@@ -72,7 +72,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
-          path: release/**/*
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/latest*.yml
           if-no-files-found: error
           retention-days: 14
 
@@ -120,7 +127,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          mapfile -d '' files < <(find dist-artifacts -type f -print0)
+          mapfile -d '' files < <(
+            find dist-artifacts -type f \( \
+              -name '*.exe' -o \
+              -name '*.blockmap' -o \
+              -name '*.dmg' -o \
+              -name '*.zip' -o \
+              -name '*.AppImage' -o \
+              -name '*.deb' -o \
+              -name 'latest*.yml' \
+            \) -print0
+          )
           if [[ ${#files[@]} -eq 0 ]]; then
             echo "No release artifacts found." >&2
             exit 1
