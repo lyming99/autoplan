@@ -181,6 +181,10 @@ export function ProjectsPage() {
                           <Icon name="enter" size={16} aria-hidden="true" />
                           <span>进入工作区</span>
                         </button>
+                        <button type="button" onClick={() => navigate(`/projects/${project.id}?tab=settings`)}>
+                          <Icon name="settings" size={16} aria-hidden="true" />
+                          <span>项目设置</span>
+                        </button>
                         <button type="button" onClick={() => openEdit(project)}>
                           <Icon name="edit" size={16} aria-hidden="true" />
                           <span>编辑</span>

@@ -1,0 +1,877 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019f0016-c0c3-7eb0-bfec-562fe34629bb
+--------
+user
+你是开发执行者。
+请只执行指定任务 P008，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_12_20260625-202919.md
+指定任务：
+- [ ] P008: 完成检查与使用说明更新 <!-- scope: README.md,ui/README.md,package.json -->
+任务 scope：readme.md, ui/readme.md, package.json
+
+完成后必须：
+- 当前为并发执行模式，不要读写其它任务的 scope
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会先只读取计划上下文和 P008 scope 内文件，确认需要更新的说明内容。
+  → 读取 P008 相关上下文
+  • 更新说明与脚本元信息
+  • 做最小范围核对
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Get-Content -LiteralPath '"'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_12_20260625-202919.md' -Encoding UTF8 | Select-String -Pattern 'P008|检查|使用说明|README|package.json' -Context 5,8; Write-Output '--- README.md ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\README.md' -Encoding UTF8; Write-Output '--- ui/README.md ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\ui\\README.md' -Encoding UTF8; Write-Output '--- package.json ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\package.json' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 265ms:
+
+    - 验收要点：新增 smoke 用例覆盖默认配置为 Codex，确保历史项目升级后 `agentCliProvider` 或等价字段为 `codex`。
+    - 验收要点：通过 stub 执行器验证选择 Claude 后，计划生成和任务执行会走 Claude 后端，不会传入 `codexSessionId`。
+    - 验收要点：通过 stub 执行器验证选择 Codex 后，现有 session 复用、resume 失败回退、新建会话等断言继续通过。
+    - 验收要点：验证 CLI 后端配置通过 IPC 保存、快照返回和 UI 类型约束保持一致。
+  
+> - [ ] P008: 完成检查与使用说明更新 <!-- scope: README.md,ui/README.md,package.json -->
+>   - 验收要点：README 或 UI 说明补充 Claude CLI 支持范围、安装/认证前置条件、项目级切换方式和默认仍为 Codex 的兼容说明。
+>   - 验收要点：若新增测试脚本或检查命令，需要同步更新 `package.json`；若复用现有命令，则不得无意义修改脚本。
+>   - 验收要点：`npm run check` 通过，覆盖 TypeScript、主进程 JS、preload 和 smoke 相关静态检查。
+    - 验收要点：`npm run smoke` 通过，确认 Codex 旧链路和 Claude 新链路均满足核心流程断言。
+  
+  ## 总体验收标准
+  
+  - 兼容性：未配置过 CLI 后端的历史项目继续默认使用 Codex，计划生成、任务执行、停止、重试、验收和并发 scope 控制保持原行为。
+  - 可配置性：用户可以在项目级配置中选择 Codex CLI 或 Claude CLI，保存后无需重启即可用于后续自动循环和手动任务执行。
+  - Claude 可用性：选择 Claude 后，AutoPlan 能在项目工作区调用 Claude CLI 非交互执行 prompt，并正确采集 stdout/stderr、last message、退出码和错误信息。
+  - 会话隔离：Codex session 复用能力不回归；Claude 后端不会错误复用或污染 `codex_session_id`，不同任务、不同项目、不同后端之间上下文不串扰。
+  | P003 | 已完成 | runCodex 抽象出 agentCliSpawnSpec 按后端选命令，保留 codex 兼容包装 |
+  | P004 | 已完成 | claude -p 非交互调用，prompt 走 stdin，不传 codex_session_id |
+  | P005 | 已完成 | CodexLog/概览/侧边栏按后端显示 Codex/Claude 文案 |
+  | P006 | 已完成 | 循环控制表单与项目创建/编辑模态框新增 CLI 后端选择 |
+  | P007 | 已完成 | smoke 新增多后端覆盖：默认 codex、claude 路由、session 隔离、非法值规范化 |
+> | P008 | 已完成 | README/ui README 补充说明，版本升至 0.2.0，check + smoke 通过 |
+  
+  当前总体进度：8/8。
+  - P001 AutoPlan 完成：2026-06-25T18:23:51.849Z；日志：docs/progress/logs/20260626-021830_execute-P001.log
+  - P003 AutoPlan 完成：2026-06-25T18:41:53.614Z；日志：docs/progress/logs/20260626-022356_execute-P003.log
+--- README.md ---
+# AutoPlan
+
+Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+
+## CLI 后端
+
+AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+
+| 后端 | 默认命令 | 说明 |
+| --- | --- | --- |
+| **Codex CLI**（默认） | `codex` | 通过 `codex exec` 非交互执行，支持会话（session）复用，失败任务重试时延续上下文 |
+| **Claude CLI** | `claude` | 通过 `claude -p` 非交互 print 模式执行，prompt 经 stdin 传入，不使用 Codex 会话机制 |
+
+- **默认仍是 Codex**：未配置过的历史项目升级后继续使用 Codex，无需重新配置。
+- **切换方式**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+- **Claude 前置条件**：需在本机已安装 `claude` CLI 并完成认证（`claude` 已可正常登录调用）。若命令不在 PATH，可在「CLI 命令路径」填写完整路径。
+- **会话隔离**：Codex 的会话复用仅在 Codex 后端启用；切换到 Claude 不会把历史 `codex_session_id` 传给 Claude，两类上下文物理隔离。
+- **可观测性**：运行中日志、事件流、任务卡片和概览会显示当前使用的 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+
+## 开发
+
+```bash
+npm install
+npm run dev        # 启动开发模式（Vite + Electron）
+npm run check      # TypeScript + 主进程 JS 静态检查
+npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+npm run package:win  # 打包 Windows 安装包
+```
+
+> 真实的 Claude CLI 调用需要本机安装并认证 `claude`，`npm run smoke` 通过 stub 覆盖后端路由与会话隔离核心分支，不依赖真实二进制。
+--- ui/README.md ---
+# AutoPlan UI 设计稿
+
+纯 HTML/CSS 设计稿，浏览器直接打开即可预览，无需依赖。
+
+项目和工作区是**两个独立的界面、各自不同的布局**，分属两个文件：
+
+## 文件
+
+| 文件 | 界面 | 布局 |
+|------|------|------|
+| `projects.html` | **项目管理** | 顶部 header + 全宽内容区（项目卡片网格 + CRUD） |
+| `workspace.html` | **工作区** | 左侧边栏导航 + 主区（概览/需求/反馈/任务/事件） |
+
+## projects.html · 项目管理
+- 顶部 sticky header：品牌 + 「打开工作区」入口 + 「创建项目」
+- 页面标题区 + 概览统计（项目总数 / 运行中 / 异常）
+- 工具栏：搜索框 + 状态分段筛选（全部/运行中/已停止/异常）
+- 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+- 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+- 完整 CRUD：
+  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
+  - **复制**：生成 `-copy`，状态置为已停止
+  - **删除**：二次确认，提示不删磁盘文件
+- 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+
+## workspace.html · 工作区
+恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+- **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+- **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
+- **事件流** — 循环运行日志表格
+- 侧边栏底部显示当前循环状态与 CLI 后端
+
+## 设计说明
+- 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+- 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+- 状态语义化：指示灯 LED（脉冲动画）、彩色状态芯片、进度条。
+- 配色：在原蓝色基调上引入紫蓝渐变 + 中性灰阶层级，浅色主题。
+- 界面图标统一使用本地 inline SVG / icon 片段，不使用 emoji 或字符图形充当图标，确保静态 HTML 离线打开时视觉与 React 界面一致。
+--- package.json ---
+{
+  "name": "autoplan",
+  "version": "0.1.6",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+
+
+**Improving UI README**
+
+I think we should enhance the UI README by adding sections on installation and authentication prerequisites. Right now, the README only mentions the CLI backend choice, and it lacks details about compatibility and the installation process. It might be useful to include these aspects to give clearer guidance to users. Maybe I could phrase one suggestion as "README या UI जानकारी को संशोधित करें..." since "या" means either one of them, while focusing on the README.
+codex
+已确认 P008 只需补充说明并核对现有脚本；接下来只改三个 scoped 文件。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\README.md
+D:\project\GitHub\autoplan\package.json
+D:\project\GitHub\autoplan\ui\README.md
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+codex
+说明和版本已更新。现在按 P008 验收只跑 `check` 与 `smoke`。
+  ✓ 读取 P008 相关上下文
+  ✓ 更新说明与脚本元信息
+  → 做最小范围核对
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); npm run check; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; npm run smoke' in D:\project\GitHub\autoplan
+2026-06-25T18:44:03.159948Z ERROR codex_core::tools::router: error={"output":"\n> autoplan@0.2.0 check\n> tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js\n\n\n> autoplan@0.2.0 smoke\n> node scripts/smoke-test.js\n\nnode:internal/modules/cjs/loader:1424\n  throw err;\n  ^\n\nError: Cannot find module './agentCli'\nRequire stack:\n- D:\\project\\GitHub\\autoplan\\scripts\\smoke-test.js\n    at Module._resolveFilename (node:internal/modules/cjs/loader:1421:15)\n    at defaultResolveImpl (node:internal/modules/cjs/loader:1059:19)\n    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1064:22)\n    at Module._load (node:internal/modules/cjs/loader:1227:37)\n    at TracingChannel.traceSync (node:diagnostics_channel:328:14)\n    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)\n    at Module.require (node:internal/modules/cjs/loader:1504:12)\n    at require (node:internal/modules/helpers:152:16)\n    at localRequire (D:\\project\\GitHub\\autoplan\\scripts\\smoke-test.js:869:12)\n    at D:\\project\\GitHub\\autoplan\\src\\loopService.js:15:5 {\n  code: 'MODULE_NOT_FOUND',\n  requireStack: [ 'D:\\\\project\\\\GitHub\\\\autoplan\\\\scripts\\\\smoke-test.js' ]\n}\n","metadata":{"exit_code":1,"duration_seconds":5.3}}
+ exited 1 in 5341ms:
+
+> autoplan@0.2.0 check
+> tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js
+
+
+> autoplan@0.2.0 smoke
+> node scripts/smoke-test.js
+
+node:internal/modules/cjs/loader:1424
+  throw err;
+  ^
+
+Error: Cannot find module './agentCli'
+Require stack:
+- D:\project\GitHub\autoplan\scripts\smoke-test.js
+    at Module._resolveFilename (node:internal/modules/cjs/loader:1421:15)
+    at defaultResolveImpl (node:internal/modules/cjs/loader:1059:19)
+    at resolveForCJSWithHooks (node:internal/modules/cjs/loader:1064:22)
+    at Module._load (node:internal/modules/cjs/loader:1227:37)
+    at TracingChannel.traceSync (node:diagnostics_channel:328:14)
+    at wrapModuleLoad (node:internal/modules/cjs/loader:245:24)
+    at Module.require (node:internal/modules/cjs/loader:1504:12)
+    at require (node:internal/modules/helpers:152:16)
+    at localRequire (D:\project\GitHub\autoplan\scripts\smoke-test.js:869:12)
+    at D:\project\GitHub\autoplan\src\loopService.js:15:5 {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [ 'D:\\project\\GitHub\\autoplan\\scripts\\smoke-test.js' ]
+}
+
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+**Evaluating missing module issue**
+
+I see that there's a failure due to a missing module './agentCli' from smoke. If the current script were wrong, it seems like P007 should have addressed scripts/smoke-test, but we can't fix that now. I'm wondering if the smoke script should be `node -r ./src/agentCli scripts/smoke-test`, but that doesn't feel right. Perhaps I need to inspect the file tree for further context, but I’m not sure if that's within the current scope.
+codex
+`check` 已通过，`smoke` 在现有脚本解析 `./agentCli` 时失败；我先只在允许的 `package.json` 范围内定位是否是命令入口问题。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Get-Content -LiteralPath '"'D:\\project\\GitHub\\autoplan\\package.json' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 204ms:
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+**Evaluating smoke failure reasons**
+
+I’m wondering if the smoke failure happened because `src/agentCli.js` is missing, potentially due to task P003 not being in this worktree. I can’t list the scope, which is frustrating. Maybe it’s because another concurrent task hasn’t committed? The plan indicates that P007 is complete. It seems like I shouldn’t fix this since it’s outside the current scope, but I’ll still need to state that the smoke test failed. The user could be expecting completion rather than success.
+**Verifying task status**
+
+I’m considering whether I should verify something using `git diff --check` for specific files. It seems that even though we passed the minimum range verification, the smoke test failed, which makes me wonder about the completion status. I think we can mark the plan step as completed, but we haven't fully validated the task yet. It looks like there's a bit of confusion around whether the overall task can be considered complete.
+codex
+`smoke` 失败点不在 P008 允许修改范围内。我再做 scoped 文件的格式/变更范围核对。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); git diff --check -- README.md ui/README.md package.json; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; git diff --name-only -- README.md ui/README.md package.json' in D:\project\GitHub\autoplan
+ succeeded in 254ms:
+README.md
+package.json
+ui/README.md
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ui/README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ui/README.md', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+**Interpreting Git Warnings**
+
+I’m looking at the `git diff --check` output, which shows some warnings but exits with 0, meaning no critical issues. It indicates there are no whitespace errors, though there may be line ending warnings due to `autocrlf`. The warnings suggest that LF files will become CRLF next time Git touches them. I'll need to ensure the encoding stays as UTF-8. I might consider using PowerShell’s `Set-Content` for proper encoding, but it could be unnecessary. Overall, these warnings aren’t blocking progress. I should also check if the README contains the necessary instructions.
+**Reviewing README and Versioning**
+
+The root README had good details about the CLI backend, and I've added UI updates and version info. However, I noticed that to update the package from version 0.1.6 to 0.2.0, it's probably necessary. I'm wondering if this change affects acceptance, especially since we followed the rule not to handle tasks too early. There's a potential issue with file naming conventions on Windows, but I don’t need to output the full diff. The `npm run check` passed, but `npm run smoke` failed due to a module not found error, so we can't claim completion yet. I'll aim for transparency about the partial block.
+**Examining Package Scope**
+
+I'm considering whether we can find a solution within the current scope. Perhaps we could modify the package's smoke script to pass without needing external resources. Should I attempt this? I want to explore this possibility more since it could allow us to deliver a complete solution just by modifying `package.json`. I need to determine if that's feasible and appropriate. To figure this out, I’ll analyze the code output, particularly the smoke script around line 869 where there's a `localRequire`.
+**Updating Plan and Line References**
+
+I can complete the plan since verification is done, but it seems the task isn't fully accepted yet. I should update the plan with the final adjustments. I’m considering if there’s an unintentional issue with line endings. I need to make sure to include line numbers for changed files as I retrieve them. I’ll use `Select-String` to get the required line references. I wonder if I should include a preamble; maybe it’s fine to omit it for clarity.
+codex
+我会抓取 scoped 文件行号，方便最终交付摘要精准可点。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false); Select-String -LiteralPath '"'README.md' -Pattern 'CLI 后端|npm run check|npm run smoke|Claude 前置条件'; Select-String -LiteralPath 'ui/README.md' -Pattern '创建/编辑|CLI 后端选择说明|默认仍为 Codex|Claude 仅覆盖'; Select-String -LiteralPath 'package.json' -Pattern '\"version\"'" in D:\project\GitHub\autoplan
+ succeeded in 248ms:
+
+README.md:3:Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+README.md:5:## CLI 后端
+README.md:15:- **切换方式**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+README.md:16:- **Claude 前置条件**：需在本机已安装 `claude` CLI 并完成认证（`claude` 已可正常登录调用）。若命令不在 PATH，可在「CLI 命令路径」填写完整路径。
+README.md:18:- **可观测性**：运行中日志、事件流、任务卡片和概览会显示当前使用的 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+README.md:25:npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+README.md:26:npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+README.md:30:> 真实的 Claude CLI 调用需要本机安装并认证 `claude`，`npm run smoke` 通过 stub 覆盖后端路由与会话隔离核心分支，不依赖真实二进制。
+ui\README.md:21:  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+ui\README.md:34:## CLI 后端选择说明
+ui\README.md:35:- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+ui\README.md:36:- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+ui\README.md:37:- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+package.json:3:  "version": "0.2.0",
+
+
+
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+  ✓ 读取 P008 相关上下文
+  ✓ 更新说明与脚本元信息
+  ✓ 做最小范围核对
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+codex
+**P008 更新**
+- 已补充 CLI 后端说明与检查命令说明：`README.md:5`、`README.md:25`
+- 已补充 UI 设计稿中的项目级 Codex/Claude 切换、默认 Codex、Claude 安装认证前置条件：`ui/README.md:21`、`ui/README.md:34`
+- 已将版本更新为 `0.2.0`：`package.json:3`
+- 未修改 plan 文件，未勾选 checkbox，仅修改 P008 scope 内文件。
+
+**验证结果**
+- `npm run check` 通过。
+- `git diff --check -- README.md ui/README.md package.json` 通过；仅有 Git CRLF 规范化 warning。
+- `npm run smoke` 未通过：现有冒烟脚本运行时报 `Cannot find module './agentCli'`。该失败点在 P008 允许修改范围外，所以我没有改动相关脚本或源码。
+diff --git a/README.md b/README.md
+index dd696e3d2854a9b9168827b3aaeb863ce02cafe7..eae2f1b1726aadc56a23732dd29a871da4264d4a
+--- a/README.md
++++ b/README.md
+@@ -22,7 +22,7 @@
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+-npm run check      # TypeScript + 主进程 JS 静态检查
++npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+diff --git a/package.json b/package.json
+index 793bc66ca2da3a2a28eb1a60861d081b288fd07a..29507e01d9ca719b4c73d11a8d1c0a27d23cb6d7
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.1.6",
++  "version": "0.2.0",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "main": "src/main.js",
+   "private": true,
+diff --git a/ui/README.md b/ui/README.md
+index 2a1b50be42c14288b04b5c1355bc5f08245b1ec9..f4650c066e6e0a926d57ef428472f383f33ea5a9
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -18,7 +18,7 @@
+ - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+ - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+ - 完整 CRUD：
+-  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、间隔、描述）
++  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   - **复制**：生成 `-copy`，状态置为已停止
+   - **删除**：二次确认，提示不删磁盘文件
+ - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+@@ -31,6 +31,12 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## CLI 后端选择说明
++- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
++- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
++- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
++- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+tokens used
+35,151
+**P008 更新**
+- 已补充 CLI 后端说明与检查命令说明：`README.md:5`、`README.md:25`
+- 已补充 UI 设计稿中的项目级 Codex/Claude 切换、默认 Codex、Claude 安装认证前置条件：`ui/README.md:21`、`ui/README.md:34`
+- 已将版本更新为 `0.2.0`：`package.json:3`
+- 未修改 plan 文件，未勾选 checkbox，仅修改 P008 scope 内文件。
+
+**验证结果**
+- `npm run check` 通过。
+- `git diff --check -- README.md ui/README.md package.json` 通过；仅有 Git CRLF 规范化 warning。
+- `npm run smoke` 未通过：现有冒烟脚本运行时报 `Cannot find module './agentCli'`。该失败点在 P008 允许修改范围外，所以我没有改动相关脚本或源码。

@@ -281,14 +281,17 @@ function createFeedbackCandidate(
 
 function createPlanCandidate(plan: AppSnapshot['plans'][number]): WorkspaceSearchCandidate {
   const fields: WorkspaceSearchField[] = [];
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', plan.title);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '文件路径', plan.file_path);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', plan.status);
+  const planTitle = toSearchText(plan.title);
+  const fileName = getFileName(plan.file_path);
 
   return {
     source: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN,
     recordId: plan.id,
-    title: getFileName(plan.file_path) || `Plan #${plan.id}`,
-    summary: summarizeSearchText(plan.file_path || plan.status, '暂无路径'),
+    title: planTitle || fileName || `Plan #${plan.id}`,
+    summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
     status: nullableSearchText(plan.status),
     updatedAt: plan.updated_at,
     fields,

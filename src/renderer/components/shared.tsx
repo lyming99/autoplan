@@ -31,6 +31,13 @@ export function agentCliProviderLabel(provider?: string | null): string {
   return 'Codex';
 }
 
+export function codexReasoningEffortLabel(effort?: string | null): string {
+  const value = String(effort || '').trim().toLowerCase();
+  if (value === 'low') return '低';
+  if (value === 'high') return '高';
+  return '中';
+}
+
 /** 状态 → 语义化 chip class */
 export function statusChipClass(status: string): string {
   const s = status.toLowerCase();

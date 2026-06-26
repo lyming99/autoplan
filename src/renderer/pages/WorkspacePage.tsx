@@ -1,11 +1,15 @@
 import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { PENDING_ATTACHMENT_SOURCES, WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
 import type {
+  AgentCliOption,
+  AgentCliProvider,
   AppSnapshot,
+  CodexReasoningEffort,
   IntakeType,
   PendingAttachment,
   Plan,
+  PlanTask,
   Project,
   ProjectState,
   WorkspacePlanReadState,
@@ -15,18 +19,42 @@ import type {
   WorkspaceTab,
 } from '../types';
 import { useSnapshot } from '../hooks/useSnapshot';
+import { ComposerCliSelectionProvider } from '../components/Composer';
 import { IntakePanel } from '../components/IntakePanel';
 import { EventList, PlanList, TaskList } from '../components/PlanLists';
 import { SearchResults } from '../components/SearchResults';
 import { CodexLog } from '../components/CodexLog';
 import { Icon, type IconName } from '../components/icons';
-import { getFilePath, agentCliProviderLabel } from '../components/shared';
+import { getFilePath, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
 import { searchWorkspaceSnapshot } from '../utils/search';
 import { formatChinaTime } from '../utils/time';
 
 const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
   requirement: [],
   feedback: [],
+};
+
+const agentCliOptions: AgentCliOption[] = [
+  { value: 'codex', label: 'Codex CLI' },
+  { value: 'claude', label: 'Claude CLI' },
+];
+
+const codexReasoningOptions: AgentCliOption[] = [
+  { value: 'low', label: '低 · 快速' },
+  { value: 'medium', label: '中 · 默认' },
+  { value: 'high', label: '高 · 深入' },
+];
+
+const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+
+const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+  requirement: 'codex',
+  feedback: 'codex',
+};
+
+const defaultComposerCodexReasoning: Record<IntakeType, CodexReasoningEffort> = {
+  requirement: defaultCodexReasoningEffort,
+  feedback: defaultCodexReasoningEffort,
 };
 
 const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [
@@ -46,6 +74,7 @@ type LoopFormState = {
   validationCommand: string;
   agentCliProvider: string;
   agentCliCommand: string;
+  codexReasoningEffort: CodexReasoningEffort;
 };
 
 type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
@@ -60,20 +89,120 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function createPendingPathAttachment(file: File): PendingAttachment | null {
+  const path = getFilePath(file);
+  if (!path) return null;
+  const name = file.name || path.split(/[\\/]/).pop() || '附件';
+  const type = file.type || 'application/octet-stream';
+  return {
+    id: `${PENDING_ATTACHMENT_SOURCES.PATH}:${path}:${file.size}`,
+    source: PENDING_ATTACHMENT_SOURCES.PATH,
+    path,
+    name,
+    size: file.size,
+    type,
+    previewUrl: window.autoplan.toFileUrl(path),
+  };
+}
+
+function getImageExtension(type: string) {
+  if (type === 'image/jpeg') return 'jpg';
+  const subtype = type.startsWith('image/') ? type.slice('image/'.length) : 'png';
+  return subtype.replace(/[^a-z0-9]+/gi, '').toLowerCase() || 'png';
+}
+
+function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('读取剪贴板图片失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function createPendingClipboardImageAttachment(file: File, index: number): Promise<PendingAttachment | null> {
+  if (!file.type.startsWith('image/')) return null;
+  const type = file.type || 'image/png';
+  const extension = getImageExtension(type);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const fallbackName = `pasted-image-${timestamp}-${index + 1}.${extension}`;
+  const name = file.name || fallbackName;
+  const dataUrl = await readFileAsDataUrl(file);
+  if (!dataUrl) return null;
+  const idSuffix = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`;
+  return {
+    id: `${PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE}:${idSuffix}`,
+    source: PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE,
+    dataUrl,
+    name,
+    size: file.size,
+    type,
+    previewUrl: dataUrl,
+  };
+}
+
+function appendPendingAttachments(
+  setPendingAttachments: Dispatch<SetStateAction<Record<IntakeType, PendingAttachment[]>>>,
+  type: IntakeType,
+  attachments: PendingAttachment[],
+) {
+  if (!attachments.length) return;
+  setPendingAttachments((current) => {
+    const nextItems = [...current[type]];
+    for (const attachment of attachments) {
+      if (!nextItems.some((item) => isSamePendingAttachment(item, attachment))) nextItems.push(attachment);
+    }
+    return nextItems.length === current[type].length ? current : { ...current, [type]: nextItems };
+  });
+}
+
+function isSamePendingAttachment(current: PendingAttachment, next: PendingAttachment) {
+  if (current.source !== next.source) return false;
+  if (current.source === PENDING_ATTACHMENT_SOURCES.PATH && next.source === PENDING_ATTACHMENT_SOURCES.PATH) {
+    return current.path === next.path && current.size === next.size;
+  }
+  if (
+    current.source === PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE &&
+    next.source === PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE
+  ) {
+    return current.dataUrl === next.dataUrl && current.size === next.size;
+  }
+  return current.id === next.id;
+}
+
+function resolveWorkspaceTab(tab: string | null): WorkspaceTab {
+  return tabs.some((item) => item.id === tab) ? (tab as WorkspaceTab) : 'overview';
+}
+
+function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEffort {
+  const effort = String(value || '').trim().toLowerCase();
+  if (effort === 'low' || effort === 'high') return effort;
+  return defaultCodexReasoningEffort;
+}
+
 export function WorkspacePage() {
   const params = useParams<{ projectId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const projectId = Number(params.projectId);
   const { snapshot, setSnapshot, error, setError } = useSnapshot(Number.isFinite(projectId) ? projectId : null);
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>('overview');
+  const tabParam = searchParams.get('tab');
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => resolveWorkspaceTab(tabParam));
   const [pendingAttachments, setPendingAttachments] =
     useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
+  const [composerCliProviders, setComposerCliProviders] =
+    useState<Record<IntakeType, AgentCliProvider>>(defaultComposerCliProviders);
+  const [composerCodexReasoning, setComposerCodexReasoning] =
+    useState<Record<IntakeType, CodexReasoningEffort>>(defaultComposerCodexReasoning);
   const [loopForm, setLoopForm] = useState<LoopFormState>({
     workspacePath: '',
     intervalSeconds: '5',
     validationCommand: '',
     agentCliProvider: 'codex',
     agentCliCommand: '',
+    codexReasoningEffort: defaultCodexReasoningEffort,
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
@@ -89,6 +218,10 @@ export function WorkspacePage() {
   const filteredItems = useMemo(
     () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
     [snapshot, workspaceSearch],
+  );
+  const displayTasks = useMemo(
+    () => filteredItems.tasks.map((task) => withTaskCliProviderTitle(task, state?.agent_cli_provider)),
+    [filteredItems.tasks, state?.agent_cli_provider],
   );
   const filteredEmptyText = isSearching ? searchNoMatchText : undefined;
   const latestReadingPlan = useMemo(() => {
@@ -108,18 +241,55 @@ export function WorkspacePage() {
 
   useEffect(() => {
     if (!state) return;
+    const defaultProvider = state.agent_cli_provider || 'codex';
+    const defaultReasoning = normalizeCodexReasoningEffort(state.codex_reasoning_effort);
     setLoopForm({
       workspacePath: state.workspace_path || '',
       intervalSeconds: String(state.interval_seconds || 5),
       validationCommand: state.validation_command || '',
-      agentCliProvider: state.agent_cli_provider || 'codex',
+      agentCliProvider: defaultProvider,
       agentCliCommand: state.agent_cli_command || '',
+      codexReasoningEffort: defaultReasoning,
     });
-  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state]);
+  }, [state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+
+  useEffect(() => {
+    const defaultProvider = state?.agent_cli_provider || 'codex';
+    const defaultReasoning = normalizeCodexReasoningEffort(state?.codex_reasoning_effort);
+    setComposerCliProviders({
+      requirement: defaultProvider,
+      feedback: defaultProvider,
+    });
+    setComposerCodexReasoning({
+      requirement: defaultReasoning,
+      feedback: defaultReasoning,
+    });
+  }, [projectId, state?.agent_cli_provider, state?.codex_reasoning_effort]);
+
+  const composerCliSelection = useMemo(
+    () => ({
+      options: agentCliOptions,
+      selectedByType: composerCliProviders,
+      reasoningOptions: codexReasoningOptions,
+      reasoningByType: composerCodexReasoning,
+      onProviderChange: (type: IntakeType, provider: AgentCliProvider) => {
+        setComposerCliProviders((current) => ({ ...current, [type]: provider }));
+      },
+      onReasoningChange: (type: IntakeType, effort: CodexReasoningEffort) => {
+        setComposerCodexReasoning((current) => ({ ...current, [type]: normalizeCodexReasoningEffort(effort) }));
+      },
+    }),
+    [composerCliProviders, composerCodexReasoning],
+  );
 
   useEffect(() => {
     setSearchQuery('');
   }, [projectId]);
+
+  useEffect(() => {
+    const nextTab = resolveWorkspaceTab(tabParam);
+    setActiveTab((current) => (current === nextTab ? current : nextTab));
+  }, [tabParam]);
 
   useEffect(() => {
     planReadRequestRef.current += 1;
@@ -130,16 +300,30 @@ export function WorkspacePage() {
   }, [projectId]);
 
   const addPendingFiles = useCallback((type: IntakeType, files: FileList | File[] | null) => {
-    const selected = Array.from(files || [])
-      .map((file) => ({ path: getFilePath(file), name: file.name, size: file.size, type: file.type }))
-      .filter((file) => file.path);
-    if (!selected.length) return;
-    setPendingAttachments((current) => {
-      const nextItems = [...current[type]];
-      for (const file of selected) {
-        if (!nextItems.some((item) => item.path === file.path && item.size === file.size)) nextItems.push(file);
+    const selectedFiles = Array.from(files || []);
+    const pathAttachments: PendingAttachment[] = [];
+    const clipboardImageFiles: File[] = [];
+
+    for (const file of selectedFiles) {
+      const pathAttachment = createPendingPathAttachment(file);
+      if (pathAttachment) {
+        pathAttachments.push(pathAttachment);
+      } else if (file.type.startsWith('image/')) {
+        clipboardImageFiles.push(file);
       }
-      return { ...current, [type]: nextItems };
+    }
+
+    appendPendingAttachments(setPendingAttachments, type, pathAttachments);
+    if (!clipboardImageFiles.length) return;
+
+    void Promise.allSettled(
+      clipboardImageFiles.map((file, index) => createPendingClipboardImageAttachment(file, index)),
+    ).then((results) => {
+      const clipboardAttachments = results
+        .filter((result): result is PromiseFulfilledResult<PendingAttachment | null> => result.status === 'fulfilled')
+        .map((result) => result.value)
+        .filter((attachment): attachment is PendingAttachment => Boolean(attachment));
+      appendPendingAttachments(setPendingAttachments, type, clipboardAttachments);
     });
   }, []);
 
@@ -158,6 +342,10 @@ export function WorkspacePage() {
           projectId,
           body,
           attachments: pendingAttachments.requirement,
+          agentCliProvider: composerCliProviders.requirement,
+          ...(composerCliProviders.requirement === 'claude'
+            ? {}
+            : { codexReasoningEffort: composerCodexReasoning.requirement }),
         });
         setSnapshot(next);
         setPendingAttachments((current) => ({ ...current, requirement: [] }));
@@ -168,7 +356,7 @@ export function WorkspacePage() {
         return false;
       }
     },
-    [pendingAttachments.requirement, projectId, setSnapshot, setError, showError],
+    [composerCliProviders.requirement, composerCodexReasoning.requirement, pendingAttachments.requirement, projectId, setSnapshot, setError, showError],
   );
 
   const createFeedback = useCallback(
@@ -179,6 +367,10 @@ export function WorkspacePage() {
           projectId,
           body,
           attachments: pendingAttachments.feedback,
+          agentCliProvider: composerCliProviders.feedback,
+          ...(composerCliProviders.feedback === 'claude'
+            ? {}
+            : { codexReasoningEffort: composerCodexReasoning.feedback }),
         });
         setSnapshot(next);
         setPendingAttachments((current) => ({ ...current, feedback: [] }));
@@ -189,7 +381,7 @@ export function WorkspacePage() {
         return false;
       }
     },
-    [pendingAttachments.feedback, projectId, setSnapshot, setError, showError],
+    [composerCliProviders.feedback, composerCodexReasoning.feedback, pendingAttachments.feedback, projectId, setSnapshot, setError, showError],
   );
 
   const updateRequirement = useCallback(
@@ -266,6 +458,9 @@ export function WorkspacePage() {
         validationCommand: loopForm.validationCommand,
         agentCliProvider: loopForm.agentCliProvider || 'codex',
         agentCliCommand: loopForm.agentCliCommand.trim(),
+        ...(loopForm.agentCliProvider === 'claude'
+          ? {}
+          : { codexReasoningEffort: loopForm.codexReasoningEffort }),
       });
       setSnapshot(next);
       setError(null);
@@ -377,16 +572,34 @@ export function WorkspacePage() {
     void readPlanForReader(plan);
   }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
 
+  const openTaskPlanReader = useCallback(
+    (task: PlanTask) => {
+      const plan = snapshot?.plans.find(
+        (item) => item.id === task.plan_id || (!!task.file_path && item.file_path === task.file_path),
+      );
+      if (plan) openPlanReader(plan);
+    },
+    [openPlanReader, snapshot?.plans],
+  );
+
   const switchProject = (nextId: number) => {
-    if (nextId && nextId !== projectId) navigate(`/projects/${nextId}`);
+    if (nextId && nextId !== projectId) navigate(`/projects/${nextId}${activeTab === 'overview' ? '' : `?tab=${activeTab}`}`);
   };
+
+  const selectTab = useCallback(
+    (tab: WorkspaceTab) => {
+      setActiveTab(tab);
+      setSearchParams(tab === 'overview' ? {} : { tab }, { replace: true });
+    },
+    [setSearchParams],
+  );
 
   if (!snapshot) {
     return (
       <div className="workspace-shell">
         <WorkspaceSidebar
           activeTab={activeTab}
-          onTab={setActiveTab}
+          onTab={selectTab}
           onBack={() => navigate('/projects')}
           projectId={projectId}
           projects={projects}
@@ -405,7 +618,7 @@ export function WorkspacePage() {
     <div className="workspace-shell">
       <WorkspaceSidebar
         activeTab={activeTab}
-        onTab={setActiveTab}
+        onTab={selectTab}
         onBack={() => navigate('/projects')}
         projectId={projectId}
         projects={projects}
@@ -449,61 +662,65 @@ export function WorkspacePage() {
 
         <SearchResults
           onClear={() => setSearchQuery('')}
-          onSelectGroup={setActiveTab}
-          onSelectResult={(result) => setActiveTab(result.targetTab)}
+          onSelectGroup={selectTab}
+          onSelectResult={(result) => selectTab(result.targetTab)}
           searchState={workspaceSearch}
         />
 
         <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
           {error ? <div className="error-banner">{error}</div> : null}
-          <OverviewView snapshot={snapshot} state={state} onGoTasks={() => setActiveTab('tasks')} />
+          <OverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
         </section>
 
         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
           {activeTab === 'requirement' ? (
-            <IntakePanel
-              emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
-              heading="需求记录"
-              items={filteredItems.requirements}
-              pendingAttachments={pendingAttachments.requirement}
-              placeholder="输入需求，Enter 发送，Shift+Enter 换行"
-              submitLabel="发送需求"
-              subtitle="循环开启后自动扫描并生成计划"
-              type="requirement"
-              attachments={snapshot.attachments}
-              onAddFiles={addPendingFiles}
-              onDelete={deleteRequirement}
-              onRemoveAttachment={removePendingAttachment}
-              onSubmit={createRequirement}
-              onUpdate={updateRequirement}
-              onInterrupt={interruptIntake}
-              onResume={resumeIntake}
-              onAppendTask={appendIntakeTask}
-            />
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
+                heading="需求记录"
+                items={filteredItems.requirements}
+                pendingAttachments={pendingAttachments.requirement}
+                placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+                submitLabel="发送需求"
+                subtitle="循环开启后自动扫描并生成计划"
+                type="requirement"
+                attachments={snapshot.attachments}
+                onAddFiles={addPendingFiles}
+                onDelete={deleteRequirement}
+                onRemoveAttachment={removePendingAttachment}
+                onSubmit={createRequirement}
+                onUpdate={updateRequirement}
+                onInterrupt={interruptIntake}
+                onResume={resumeIntake}
+                onAppendTask={appendIntakeTask}
+              />
+            </ComposerCliSelectionProvider>
           ) : null}
         </section>
 
         <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
           {activeTab === 'feedback' ? (
-            <IntakePanel
-              emptyText={filteredEmptyText || '暂无反馈。'}
-              heading="反馈记录"
-              items={filteredItems.feedback}
-              pendingAttachments={pendingAttachments.feedback}
-              placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
-              submitLabel="发送反馈"
-              subtitle="循环开启后自动扫描并生成计划"
-              type="feedback"
-              attachments={snapshot.attachments}
-              onAddFiles={addPendingFiles}
-              onDelete={deleteFeedback}
-              onRemoveAttachment={removePendingAttachment}
-              onSubmit={createFeedback}
-              onUpdate={updateFeedback}
-              onInterrupt={interruptIntake}
-              onResume={resumeIntake}
-              onAppendTask={appendIntakeTask}
-            />
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无反馈。'}
+                heading="反馈记录"
+                items={filteredItems.feedback}
+                pendingAttachments={pendingAttachments.feedback}
+                placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+                submitLabel="发送反馈"
+                subtitle="循环开启后自动扫描并生成计划"
+                type="feedback"
+                attachments={snapshot.attachments}
+                onAddFiles={addPendingFiles}
+                onDelete={deleteFeedback}
+                onRemoveAttachment={removePendingAttachment}
+                onSubmit={createFeedback}
+                onUpdate={updateFeedback}
+                onInterrupt={interruptIntake}
+                onResume={resumeIntake}
+                onAppendTask={appendIntakeTask}
+              />
+            </ComposerCliSelectionProvider>
           ) : null}
         </section>
 
@@ -533,7 +750,8 @@ export function WorkspacePage() {
                   </div>
                   <TaskList
                     emptyText={filteredEmptyText}
-                    tasks={filteredItems.tasks}
+                    tasks={displayTasks}
+                    onOpenPlan={openTaskPlanReader}
                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
                   />
@@ -566,7 +784,7 @@ export function WorkspacePage() {
             <section className="card">
               <div className="card-head">
                 <h2>事件流</h2>
-                <span className="hint">最近 80 条 · 实时更新</span>
+                <span className="hint">最近 80 条 · 实时更新 · 当前 {agentCliConfigSummary(state)}</span>
               </div>
               <EventList emptyText={filteredEmptyText} events={filteredItems.events} />
             </section>
@@ -650,7 +868,7 @@ function WorkspaceSidebar({
           </span>
         </div>
         <div className="loop-config mono">
-          {agentCliProviderLabel(state?.agent_cli_provider)}
+          {agentCliConfigSummary(state)}
           {' · '}间隔 {state?.interval_seconds || 5}s
           {state?.validation_command ? ` · ${state.validation_command}` : ' · 无验收命令'}
         </div>
@@ -764,6 +982,19 @@ function filterItemsBySearchGroup<T extends { id: number }>(
   return items.filter((item) => recordIds.has(item.id));
 }
 
+function withTaskCliProviderTitle(task: PlanTask, fallbackProvider?: string | null): PlanTask {
+  const providerLabel = agentCliProviderLabel(task.agentCliProvider || fallbackProvider);
+  if (!providerLabel || task.title.startsWith(`[${providerLabel}] `)) return task;
+  return { ...task, title: `[${providerLabel}] ${task.title}` };
+}
+
+function agentCliConfigSummary(state?: ProjectState | null) {
+  const provider = state?.agent_cli_provider || 'codex';
+  const providerLabel = agentCliProviderLabel(provider);
+  if (provider === 'claude') return providerLabel;
+  return `${providerLabel} · 思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)}`;
+}
+
 function SettingsView({
   loopForm,
   setLoopForm,
@@ -777,6 +1008,8 @@ function SettingsView({
   onToggleRun: () => void;
   running: boolean;
 }) {
+  const isCodexProvider = loopForm.agentCliProvider !== 'claude';
+
   return (
     <div className="settings-layout">
       <form className="editor card settings-card" onSubmit={onSubmit}>
@@ -806,7 +1039,7 @@ function SettingsView({
           <input
             value={loopForm.validationCommand}
             onChange={(event) => setLoopForm((current) => ({ ...current, validationCommand: event.target.value }))}
-            placeholder="flutter analyze"
+            placeholder="留空则跳过外部验收命令"
           />
         </label>
         <label className="field">
@@ -822,6 +1055,32 @@ function SettingsView({
             <small className="field-hint">需本机已安装 claude CLI 并完成认证</small>
           ) : null}
         </label>
+        {isCodexProvider ? (
+          <label className="field">
+            Codex 思考深度
+            <select
+              value={loopForm.codexReasoningEffort}
+              onChange={(event) =>
+                setLoopForm((current) => ({
+                  ...current,
+                  codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+                }))
+              }
+            >
+              {codexReasoningOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <small className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度</small>
+          </label>
+        ) : (
+          <div className="field readonly-field">
+            Codex 思考深度
+            <span>Claude CLI 不使用该配置</span>
+          </div>
+        )}
         <label className="field">
           CLI 命令路径（留空用默认）
           <input
@@ -862,15 +1121,23 @@ function OverviewView({
   const activeIndex = phases.indexOf(currentPhase);
   const operation = snapshot.activeOperation || snapshot.lastOperation;
   const operationActive = Boolean(snapshot.activeOperation);
+  const operationProvider = operation?.agentCliProvider || state?.agent_cli_provider;
+  const operationProviderLabel = agentCliProviderLabel(operationProvider);
+  const operationReasoningLabel = operationProvider !== 'claude'
+    ? `思考${codexReasoningEffortLabel(operation?.codexReasoningEffort || state?.codex_reasoning_effort)}`
+    : '';
+  const operationSessionLabel = operationProviderLabel === 'Codex' ? operation?.codexSessionLabel : '';
   const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operation.startedAt)}` : '';
   const operationExit =
     operation && !operationActive && typeof operation.exitCode === 'number'
       ? `退出码 ${operation.exitCode}${operation.exitCode === 0 ? '（成功）' : '（失败）'}`
       : '';
   const operationHint = operation
-    ? [operationTime, operation.codexSessionLabel, operationExit].filter(Boolean).join(' · ')
+    ? [operationProviderLabel, operationReasoningLabel, operationTime, operationSessionLabel, operationExit].filter(Boolean).join(' · ')
     : '等待下一次执行';
-  const operationTitle = operation ? `${operationActive ? '执行日志' : '最近执行'} · ${operation.label}` : '执行日志';
+  const operationTitle = operation
+    ? `${operationActive ? '执行日志' : '最近执行'} · ${operationProviderLabel} · ${operation.label}`
+    : `执行日志 · ${operationProviderLabel}`;
 
   return (
     <>
@@ -884,7 +1151,13 @@ function OverviewView({
           accent="info"
         />
         <StatCard icon="tasks" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
-        <StatCard icon="refresh" value={`${state?.interval_seconds || 5}s`} label="循环间隔" accent="warning" />
+        <StatCard
+          icon="settings"
+          value={agentCliProviderLabel(state?.agent_cli_provider)}
+          label="CLI 后端"
+          sub={state?.agent_cli_provider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)} · 间隔 ${state?.interval_seconds || 5}s`}
+          accent="warning"
+        />
       </div>
 
       <div className="overview-grid">
@@ -897,7 +1170,7 @@ function OverviewView({
                 </h2>
                 <span className="hint">{operationHint}</span>
                 <span className={`log-phase-chip ${state?.running ? 'running' : 'stopped'}`}>
-                  {state?.running ? '循环运行中' : '循环已停止'} · {currentPhase}
+                  {state?.running ? '循环运行中' : '循环已停止'} · {operationProviderLabel} · {currentPhase}
                 </span>
               </div>
               <div className="log-summary">
@@ -916,7 +1189,7 @@ function OverviewView({
               log={operation?.logTail || ''}
               activity={operation?.activity || []}
               context={operation || null}
-              provider={operation?.agentCliProvider || state?.agent_cli_provider}
+              provider={operationProvider}
             />
           </section>
         </div>

@@ -1,14 +1,25 @@
-const crypto = require('node:crypto');
+﻿const crypto = require('node:crypto');
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { nowIso } = require('./database');
 const { CodexActivityPrinter } = require('./codexActivity');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  codexNewSessionArgs,
+  codexResumeSessionArgs,
+  normalizeAgentCliCommand,
+  normalizeAgentCliProvider,
+  runAgentCliAttempt,
+} = require('./agentCli');
 
 const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);
 const ACTIVE_RUNTIME_PHASE_SQL = "('running','scan','generate-plan','execute-task','validate')";
 const MAX_PARALLEL_TASKS = 2;
+const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+const ACCEPTANCE_TASK_RE = /(完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation)/i;
 const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;
 const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
 const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
@@ -23,10 +34,20 @@ const CODEX_SESSION_ID_RES = Object.freeze([
   new RegExp(`\\b(?:session_id|sessionId)\\s*[:=]\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\b`, 'i'),
 ]);
 const CODEX_RESUME_FAILURE_RE = /(?:thread\/resume|resume failed|no rollout found|session\s+(?:not\s+found|missing)|conversation\s+not\s+found|unknown\s+session|invalid\s+session)/i;
-const DEFAULT_AGENT_CLI_PROVIDER = 'codex';
-const AGENT_CLI_PROVIDERS = new Set([DEFAULT_AGENT_CLI_PROVIDER, 'claude']);
 const AGENT_CLI_PROVIDER_COLUMNS = Object.freeze(['agent_cli_provider', 'cli_provider', 'cli_backend']);
 const AGENT_CLI_COMMAND_COLUMNS = Object.freeze(['agent_cli_command', 'cli_command', 'cli_path']);
+const CODEX_REASONING_EFFORT_COLUMNS = Object.freeze([
+  'codex_reasoning_effort',
+  'codexReasoningEffort',
+  'codex_thinking_depth',
+  'codexThinkingDepth',
+  'reasoning_effort',
+  'reasoningEffort',
+  'thinking_depth',
+  'thinkingDepth',
+]);
+const CODEX_REASONING_EFFORTS = new Set(['low', 'medium', 'high']);
+const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
 const AGENT_CLI_PROVIDER_INPUT_KEYS = Object.freeze([
   'agentCliProvider',
   'agent_cli_provider',
@@ -43,12 +64,15 @@ const AGENT_CLI_COMMAND_INPUT_KEYS = Object.freeze([
   'cliPath',
   'cli_path',
 ]);
+const AGENT_CLI_PROVIDER_CONTEXT_KEYS = Object.freeze([...AGENT_CLI_PROVIDER_INPUT_KEYS, 'provider']);
+const AGENT_CLI_COMMAND_CONTEXT_KEYS = Object.freeze([...AGENT_CLI_COMMAND_INPUT_KEYS, 'command']);
 const LOOP_CONFIG_INPUT_KEYS = Object.freeze([
   'workspacePath',
   'intervalSeconds',
   'validationCommand',
   ...AGENT_CLI_PROVIDER_INPUT_KEYS,
   ...AGENT_CLI_COMMAND_INPUT_KEYS,
+  ...CODEX_REASONING_EFFORT_COLUMNS,
 ]);
 
 const TASK_EVENT_TYPES = Object.freeze({
@@ -156,7 +180,7 @@ class LoopService extends EventEmitter {
     this.db.run(
       `INSERT OR IGNORE INTO project_states
        (project_id, running, phase, interval_seconds, validation_command, updated_at)
-       VALUES (?, 0, 'idle', 5, 'flutter analyze', ?)`,
+       VALUES (?, 0, 'idle', 5, '', ?)`,
       [projectId, nowIso()],
     );
   }
@@ -200,8 +224,10 @@ class LoopService extends EventEmitter {
     const normalized = {
       ...state,
       running: runtimeRunning ? 1 : 0,
+      validation_command: state.validation_command ?? '',
       agent_cli_provider: agentCliConfig.provider,
       agent_cli_command: agentCliConfig.command,
+      codex_reasoning_effort: agentCliConfig.codexReasoningEffort,
     };
 
     if (!runtimeRunning && !runtime?.busy && ACTIVE_RUNTIME_PHASES.has(String(normalized.phase || ''))) {
@@ -252,6 +278,13 @@ class LoopService extends EventEmitter {
       this._projectStateColumns = new Set(this.db.all('PRAGMA table_info(project_states)').map((column) => column.name));
     }
     return this._projectStateColumns;
+  }
+
+  planColumns() {
+    if (!this._planColumns) {
+      this._planColumns = new Set(this.db.all('PRAGMA table_info(plans)').map((column) => column.name));
+    }
+    return this._planColumns;
   }
 
   scheduleProject(projectId, intervalSeconds) {
@@ -323,6 +356,7 @@ class LoopService extends EventEmitter {
         const eventTask = stoppedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: operation?.planId } : null);
         if (eventTask) {
           this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.STOPPED, eventTask, {
+            ...agentCliContextFields(operation, { defaultProvider: true }),
             status: TASK_EVENT_STATUS.STOPPED,
             finishedAt,
             log: operation?.logFile,
@@ -425,9 +459,13 @@ class LoopService extends EventEmitter {
 
     runtime.busy = true;
     try {
-      const result = await this.executeTask(workspace, plan, task);
-      if (result.exitCode === 0) {
-        this.completeTask(workspace, plan, task, result);
+      if (this.isFinalAcceptanceTask(plan.id, task)) {
+        await this.validatePlan(workspace, plan, { task });
+      } else {
+        const result = await this.executeTask(workspace, plan, task);
+        if (result.exitCode === 0) {
+          this.completeTask(workspace, plan, task, result);
+        }
       }
       if (runtime.running) {
         this.setPhase(projectId, 'waiting');
@@ -454,6 +492,7 @@ class LoopService extends EventEmitter {
         : this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
       if (!runtime.running) {
         this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.STOPPED, stoppedTask, {
+          ...agentCliContextFields(activeEntry.operation, { defaultProvider: true }),
           status: TASK_EVENT_STATUS.STOPPED,
           finishedAt,
           log: activeEntry.operation?.logFile,
@@ -463,7 +502,9 @@ class LoopService extends EventEmitter {
     } else {
       const finishedAt = nowIso();
       const stoppedTask = this.finishTaskRun(taskId, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || task;
+      const taskPlan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [task.plan_id, projectId]);
       this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.STOP_REQUESTED, stoppedTask, {
+        ...agentCliContextFields(taskPlan ? this.planAgentCliConfig(taskPlan) : this.status(projectId), { defaultProvider: true }),
         status: TASK_EVENT_STATUS.STOPPING,
         finishedAt,
       });
@@ -572,6 +613,7 @@ class LoopService extends EventEmitter {
       const eventTask = interruptedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: planId } : null);
       if (eventTask) {
         this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.INTERRUPTED, eventTask, {
+          ...agentCliContextFields(activeEntry.operation, { defaultProvider: true }),
           planId,
           taskId: activeTaskId || undefined,
           status: TASK_EVENT_STATUS.INTERRUPTED,
@@ -630,8 +672,14 @@ class LoopService extends EventEmitter {
     let content = fs.readFileSync(planFile, 'utf8');
     const line = ensureTaskScopeComment(`- [ ] ${taskKey}: ${cleanTitle}`);
     const taskSectionIdx = content.search(/##\s*任务计划/);
+    const lastTask = this.db.get(
+      'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+      [planId],
+    );
     if (taskSectionIdx === -1) {
       content = `${content.trim()}\n\n## 任务计划\n${line}\n`;
+    } else if (isAcceptanceTask(lastTask)) {
+      content = insertTaskLineBeforeTask(content, lastTask, line);
     } else {
       content = `${content.trimEnd()}\n${line}\n`;
     }
@@ -727,8 +775,72 @@ class LoopService extends EventEmitter {
     );
   }
 
+  insertPlan({ projectId, issueHash, filePath, hash, status, agentCliConfig }) {
+    const createdAt = nowIso();
+    const columns = [
+      'project_id',
+      'issue_hash',
+      'file_path',
+      'hash',
+      'status',
+      'total_tasks',
+      'completed_tasks',
+      'validation_passed',
+      'created_at',
+      'updated_at',
+    ];
+    const values = [projectId, issueHash, filePath, hash, status, 0, 0, 0, createdAt, createdAt];
+    for (const [column, value] of planAgentCliColumnValues(this.planColumns(), agentCliConfig)) {
+      columns.push(column);
+      values.push(value);
+    }
+    return this.db.insert(
+      `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+      values,
+    );
+  }
+
+  planAgentCliConfig(plan) {
+    const projectDefaults = this.status(plan.project_id);
+    const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+    const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+    const snapshotDefaults = eventSnapshot || sourceSnapshot || projectDefaults;
+    if (hasAgentCliOverride(plan)) return effectiveAgentCliConfig(snapshotDefaults, plan);
+    if (eventSnapshot) return effectiveAgentCliConfig(projectDefaults, eventSnapshot);
+    if (sourceSnapshot) return effectiveAgentCliConfig(projectDefaults, sourceSnapshot);
+    return effectiveAgentCliConfig(projectDefaults);
+  }
+
+  planAgentCliEventSnapshot(projectId, planId) {
+    const rows = this.db.all(
+      `SELECT meta FROM events
+       WHERE project_id = ? AND type = 'plan.generated' AND meta IS NOT NULL
+       ORDER BY id DESC
+       LIMIT 40`,
+      [projectId],
+    );
+    for (const row of rows) {
+      const meta = parseEventMeta(row.meta);
+      if (!meta || typeof meta !== 'object') continue;
+      if (Number(meta.planId ?? meta.plan_id) === Number(planId) && hasAgentCliOverride(meta)) return meta;
+    }
+    return null;
+  }
+
+  planSourceAgentCliSnapshot(projectId, planId) {
+    const requirement = this.db.get('SELECT * FROM requirements WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [
+      projectId,
+      planId,
+    ]);
+    if (requirement && hasAgentCliOverride(requirement)) return requirement;
+    const feedback = this.db.get('SELECT * FROM feedback WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [projectId, planId]);
+    if (feedback && hasAgentCliOverride(feedback)) return feedback;
+    return null;
+  }
+
   async generatePlan(projectId, workspace, issueScan) {
     this.setPhase(projectId, 'generate-plan');
+    const planAgentCliConfig = effectiveAgentCliConfig(this.status(projectId));
     const planFile = path.join(
       workspace,
       'docs',
@@ -752,6 +864,9 @@ class LoopService extends EventEmitter {
       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
       '- 每个任务要有验收要点',
+      '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+      '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+      '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
       '- 必须包含总体验收标准和进度区',
       '- 只写 plan 文件，不要改业务代码',
       '',
@@ -759,33 +874,35 @@ class LoopService extends EventEmitter {
       issueBundle,
     ].join('\n');
 
-    const result = await this.runCodex(workspace, prompt, 'generate-plan', { projectId });
+    const result = await this.runCodex(workspace, prompt, 'generate-plan', {
+      projectId,
+      ...agentCliOperationFields(planAgentCliConfig),
+    });
+    const agentContext = agentCliContextFields(result, { defaultProvider: true });
+    const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
-      this.addEvent(projectId, 'plan.generate.failed', result.logFile);
+      this.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, agentContext);
       return;
     }
 
-    const id = this.db.insert(
-      `INSERT INTO plans
-       (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
-      [
-        projectId,
-        issueScan.aggregateHash,
-        normalizeRelative(workspace, planFile),
-        hashFile(planFile),
-        'pending',
-        nowIso(),
-        nowIso(),
-      ],
-    );
+    const id = this.insertPlan({
+      projectId,
+      issueHash: issueScan.aggregateHash,
+      filePath: normalizeRelative(workspace, planFile),
+      hash: hashFile(planFile),
+      status: 'pending',
+      agentCliConfig: planAgentCliConfig,
+    });
     this.syncPlanTasks(id, planFile);
     this.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
       issueScan.aggregateHash,
       nowIso(),
       projectId,
     ]);
-    this.addEvent(projectId, 'plan.generated', normalizeRelative(workspace, planFile));
+    this.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+      ...agentContext,
+      planId: id,
+    });
   }
 
   /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
@@ -793,6 +910,7 @@ class LoopService extends EventEmitter {
     const table = intake.__type === 'feedback' ? 'feedback' : 'requirements';
     const sourceName = intake.__type === 'feedback' ? '反馈' : '需求';
     this.setPhase(projectId, 'generate-plan');
+    const planAgentCliConfig = effectiveAgentCliConfig(this.status(projectId), intake);
     const safeId = String(intake.id).replace(/[^0-9a-zA-Z_-]/g, '');
     const planFile = path.join(
       workspace,
@@ -800,7 +918,8 @@ class LoopService extends EventEmitter {
       'plan',
       `plan_${intake.__type}_${safeId}_${timestampForPath()}.md`,
     );
-    const prompt = [
+    const attachmentPrompt = this.intakeAttachmentPrompt(projectId, workspace, intake, sourceName);
+    const promptParts = [
       '你是需求整理与开发计划生成者。',
       `请根据以下${sourceName}，生成一个开发计划和验收标准。`,
       '',
@@ -810,31 +929,89 @@ class LoopService extends EventEmitter {
       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
       '- 每个任务要有验收要点',
+      '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+      '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+      '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
       '- 必须包含总体验收标准和进度区',
       '- 只写 plan 文件，不要改业务代码',
       '',
       `${sourceName} #${intake.id} 内容：`,
       String(intake.body || '').trim() || '（正文为空）',
-    ].join('\n');
+    ];
+    if (attachmentPrompt) promptParts.push('', attachmentPrompt);
+    const prompt = promptParts.join('\n');
 
-    const result = await this.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, { projectId });
+    const result = await this.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, {
+      projectId,
+      intakeType: intake.__type,
+      intakeId: intake.id,
+      ...agentCliOperationFields(planAgentCliConfig),
+    });
+    const agentContext = agentCliContextFields(result, { defaultProvider: true });
+    const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
-      this.addEvent(projectId, 'plan.generate.failed', `${sourceName} #${intake.id} 计划生成失败：${result.logFile}`);
+      this.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`, agentContext);
       return null;
     }
 
     const issueHash = `${intake.__type}-${intake.id}-${hashText(String(intake.body || '')).slice(0, 16)}`;
-    const id = this.db.insert(
-      `INSERT INTO plans
-       (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
-      [projectId, issueHash, normalizeRelative(workspace, planFile), hashFile(planFile), 'pending', nowIso(), nowIso()],
-    );
+    const id = this.insertPlan({
+      projectId,
+      issueHash,
+      filePath: normalizeRelative(workspace, planFile),
+      hash: hashFile(planFile),
+      status: 'pending',
+      agentCliConfig: planAgentCliConfig,
+    });
     this.syncPlanTasks(id, planFile);
     // 回写关联
     this.db.run(`UPDATE ${table} SET linked_plan_id = ?, updated_at = ? WHERE id = ?`, [id, nowIso(), intake.id]);
-    this.addEvent(projectId, 'plan.generated', `${sourceName} #${intake.id} 已生成计划：${normalizeRelative(workspace, planFile)}`);
+    this.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+      ...agentContext,
+      planId: id,
+      intakeType: intake.__type,
+      intakeId: intake.id,
+    });
     return id;
+  }
+
+  intakeAttachmentPrompt(projectId, workspace, intake, sourceName) {
+    const ownerTypes = intakeAttachmentOwnerTypes(intake.__type);
+    const placeholders = ownerTypes.map(() => '?').join(', ');
+    const attachments = this.db.all(
+      `SELECT * FROM attachments
+       WHERE project_id = ? AND owner_id = ? AND owner_type IN (${placeholders})
+       ORDER BY created_at ASC, id ASC`,
+      [projectId, intake.id, ...ownerTypes],
+    );
+    if (!attachments.length) return '';
+
+    const entries = attachments.map((attachment, index) => describeIntakeAttachment(workspace, attachment, index));
+    const failed = entries.filter((entry) => !entry.readable);
+    if (failed.length) {
+      this.addEvent(
+        projectId,
+        'attachment.read.failed',
+        `${sourceName} #${intake.id} 存在不可读附件：${failed.map((entry) => `${entry.name}（${entry.readError}）`).join('；')}`,
+        {
+          intakeType: intake.__type,
+          intakeId: intake.id,
+          attachments: failed.map((entry) => ({
+            id: entry.id,
+            name: entry.name,
+            path: entry.path,
+            error: entry.readError,
+          })),
+        },
+      );
+    }
+
+    return [
+      '附件清单：',
+      '以下附件已持久化到本地文件系统；不要将图片二进制内联进 plan，工具可以通过“持久化本地路径”读取附件内容。',
+      '生成 plan 时，如任务理解或后续执行依赖附件内容，请在计划、验收要点或任务说明中保留必要的附件路径或引用。',
+      ...entries.flatMap((entry) => formatIntakeAttachmentEntry(entry)),
+    ].join('\n');
   }
 
   async processPlan(workspace, plan) {
@@ -846,19 +1023,56 @@ class LoopService extends EventEmitter {
       [plan.id],
     );
     if (pendingTasks.length) {
-      const batch = this.parallelTaskBatch(pendingTasks);
-      if (batch.length > 1) {
-        await this.executeTaskBatch(workspace, plan, batch);
-      } else {
-        const task = batch[0] || pendingTasks[0];
-        const result = await this.executeTask(workspace, plan, task);
-        if (result.exitCode === 0) {
-          this.completeTask(workspace, plan, task, result);
-        }
+      const firstPendingTask = pendingTasks[0];
+      if (this.isFinalAcceptanceTask(plan.id, firstPendingTask)) {
+        await this.validatePlan(workspace, plan, { task: firstPendingTask });
+        return;
+      }
+      const result = await this.executeTask(workspace, plan, firstPendingTask);
+      if (result.exitCode === 0) {
+        this.completeTask(workspace, plan, firstPendingTask, result);
       }
       return;
     }
+    if (this.hasFinalAcceptanceTask(plan.id)) {
+      const currentPlan = this.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [plan.id]);
+      if (currentPlan?.validation_passed || currentPlan?.status === 'completed') return;
+    }
     await this.validatePlan(workspace, plan);
+  }
+
+  isFinalAcceptanceTask(planId, task) {
+    if (!task) return false;
+    const lastTask = this.db.get(
+      'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+      [planId],
+    );
+    return Number(lastTask?.id) === Number(task.id) && isAcceptanceTask(task);
+  }
+
+  hasFinalAcceptanceTask(planId) {
+    const lastTask = this.db.get(
+      'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+      [planId],
+    );
+    return isAcceptanceTask(lastTask);
+  }
+
+  previousPlanCodexSessionId(planId, task) {
+    if (!task) return '';
+    const previousTask = this.db.get(
+      `SELECT codex_session_id
+       FROM plan_tasks
+       WHERE plan_id = ?
+         AND status = ?
+         AND codex_session_id IS NOT NULL
+         AND codex_session_id != ''
+         AND (sort_order < ? OR (sort_order = ? AND id < ?))
+       ORDER BY sort_order DESC, id DESC
+       LIMIT 1`,
+      [planId, TASK_EVENT_STATUS.COMPLETED, task.sort_order || 0, task.sort_order || 0, task.id || 0],
+    );
+    return normalizeCodexSessionId(previousTask?.codex_session_id);
   }
 
   parallelTaskBatch(tasks) {
@@ -880,11 +1094,12 @@ class LoopService extends EventEmitter {
 
   async executeTaskBatch(workspace, plan, tasks) {
     this.setPhase(plan.project_id, 'execute-task');
+    const agentContext = agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true });
     this.addEvent(
       plan.project_id,
       'tasks.parallel.started',
-      `并发执行 ${tasks.map((task) => task.task_key).join(', ')}`,
-      { taskIds: tasks.map((task) => task.id) },
+      `${agentCliProviderDisplayName(agentContext.agentCliProvider)} 并发执行 ${tasks.map((task) => task.task_key).join(', ')}`,
+      { ...agentContext, taskIds: tasks.map((task) => task.id) },
     );
     const results = await Promise.all(
       tasks.map(async (task) => {
@@ -913,12 +1128,23 @@ class LoopService extends EventEmitter {
     this.setPhase(plan.project_id, 'execute-task');
     const startedAt = nowIso();
     const startedTask = this.startTaskRun(task.id, startedAt) || task;
-    const existingSessionId = operationCodexSessionId(startedTask);
-    const startedSessionContext = codexSessionContextFields({
-      codexSessionId: existingSessionId,
-      codexSessionMode: existingSessionId ? 'resume' : 'new',
-    });
+    const taskAgentCliContext = agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true });
+    const isTaskCodexProvider = taskAgentCliContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
+    const taskSessionId = isTaskCodexProvider ? operationCodexSessionId(startedTask) : '';
+    const planSessionId = isTaskCodexProvider && !options.parallel
+      ? this.previousPlanCodexSessionId(plan.id, startedTask)
+      : '';
+    const existingSessionId = taskSessionId || planSessionId;
+    const inheritedPlanSession = Boolean(!taskSessionId && planSessionId);
+    const startedSessionContext = isTaskCodexProvider
+      ? codexSessionContextFields({
+          codexSessionId: existingSessionId,
+          codexSessionMode: existingSessionId ? 'resume' : 'new',
+          codexSessionState: inheritedPlanSession ? 'plan-resume' : undefined,
+        })
+      : {};
     this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedTask, {
+      ...taskAgentCliContext,
       planId: plan.id,
       status: TASK_EVENT_STATUS.RUNNING,
       startedAt,
@@ -929,11 +1155,16 @@ class LoopService extends EventEmitter {
       '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
       '- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区',
       '- 只修改当前任务 scope 直接相关的业务文件',
-      '- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试',
-      '- 只有当前任务本身明确要求全量验证时，才允许运行全量测试',
+      '- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令',
+      '- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”',
+      '- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze',
+      '- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段',
       '- 不输出完整 diff、源码全文或长文件列表',
       '- 中文文件读写使用 UTF-8',
     ];
+    if (inheritedPlanSession) {
+      completionRules.unshift('- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理');
+    }
     if (options.parallel) {
       completionRules.unshift('- 当前为并发执行模式，不要读写其它任务的 scope');
     }
@@ -955,12 +1186,18 @@ class LoopService extends EventEmitter {
         planId: plan.id,
         taskId: task.id,
         parallel: Boolean(options.parallel),
-        ...(existingSessionId ? { codexSessionId: existingSessionId } : {}),
+        ...taskAgentCliContext,
+        ...(isTaskCodexProvider && existingSessionId ? { codexSessionId: existingSessionId } : {}),
+        ...(inheritedPlanSession ? { codexSessionState: 'plan-resume' } : {}),
       }, planFile);
     } catch (error) {
       const finishedAt = nowIso();
+      const errorMessage = error?.message || String(error);
+      const failure = classifyExecutionFailure({ exitCode: -1, errorMessage });
       const failedTask = this.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
-        error: error?.message || String(error),
+        ...taskAgentCliContext,
+        error: errorMessage,
+        ...failure,
         ...startedSessionContext,
       });
       if (failedTask) markTaskLifecycleEventRecorded(error);
@@ -972,10 +1209,13 @@ class LoopService extends EventEmitter {
     if (capturedSessionId) this.updateTaskCodexSession(task.id, capturedSessionId, finishedAt);
     const succeeded = result.exitCode === 0;
     if (!succeeded) {
+      const failure = classifyExecutionFailure(result);
       this.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+        ...agentCliContextFields(result, { defaultProvider: true }),
         exitCode: result.exitCode,
         log: result.logFile,
-        ...codexSessionContextFields(result),
+        ...failure,
+        ...(result.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
       });
     }
     return result;
@@ -987,14 +1227,44 @@ class LoopService extends EventEmitter {
     this.markTaskCompletedInPlan(workspace, planFile, task, result);
     const completedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
     this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+      ...agentCliContextFields(result, { defaultProvider: true }),
       planId: plan.id,
       status: TASK_EVENT_STATUS.COMPLETED,
       finishedAt,
       exitCode: result?.exitCode,
       log: result?.logFile,
-      ...codexSessionContextFields(result),
+      ...(result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
     });
     this.refreshPlanProgress(plan.id, planFile);
+    this.emitUpdate(plan.project_id);
+  }
+
+  completeAcceptanceTask(workspace, plan, task, result) {
+    const planFile = path.join(workspace, plan.file_path);
+    const finishedAt = result?.finishedAt || nowIso();
+    this.markTaskCompletedInPlan(workspace, planFile, task, result);
+    const completedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+    const totals = this.db.get(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+       FROM plan_tasks
+       WHERE plan_id = ?`,
+      [plan.id],
+    ) || { total: 0, completed: 0 };
+    const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+    this.db.run(
+      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+      [hash, 'completed', Number(totals.total || 0), Number(totals.completed || 0), nowIso(), plan.id],
+    );
+    this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+      ...agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true }),
+      planId: plan.id,
+      status: TASK_EVENT_STATUS.COMPLETED,
+      finishedAt,
+      exitCode: result?.exitCode,
+      log: result?.logFile,
+      acceptanceTask: true,
+    });
     this.emitUpdate(plan.project_id);
   }
 
@@ -1038,21 +1308,45 @@ class LoopService extends EventEmitter {
     fs.writeFileSync(planFile, content, 'utf8');
   }
 
-  async validatePlan(workspace, plan) {
+  async validatePlan(workspace, plan, options = {}) {
     this.setPhase(plan.project_id, 'validate');
     const planFile = path.join(workspace, plan.file_path);
+    const planAgentCliContext = agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true });
+    const acceptanceTask = options.task || null;
+    let startedAcceptanceTask = acceptanceTask;
+    if (acceptanceTask) {
+      const startedAt = nowIso();
+      startedAcceptanceTask = this.startTaskRun(acceptanceTask.id, startedAt) || acceptanceTask;
+      this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedAcceptanceTask, {
+        ...planAgentCliContext,
+        planId: plan.id,
+        status: TASK_EVENT_STATUS.RUNNING,
+        startedAt,
+        acceptanceTask: true,
+      });
+    }
     const command = String(this.status(plan.project_id)?.validation_command || '').trim();
     if (!command) {
       // 验收命令为空：跳过校验，直接标记完成。
+      const validation = { exitCode: 0, output: '', logFile: null, finishedAt: nowIso() };
       this.db.run(
         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
-        ['completed', nowIso(), plan.id],
+        ['completed', validation.finishedAt, plan.id],
       );
-      this.addEvent(plan.project_id, 'plan.completed', '任务全部完成（验收命令为空，已跳过校验）');
-      return;
+      this.addEvent(plan.project_id, 'plan.completed', '任务全部完成（验收命令为空，已跳过校验）', {
+        ...planAgentCliContext,
+        planId: plan.id,
+      });
+      if (startedAcceptanceTask) this.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
+      return validation;
     }
     let validation = await this.runShell(workspace, command, `validate-${plan.id}`, { projectId: plan.project_id });
-    for (let attempt = 1; validation.exitCode !== 0 && attempt <= 2; attempt += 1) {
+    let validationFailure = classifyExecutionFailure(validation);
+    for (
+      let attempt = 1;
+      validation.exitCode !== 0 && attempt <= 2 && !isEnvironmentBlockingFailure(validationFailure);
+      attempt += 1
+    ) {
       this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
         'validation_failed',
         nowIso(),
@@ -1069,21 +1363,48 @@ class LoopService extends EventEmitter {
       await this.runCodexWithPlanGuard(workspace, prompt, `repair-${plan.id}-${attempt}`, {
         projectId: plan.project_id,
         planId: plan.id,
+        ...planAgentCliContext,
       }, planFile);
       validation = await this.runShell(workspace, command, `validate-${plan.id}-repair-${attempt}`, {
         projectId: plan.project_id,
       });
+      validationFailure = classifyExecutionFailure(validation);
     }
 
     if (validation.exitCode === 0) {
+      validation.finishedAt = nowIso();
       this.db.run(
         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
-        ['completed', nowIso(), plan.id],
+        ['completed', validation.finishedAt, plan.id],
       );
-      this.addEvent(plan.project_id, 'plan.completed', plan.file_path);
+      this.addEvent(plan.project_id, 'plan.completed', plan.file_path, { ...planAgentCliContext, planId: plan.id });
+      if (startedAcceptanceTask) this.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
     } else {
-      this.addEvent(plan.project_id, 'validation.failed', validation.logFile);
+      validation.finishedAt = nowIso();
+      this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+        'validation_failed',
+        validation.finishedAt,
+        plan.id,
+      ]);
+      const eventType = isEnvironmentBlockingFailure(validationFailure) ? 'validation.blocked' : 'validation.failed';
+      this.addEvent(plan.project_id, eventType, validation.logFile || validationFailure.failureSummary || command, {
+        ...planAgentCliContext,
+        planId: plan.id,
+        exitCode: validation.exitCode,
+        log: validation.logFile,
+        ...validationFailure,
+      });
+      if (startedAcceptanceTask) {
+        this.recordTaskFailure(plan.project_id, plan, startedAcceptanceTask, validation.finishedAt, {
+          ...planAgentCliContext,
+          exitCode: validation.exitCode,
+          log: validation.logFile,
+          acceptanceTask: true,
+          ...validationFailure,
+        });
+      }
     }
+    return validation;
   }
 
   syncPlanTasks(planId, planFile) {
@@ -1153,7 +1474,12 @@ class LoopService extends EventEmitter {
     }
 
     const completed = syncedStatuses.filter((status) => status === 'completed').length;
-    const status = tasks.length > 0 && completed === tasks.length ? 'ready_for_validation' : 'running';
+    const currentPlan = this.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+    const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
+      ? 'completed'
+      : tasks.length > 0 && completed === tasks.length
+        ? 'ready_for_validation'
+        : 'running';
     this.db.run(
       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
       [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
@@ -1174,12 +1500,16 @@ class LoopService extends EventEmitter {
         projectId: op.projectId || null,
         planId: op.planId || null,
         taskId: op.taskId || null,
+        ...agentCliContextFields(op),
+        logFile: op.logFile || null,
+        lastFile: op.lastFile || null,
+        errorMessage: op.errorMessage || '',
         startedAt: op.startedAt || null,
         finishedAt: nowIso(),
         exitCode: typeof op.exitCode === 'number' ? op.exitCode : null,
         logTail: (op.logBuffer || '').slice(-8000),
         activity: op.activity ? op.activity.getLines() : [],
-        ...codexSessionContextFields(op),
+        ...(op.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(op) : {}),
       };
     }
     if (operationKey) {
@@ -1199,7 +1529,8 @@ class LoopService extends EventEmitter {
       const changed = !fs.existsSync(planFile) || fs.readFileSync(planFile, 'utf8') !== before;
       if (changed) {
         fs.writeFileSync(planFile, before, 'utf8');
-        this.addEvent(operation.projectId, 'plan.guard.restored', `Codex 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+        this.addEvent(operation.projectId, 'plan.guard.restored', `${agentCliProviderDisplayName(result.agentCliProvider)} 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+          ...agentCliContextFields(result),
           planId: operation.planId || null,
           taskId: operation.taskId || null,
         });
@@ -1213,8 +1544,10 @@ class LoopService extends EventEmitter {
     const runtime = this.runtime(projectIdForEmit);
     if (!runtime) throw new Error('projectId is required for codex operations');
     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
-    const agentCliProvider = normalizeAgentCliProvider(projectStatus?.agent_cli_provider);
-    const agentCliCommand = normalizeAgentCliCommand(projectStatus?.agent_cli_command);
+    const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+    const agentCliProvider = agentCliConfig.provider;
+    const agentCliCommand = agentCliConfig.command;
+    const codexReasoningEffort = agentCliConfig.codexReasoningEffort;
     const isCodexProvider = agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
     const logDir = path.join(workspace, 'docs', 'progress', 'logs');
     fs.mkdirSync(logDir, { recursive: true });
@@ -1230,14 +1563,20 @@ class LoopService extends EventEmitter {
       lastFile,
       agentCliProvider,
       agentCliCommand,
-      codexSessionId: requestedSessionId || null,
-      codexSessionRequestedId: requestedSessionId || null,
-      codexSessionMode: requestedSessionId ? 'resume' : 'new',
-      codexSessionState: requestedSessionId ? 'resume' : 'new',
+      ...(isCodexProvider ? { codexReasoningEffort } : {}),
+      ...(isCodexProvider
+        ? {
+            codexSessionId: requestedSessionId || null,
+            codexSessionRequestedId: requestedSessionId || null,
+            codexSessionMode: requestedSessionId ? 'resume' : 'new',
+            codexSessionState: requestedSessionId ? 'resume' : 'new',
+          }
+        : {}),
       logBuffer: '',
-      activity: new CodexActivityPrinter(200),
+      activity: isCodexProvider ? new CodexActivityPrinter(200) : null,
       startedAt: nowIso(),
     };
+    if (!isCodexProvider) clearCodexSessionFields(activeOperation);
     let operationKey = null;
     let capturedSessionId = '';
     let sessionScanBuffer = '';
@@ -1250,81 +1589,89 @@ class LoopService extends EventEmitter {
         activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
       }
     };
-    const resultFor = (exitCode, mode) => {
+    const resultFor = (attempt, mode) => {
+      if (activeOperation.activity && typeof activeOperation.activity.flush === 'function') {
+        activeOperation.activity.flush();
+      }
+      const exitCode = typeof attempt?.exitCode === 'number' ? attempt.exitCode : -1;
       const sessionId = capturedSessionId || (mode === 'resume' ? requestedSessionId : '');
-      const codexSessionFields = codexSessionContextFields({
-        codexSessionId: sessionId,
-        codexSessionRequestedId: requestedSessionId,
-        codexSessionMode: mode,
-        codexSessionFallback: mode === 'new' && Boolean(requestedSessionId),
-      });
+      const codexSessionFields = isCodexProvider
+        ? codexSessionContextFields({
+            codexSessionId: sessionId,
+            codexSessionRequestedId: requestedSessionId,
+            codexSessionMode: mode,
+            codexSessionFallback: mode === 'new' && Boolean(requestedSessionId),
+          })
+        : {};
       return {
         exitCode,
         logFile,
         lastFile,
-        sessionId: sessionId || null,
-        codexSessionId: sessionId || null,
-        codexSessionMode: mode,
-        resumed: mode === 'resume',
+        provider: activeOperation.agentCliProvider,
+        agentCliProvider: activeOperation.agentCliProvider,
+        command: activeOperation.agentCliCommand,
+        agentCliCommand: activeOperation.agentCliCommand,
+        ...(isCodexProvider ? { codexReasoningEffort: activeOperation.codexReasoningEffort } : {}),
+        activity: activeOperation.activity ? activeOperation.activity.getLines() : [],
+        output: attempt?.output || '',
+        errorMessage: attempt?.errorMessage || '',
+        timedOut: Boolean(attempt?.timedOut),
+        timeoutMs: attempt?.timeoutMs,
+        ...(isCodexProvider
+          ? {
+              sessionId: sessionId || null,
+              codexSessionId: sessionId || null,
+              codexSessionMode: mode,
+              resumed: mode === 'resume',
+            }
+          : {}),
         ...codexSessionFields,
       };
     };
     const runAttempt = async (args, mode) => {
-      const spawnSpec = agentCliSpawnSpec(
-        activeOperation.agentCliProvider,
-        activeOperation.agentCliCommand,
-        lastFile,
-        args,
-      );
-      const child = spawn(spawnSpec.command, spawnSpec.args, {
-        shell: process.platform === 'win32' && spawnSpec.useShell,
-        cwd: workspace,
-      });
-      activeOperation.codexSessionMode = mode;
-      activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
-      activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
-      if (operationKey) {
-        runtime.activeChildren.set(operationKey, child);
-        runtime.activeChild = child;
-        runtime.activeOperation = activeOperation;
-      } else {
-        operationKey = registerRuntimeOperation(runtime, child, activeOperation);
+      if (isCodexProvider) {
+        activeOperation.codexSessionMode = mode;
+        activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
+        activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
       }
-      child.stdin.setDefaultEncoding('utf8');
-      child.stdin.end(prompt);
-
-      let attemptOutput = '';
-      // 累积原始日志 + 提取可读活动行
-      const onChunk = (chunk) => {
-        const text = chunk.toString('utf8');
-        attemptOutput += text;
-        if (!runtime.activeOperations.has(operationKey)) return;
-        activeOperation.logBuffer = (activeOperation.logBuffer || '') + text;
-        if (activeOperation.logBuffer.length > 24000) {
-          activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
-        }
-        sessionScanBuffer = `${sessionScanBuffer}${text}`.slice(-4000);
-        const parsedSessionId = extractCodexSessionId(sessionScanBuffer);
-        if (parsedSessionId) {
-          capturedSessionId = parsedSessionId;
-          activeOperation.codexSessionId = parsedSessionId;
-        }
-        // 喂给活动打印机，提取人类可读的进度行
-        if (activeOperation.activity) activeOperation.activity.offer(text);
-      };
-      child.stdout.on('data', onChunk);
-      child.stderr.on('data', onChunk);
-      child.stdout.pipe(stream, { end: false });
-      child.stderr.pipe(stream, { end: false });
-
-      const exitCode = await waitForChild(child, 45 * 60 * 1000);
-      if (runtime.activeOperations.has(operationKey)) activeOperation.exitCode = exitCode;
-      return { exitCode, output: attemptOutput };
+      return runAgentCliAttempt({
+        workspace,
+        prompt,
+        lastFile,
+        logFile,
+        runtime,
+        activeOperation,
+        operationKey,
+        onOperationKey: (nextOperationKey) => {
+          operationKey = nextOperationKey;
+        },
+        registerRuntimeOperation,
+        waitForChild,
+        stream,
+        provider: activeOperation.agentCliProvider,
+        command: activeOperation.agentCliCommand,
+        codexArgs: args,
+        env: workspaceToolEnv(workspace),
+        onChunk: (text) => {
+          if (!isCodexProvider) return;
+          sessionScanBuffer = `${sessionScanBuffer}${text}`.slice(-4000);
+          const parsedSessionId = extractCodexSessionId(sessionScanBuffer);
+          if (parsedSessionId) {
+            capturedSessionId = parsedSessionId;
+            activeOperation.codexSessionId = parsedSessionId;
+          }
+        },
+      });
     };
     const tailTimer = setInterval(() => {
       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
     }, 600);
     try {
+      if (!isCodexProvider) {
+        const attempt = await runAttempt([], '');
+        return resultFor(attempt, '');
+      }
+
       if (requestedSessionId) {
         this.addEvent(projectIdForEmit, 'codex.session.resume.started', `尝试恢复 Codex 会话 ${shortCodexSessionId(requestedSessionId)}`, {
           ...codexSessionContextFields({
@@ -1337,9 +1684,9 @@ class LoopService extends EventEmitter {
           planId: operation.planId || null,
           taskId: operation.taskId || null,
         });
-        const resume = await runAttempt(codexResumeSessionArgs(requestedSessionId, lastFile), 'resume');
+        const resume = await runAttempt(codexResumeSessionArgs(requestedSessionId, lastFile, { reasoningEffort: codexReasoningEffort }), 'resume');
         const resumeFailed = resume.exitCode !== 0 && !extractCodexSessionId(resume.output) && isCodexResumeFailure(resume.output);
-        if (!resumeFailed) return resultFor(resume.exitCode, 'resume');
+        if (!resumeFailed) return resultFor(resume, 'resume');
 
         this.addEvent(projectIdForEmit, 'codex.session.resume.failed', `恢复 Codex 会话失败，已回退新建：${shortCodexSessionId(requestedSessionId)}`, {
           ...codexSessionContextFields({
@@ -1372,8 +1719,8 @@ class LoopService extends EventEmitter {
         appendInternalLog('Codex session id was empty; starting a new session.');
       }
 
-      const fresh = await runAttempt(codexNewSessionArgs(workspace, lastFile), 'new');
-      return resultFor(fresh.exitCode, 'new');
+      const fresh = await runAttempt(codexNewSessionArgs(workspace, lastFile, { reasoningEffort: codexReasoningEffort }), 'new');
+      return resultFor(fresh, 'new');
     } finally {
       clearInterval(tailTimer);
       stream.end();
@@ -1394,7 +1741,7 @@ class LoopService extends EventEmitter {
     const child = spawn(shellCommand, {
       shell: true,
       cwd: workspace,
-      env: { ...process.env },
+      env: workspaceToolEnv(workspace),
     });
     const activeOperation = {
       ...operation,
@@ -1421,10 +1768,20 @@ class LoopService extends EventEmitter {
       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
     }, 600);
     try {
-      const exitCode = await waitForChild(child, 10 * 60 * 1000);
+      const exitCode = await waitForChild(child, SHELL_COMMAND_TIMEOUT_MS);
+      const timedOut = Boolean(child.__autoplanTimedOut);
+      const errorMessage = timedOut ? `Shell command timed out after ${formatDurationMs(SHELL_COMMAND_TIMEOUT_MS)}` : '';
+      if (errorMessage) {
+        const text = `\n[AutoPlan] ${errorMessage}\n`;
+        output += text;
+        if (runtime.activeOperations.has(operationKey)) {
+          activeOperation.errorMessage = errorMessage;
+          activeOperation.logBuffer = `${activeOperation.logBuffer || ''}${text}`;
+        }
+      }
       fs.writeFileSync(logFile, output, 'utf8');
       if (runtime.activeOperations.has(operationKey)) activeOperation.exitCode = exitCode;
-      return { exitCode, output, logFile };
+      return { exitCode, output, logFile, errorMessage, timedOut, timeoutMs: SHELL_COMMAND_TIMEOUT_MS };
     } finally {
       clearInterval(tailTimer);
       if (runtime.activeOperations.has(operationKey)) {
@@ -1479,7 +1836,7 @@ class LoopService extends EventEmitter {
       workspace_path: activeProject.workspace_path || '',
     };
     const runtime = this.existingRuntime(projectId);
-    const taskCodexContexts = runtimeCodexContextByTask(runtime, projectId);
+    const taskOperationContexts = runtimeOperationContextByTask(runtime, projectId);
 
     return {
       activeProjectId: projectId,
@@ -1492,23 +1849,25 @@ class LoopService extends EventEmitter {
          FROM requirements
          LEFT JOIN plans ON plans.id = requirements.linked_plan_id
          WHERE requirements.project_id = ?
-         ORDER BY requirements.updated_at DESC`,
+          ORDER BY requirements.updated_at DESC`,
         [projectId],
-      ),
+      ).map((row) => intakeSnapshotRow(row)),
       feedback: this.db.all(
         `SELECT feedback.*, plans.status AS plan_status,
                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
          FROM feedback
          LEFT JOIN plans ON plans.id = feedback.linked_plan_id
          WHERE feedback.project_id = ?
-         ORDER BY feedback.updated_at DESC`,
+          ORDER BY feedback.updated_at DESC`,
         [projectId],
-      ),
+      ).map((row) => intakeSnapshotRow(row)),
       attachments: this.db.all(
         'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
         [projectId],
       ),
-      plans: this.db.all('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId]),
+      plans: this.db
+        .all('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId])
+        .map((plan) => planSnapshotRow(activeProject.workspace_path, plan)),
       tasks: this.db
         .all(
           `SELECT plan_tasks.*, plans.file_path
@@ -1517,7 +1876,7 @@ class LoopService extends EventEmitter {
            ORDER BY plans.created_at DESC, plan_tasks.sort_order ASC`,
           [projectId],
         )
-        .map((task) => taskSnapshotRow(task, taskCodexContexts.get(Number(task.id)))),
+        .map((task) => taskSnapshotRow(task, taskOperationContexts.get(Number(task.id)))),
       events: this.db
         .all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId])
         .map((event) => eventSnapshotRow(event)),
@@ -1557,15 +1916,18 @@ function taskEventMeta(task, overrides = {}) {
     }),
     ...compactEventMeta(overrides),
   };
+  Object.assign(meta, agentCliContextFields(meta));
   Object.assign(
     meta,
-    codexSessionContextFields({
-      codexSessionId: meta.codexSessionId ?? meta.codex_session_id ?? meta.sessionId ?? task?.codex_session_id,
-      codexSessionRequestedId: meta.codexSessionRequestedId,
-      codexSessionMode: meta.codexSessionMode,
-      codexSessionState: meta.codexSessionState,
-      codexSessionFallback: meta.codexSessionFallback,
-    }),
+    meta.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER
+      ? codexSessionContextFields({
+          codexSessionId: meta.codexSessionId ?? meta.codex_session_id ?? meta.sessionId ?? task?.codex_session_id,
+          codexSessionRequestedId: meta.codexSessionRequestedId,
+          codexSessionMode: meta.codexSessionMode,
+          codexSessionState: meta.codexSessionState,
+          codexSessionFallback: meta.codexSessionFallback,
+        })
+      : {},
   );
   meta.taskId = normalizeOptionalNumber(meta.taskId);
   meta.planId = normalizeOptionalNumber(meta.planId);
@@ -1574,6 +1936,11 @@ function taskEventMeta(task, overrides = {}) {
   meta.status = normalizeOptionalString(meta.status);
   meta.startedAt = normalizeOptionalString(meta.startedAt);
   meta.finishedAt = normalizeOptionalString(meta.finishedAt);
+  meta.agentCliProvider = normalizeOptionalString(meta.agentCliProvider);
+  meta.agentCliCommand = normalizeOptionalString(meta.agentCliCommand);
+  meta.codexReasoningEffort = meta.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER
+    ? normalizeOptionalCodexReasoningEffort(meta.codexReasoningEffort)
+    : undefined;
   meta.durationMs = normalizeOptionalNumber(meta.durationMs);
   meta.runDurationMs = normalizeOptionalNumber(meta.runDurationMs);
   const compacted = compactEventMeta(meta);
@@ -1593,8 +1960,13 @@ function taskEventMessage(type, task, meta = null) {
       [TASK_EVENT_TYPES.STOPPED]: '停止了',
       [TASK_EVENT_TYPES.INTERRUPTED]: '中断了',
     }[type] || '更新了';
-  const codexContext = codexSessionReadableLabel(meta);
-  return `${action}${separator}${taskLabel}：${taskTitle}${codexContext ? `（${codexContext}）` : ''}`;
+  const providerContext = meta?.agentCliProvider ? agentCliProviderDisplayName(meta.agentCliProvider) : '';
+  const codexContext = meta?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionReadableLabel(meta) : '';
+  const reasoningContext = meta?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER && meta?.codexReasoningEffort
+    ? `思考深度 ${meta.codexReasoningEffort}`
+    : '';
+  const contexts = [providerContext, reasoningContext, codexContext].filter(Boolean).join(' · ');
+  return `${action}${separator}${taskLabel}：${taskTitle}${contexts ? `（${contexts}）` : ''}`;
 }
 
 function markTaskLifecycleEventRecorded(error) {
@@ -1639,31 +2011,120 @@ function readFirstOwnValue(source, keys) {
 }
 
 function normalizeAgentCliConfig(source = {}) {
+  const provider = normalizeAgentCliProvider(readFirstOwnValue(source, AGENT_CLI_PROVIDER_COLUMNS));
   return {
-    provider: normalizeAgentCliProvider(readFirstOwnValue(source, AGENT_CLI_PROVIDER_COLUMNS)),
+    provider,
     command: normalizeAgentCliCommand(readFirstOwnValue(source, AGENT_CLI_COMMAND_COLUMNS)),
+    codexReasoningEffort: provider === DEFAULT_AGENT_CLI_PROVIDER
+      ? normalizeCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS))
+      : null,
+  };
+}
+
+function normalizeCodexReasoningEffort(value) {
+  const effort = String(value || '').trim().toLowerCase();
+  return CODEX_REASONING_EFFORTS.has(effort) ? effort : DEFAULT_CODEX_REASONING_EFFORT;
+}
+
+function normalizeOptionalCodexReasoningEffort(value) {
+  if (value === undefined || value === null || value === '') return null;
+  return normalizeCodexReasoningEffort(value);
+}
+
+function normalizeOptionalAgentCliProvider(value) {
+  const provider = String(value ?? '').trim();
+  return provider ? normalizeAgentCliProvider(provider) : null;
+}
+
+function normalizeIntakeAgentCliConfig(source = {}) {
+  const provider = normalizeOptionalAgentCliProvider(
+    readFirstOwnValue(source, [...AGENT_CLI_PROVIDER_INPUT_KEYS, ...AGENT_CLI_PROVIDER_COLUMNS]),
+  );
+  const codexReasoningEffort = provider === 'claude'
+    ? null
+    : normalizeOptionalCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS));
+  return {
+    provider,
+    command: normalizeAgentCliCommand(readFirstOwnValue(source, [...AGENT_CLI_COMMAND_INPUT_KEYS, ...AGENT_CLI_COMMAND_COLUMNS])),
+    codexReasoningEffort,
+  };
+}
+
+function effectiveAgentCliConfig(defaults = {}, override = {}) {
+  const defaultConfig = normalizeAgentCliConfig(defaults || {});
+  const overrideConfig = normalizeIntakeAgentCliConfig(override || {});
+  const provider = overrideConfig.provider || defaultConfig.provider;
+  const command = overrideConfig.command || defaultConfig.command;
+  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+    ? overrideConfig.codexReasoningEffort || defaultConfig.codexReasoningEffort || DEFAULT_CODEX_REASONING_EFFORT
+    : null;
+  return { provider, command, codexReasoningEffort };
+}
+
+function hasExplicitAgentCliProvider(source = {}) {
+  return Boolean(normalizeOptionalAgentCliProvider(readFirstOwnValue(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS)));
+}
+
+function hasAgentCliOverride(source = {}) {
+  return Boolean(
+    hasExplicitAgentCliProvider(source) ||
+      normalizeAgentCliCommand(readFirstOwnValue(source, AGENT_CLI_COMMAND_CONTEXT_KEYS)) ||
+      normalizeOptionalCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS)),
+  );
+}
+
+function agentCliOperationFields(config = {}) {
+  return compactEventMeta({
+    agentCliProvider: config.provider,
+    agentCliCommand: config.command,
+    codexReasoningEffort: config.provider === DEFAULT_AGENT_CLI_PROVIDER ? config.codexReasoningEffort : undefined,
+  });
+}
+
+function nextIntakeAgentCliConfig(current = {}, input = {}) {
+  const inputHasProvider = hasAnyOwnProperty(input, AGENT_CLI_PROVIDER_INPUT_KEYS);
+  const provider = inputHasProvider
+    ? normalizeAgentCliProvider(readFirstOwnValue(input, AGENT_CLI_PROVIDER_INPUT_KEYS))
+    : normalizeOptionalAgentCliProvider(readFirstOwnValue(current, AGENT_CLI_PROVIDER_COLUMNS));
+  const command = hasAnyOwnProperty(input, AGENT_CLI_COMMAND_INPUT_KEYS)
+    ? normalizeAgentCliCommand(readFirstOwnValue(input, AGENT_CLI_COMMAND_INPUT_KEYS))
+    : normalizeAgentCliCommand(readFirstOwnValue(current, AGENT_CLI_COMMAND_COLUMNS));
+  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER || (!provider && hasAnyOwnProperty(input, CODEX_REASONING_EFFORT_COLUMNS))
+    ? normalizeCodexReasoningEffort(
+        hasAnyOwnProperty(input, CODEX_REASONING_EFFORT_COLUMNS)
+          ? readFirstOwnValue(input, CODEX_REASONING_EFFORT_COLUMNS)
+          : readFirstOwnValue(current, CODEX_REASONING_EFFORT_COLUMNS),
+      )
+    : null;
+  return { provider, command, codexReasoningEffort };
+}
+
+function intakeSnapshotRow(row = {}) {
+  const config = normalizeIntakeAgentCliConfig(row);
+  return {
+    ...row,
+    agent_cli_provider: config.provider,
+    agent_cli_command: config.command,
+    codex_reasoning_effort: config.codexReasoningEffort,
   };
 }
 
 function nextAgentCliConfig(current = {}, input = {}) {
   const currentConfig = normalizeAgentCliConfig(current);
-  return {
-    provider: hasAnyOwnProperty(input, AGENT_CLI_PROVIDER_INPUT_KEYS)
-      ? normalizeAgentCliProvider(readFirstOwnValue(input, AGENT_CLI_PROVIDER_INPUT_KEYS))
-      : currentConfig.provider,
-    command: hasAnyOwnProperty(input, AGENT_CLI_COMMAND_INPUT_KEYS)
-      ? normalizeAgentCliCommand(readFirstOwnValue(input, AGENT_CLI_COMMAND_INPUT_KEYS))
-      : currentConfig.command,
-  };
-}
-
-function normalizeAgentCliProvider(value) {
-  const provider = String(value || '').trim().toLowerCase();
-  return AGENT_CLI_PROVIDERS.has(provider) ? provider : DEFAULT_AGENT_CLI_PROVIDER;
-}
-
-function normalizeAgentCliCommand(value) {
-  return String(value || '').trim();
+  const provider = hasAnyOwnProperty(input, AGENT_CLI_PROVIDER_INPUT_KEYS)
+    ? normalizeAgentCliProvider(readFirstOwnValue(input, AGENT_CLI_PROVIDER_INPUT_KEYS))
+    : currentConfig.provider;
+  const command = hasAnyOwnProperty(input, AGENT_CLI_COMMAND_INPUT_KEYS)
+    ? normalizeAgentCliCommand(readFirstOwnValue(input, AGENT_CLI_COMMAND_INPUT_KEYS))
+    : currentConfig.command;
+  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+    ? normalizeCodexReasoningEffort(
+        hasAnyOwnProperty(input, CODEX_REASONING_EFFORT_COLUMNS)
+          ? readFirstOwnValue(input, CODEX_REASONING_EFFORT_COLUMNS)
+          : currentConfig.codexReasoningEffort,
+      )
+    : null;
+  return { provider, command, codexReasoningEffort };
 }
 
 function agentCliStateUpdates(columns, config) {
@@ -1674,7 +2135,25 @@ function agentCliStateUpdates(columns, config) {
   for (const column of AGENT_CLI_COMMAND_COLUMNS) {
     if (columns.has(column)) updates.push([column, config.command]);
   }
+  for (const column of CODEX_REASONING_EFFORT_COLUMNS) {
+    if (columns.has(column)) updates.push([column, config.codexReasoningEffort]);
+  }
   return updates;
+}
+
+function planAgentCliColumnValues(columns, config) {
+  const values = [];
+  const fields = agentCliOperationFields(config);
+  for (const column of AGENT_CLI_PROVIDER_COLUMNS) {
+    if (columns.has(column)) values.push([column, fields.agentCliProvider]);
+  }
+  for (const column of AGENT_CLI_COMMAND_COLUMNS) {
+    if (columns.has(column)) values.push([column, fields.agentCliCommand || '']);
+  }
+  for (const column of CODEX_REASONING_EFFORT_COLUMNS) {
+    if (columns.has(column)) values.push([column, fields.codexReasoningEffort || null]);
+  }
+  return values;
 }
 
 function normalizeOptionalNumber(value) {
@@ -1687,6 +2166,24 @@ function normalizeOptionalString(value) {
   if (value === undefined || value === null) return undefined;
   const text = String(value).trim();
   return text || undefined;
+}
+
+function agentCliContextFields(source = {}, options = {}) {
+  const hasProvider = hasAnyOwnProperty(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS);
+  const rawProvider = readFirstOwnValue(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS);
+  const provider = hasProvider || options.defaultProvider ? normalizeAgentCliProvider(rawProvider) : undefined;
+  const command = normalizeAgentCliCommand(readFirstOwnValue(source, AGENT_CLI_COMMAND_CONTEXT_KEYS));
+  return compactEventMeta({
+    agentCliProvider: provider,
+    agentCliCommand: command,
+    codexReasoningEffort: provider === DEFAULT_AGENT_CLI_PROVIDER
+      ? normalizeOptionalCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS))
+      : undefined,
+  });
+}
+
+function agentCliProviderDisplayName(provider) {
+  return normalizeAgentCliProvider(provider) === 'claude' ? 'Claude' : 'Codex';
 }
 
 function withTaskDurationMeta(task, runDurationMs) {
@@ -1710,26 +2207,37 @@ function operationSnapshotRow(operation) {
     projectId: operation.projectId || null,
     planId: operation.planId || null,
     taskId: operation.taskId || null,
-    agentCliProvider: normalizeAgentCliProvider(operation.agentCliProvider),
+    ...agentCliContextFields(operation),
     startedAt: operation.startedAt || null,
     ...(operation.finishedAt ? { finishedAt: operation.finishedAt } : {}),
     ...(typeof operation.exitCode === 'number' ? { exitCode: operation.exitCode } : {}),
+    ...(operation.logFile ? { logFile: operation.logFile } : {}),
+    ...(operation.lastFile ? { lastFile: operation.lastFile } : {}),
+    ...(operation.errorMessage ? { errorMessage: operation.errorMessage } : {}),
     logTail: (operation.logBuffer || operation.logTail || '').slice(-8000),
     activity,
     ...codexSessionContextFields(operation),
   };
 }
 
-function runtimeCodexContextByTask(runtime, projectId) {
+function runtimeOperationContextByTask(runtime, projectId) {
   const contexts = new Map();
   if (runtime?.lastOperation && Number(runtime.lastOperation.projectId) === Number(projectId) && runtime.lastOperation.taskId) {
-    contexts.set(Number(runtime.lastOperation.taskId), codexSessionContextFields(runtime.lastOperation));
+    contexts.set(Number(runtime.lastOperation.taskId), operationTaskContextFields(runtime.lastOperation));
   }
   for (const operation of runtime?.activeOperations?.values?.() || []) {
     if (Number(operation.projectId) !== Number(projectId) || !operation.taskId) continue;
-    contexts.set(Number(operation.taskId), codexSessionContextFields(operation));
+    contexts.set(Number(operation.taskId), operationTaskContextFields(operation));
   }
   return contexts;
+}
+
+function operationTaskContextFields(operation = {}) {
+  const agentContext = agentCliContextFields(operation, { defaultProvider: true });
+  return {
+    ...agentContext,
+    ...(agentContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(operation) : {}),
+  };
 }
 
 function codexSessionContextFields(source = {}) {
@@ -1757,6 +2265,21 @@ function codexSessionContextFields(source = {}) {
   });
 }
 
+function clearCodexSessionFields(operation) {
+  for (const key of [
+    'codexSessionId',
+    'sessionId',
+    'codex_session_id',
+    'codexSessionRequestedId',
+    'requestedSessionId',
+    'codexSessionMode',
+    'codexSessionState',
+    'codexSessionFallback',
+  ]) {
+    delete operation[key];
+  }
+}
+
 function normalizeCodexSessionMode(mode) {
   const normalized = normalizeOptionalString(mode);
   if (normalized === 'new' || normalized === 'resume') return normalized;
@@ -1782,25 +2305,30 @@ function codexSessionReadableLabel(source = {}) {
   return sessionShortId ? `会话 ${sessionShortId}` : '';
 }
 
-function taskSnapshotRow(task, codexContext = null) {
+function taskSnapshotRow(task, operationContext = null) {
   if (!task) return task;
   const startedAt = normalizeOptionalString(task.started_at) || null;
   const finishedAt = normalizeOptionalString(task.finished_at) || null;
   const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
   const runDurationMs = isRunning ? taskRunDurationMs(startedAt, nowIso()) : undefined;
-  const sessionContext = codexSessionContextFields({
-    codexSessionId: codexContext?.codexSessionId ?? task.codex_session_id,
-    codexSessionRequestedId: codexContext?.codexSessionRequestedId,
-    codexSessionMode: codexContext?.codexSessionMode,
-    codexSessionState: codexContext?.codexSessionState,
-    codexSessionFallback: codexContext?.codexSessionFallback,
-  });
+  const agentContext = agentCliContextFields(operationContext || {}, { defaultProvider: false });
+  const providerForSession = agentContext.agentCliProvider || (task.codex_session_id ? DEFAULT_AGENT_CLI_PROVIDER : undefined);
+  const sessionContext = providerForSession !== DEFAULT_AGENT_CLI_PROVIDER
+    ? {}
+    : codexSessionContextFields({
+        codexSessionId: operationContext?.codexSessionId ?? task.codex_session_id,
+        codexSessionRequestedId: operationContext?.codexSessionRequestedId,
+        codexSessionMode: operationContext?.codexSessionMode,
+        codexSessionState: operationContext?.codexSessionState,
+        codexSessionFallback: operationContext?.codexSessionFallback,
+      });
   return {
     ...task,
     started_at: startedAt,
     finished_at: finishedAt,
     duration_ms: normalizeDurationMs(task.duration_ms),
     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+    ...agentContext,
     ...sessionContext,
   };
 }
@@ -1871,6 +2399,149 @@ function parseEventMeta(meta) {
   return meta;
 }
 
+function planSnapshotRow(workspace, plan) {
+  if (!plan) return plan;
+  return {
+    ...plan,
+    title: readPlanMarkdownTitle(workspace, plan.file_path),
+  };
+}
+
+function readPlanMarkdownTitle(workspace, filePath) {
+  const planPath = resolveWorkspaceChildPath(workspace, filePath);
+  if (!planPath) return '';
+
+  try {
+    const markdown = readSnippet(planPath, 64 * 1024);
+    return extractMarkdownTitle(markdown);
+  } catch {
+    return '';
+  }
+}
+
+function resolveWorkspaceChildPath(workspace, filePath) {
+  const workspaceValue = String(workspace || '').trim();
+  const filePathValue = String(filePath || '').trim();
+  if (!workspaceValue || !filePathValue) return '';
+
+  const workspaceRoot = path.resolve(workspaceValue);
+  const requestedPath = path.resolve(workspaceRoot, filePathValue);
+  const relativePath = path.relative(workspaceRoot, requestedPath);
+  if (relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))) {
+    return requestedPath;
+  }
+  return '';
+}
+
+function extractMarkdownTitle(markdown) {
+  const lines = String(markdown || '').split(/\r?\n/);
+  const h1 = lines.find((line) => /^\uFEFF?\s*#\s+\S/.test(line) && !/^\uFEFF?\s*#{2,}\s+/.test(line));
+  if (h1) return cleanMarkdownHeadingTitle(h1.replace(/^\uFEFF?\s*#\s+/, ''));
+
+  const heading = lines.find((line) => /^\uFEFF?\s*#{1,6}\s+\S/.test(line));
+  return heading ? cleanMarkdownHeadingTitle(heading.replace(/^\uFEFF?\s*#{1,6}\s+/, '')) : '';
+}
+
+function cleanMarkdownHeadingTitle(value) {
+  return String(value || '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\s+#+\s*$/g, '')
+    .trim();
+}
+
+function workspaceToolEnv(workspace, baseEnv = process.env) {
+  const root = path.join(path.resolve(workspace), WORKSPACE_RUNTIME_DIR);
+  const dirs = {
+    pubCache: path.join(root, 'pub-cache'),
+    gradleHome: path.join(root, 'gradle'),
+    xdgCache: path.join(root, 'xdg-cache'),
+    xdgConfig: path.join(root, 'xdg-config'),
+    appData: path.join(root, 'appdata'),
+    localAppData: path.join(root, 'localappdata'),
+  };
+  for (const dir of Object.values(dirs)) fs.mkdirSync(dir, { recursive: true });
+
+  const env = {
+    ...baseEnv,
+    AUTOPLAN_RUNTIME_ROOT: root,
+    PUB_CACHE: dirs.pubCache,
+    FLUTTER_SUPPRESS_ANALYTICS: 'true',
+    CI: baseEnv.CI || 'true',
+    GRADLE_USER_HOME: baseEnv.GRADLE_USER_HOME || dirs.gradleHome,
+    XDG_CACHE_HOME: baseEnv.XDG_CACHE_HOME || dirs.xdgCache,
+    XDG_CONFIG_HOME: baseEnv.XDG_CONFIG_HOME || dirs.xdgConfig,
+  };
+  if (!env.APPDATA) env.APPDATA = dirs.appData;
+  if (!env.LOCALAPPDATA) env.LOCALAPPDATA = dirs.localAppData;
+  return env;
+}
+
+function classifyExecutionFailure(result = {}) {
+  const exitCode = typeof result.exitCode === 'number' ? result.exitCode : null;
+  if (exitCode === 0) return {};
+
+  const text = [result.errorMessage, result.output].filter(Boolean).join('\n');
+  const timedOut = Boolean(result.timedOut) || /(?:timed\s*out|timeout|ETIMEDOUT)/i.test(text);
+  let failureKind = 'command_failed';
+  let failureCategory = 'execution';
+  let environmentBlocked = false;
+
+  if (/(?:PathAccessException|Permission\s+denied|Access\s+is\s+denied|EACCES|EPERM|errno\s*=\s*5|拒绝访问|存取被拒)/i.test(text)) {
+    failureKind = 'environment_permission';
+    failureCategory = 'environment';
+    environmentBlocked = true;
+  } else if (timedOut) {
+    failureKind = 'timeout';
+    failureCategory = 'environment';
+    environmentBlocked = true;
+  } else if (/(?:command not found|not recognized as (?:an internal|a cmdlet)|ENOENT|spawn .* ENOENT)/i.test(text)) {
+    failureKind = 'tool_missing';
+    failureCategory = 'environment';
+    environmentBlocked = true;
+  } else if (/(?:No tests? (?:match|matched|were found)|does not match any tests?)/i.test(text)) {
+    failureKind = 'test_filter';
+    failureCategory = 'test';
+  } else if (/(?:Some tests failed|Test failed|TestFailure|Failed assertion|Expected:|Actual:|EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK)/i.test(text)) {
+    failureKind = 'test_failure';
+    failureCategory = 'test';
+  } else if (/(?:Compilation failed|Dart compiler exited|Error: The Dart compiler|Failed to compile|Target kernel_snapshot failed|SyntaxError)/i.test(text)) {
+    failureKind = 'compile_failure';
+    failureCategory = 'compile';
+  } else if (/(?:Agent CLI|Codex CLI|Claude CLI)/i.test(text)) {
+    failureKind = 'agent_failure';
+    failureCategory = 'agent';
+  }
+
+  return compactEventMeta({
+    failureKind,
+    failureCategory,
+    failureSummary: summarizeFailure(text, exitCode, failureKind),
+    environmentBlocked,
+    timedOut,
+    timeoutMs: normalizeOptionalNumber(result.timeoutMs),
+  });
+}
+
+function isEnvironmentBlockingFailure(failure = {}) {
+  return Boolean(failure.environmentBlocked || failure.failureCategory === 'environment');
+}
+
+function summarizeFailure(text, exitCode, failureKind) {
+  const fallback = exitCode === null ? failureKind : `${failureKind}; exitCode=${exitCode}`;
+  const line = String(text || '')
+    .split(/\r?\n/)
+    .map((entry) => entry.trim())
+    .find(Boolean);
+  if (!line) return fallback;
+  return line.length > 240 ? `${line.slice(0, 237)}...` : line;
+}
+
+function formatDurationMs(milliseconds) {
+  const seconds = Math.max(1, Math.round(Number(milliseconds || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  return `${Math.round(seconds / 60)}m`;
+}
+
 function hasCodexSessionOption(operation = {}) {
   return ['codexSessionId', 'sessionId', 'codex_session_id'].some((key) => Object.prototype.hasOwnProperty.call(operation, key));
 }
@@ -1902,68 +2573,6 @@ function shortCodexSessionId(sessionId) {
   const normalized = normalizeCodexSessionId(sessionId);
   if (normalized.length <= 13) return normalized || 'unknown';
   return `${normalized.slice(0, 8)}…${normalized.slice(-4)}`;
-}
-
-function codexNewSessionArgs(workspace, lastFile) {
-  return [
-    'exec',
-    '--cd',
-    workspace,
-    '--color',
-    'never',
-    '-o',
-    lastFile,
-    '--sandbox',
-    'danger-full-access',
-    '-',
-  ];
-}
-
-function codexResumeSessionArgs(sessionId, lastFile) {
-  return [
-    'exec',
-    'resume',
-    '-o',
-    lastFile,
-    sessionId,
-    '-',
-  ];
-}
-
-function claudeCliArgs(lastFile) {
-  return [
-    '-p',
-    '--output-format',
-    'text',
-    '--verbose',
-    '--dangerously-skip-permissions',
-    '-a',
-    'print',
-    '--output-file',
-    lastFile,
-    '-',
-  ];
-}
-
-/**
- * 按后端 provider 选择 spawn 的命令与参数。
- * - codex：原样透传上层组装好的 codex exec 参数
- * - claude：忽略 codex 参数，使用 Claude CLI 非交互 print 模式（prompt 经 stdin 传入，避免命令注入）
- * 命令名优先取项目配置 agent_cli_command，留空时用各后端默认（codex / claude）。
- */
-function agentCliSpawnSpec(provider, command, lastFile, codexArgs) {
-  const normalizedProvider = AGENT_CLI_PROVIDERS.has(provider)
-    ? provider
-    : DEFAULT_AGENT_CLI_PROVIDER;
-  const resolvedCommand = String(command || '').trim() || normalizedProvider;
-  if (normalizedProvider === 'claude') {
-    return {
-      command: resolvedCommand,
-      args: claudeCliArgs(lastFile),
-      useShell: false,
-    };
-  }
-  return { command: resolvedCommand, args: codexArgs || [], useShell: true };
 }
 
 function registerRuntimeOperation(runtime, child, operation) {
@@ -2020,6 +2629,7 @@ function waitForChild(child, timeoutMs) {
       resolve(code ?? 0);
     };
     const timer = setTimeout(() => {
+      child.__autoplanTimedOut = true;
       killChildProcess(child);
       killTimer = setTimeout(() => finish(-1), 5000);
     }, timeoutMs);
@@ -2046,6 +2656,98 @@ function hashFile(filePath) {
 
 function hashText(text) {
   return crypto.createHash('sha256').update(text).digest('hex');
+}
+
+function intakeAttachmentOwnerTypes(intakeType) {
+  return intakeType === 'feedback' ? ['feedback'] : ['requirement', 'requirements'];
+}
+
+function describeIntakeAttachment(workspace, attachment, index) {
+  const name = attachmentField(attachment, ['original_name', 'originalName', 'name', 'filename', 'file_name']) || `附件 ${index + 1}`;
+  const mime = attachmentField(attachment, ['mime', 'mime_type', 'mimeType', 'content_type', 'contentType']) || 'unknown';
+  const declaredSize = attachmentField(attachment, ['size', 'file_size', 'fileSize']);
+  const hash = attachmentField(attachment, ['sha256', 'hash', 'file_hash', 'fileHash']) || 'unknown';
+  const storedPath = attachmentField(attachment, [
+    'stored_path',
+    'storedPath',
+    'persistent_path',
+    'persistentPath',
+    'file_path',
+    'filePath',
+    'path',
+  ]);
+  const resolvedPath = resolveAttachmentPath(workspace, storedPath);
+  let readable = false;
+  let readError = '';
+  let actualSize = null;
+
+  if (!resolvedPath) {
+    readError = '缺少持久化本地路径';
+  } else {
+    try {
+      fs.accessSync(resolvedPath, fs.constants.R_OK);
+      const stat = fs.statSync(resolvedPath);
+      readable = stat.isFile();
+      actualSize = stat.size;
+      if (!readable) readError = '路径不是文件';
+    } catch (error) {
+      readError = error?.message || String(error);
+    }
+  }
+
+  return {
+    id: attachment.id,
+    number: index + 1,
+    name,
+    mime,
+    size: declaredSize ?? actualSize,
+    actualSize,
+    hash,
+    path: resolvedPath || storedPath || '',
+    readable,
+    readError,
+  };
+}
+
+function formatIntakeAttachmentEntry(entry) {
+  const lines = [
+    `- 附件 ${entry.number}: ${entry.name}`,
+    `  - MIME: ${entry.mime}`,
+    `  - 大小: ${formatAttachmentSize(entry.size)}`,
+    `  - SHA256: ${entry.hash}`,
+    `  - 持久化本地路径: ${entry.path || '（缺失）'}`,
+    `  - 读取方式: 工具可以通过上述本地路径读取附件内容`,
+    `  - 可读性: ${entry.readable ? '已确认可读' : `不可读：${entry.readError || '未知错误'}`}`,
+  ];
+  if (entry.actualSize != null && String(entry.actualSize) !== String(entry.size ?? '')) {
+    lines.push(`  - 实际文件大小: ${entry.actualSize} bytes`);
+  }
+  return lines;
+}
+
+function attachmentField(attachment, keys) {
+  for (const key of keys) {
+    if (attachment?.[key] !== undefined && attachment[key] !== null && attachment[key] !== '') {
+      return attachment[key];
+    }
+  }
+  return '';
+}
+
+function resolveAttachmentPath(workspace, storedPath) {
+  const value = String(storedPath || '').trim();
+  if (!value) return '';
+  return path.isAbsolute(value) ? value : path.resolve(workspace, value);
+}
+
+function formatAttachmentSize(size) {
+  return size === undefined || size === null || size === '' ? 'unknown' : `${size} bytes`;
+}
+
+function isAcceptanceTask(task) {
+  if (!task) return false;
+  const text = `${task.task_key || task.key || ''} ${task.title || ''} ${task.raw_line || task.rawLine || ''}`;
+  return ACCEPTANCE_TASK_RE.test(text);
 }
 
 function taskParallelScopes(task) {
@@ -2125,6 +2827,16 @@ function normalizePlanTaskScopes(planFile) {
   if (changed) fs.writeFileSync(planFile, next, 'utf8');
 }
 
+function insertTaskLineBeforeTask(content, task, line) {
+  const key = escapeRegExp(String(task?.task_key || task?.key || ''));
+  if (!key) return `${content.trimEnd()}\n${line}\n`;
+  const taskLineRe = new RegExp(`(^\\s*[-*]\\s+\\[[ xX]\\]\\s+${key}(?:\\b|[:：\\s-]).*$)`, 'm');
+  if (taskLineRe.test(content)) {
+    return content.replace(taskLineRe, `${line}\n$1`);
+  }
+  return `${content.trimEnd()}\n${line}\n`;
+}
+
 function normalizeRelative(root, fullPath) {
   return path.relative(root, fullPath).replaceAll(path.sep, '/');
 }
@@ -2164,6 +2876,8 @@ function safePart(value) {
 module.exports = {
   LoopService,
   LEGACY_TASK_EVENT_TYPES,
+  normalizeIntakeAgentCliConfig,
+  nextIntakeAgentCliConfig,
   TASK_EVENT_COMPATIBILITY,
   TASK_EVENT_SEMANTICS,
   TASK_EVENT_STATUS,

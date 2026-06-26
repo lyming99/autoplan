@@ -1,0 +1,1354 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: read-only
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019efec4-a6d0-7d50-96a8-f3acc91a7fbc
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_12_20260625-202919.md
+指定任务：
+- [ ] P001: 增加项目级 CLI 后端配置 <!-- scope: src/database.js,src/renderer/types.ts -->
+任务 scope：src/database.js, src/renderer/types.ts
+
+完成后必须：
+- 当前为并发执行模式，不要读写其它任务的 scope
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会先只读取 plan 与两个 scope 文件，确认 P001 的具体字段与现有结构。
+  → 读取 P001 上下文
+  • 检查目标文件结构
+  • 实现配置字段变更
+  • 最小范围验证
+2026-06-25T18:19:06.853823Z ERROR codex_core::tools::router: error=`powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Get-Content -LiteralPath '"'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_12_20260625-202919.md' -Encoding UTF8 | Select-String -Pattern 'P001|CLI|后端配置|backend|配置' -Context 3,8; Write-Output '--- database.js ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\database.js' -Encoding UTF8; Write-Output '--- types.ts ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\renderer\\types.ts' -Encoding UTF8"` rejected: blocked by policy
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Get-Content -LiteralPath '"'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_12_20260625-202919.md' -Encoding UTF8 | Select-String -Pattern 'P001|CLI|后端配置|backend|配置' -Context 3,8; Write-Output '--- database.js ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\database.js' -Encoding UTF8; Write-Output '--- types.ts ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\renderer\\types.ts' -Encoding UTF8" in D:\project\GitHub\autoplan
+ declined in 0ms:
+`powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[Text.UTF8Encoding]::new(); Get-Content -LiteralPath '"'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_12_20260625-202919.md' -Encoding UTF8 | Select-String -Pattern 'P001|CLI|后端配置|backend|配置' -Context 3,8; Write-Output '--- database.js ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\database.js' -Encoding UTF8; Write-Output '--- types.ts ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\renderer\\types.ts' -Encoding UTF8"` rejected: blocked by policy
+codex
+读取命令被策略拦截了；我改用更小的只读命令逐个查看。
+2026-06-25T18:19:15.375014Z ERROR codex_core::tools::router: error=`powershell.exe -Command "Get-Content -LiteralPath 'docs\\plan\\plan_requirement_12_20260625-202919.md' -Encoding UTF8 | Select-String -Pattern 'P001' -Context 2,6"` rejected: blocked by policy
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'docs\\plan\\plan_requirement_12_20260625-202919.md' -Encoding UTF8 | Select-String -Pattern 'P001' -Context 2,6" in D:\project\GitHub\autoplan
+ declined in 0ms:
+`powershell.exe -Command "Get-Content -LiteralPath 'docs\\plan\\plan_requirement_12_20260625-202919.md' -Encoding UTF8 | Select-String -Pattern 'P001' -Context 2,6"` rejected: blocked by policy
+codex
+连基础读取也被拦截，我再确认当前目录可见性。
+exec
+powershell.exe -Command Get-Location in D:\project\GitHub\autoplan
+ succeeded in 582ms:
+
+Path                      
+----                      
+D:\project\GitHub\autoplan
+
+
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+codex
+目录可访问；接下来只读目标文件内容。
+exec
+powershell.exe -NoProfile -Command "Get-Content -LiteralPath 'src\\database.js' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 576ms:
+const fs = require('node:fs');
+const path = require('node:path');
+const initSqlJs = require('sql.js');
+
+class AppDatabase {
+  constructor(dbPath) {
+    this.dbPath = dbPath;
+    this.db = null;
+  }
+
+  async init() {
+    fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
+    const SQL = await initSqlJs({
+      locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
+    });
+    const bytes = fs.existsSync(this.dbPath) ? fs.readFileSync(this.dbPath) : undefined;
+    this.db = new SQL.Database(bytes);
+    this.migrate();
+    this.persist();
+  }
+
+  migrate() {
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        workspace_path TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_projects_updated
+      ON projects (updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS project_states (
+        project_id INTEGER PRIMARY KEY,
+        running INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'idle',
+        interval_seconds INTEGER NOT NULL DEFAULT 5,
+        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        last_issue_hash TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS requirements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        source_path TEXT,
+        source_hash TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        requirement_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        owner_type TEXT NOT NULL,
+        owner_id INTEGER NOT NULL,
+        original_name TEXT NOT NULL,
+        stored_path TEXT NOT NULL,
+        mime_type TEXT,
+        size INTEGER NOT NULL,
+        hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_attachments_owner
+      ON attachments (owner_type, owner_id);
+
+      CREATE TABLE IF NOT EXISTS scan_files (
+        project_id INTEGER NOT NULL DEFAULT 1,
+        scan_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+
+      CREATE TABLE IF NOT EXISTS plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        issue_hash TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        total_tasks INTEGER NOT NULL DEFAULT 0,
+        completed_tasks INTEGER NOT NULL DEFAULT 0,
+        validation_passed INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS plan_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        task_key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        raw_line TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        sort_order INTEGER NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        codex_session_id TEXT,
+        updated_at TEXT NOT NULL,
+        UNIQUE(plan_id, task_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        meta TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS loop_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        running INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'idle',
+        workspace_path TEXT NOT NULL DEFAULT '',
+        interval_seconds INTEGER NOT NULL DEFAULT 5,
+        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        last_issue_hash TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT OR IGNORE INTO loop_state (
+        id, running, phase, workspace_path, interval_seconds, validation_command, updated_at
+      ) VALUES (1, 0, 'idle', '', 5, 'flutter analyze', datetime('now'));
+    `);
+
+    this.ensureColumn('requirements', 'project_id', 'INTEGER');
+    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+    this.ensureColumn('plans', 'project_id', 'INTEGER');
+    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+    this.ensureColumn('events', 'project_id', 'INTEGER');
+    this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
+    this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+
+    const defaultProjectId = this.ensureDefaultProject();
+    this.migrateScanFilesTable(defaultProjectId);
+    this.assignLegacyRows(defaultProjectId);
+    this.ensureProjectState(defaultProjectId);
+  }
+
+  ensureDefaultProject() {
+    const existing = this.get('SELECT id FROM projects ORDER BY id ASC LIMIT 1');
+    if (existing) return Number(existing.id);
+
+    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+    const now = nowIso();
+    this.db.run(
+      `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['默认项目', legacyState.workspace_path || '', '从旧版单项目数据自动迁移', now, now],
+    );
+    return Number(this.get('SELECT last_insert_rowid() AS id').id);
+  }
+
+  ensureProjectState(projectId) {
+    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+    this.db.run(
+      `INSERT OR IGNORE INTO project_states
+       (project_id, running, phase, interval_seconds, validation_command, last_issue_hash, last_error, updated_at)
+       VALUES (?, 0, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId,
+        legacyState.phase || 'idle',
+        Number(legacyState.interval_seconds || 5),
+        legacyState.validation_command || 'flutter analyze',
+        legacyState.last_issue_hash || null,
+        legacyState.last_error || null,
+        legacyState.updated_at || nowIso(),
+      ],
+    );
+  }
+
+  assignLegacyRows(projectId) {
+    for (const table of ['requirements', 'feedback', 'attachments', 'plans', 'events', 'scan_files']) {
+      this.db.run(`UPDATE ${table} SET project_id = ? WHERE project_id IS NULL`, [projectId]);
+    }
+  }
+
+  ensureColumn(table, column, definition) {
+    const columns = this.all(`PRAGMA table_info(${table})`);
+    if (!columns.some((item) => item.name === column)) {
+      this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  migrateScanFilesTable(defaultProjectId) {
+    const table = this.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'scan_files'");
+    if (String(table?.sql || '').includes('PRIMARY KEY (project_id, scan_type, file_path)')) return;
+
+    const hasProjectId = this.all('PRAGMA table_info(scan_files)').some((item) => item.name === 'project_id');
+    const fallbackProjectId = Number(defaultProjectId || 1);
+    this.db.run('ALTER TABLE scan_files RENAME TO scan_files_legacy');
+    this.db.run(`
+      CREATE TABLE scan_files (
+        project_id INTEGER NOT NULL DEFAULT ${fallbackProjectId},
+        scan_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+    `);
+
+    if (hasProjectId) {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT COALESCE(project_id, ${fallbackProjectId}), scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    } else {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT ${fallbackProjectId}, scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    }
+
+    this.db.run('DROP TABLE scan_files_legacy');
+  }
+
+  persist() {
+    const data = Buffer.from(this.db.export());
+    const tmp = `${this.dbPath}.tmp`;
+    const mirror = `${this.dbPath}.mirror`;
+    fs.writeFileSync(tmp, data);
+    fs.writeFileSync(mirror, data);
+    if (fs.existsSync(this.dbPath)) {
+      fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`);
+      fs.unlinkSync(this.dbPath);
+    }
+    fs.renameSync(tmp, this.dbPath);
+  }
+
+  run(sql, params = []) {
+    this.db.run(sql, params);
+    this.persist();
+  }
+
+  get(sql, params = []) {
+    const rows = this.all(sql, params);
+    return rows[0] || null;
+  }
+
+  all(sql, params = []) {
+    const stmt = this.db.prepare(sql);
+    try {
+      stmt.bind(params);
+      const rows = [];
+      while (stmt.step()) rows.push(stmt.getAsObject());
+      return rows;
+    } finally {
+      stmt.free();
+    }
+  }
+
+  insert(sql, params = []) {
+    this.db.run(sql, params);
+    const id = this.get('SELECT last_insert_rowid() AS id').id;
+    this.persist();
+    return id;
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+module.exports = { AppDatabase, nowIso };
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+codex
+`database.js` 较长且输出被截断，我按小段查看迁移相关位置。
+2026-06-25T18:19:45.591583Z ERROR codex_core::tools::router: error=`powershell.exe -NoProfile -Command '$lines = Get-Content -LiteralPath '"'src\\database.js' -Encoding UTF8; for ("'$i=0; $i -lt [Math]::Min($lines.Length,220); $i++) { '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] }'` rejected: blocked by policy
+exec
+powershell.exe -NoProfile -Command '$lines = Get-Content -LiteralPath '"'src\\database.js' -Encoding UTF8; for ("'$i=0; $i -lt [Math]::Min($lines.Length,220); $i++) { '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] }' in D:\project\GitHub\autoplan
+ declined in 0ms:
+`powershell.exe -NoProfile -Command '$lines = Get-Content -LiteralPath '"'src\\database.js' -Encoding UTF8; for ("'$i=0; $i -lt [Math]::Min($lines.Length,220); $i++) { '"'{0,4}: {1}' -f ("'$i+1), $lines[$i] }'` rejected: blocked by policy
+**Simplifying command execution**
+
+It looks like my initial command was rejected because it was too complex, possibly due to a loop being involved. I should think about simplifying things. Maybe I can use PowerShell, but I need to ensure it’s compatible with UTF-8. Should I switch to using cmd? Since the shell is PowerShell, I can explore a different approach without being destructive. I might also consider using `Get-Content -TotalCount` for a simpler solution.
+codex
+复杂 PowerShell 被限制了；我改用简单分段读取。
+exec
+powershell.exe -NoProfile -Command "Get-Content -LiteralPath 'src\\database.js' -Encoding UTF8 -TotalCount 180" in D:\project\GitHub\autoplan
+ succeeded in 566ms:
+const fs = require('node:fs');
+const path = require('node:path');
+const initSqlJs = require('sql.js');
+
+class AppDatabase {
+  constructor(dbPath) {
+    this.dbPath = dbPath;
+    this.db = null;
+  }
+
+  async init() {
+    fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
+    const SQL = await initSqlJs({
+      locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
+    });
+    const bytes = fs.existsSync(this.dbPath) ? fs.readFileSync(this.dbPath) : undefined;
+    this.db = new SQL.Database(bytes);
+    this.migrate();
+    this.persist();
+  }
+
+  migrate() {
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS projects (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        workspace_path TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_projects_updated
+      ON projects (updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS project_states (
+        project_id INTEGER PRIMARY KEY,
+        running INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'idle',
+        interval_seconds INTEGER NOT NULL DEFAULT 5,
+        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        last_issue_hash TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS requirements (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        source_path TEXT,
+        source_hash TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS feedback (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        requirement_id INTEGER,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'open',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS attachments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        owner_type TEXT NOT NULL,
+        owner_id INTEGER NOT NULL,
+        original_name TEXT NOT NULL,
+        stored_path TEXT NOT NULL,
+        mime_type TEXT,
+        size INTEGER NOT NULL,
+        hash TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_attachments_owner
+      ON attachments (owner_type, owner_id);
+
+      CREATE TABLE IF NOT EXISTS scan_files (
+        project_id INTEGER NOT NULL DEFAULT 1,
+        scan_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+
+      CREATE TABLE IF NOT EXISTS plans (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        issue_hash TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        total_tasks INTEGER NOT NULL DEFAULT 0,
+        completed_tasks INTEGER NOT NULL DEFAULT 0,
+        validation_passed INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS plan_tasks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        plan_id INTEGER NOT NULL,
+        task_key TEXT NOT NULL,
+        title TEXT NOT NULL,
+        raw_line TEXT NOT NULL,
+        scope TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending',
+        sort_order INTEGER NOT NULL,
+        started_at TEXT,
+        finished_at TEXT,
+        duration_ms INTEGER NOT NULL DEFAULT 0,
+        codex_session_id TEXT,
+        updated_at TEXT NOT NULL,
+        UNIQUE(plan_id, task_key)
+      );
+
+      CREATE TABLE IF NOT EXISTS events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        type TEXT NOT NULL,
+        message TEXT NOT NULL,
+        meta TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS loop_state (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        running INTEGER NOT NULL DEFAULT 0,
+        phase TEXT NOT NULL DEFAULT 'idle',
+        workspace_path TEXT NOT NULL DEFAULT '',
+        interval_seconds INTEGER NOT NULL DEFAULT 5,
+        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        last_issue_hash TEXT,
+        last_error TEXT,
+        updated_at TEXT NOT NULL
+      );
+
+      INSERT OR IGNORE INTO loop_state (
+        id, running, phase, workspace_path, interval_seconds, validation_command, updated_at
+      ) VALUES (1, 0, 'idle', '', 5, 'flutter analyze', datetime('now'));
+    `);
+
+    this.ensureColumn('requirements', 'project_id', 'INTEGER');
+    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+    this.ensureColumn('plans', 'project_id', 'INTEGER');
+    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+    this.ensureColumn('events', 'project_id', 'INTEGER');
+    this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
+    this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+
+    const defaultProjectId = this.ensureDefaultProject();
+    this.migrateScanFilesTable(defaultProjectId);
+    this.assignLegacyRows(defaultProjectId);
+    this.ensureProjectState(defaultProjectId);
+  }
+
+  ensureDefaultProject() {
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+**Considering database configuration**
+
+I’m finding that the interesting database already contains the project_states agent_cli_provider/command ensureColumn. For the P001 project, I think it might be necessary to add a project-level CLI backend configuration in the database and types. I should also inspect the rest to see how everything connects. It seems like a good step to ensure everything is in order for the project's needs. Let's take it one step at a time!
+codex
+已看到现有迁移末尾已有部分 CLI 字段，继续查看状态初始化与类型定义。
+exec
+powershell.exe -NoProfile -Command "Get-Content -LiteralPath 'src\\database.js' -Encoding UTF8 | Select-Object -Skip 180 -First 160" in D:\project\GitHub\autoplan
+ succeeded in 626ms:
+    const existing = this.get('SELECT id FROM projects ORDER BY id ASC LIMIT 1');
+    if (existing) return Number(existing.id);
+
+    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+    const now = nowIso();
+    this.db.run(
+      `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      ['默认项目', legacyState.workspace_path || '', '从旧版单项目数据自动迁移', now, now],
+    );
+    return Number(this.get('SELECT last_insert_rowid() AS id').id);
+  }
+
+  ensureProjectState(projectId) {
+    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+    this.db.run(
+      `INSERT OR IGNORE INTO project_states
+       (project_id, running, phase, interval_seconds, validation_command, last_issue_hash, last_error, updated_at)
+       VALUES (?, 0, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId,
+        legacyState.phase || 'idle',
+        Number(legacyState.interval_seconds || 5),
+        legacyState.validation_command || 'flutter analyze',
+        legacyState.last_issue_hash || null,
+        legacyState.last_error || null,
+        legacyState.updated_at || nowIso(),
+      ],
+    );
+  }
+
+  assignLegacyRows(projectId) {
+    for (const table of ['requirements', 'feedback', 'attachments', 'plans', 'events', 'scan_files']) {
+      this.db.run(`UPDATE ${table} SET project_id = ? WHERE project_id IS NULL`, [projectId]);
+    }
+  }
+
+  ensureColumn(table, column, definition) {
+    const columns = this.all(`PRAGMA table_info(${table})`);
+    if (!columns.some((item) => item.name === column)) {
+      this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  migrateScanFilesTable(defaultProjectId) {
+    const table = this.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'scan_files'");
+    if (String(table?.sql || '').includes('PRIMARY KEY (project_id, scan_type, file_path)')) return;
+
+    const hasProjectId = this.all('PRAGMA table_info(scan_files)').some((item) => item.name === 'project_id');
+    const fallbackProjectId = Number(defaultProjectId || 1);
+    this.db.run('ALTER TABLE scan_files RENAME TO scan_files_legacy');
+    this.db.run(`
+      CREATE TABLE scan_files (
+        project_id INTEGER NOT NULL DEFAULT ${fallbackProjectId},
+        scan_type TEXT NOT NULL,
+        file_path TEXT NOT NULL,
+        hash TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        modified_at TEXT NOT NULL,
+        scanned_at TEXT NOT NULL,
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+    `);
+
+    if (hasProjectId) {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT COALESCE(project_id, ${fallbackProjectId}), scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    } else {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT ${fallbackProjectId}, scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    }
+
+    this.db.run('DROP TABLE scan_files_legacy');
+  }
+
+  persist() {
+    const data = Buffer.from(this.db.export());
+    const tmp = `${this.dbPath}.tmp`;
+    const mirror = `${this.dbPath}.mirror`;
+    fs.writeFileSync(tmp, data);
+    fs.writeFileSync(mirror, data);
+    if (fs.existsSync(this.dbPath)) {
+      fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`);
+      fs.unlinkSync(this.dbPath);
+    }
+    fs.renameSync(tmp, this.dbPath);
+  }
+
+  run(sql, params = []) {
+    this.db.run(sql, params);
+    this.persist();
+  }
+
+  get(sql, params = []) {
+    const rows = this.all(sql, params);
+    return rows[0] || null;
+  }
+
+  all(sql, params = []) {
+    const stmt = this.db.prepare(sql);
+    try {
+      stmt.bind(params);
+      const rows = [];
+      while (stmt.step()) rows.push(stmt.getAsObject());
+      return rows;
+    } finally {
+      stmt.free();
+    }
+  }
+
+  insert(sql, params = []) {
+    this.db.run(sql, params);
+    const id = this.get('SELECT last_insert_rowid() AS id').id;
+    this.persist();
+    return id;
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+module.exports = { AppDatabase, nowIso };
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+codex
+数据库字段只在迁移补列里出现；现在检查渲染端类型是否同步。
+exec
+powershell.exe -NoProfile -Command "Get-Content -LiteralPath 'src\\renderer\\types.ts' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 598ms:
+export type IntakeType = 'requirement' | 'feedback';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+
+export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+  REQUIREMENT: 'requirement',
+  FEEDBACK: 'feedback',
+  PLAN: 'plan',
+  TASK: 'task',
+  EVENT: 'event',
+} as const;
+
+export type WorkspaceSearchSourceType =
+  (typeof WORKSPACE_SEARCH_SOURCE_TYPES)[keyof typeof WORKSPACE_SEARCH_SOURCE_TYPES];
+
+export const WORKSPACE_SEARCH_HIT_FIELDS = {
+  TITLE: 'title',
+  BODY: 'body',
+  STATUS: 'status',
+  MARKDOWN: 'markdown',
+  FILE_PATH: 'filePath',
+  SOURCE_PATH: 'sourcePath',
+  TASK_KEY: 'taskKey',
+  SCOPE: 'scope',
+  RAW_LINE: 'rawLine',
+  EVENT_TYPE: 'eventType',
+  EVENT_MESSAGE: 'eventMessage',
+  EVENT_META: 'eventMeta',
+} as const;
+
+export type WorkspaceSearchHitField =
+  (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
+
+export interface WorkspaceSearchQuery {
+  raw: string;
+  normalized: string;
+  terms: string[];
+  isEmpty: boolean;
+}
+
+export interface WorkspaceSearchSourceConfig {
+  type: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+}
+
+export interface WorkspaceSearchMatch {
+  field: WorkspaceSearchHitField;
+  label: string;
+  value: string;
+  snippet?: string;
+}
+
+export interface WorkspaceSearchResult {
+  id: string;
+  source: WorkspaceSearchSourceType;
+  targetTab: WorkspaceTab;
+  recordId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  matches: WorkspaceSearchMatch[];
+}
+
+export interface WorkspaceSearchGroup {
+  source: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+  count: number;
+  results: WorkspaceSearchResult[];
+}
+
+export interface WorkspaceSearchState {
+  query: WorkspaceSearchQuery;
+  total: number;
+  results: WorkspaceSearchResult[];
+  groups: WorkspaceSearchGroup[];
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  workspace_path: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  running?: number;
+  phase?: string;
+  interval_seconds?: number;
+  validation_command?: string;
+  agent_cli_provider?: string;
+  agent_cli_command?: string;
+}
+
+export interface ProjectState {
+  project_id: number;
+  running: number;
+  phase: string;
+  interval_seconds: number;
+  validation_command: string;
+  last_issue_hash?: string | null;
+  last_error?: string | null;
+  agent_cli_provider?: string;
+  agent_cli_command?: string;
+  updated_at: string;
+  /** 由 snapshot 合并自 project.workspace_path */
+  workspace_path?: string;
+}
+
+export interface Requirement {
+  id: number;
+  project_id: number;
+  title: string;
+  body: string;
+  status: string;
+  source_path?: string | null;
+  source_hash?: string | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: number;
+  project_id: number;
+  requirement_id?: number | null;
+  title: string;
+  body: string;
+  status: string;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Attachment {
+  id: number;
+  project_id: number;
+  owner_type: IntakeType;
+  owner_id: number;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size: number;
+  hash: string;
+  created_at: string;
+}
+
+export interface Plan {
+  id: number;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  hash: string;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReadPlanResult {
+  ok: boolean;
+  id: number | null;
+  project_id: number | null;
+  file_path: string;
+  markdown: string;
+  hash: string;
+  updated_at: string;
+  error: string | null;
+}
+
+export interface WorkspacePlanReadState {
+  plan: Plan | null;
+  result: ReadPlanResult | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export type CodexSessionMode = 'new' | 'resume';
+
+export type CodexSessionState = CodexSessionMode | 'fallback-new' | string;
+
+export interface CodexSessionInfo {
+  codexSessionId?: string | null;
+  codexSessionShortId?: string | null;
+  codexSessionMode?: CodexSessionMode | null;
+  codexSessionState?: CodexSessionState | null;
+  codexSessionLabel?: string | null;
+  codexSessionRequestedId?: string | null;
+  codexSessionRequestedShortId?: string | null;
+  codexSessionFallback?: boolean | null;
+}
+
+export interface PlanTask extends CodexSessionInfo {
+  id: number;
+  plan_id: number;
+  task_key: string;
+  title: string;
+  raw_line: string;
+  scope: string;
+  status: string;
+  sort_order: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number;
+  run_duration_ms?: number;
+  codex_session_id: string | null;
+  updated_at: string;
+  /** JOIN plans 得到 */
+  file_path: string;
+}
+
+export const TASK_EVENT_TYPES = {
+  STARTED: 'task.started',
+  SUCCEEDED: 'task.succeeded',
+  FAILED: 'task.failed',
+  STOP_REQUESTED: 'task.stop.requested',
+  STOPPED: 'task.stopped',
+  INTERRUPTED: 'task.interrupted',
+} as const;
+
+export const LEGACY_TASK_EVENT_TYPES = {
+  EXECUTED: 'task.executed',
+  STOPPING: 'task.stopping',
+} as const;
+
+export const TASK_EVENT_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  STOPPING: 'stopping',
+  STOPPED: 'stopped',
+  INTERRUPTED: 'interrupted',
+} as const;
+
+export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TYPES];
+export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];
+export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];
+
+export interface TaskEventSemantics {
+  status: TaskEventStatus;
+  label: string;
+}
+
+export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {
+  [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },
+  [TASK_EVENT_TYPES.SUCCEEDED]: { status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' },
+  [TASK_EVENT_TYPES.FAILED]: { status: TASK_EVENT_STATUS.FAILED, label: '任务失败' },
+  [TASK_EVENT_TYPES.STOP_REQUESTED]: { status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' },
+  [TASK_EVENT_TYPES.STOPPED]: { status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' },
+  [TASK_EVENT_TYPES.INTERRUPTED]: { status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' },
+};
+
+export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType> = {
+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,
+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,
+};
+
+export interface TaskEventMeta extends CodexSessionInfo {
+  taskId?: number | null;
+  taskKey?: string | null;
+  taskTitle?: string | null;
+  planId?: number | null;
+  status?: TaskEventStatus | string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  runDurationMs?: number | null;
+  exitCode?: number | null;
+  log?: string | null;
+  error?: string | null;
+  [key: string]: unknown;
+}
+
+export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+export type AppEventMeta = string | AppEventStructuredMeta;
+
+export interface AppEvent<TMeta extends AppEventMeta | null = AppEventMeta | null> {
+  id: number;
+  project_id: number;
+  type: string;
+  message: string;
+  meta?: TMeta;
+  created_at: string;
+}
+
+export interface ScanFile {
+  project_id: number;
+  scan_type: string;
+  file_path: string;
+  hash: string;
+  size: number;
+  modified_at: string;
+  scanned_at: string;
+}
+
+export interface AppSnapshot {
+  activeProjectId: number | null;
+  activeProject: Project | null;
+  projects: Project[];
+  state: ProjectState | null;
+  requirements: Requirement[];
+  feedback: Feedback[];
+  attachments: Attachment[];
+  plans: Plan[];
+  tasks: PlanTask[];
+  events: AppEvent<AppEventMeta | null>[];
+  scans: ScanFile[];
+  activeOperation: ActiveOperation | null;
+  activeOperations: ActiveOperation[];
+  lastOperation: ActiveOperation | null;
+}
+
+export interface ActivityLine {
+  role: string;
+  text: string;
+  at: string;
+}
+
+export interface ActiveOperation extends CodexSessionInfo {
+  label: string;
+  projectId: number | null;
+  planId: number | null;
+  taskId: number | null;
+  agentCliProvider?: string;
+  startedAt: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  logTail: string;
+  activity: ActivityLine[];
+}
+
+export interface PendingAttachment {
+  path: string;
+  name: string;
+  size: number;
+  type: string;
+}
+
+export interface CreateIntakeInput {
+  projectId: number;
+  body: string;
+  attachments: PendingAttachment[];
+  title?: string;
+  status?: string;
+  autoRun?: boolean;
+  requirementId?: number | null;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  workspacePath: string;
+  description?: string;
+  agentCliProvider?: string;
+  agentCliCommand?: string;
+}
+
+export interface UpdateProjectInput extends CreateProjectInput {
+  id: number;
+}
+
+export interface LoopConfigInput {
+  projectId: number;
+  workspacePath?: string;
+  intervalSeconds?: number;
+  validationCommand?: string;
+  agentCliProvider?: string;
+  agentCliCommand?: string;
+}
+
+export interface ProjectIdInput {
+  projectId: number;
+  manual?: boolean;
+}
+
+export interface RecordIdInput extends ProjectIdInput {
+  id: number;
+}
+
+export interface TaskIdInput extends ProjectIdInput {
+  taskId: number;
+}
+
+export interface ReadPlanInput extends ProjectIdInput {
+  planId: number;
+}
+
+export interface IntakeActionInput extends ProjectIdInput {
+  type: IntakeType;
+  id: number;
+  title?: string;
+}
+
+export interface UpdateRequirementInput extends RecordIdInput {
+  title?: string;
+  body?: string;
+  status?: string;
+  attachments?: PendingAttachment[];
+}
+
+export interface UpdateFeedbackInput extends UpdateRequirementInput {
+  requirementId?: number | null;
+}
+
+export interface AutoplanApi {
+  snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+  createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+  updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+  deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
+  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+  deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+  createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+  deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+  interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  getDroppedFilePath: (file: File) => string;
+  toFileUrl: (filePath: string) => string;
+  onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    autoplan: AutoplanApi;
+  }
+}
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+**Deciding on reading methods**
+
+I'm thinking about how the types already have agent fields, but those are optional strings. I should read the P001 details surrounding the plan, but it seems my previous Select-String method was rejected. Maybe that happened because it's more complex than necessary? I could try a simpler approach with Get-Content to see if that makes it shorter and easier to digest. It's worth a shot!
+codex
+类型文件也已有可选字段；我读取 P001 详细要求确认还缺哪一层。
+exec
+powershell.exe -NoProfile -Command "Get-Content -LiteralPath 'docs\\plan\\plan_requirement_12_20260625-202919.md' -Encoding UTF8 -TotalCount 120" in D:\project\GitHub\autoplan
+ succeeded in 581ms:
+# 需求 #12 开发计划：增加 Claude CLI 支持
+
+## 背景
+
+当前 AutoPlan 的计划生成、任务执行、修复与验收流程主要通过 `codex exec` 调用 Codex CLI。需求 #12 要求“增加 claude cli 支持”，本计划默认目标是：在不破坏现有 Codex 默认行为、任务上下文复用、并发 scope 控制和日志展示的前提下，为项目级配置增加 Claude CLI 作为可选执行后端。
+
+## 设计约束
+
+- 默认后端保持 Codex，历史项目和旧数据库升级后无需重新配置即可继续运行。
+- Claude CLI 作为项目级选项保存，允许不同项目选择不同 CLI 后端。
+- Codex 的 session 复用能力仅在 Codex 后端启用；切换到 Claude 时不得把历史 `codex_session_id` 传给 Claude CLI。
+- Claude CLI 调用必须使用当前项目 `workspace_path` 作为工作目录，并接收与 Codex 相同语义的 prompt。
+- CLI 不存在、认证失效、非零退出、用户停止等状态必须回写到现有事件、活动日志和任务状态链路。
+
+## 任务拆解
+
+- [ ] P001: 增加项目级 CLI 后端配置 <!-- scope: src/database.js,src/renderer/types.ts -->
+  - 验收要点：`project_states` 或等价配置表新增 CLI 后端字段，至少支持 `codex` 与 `claude`，历史数据默认值为 `codex`。
+  - 验收要点：配置字段通过现有迁移机制兼容旧数据库，应用启动、项目快照和项目列表不会因缺少字段报错。
+  - 验收要点：前端类型新增 CLI 后端、命令路径或命令名等字段，`Project`、`Snapshot`、`ActiveOperation` 等相关类型不出现类型缺口。
+  - 验收要点：非法后端值会被规范化或拒绝保存，不会进入执行链路导致 spawn 未知命令。
+
+- [ ] P002: 打通配置保存与 IPC 链路 <!-- scope: src/main.js,src/preload.js,src/loopService.js -->
+  - 验收要点：项目创建、项目更新和运行配置更新接口能够读写 CLI 后端配置，并随 `snapshot` 返回最新值。
+  - 验收要点：`loop.configure` 保留现有 `workspacePath`、`intervalSeconds`、`validationCommand` 行为，同时支持更新 CLI 后端配置。
+  - 验收要点：配置变更后不需要重启应用即可影响后续计划生成、任务执行、修复和验收调用。
+  - 验收要点：删除项目、停止循环、手动运行任务等既有 IPC 行为不因新增配置字段发生回归。
+
+- [ ] P003: 抽象通用 Agent CLI 执行器 <!-- scope: src/loopService.js,src/agentCli.js,src/codexActivity.js -->
+  - 验收要点：将当前写死的 `runCodex`/`codex exec` 参数组装抽象为按后端选择的执行器，保留兼容包装以减少现有调用点改动风险。
+  - 验收要点：Codex 后端生成的命令参数、工作目录、stdin prompt、日志文件、last message 文件和退出码处理与改造前保持一致。
+  - 验收要点：执行器统一返回 `exitCode`、`logFile`、`lastFile`、后端名称、会话信息、活动摘要和可读错误信息。
+  - 验收要点：停止任务时仍能终止当前 CLI 子进程及其子进程树，且多任务并发执行时各自登记独立进程。
+
+- [ ] P004: 实现 Claude CLI 非交互调用 <!-- scope: src/agentCli.js,src/loopService.js -->
+  - 验收要点：Claude 后端默认调用可配置命令名，默认值为 `claude`，并使用 Claude CLI 的非交互/打印模式执行完整 prompt。
+  - 验收要点：Claude 调用在项目工作区内运行，prompt 传递方式不经过危险字符串拼接，避免路径或需求内容触发命令注入。
+  - 验收要点：Claude stdout/stderr 会写入现有日志文件，最终回复会写入 last message 文件，非零退出会让对应计划或任务进入现有失败/重试流程。
+  - 验收要点：Claude 后端不使用 `codex_session_id`；如果未来 Claude CLI 返回稳定会话标识，也必须与 Codex 会话字段隔离。
+
+- [ ] P005: 适配多 CLI 活动日志与展示文案 <!-- scope: src/renderer/components/CodexLog.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts,src/loopService.js -->
+  - 验收要点：活动日志组件能根据当前后端显示 `Codex` 或 `Claude`，等待文案、状态摘要和错误信息不再固定写死为 Codex。
+  - 验收要点：Codex 的结构化 activity 解析继续可用；Claude 输出无法解析为结构化事件时仍显示原始日志尾部和基础状态。
+  - 验收要点：运行中概览、事件流、任务卡片和 active operation 元信息展示当前 CLI 后端，便于用户判断正在使用哪个工具。
+  - 验收要点：已有 Codex 会话标签、恢复会话、回退新建会话等文案在 Codex 后端不回归；Claude 后端不展示误导性的 Codex 会话恢复状态。
+
+- [ ] P006: 增加项目设置 UI 入口 <!-- scope: src/renderer/pages/ProjectsPage.tsx,src/styles.css,src/renderer/pages/WorkspacePage.tsx -->
+  - 验收要点：项目编辑或创建界面提供 CLI 后端选择，至少包含 `Codex CLI` 和 `Claude CLI` 两个选项。
+  - 验收要点：界面清楚提示 Claude CLI 需要用户本机已安装并完成认证，保存后能在项目列表或工作区概览看到当前后端。
+  - 验收要点：切换后端时只影响后续执行，不主动修改历史 plan 文件、任务状态或已有 Codex session id。
+  - 验收要点：样式适配现有项目配置表单，在窄屏和当前 Electron 窗口尺寸下不遮挡主要操作按钮。
+
+- [ ] P007: 补充 smoke 覆盖多后端执行 <!-- scope: scripts/smoke-test.js -->
+  - 验收要点：新增 smoke 用例覆盖默认配置为 Codex，确保历史项目升级后 `agentCliProvider` 或等价字段为 `codex`。
+  - 验收要点：通过 stub 执行器验证选择 Claude 后，计划生成和任务执行会走 Claude 后端，不会传入 `codexSessionId`。
+  - 验收要点：通过 stub 执行器验证选择 Codex 后，现有 session 复用、resume 失败回退、新建会话等断言继续通过。
+  - 验收要点：验证 CLI 后端配置通过 IPC 保存、快照返回和 UI 类型约束保持一致。
+
+- [ ] P008: 完成检查与使用说明更新 <!-- scope: README.md,ui/README.md,package.json -->
+  - 验收要点：README 或 UI 说明补充 Claude CLI 支持范围、安装/认证前置条件、项目级切换方式和默认仍为 Codex 的兼容说明。
+  - 验收要点：若新增测试脚本或检查命令，需要同步更新 `package.json`；若复用现有命令，则不得无意义修改脚本。
+  - 验收要点：`npm run check` 通过，覆盖 TypeScript、主进程 JS、preload 和 smoke 相关静态检查。
+  - 验收要点：`npm run smoke` 通过，确认 Codex 旧链路和 Claude 新链路均满足核心流程断言。
+
+## 总体验收标准
+
+- 兼容性：未配置过 CLI 后端的历史项目继续默认使用 Codex，计划生成、任务执行、停止、重试、验收和并发 scope 控制保持原行为。
+- 可配置性：用户可以在项目级配置中选择 Codex CLI 或 Claude CLI，保存后无需重启即可用于后续自动循环和手动任务执行。
+- Claude 可用性：选择 Claude 后，AutoPlan 能在项目工作区调用 Claude CLI 非交互执行 prompt，并正确采集 stdout/stderr、last message、退出码和错误信息。
+- 会话隔离：Codex session 复用能力不回归；Claude 后端不会错误复用或污染 `codex_session_id`，不同任务、不同项目、不同后端之间上下文不串扰。
+- 可观测性：运行中日志、事件流、任务卡片和概览能明确显示当前 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+- 验证通过：完成后 `npm run check` 与 `npm run smoke` 均通过；如本机未安装 Claude CLI，smoke 必须通过 stub 或 mock 覆盖核心分支，真实 Claude 调用可作为手动验收项。
+
+## 进度区
+
+| 任务 | 状态 | 说明 |
+| --- | --- | --- |
+| P001 | 已完成 | project_states 新增 agent_cli_provider/agent_cli_command，默认 codex，前端类型补齐 |
+| P002 | 已完成 | configure/create/update IPC 读写后端配置，snapshot 返回最新值 |
+| P003 | 已完成 | runCodex 抽象出 agentCliSpawnSpec 按后端选命令，保留 codex 兼容包装 |
+| P004 | 已完成 | claude -p 非交互调用，prompt 走 stdin，不传 codex_session_id |
+| P005 | 已完成 | CodexLog/概览/侧边栏按后端显示 Codex/Claude 文案 |
+| P006 | 已完成 | 循环控制表单与项目创建/编辑模态框新增 CLI 后端选择 |
+| P007 | 已完成 | smoke 新增多后端覆盖：默认 codex、claude 路由、session 隔离、非法值规范化 |
+| P008 | 已完成 | README/ui README 补充说明，版本升至 0.2.0，check + smoke 通过 |
+
+当前总体进度：8/8。
+无法设置属性。此语言模式仅支持核心类型的属性设置。
+所在位置 行:1 字符: 1
++ [Console]::OutputEncoding=[System.Text.Encoding]::UTF8;
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) []，RuntimeException
+    + FullyQualifiedErrorId : PropertySetterNotSupportedInConstrainedLanguage
+ 
+
+**Clarifying project states**
+
+The plan indicates that P001 is done but the user requested to focus solely on P001. I need to verify if the current worktree has P001 files already modified. The project_states table creation lacks some fields, but I need to ensure that the ensureColumn function adds them back. For a new database, I'll create the table without those initial columns and then use ensureColumn to add them later. I wonder if the acceptance criteria for P001 are clear enough.
+**Exploring database normalization**
+
+I’m considering that since P002 will handle IPC saving later, but for P001, maybe I need to focus on the database. I think using constants and normalization helpers could be beneficial, though I can't modify the main loop. The idea of "illegal backend values being normalized or rejected" might fit into the database layer through checks or normalization techniques. However, the existing database allows illegal values. I could add constants and checks when creating new tables and think about a normalization helper too. I'll need to check how the database modules interact!
+**Planning file modifications**
+
+I see I need to modify target files, but it looks like the sandbox is read-only. The earlier command was able to read but not write, so I might need to try applying a patch. Before I jump into writing anything, I should plan carefully. I need to decide on the precise patch and review the types of all relevant interfaces to make sure they're not truncated. Specifically, Project, ProjectState, ActiveOperation, CreateProjectInput, and LoopConfigInput have optional string types that I should keep in mind.
+**Considering project_states reconstruction**
+
+I'm thinking about a potential rebuild of the project_states to add a check for the existing column. I wonder if that might be overkill. Looking over the columns in project_states, which include project_id, running status, and others, it seems I could create a new project_states_new with the complete schema and then drop the old one after inserting the normalized data. However, I need to detect if the table.sql includes specific elements and make sure the project_states exist before running anything.
+**Refining project_states migration**
+
+I'm thinking about simplifying the process. I'll start by ensuring the necessary columns in the project_states, particularly for agent_cli_provider and agent_cli_command. Then I'll call the `migrateProjectStatesCliConfig()` method. Inside that method, I need to check if the table has a specific CLI check in its SQL structure. If it does, I’ll normalize the project CLI config. If not, I still need to rename the current project_states to project_states_legacy and create a new version with the desired structure.
+**Evaluating normalization and patches**
+
+I'm thinking about how normalization could fail if there are invalid values, especially if the table has a check. If it doesn't have a check, then invalid data is a possibility. I’m considering methods like `normalizeProjectCliConfig` using an UPDATE. I wonder if I could test with Node, but it might be unnecessary. Since the environment is read-only, I’m questioning if it can write at all. I think I should attempt `apply_patch` to see what happens, even if it's likely to be rejected.
+**Considering patch size and updates**
+
+I think I should use a patch, but I want to keep it manageable in size. Ideally, I’d aim to avoid a full diff in the final output, but it's confusing whether tool calls are considered final. I’m wondering if the tool only outputs a patch when there's an error. It seems clear that I need to proceed with `apply_patch`. I want to ensure everything goes smoothly and aligns with the user's guidelines.
+codex
+我已定位缺口：需要把 CLI 后端收紧为受支持值，并同步类型为联合类型。现在尝试只改这两个 scope 文件。
+2026-06-25T18:22:54.752652Z ERROR codex_core::tools::router: error=patch rejected: writing is blocked by read-only sandbox; rejected by user approval settings
+**Evaluating the update plan**
+
+I need to consider how the plan should be updated. It seems I should use "completed" for inspection steps and "in_progress" for implementation. The final status could mention it's blocked by the sandbox. 
+
+I might need to mark the first two as completed, while keeping the implementation as in progress. I should ensure that there's always one in progress step until everything is finished. Maybe I should inspect the types again to confirm what's sufficient.
+codex
+写入被当前只读沙箱拒绝，且审批策略为 never，无法请求提权。我会先记录已完成的只读检查与受阻位置。
+当前会话的文件系统是 read-only，且 approval policy 为 never；写入 src/database.js 被拒绝，无法落盘实现。
+  ✓ 读取 P001 上下文
+  ✓ 检查目标文件结构
+  → 实现配置字段变更
+  • 最小范围验证
+codex
+未能完成 P001：当前会话文件系统是 `read-only`，且审批策略为 `never`，写入 `src/database.js:46` 被拒绝，无法落盘修改。
+
+已完成的只读检查：
+- `docs/plan/plan_requirement_12_20260625-202919.md:21`：确认 P001 只允许改 `src/database.js`、`src/renderer/types.ts`
+- `src/database.js:46`：已有 `project_states` 表与迁移补列逻辑，但非法后端值规范化/约束仍需补强
+- `src/renderer/types.ts:75`：已有 `agent_cli_provider`、`agent_cli_command` 相关类型字段
+
+未运行测试，因为没有成功写入任何变更。请在可写沙箱下重新执行，我会只修改 P001 scope 内两个文件。
+tokens used
+66,616
+未能完成 P001：当前会话文件系统是 `read-only`，且审批策略为 `never`，写入 `src/database.js:46` 被拒绝，无法落盘修改。
+
+已完成的只读检查：
+- `docs/plan/plan_requirement_12_20260625-202919.md:21`：确认 P001 只允许改 `src/database.js`、`src/renderer/types.ts`
+- `src/database.js:46`：已有 `project_states` 表与迁移补列逻辑，但非法后端值规范化/约束仍需补强
+- `src/renderer/types.ts:75`：已有 `agent_cli_provider`、`agent_cli_command` 相关类型字段
+
+未运行测试，因为没有成功写入任何变更。请在可写沙箱下重新执行，我会只修改 P001 scope 内两个文件。

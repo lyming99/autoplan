@@ -1,8 +1,9 @@
 import type { KeyboardEvent } from 'react';
-import { useEffect, useId, useRef } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
 import { RecordCard } from './IntakePanel';
 import { MarkdownReader } from './MarkdownReader';
+import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
 import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
 
 type TimedPlanTask = PlanTask & {
@@ -23,6 +24,15 @@ type TaskEventDisplay = {
   badge?: string;
   tone?: TaskEventTone;
 };
+
+type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+
+const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+  { id: 'all', label: '全部', emptyText: '暂无任务。' },
+  { id: 'running', label: '进行中', emptyText: '暂无进行中任务。' },
+  { id: 'queued', label: '队列中', emptyText: '暂无队列中任务。' },
+  { id: 'completed', label: '已完成', emptyText: '暂无已完成任务。' },
+];
 
 const TASK_EVENT_PRESENTATION: Record<TaskEventTone, { action: string; badge: string }> = {
   start: { action: '开始了', badge: '开始' },
@@ -57,6 +67,19 @@ function formatTaskDuration(task: TimedPlanTask) {
   return `耗时 ${formatDuration(duration, '0秒')}`;
 }
 
+function normalizeTaskStatus(status: string | null | undefined) {
+  return String(status || '').trim().toLowerCase();
+}
+
+function matchesTaskStatusFilter(task: PlanTask, filter: TaskStatusFilter) {
+  const status = normalizeTaskStatus(task.status);
+  if (filter === 'all') return true;
+  if (filter === 'running') return ['running', 'processing', 'stopping'].includes(status);
+  if (filter === 'queued') return ['pending', 'queued', 'waiting'].includes(status);
+  if (filter === 'completed') return ['completed', 'done', 'passed', 'accepted'].includes(status);
+  return true;
+}
+
 function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
   const timedTasks = tasks as TimedPlanTask[];
   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
@@ -72,6 +95,10 @@ function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
   );
 
   return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
+}
+
+function planTitle(plan: Plan) {
+  return String((plan as Plan & { title?: string | null }).title || '').trim();
 }
 
 function toEventMetaRecord(value: unknown): EventMetaRecord | null {
@@ -150,10 +177,23 @@ function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDispl
   const originalMessage = event.message?.trim() || '';
   const planId = readMetaText(meta, ['planId', 'plan_id']);
   const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+  const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+  const codexReasoningEffort = readMetaText(meta, [
+    'codexReasoningEffort',
+    'codex_reasoning_effort',
+    'codexThinkingDepth',
+    'codex_thinking_depth',
+    'reasoningEffort',
+    'reasoning_effort',
+    'thinkingDepth',
+    'thinking_depth',
+  ]);
   const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
   const metaParts = [
     formatChinaDateTime(event.created_at),
     planId ? `Plan #${planId}` : '',
+    agentCliProvider ? agentCliProviderLabel(agentCliProvider) : '',
+    agentCliProvider !== 'claude' && codexReasoningEffort ? `思考深度 ${codexReasoningEffortLabel(codexReasoningEffort)}` : '',
     status ? `状态 ${status}` : '',
     durationMs !== null ? `耗时 ${formatDuration(durationMs, '0秒')}` : '',
   ].filter(Boolean);
@@ -347,6 +387,10 @@ export function PlanList({
         <div className="list compact">
           {plans.map((plan) => {
             const durationSummary = formatPlanDurationSummary(tasksForPlan(tasks, plan, totalPlanCount));
+            const title = planTitle(plan);
+            const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+              plan.validation_passed ? 'passed' : 'pending'
+            }`;
             const readingThisPlan = Boolean(
               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
             );
@@ -372,9 +416,12 @@ export function PlanList({
                 key={plan.id}
                 title={plan.file_path}
                 status={plan.status}
-                body={`${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
-                  plan.validation_passed ? 'passed' : 'pending'
-                }`}
+                body={
+                  <div className="plan-list-body">
+                    {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
+                    <div className="plan-list-summary">{progressSummary}</div>
+                  </div>
+                }
                 meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
               />
             );
@@ -482,42 +529,99 @@ export function PlanList({
 export function TaskList({
   emptyText = '暂无任务。',
   tasks,
+  onOpenPlan,
   onRun,
   onStop,
 }: {
   emptyText?: string;
   tasks: PlanTask[];
+  onOpenPlan?: (task: PlanTask) => void;
   onRun?: (task: PlanTask) => void;
   onStop?: (task: PlanTask) => void;
 }) {
-  if (!tasks.length) return <div className="empty">{emptyText}</div>;
+  const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+    [activeFilter, tasks],
+  );
+  const filterCounts = useMemo(
+    () =>
+      TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+        (counts, filter) => ({
+          ...counts,
+          [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+        }),
+        { all: 0, running: 0, queued: 0, completed: 0 },
+      ),
+    [tasks],
+  );
+  const activeFilterConfig =
+    TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
 
   return (
-    <div className="list compact">
-      {tasks.map((task) => {
-        const running = task.status === 'running';
-        const completed = task.status === 'completed';
-        const durationLabel = formatTaskDuration(task as TimedPlanTask);
-        return (
-          <RecordCard
-            actions={
-              <div className="item-actions">
-                <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
-                  执行
-                </button>
-                <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
-                  停止
-                </button>
-              </div>
-            }
-            key={task.id}
-            title={task.title}
-            status={task.status}
-            body={task.file_path}
-            meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
-          />
-        );
-      })}
+    <div className="task-list-panel">
+      <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+        {TASK_STATUS_FILTERS.map((filter) => {
+          const active = activeFilter === filter.id;
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`task-filter-tab${active ? ' active' : ''}`}
+              onClick={() => setActiveFilter(filter.id)}
+            >
+              <span>{filter.label}</span>
+              <span className="task-filter-count">{filterCounts[filter.id]}</span>
+            </button>
+          );
+        })}
+      </div>
+      {visibleTasks.length ? (
+        <div className="list compact">
+          {visibleTasks.map((task) => {
+            const running = task.status === 'running';
+            const completed = task.status === 'completed';
+            const durationLabel = formatTaskDuration(task as TimedPlanTask);
+            return (
+              <RecordCard
+                actions={
+                  <div className="item-actions">
+                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+                      执行
+                    </button>
+                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+                      停止
+                    </button>
+                  </div>
+                }
+                key={task.id}
+                title={task.title}
+                status={task.status}
+                body={
+                  task.file_path ? (
+                    <button
+                      type="button"
+                      className="btn-link task-file-link mono"
+                      disabled={!onOpenPlan}
+                      title={task.file_path}
+                      aria-label={`预览 ${task.file_path}`}
+                      onClick={() => onOpenPlan?.(task)}
+                    >
+                      {task.file_path}
+                    </button>
+                  ) : null
+                }
+                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+              />
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty">{currentEmptyText}</div>
+      )}
     </div>
   );
 }

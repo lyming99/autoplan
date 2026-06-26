@@ -21,7 +21,7 @@ function isNearLogBottom(el: HTMLDivElement) {
 }
 
 /**
- * 以活动时间线显示 codex 执行过程（参考 run_advanced_plan_with_codex.dart 的 Activity 输出）。
+ * 以活动时间线显示 Agent CLI 执行过程（Codex 结构化 Activity 优先）。
  * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
  */
 export function CodexLog({
@@ -32,7 +32,7 @@ export function CodexLog({
 }: {
   log: string;
   activity?: ActivityLine[];
-  context?: CodexSessionInfo | null;
+  context?: (CodexSessionInfo & { errorMessage?: string | null; exitCode?: number | null }) | null;
   provider?: string | null;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -42,11 +42,17 @@ export function CodexLog({
   const lastDisplayModeRef = useRef(displayMode);
   const providerLabel = agentCliProviderLabel(provider);
   const rawLogText = log ? log.slice(-4000) : `等待 ${providerLabel} 输出…`;
+  const statusText = lines
+    ? `${providerLabel} 活动摘要`
+    : log
+      ? `${providerLabel} 原始日志尾部`
+      : `等待 ${providerLabel} 输出`;
   const activityContentKey = lines
     ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
     : '';
   const renderedContentKey = lines ? activityContentKey : rawLogText;
-  const contextLabel = codexContextLabel(context);
+  const contextLabel = providerLabel === 'Codex' ? codexContextLabel(context) : '';
+  const errorMessage = context?.errorMessage?.trim() || '';
 
   const updateBottomState = () => {
     const el = scrollRef.current;
@@ -63,7 +69,15 @@ export function CodexLog({
       lastDisplayModeRef.current = displayMode;
       updateBottomState();
     }
-  }, [displayMode, renderedContentKey, contextLabel]);
+  }, [displayMode, renderedContentKey, contextLabel, errorMessage, statusText]);
+
+  const statusLine = (
+    <div className="act-line act-info">
+      <span className="act-time">状态</span>
+      <span className="act-tag">CLI</span>
+      <span className="act-text">{statusText}</span>
+    </div>
+  );
 
   const contextLine = contextLabel ? (
     <div className="act-line act-info">
@@ -73,9 +87,17 @@ export function CodexLog({
     </div>
   ) : null;
 
+  const errorLine = errorMessage ? (
+    <div className="act-line act-error">
+      <span className="act-time">错误</span>
+      <span className="act-tag">{providerLabel}</span>
+      <span className="act-text">{errorMessage}</span>
+    </div>
+  ) : null;
+
   const content = lines ? (
     lines.map((line, index) => {
-      const config = ROLE_CONFIG[line.role] || { label: line.role || '信息', cls: 'act-info' };
+      const config = activityRoleConfig(line.role, providerLabel);
       return (
         <div className={`act-line ${config.cls}`} key={index}>
           <span className="act-time">{formatChinaTime(line.at)}</span>
@@ -90,10 +112,19 @@ export function CodexLog({
 
   return (
     <div className="codex-log" ref={scrollRef} onScroll={updateBottomState}>
+      {statusLine}
       {contextLine}
+      {errorLine}
       {content}
     </div>
   );
+}
+
+function activityRoleConfig(role: string, providerLabel: string) {
+  if (role === 'codex' || role === 'assistant') {
+    return { ...ROLE_CONFIG.codex, label: providerLabel };
+  }
+  return ROLE_CONFIG[role] || { label: role || '信息', cls: 'act-info' };
 }
 
 function codexContextLabel(context?: CodexSessionInfo | null) {

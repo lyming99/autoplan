@@ -1,0 +1,668 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: xhigh
+reasoning summaries: none
+session id: 019f0081-e430-7642-bf89-93ea2f2cd929
+--------
+user
+你是开发执行者。
+请只执行指定任务 P006，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_21_20260626-033033.md
+指定任务：
+- [ ] P006: 更新附件使用说明 <!-- scope: README.md,ui/README.md -->
+任务 scope：readme.md, ui/readme.md
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 如需测试，只运行与当前任务直接相关的最小测试集，不要运行全量测试或与本任务无关的测试
+- 只有当前任务本身明确要求全量验证时，才允许运行全量测试
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Planning documentation updates**
+
+I need to respond in Chinese for task P006, so I’ll look into the repo without changing plans. It's important to check the context and read any relevant documentation, especially the README.md and ui/README.md since it's case-sensitive in Windows. I might use codegraph first for codebase questions, but primarily I'm updating docs. Checking the AGENTS is wise, but I’ll need to verify if they’re included. Overall, I just need to be precise and not overcomplicate things.
+**Organizing my steps**
+
+I think I’ll structure my task in three steps: review the docs and plan, patch attachment usage, and verify the scope. The note "不要更新 plan 进度区" likely means I shouldn't update the plan file, which seems to refer to something internal. But since the task seems simple, I might not need an official plan at all. I’ll read the plan file in readonly mode along with README.md files. Next, I should find the attachment info in the code and check its behavior, verifying which files to modify directly. I'll start by reading the plan and the two README files, then use PowerShell commands to proceed.
+codex
+我会先只读取计划与两个 README，确认附件说明位置。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Get-ChildItem -Force -Filter AGENTS.md -Recurse | Select-Object -ExpandProperty FullName; Write-Host '--- PLAN ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_21_20260626-033033.md' -Raw -Encoding UTF8; Write-Host '--- README ---'; Get-Content -LiteralPath 'README.md' -Raw -Encoding UTF8; Write-Host '--- UI README ---'; Get-Content -LiteralPath 'ui\\README.md' -Raw -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 347ms:
+--- PLAN ---
+# 需求 #21 开发计划：需求/反馈输入框支持粘贴图片并确保附件可读
+
+## 背景
+
+当前需求、反馈界面已经支持通过文件选择和拖拽添加附件，附件会持久化到本地附件目录并在快照中返回。但输入框尚未明确支持从剪贴板直接粘贴图片；同时，需求/反馈进入计划生成流程时，AI 工具只看到正文内容，附件路径与可读取说明没有被稳定注入到 prompt 或计划上下文中。
+
+本需求目标是：用户可以在需求、反馈输入框内直接粘贴截图或图片，图片按附件进入现有保存链路；当这些需求/反馈触发计划生成和后续开发执行时，工具能看到附件清单、读取到附件文件内容，并能在必要时基于图片内容整理计划。
+
+## 设计约束
+
+- 需求与反馈共用同一套输入组件能力，不能只支持其中一个页面。
+- 粘贴纯文本、输入正文、Enter 发送、文件选择、拖拽上传等既有交互不能回归。
+- 粘贴图片应进入现有待提交附件列表，提交前允许预览和移除；只粘贴图片、正文为空时仍允许提交。
+- 剪贴板图片通常没有稳定文件路径，保存链路需要支持无路径的二进制图片来源，不能依赖 `File.path`。
+- 附件保存后需要继续记录原始名称、MIME、大小、hash、持久化路径，并保持现有快照与搜索/展示行为兼容。
+- 计划生成 prompt 必须包含需求/反馈附件清单和可读取路径；如果附件缺失或读取失败，要有可追踪的日志或事件提示。
+- 不应把大体积图片直接内联进 prompt；prompt 中传路径、hash、MIME 和读取说明，由工具按需读取文件内容。
+
+## 任务拆解
+
+- [ ] P001: 统一粘贴图片附件数据模型 <!-- scope: src/renderer/types.ts,src/renderer/components/Composer.tsx,src/renderer/pages/WorkspacePage.tsx -->
+  - 验收要点：`PendingAttachment` 或等价类型能够区分路径附件与剪贴板图片附件，至少包含来源类型、名称、MIME、大小、预览所需信息和保存所需载荷。
+  - 验收要点：`WorkspacePage` 的待提交附件状态可以同时容纳文件选择/拖拽附件和粘贴图片附件，去重、移除、提交后清空逻辑均不破坏现有路径附件。
+  - 验收要点：需求与反馈两个 `Composer` 实例使用相同的数据模型和回调，不出现一端可粘贴、一端不可粘贴的分叉实现。
+  - 验收要点：TypeScript 类型检查能覆盖 create/update 入参中的两类附件来源，避免主进程收到结构不明的附件对象。
+
+- [ ] P002: 实现输入框粘贴图片交互 <!-- scope: src/renderer/components/Composer.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：在需求输入框和反馈输入框中粘贴截图、PNG、JPEG、WebP 等图片时，图片会立即出现在待提交附件列表中。
+  - 验收要点：粘贴纯文本时仍按浏览器默认行为进入正文，不会被附件处理逻辑阻断；同时粘贴文本和图片时，文本与图片都能保留。
+  - 验收要点：多个剪贴板图片项可以一次性加入；不支持的剪贴板项会被忽略且不弹出误导性错误。
+  - 验收要点：待提交图片显示缩略图、文件名、大小，并可在提交前移除；附件列表过长时布局不遮挡发送按钮。
+  - 验收要点：仅有粘贴图片、正文为空时允许发送；发送成功后正文与待提交附件都清空，发送失败时保留待提交附件。
+
+- [x] P003: 支持剪贴板图片持久化保存 <!-- scope: src/attachments.js,src/main.js,src/renderer/types.ts -->
+  - 验收要点：`saveAttachments` 或等价保存函数既支持现有 `path` 文件复制，也支持剪贴板图片的二进制/base64 载荷写入持久化附件目录。
+  - 验收要点：剪贴板图片保存后写入 `attachments` 表，字段包含 `project_id`、`owner_type`、`owner_id`、`original_name`、`stored_path`、`mime_type`、`size`、`hash`、`created_at`。
+  - 验收要点：保存时根据 MIME 推导安全扩展名和默认文件名，文件名经过清洗，不能产生路径穿越或覆盖其他附件的问题。
+  - 验收要点：保存后的 `size` 与实际写入字节数一致，`hash` 基于真实文件内容计算；重复粘贴同一图片不会导致数据库记录指向错误文件。
+  - 验收要点：现有文件选择、拖拽上传、需求更新、反馈更新的附件保存行为保持兼容。
+
+- [x] P004: 注入附件可读清单到计划生成 <!-- scope: src/loopService.js -->
+  - 验收要点：为单条需求或反馈生成计划时，`generatePlanForIntake` 会查询该记录绑定的附件，并在 prompt 中追加“附件清单”。
+  - 验收要点：附件清单至少包含原始名称、MIME、大小、SHA256、持久化本地路径，并明确说明工具可以通过该路径读取附件内容。
+  - 验收要点：有附件时，生成出的 plan 文件应要求保留必要的附件路径或引用，避免后续执行任务时失去图片上下文。
+  - 验收要点：附件文件存在且可读时，计划生成前能通过 `fs.stat`/`fs.access` 或等价方式确认；不可读时 prompt 和事件日志都能提示具体附件异常。
+  - 验收要点：无附件的需求/反馈继续生成原有简洁 prompt，不额外引入空清单或无意义噪声。
+
+- [x] P005: 补充自动化 smoke 验证 <!-- scope: scripts/smoke-test.js -->
+  - 验收要点：新增用例覆盖路径附件与剪贴板图片载荷两种保存路径，断言文件落盘、SQLite 记录、MIME、大小、hash 均正确。
+  - 验收要点：新增用例模拟需求和反馈各自携带图片附件，断言快照中的附件 `owner_type`、`owner_id`、`project_id` 绑定正确。
+  - 验收要点：新增计划生成 stub 断言 prompt 包含附件清单、可读路径、MIME、hash，并能在测试进程中读取该路径的文件内容。
+  - 验收要点：保留现有 smoke 覆盖的项目隔离、计划读取、搜索、任务执行、多后端等断言，不因附件改造而回归。
+  - 验收要点：完成后 `npm run check` 与 `npm run smoke` 均通过。
+
+- [ ] P006: 更新附件使用说明 <!-- scope: README.md,ui/README.md -->
+  - 验收要点：README 补充需求/反馈支持粘贴图片、文件选择、拖拽上传的说明，以及附件会作为计划生成上下文提供给 AI 工具读取。
+  - 验收要点：UI 说明补充粘贴图片的使用方式、只传附件也可提交、发送失败会保留待提交附件等用户可感知行为。
+  - 验收要点：文档明确附件以本地文件路径提供给工具，不把图片二进制直接内联进 prompt，便于理解隐私和体积边界。
+  - 验收要点：如实现过程中没有新增命令，不修改 `package.json`；如新增测试命令或检查脚本，则同步更新文档和脚本说明。
+
+## 总体验收标准
+
+- 需求界面和反馈界面的输入框均支持直接粘贴图片，粘贴后图片进入待提交附件列表并可预览、移除和随正文一起提交。
+- 粘贴文本、输入正文、文件选择、拖拽上传、仅正文提交、仅附件提交、发送失败保留草稿等核心交互均符合预期。
+- 路径文件附件与剪贴板图片附件都能持久化到本地附件目录，并在数据库、项目快照和前端展示中保持正确 owner 关系。
+- 需求/反馈触发计划生成时，AI CLI prompt 能获得附件清单和本地可读路径；工具按该路径读取到的文件内容与数据库记录的大小/hash 一致。
+- 附件缺失、不可读、类型异常或保存失败时，用户界面或事件日志能看到可定位的错误信息，不会静默生成缺失上下文的计划。
+- 安全性满足基本边界：文件名清洗、路径穿越防护、MIME/扩展名合理推导、大体积附件不内联到 prompt、图片预览不执行脚本。
+- 验证通过：`npm run check` 与 `npm run smoke` 均通过；手动验收至少覆盖从截图工具复制图片后分别粘贴到需求和反馈输入框并生成计划。
+
+## 进度区
+
+| 任务 | 状态 | 说明 |
+| --- | --- | --- |
+| P001 | 未开始 | 待统一前端附件类型，支持路径附件与剪贴板图片附件共存 |
+| P002 | 未开始 | 待实现输入框 onPaste 处理、待提交展示与交互样式 |
+| P003 | 未开始 | 待扩展附件保存链路，支持无路径图片二进制写入 |
+| P004 | 未开始 | 待在计划生成 prompt 中注入附件清单与可读路径 |
+| P005 | 未开始 | 待补充 smoke 覆盖保存、快照、prompt 与工具读取验证 |
+| P006 | 未开始 | 待更新 README 与 UI 使用说明 |
+
+当前总体进度：0/6。
+- P004 AutoPlan 完成：2026-06-25T19:46:55.776Z；日志：docs/progress/logs/20260626-033820_execute-P004.log
+- P003 AutoPlan 完成：2026-06-25T20:29:51.975Z；日志：docs/progress/logs/20260626-041853_execute-P003.log
+- P005 AutoPlan 完成：2026-06-25T20:38:57.608Z；日志：docs/progress/logs/20260626-042954_execute-P005.log
+
+--- README ---
+# AutoPlan
+
+Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+
+## CLI 后端
+
+AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+
+| 后端 | 默认命令 | 说明 |
+| --- | --- | --- |
+| **Codex CLI**（默认） | `codex` | 通过 `codex exec` 非交互执行，支持会话（session）复用，失败任务重试时延续上下文 |
+| **Claude CLI** | `claude` | 通过 `claude -p` 非交互 print 模式执行，prompt 经 stdin 传入，不使用 Codex 会话机制 |
+
+- **默认仍是 Codex**：未配置过的历史项目升级后继续使用 Codex，无需重新配置。
+- **切换方式**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+- **验收命令默认空**：新建项目不会预填验收命令；留空时任务完成后跳过外部验收命令，已保存的历史命令保持不变。
+- **Claude 前置条件**：需在本机已安装 `claude` CLI 并完成认证（`claude` 已可正常登录调用）。若命令不在 PATH，可在「CLI 命令路径」填写完整路径。
+- **会话隔离**：Codex 的会话复用仅在 Codex 后端启用；切换到 Claude 不会把历史 `codex_session_id` 传给 Claude，两类上下文物理隔离。
+- **可观测性**：运行中日志、事件流、任务卡片和概览会显示当前使用的 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+
+## 开发
+
+```bash
+npm install
+npm run dev        # 启动开发模式（Vite + Electron）
+npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+npm run package:win  # 打包 Windows 安装包
+```
+
+> 真实的 Claude CLI 调用需要本机安装并认证 `claude`，`npm run smoke` 通过 stub 覆盖后端路由与会话隔离核心分支，不依赖真实二进制。
+
+--- UI README ---
+# AutoPlan UI 设计稿
+
+纯 HTML/CSS 设计稿，浏览器直接打开即可预览，无需依赖。
+
+项目和工作区是**两个独立的界面、各自不同的布局**，分属两个文件：
+
+## 文件
+
+| 文件 | 界面 | 布局 |
+|------|------|------|
+| `projects.html` | **项目管理** | 顶部 header + 全宽内容区（项目卡片网格 + CRUD） |
+| `workspace.html` | **工作区** | 左侧边栏导航 + 主区（概览/需求/反馈/任务/事件） |
+
+## projects.html · 项目管理
+- 顶部 sticky header：品牌 + 「打开工作区」入口 + 「创建项目」
+- 页面标题区 + 概览统计（项目总数 / 运行中 / 异常）
+- 工具栏：搜索框 + 状态分段筛选（全部/运行中/已停止/异常）
+- 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+- 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+- 完整 CRUD：
+  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+  - **复制**：生成 `-copy`，状态置为已停止
+  - **删除**：二次确认，提示不删磁盘文件
+- 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+
+## workspace.html · 工作区
+恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+- **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+- **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
+- **事件流** — 循环运行日志表格
+- 侧边栏底部显示当前循环状态与 CLI 后端
+
+## CLI 后端选择说明
+- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+
+## 设计说明
+- 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+- 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+- 状态语义化：指示灯 LED（脉冲动画）、彩色状态芯片、进度条。
+- 配色：在原蓝色基调上引入紫蓝渐变 + 中性灰阶层级，浅色主题。
+- 界面图标统一使用本地 inline SVG / icon 片段，不使用 emoji 或字符图形充当图标，确保静态 HTML 离线打开时视觉与 React 界面一致。
+
+
+**Planning for P006**
+
+I need to think through the full plan for P006 acceptance. It feels like I’m missing something since the output doesn’t include AGENTS, and I only have a partial README. I should target commands around P006 and use Select-String to find any relevant sections, like "附件," in the readmes. Inspecting the code and existing documentation seems necessary to get the current attachment usage instructions clearly defined. Let's proceed with updating those docs!
+codex
+计划内容被截断了；我会只定位 P006 和现有附件段落。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Write-Host '--- P006 CONTEXT ---'; Select-String -LiteralPath 'docs\\plan\\plan_requirement_21_20260626-033033.md' -Pattern 'P006' -Context 0,8 | ForEach-Object { "'$_.Line; $_.Context.PostContext }; Write-Host '"'--- README ATTACHMENTS ---'; Select-String -LiteralPath 'README.md' -Pattern '附件|粘贴|截图|图片|剪贴板|文件选择|拖拽' -Context 2,3 | ForEach-Object { '### ' + "'$_.Filename + '"':' + "'$_.LineNumber; $_.Context.PreContext; $_.Line; $_.Context.PostContext }; Write-Host '"'--- UI README ATTACHMENTS ---'; Select-String -LiteralPath 'ui\\README.md' -Pattern '附件|粘贴|截图|图片|剪贴板|文件选择|拖拽' -Context 2,3 | ForEach-Object { '### ' + "'$_.Filename + '"':' + "'$_.LineNumber; $_.Context.PreContext; $_.Line; $_.Context.PostContext }' in D:\project\GitHub\autoplan
+ succeeded in 242ms:
+--- P006 CONTEXT ---
+- [ ] P006: 更新附件使用说明 <!-- scope: README.md,ui/README.md -->
+  - 验收要点：README 补充需求/反馈支持粘贴图片、文件选择、拖拽上传的说明，以及附件会作为计划生成上下文提供给 AI 工具读取。
+  - 验收要点：UI 说明补充粘贴图片的使用方式、只传附件也可提交、发送失败会保留待提交附件等用户可感知行为。
+  - 验收要点：文档明确附件以本地文件路径提供给工具，不把图片二进制直接内联进 prompt，便于理解隐私和体积边界。
+  - 验收要点：如实现过程中没有新增命令，不修改 `package.json`；如新增测试命令或检查脚本，则同步更新文档和脚本说明。
+
+## 总体验收标准
+
+- 需求界面和反馈界面的输入框均支持直接粘贴图片，粘贴后图片进入待提交附件列表并可预览、移除和随正文一起提交。
+| P006 | 未开始 | 待更新 README 与 UI 使用说明 |
+
+当前总体进度：0/6。
+- P004 AutoPlan 完成：2026-06-25T19:46:55.776Z；日志：docs/progress/logs/20260626-033820_execute-P004.log
+- P003 AutoPlan 完成：2026-06-25T20:29:51.975Z；日志：docs/progress/logs/20260626-041853_execute-P003.log
+- P005 AutoPlan 完成：2026-06-25T20:38:57.608Z；日志：docs/progress/logs/20260626-042954_execute-P005.log
+--- README ATTACHMENTS ---
+--- UI README ATTACHMENTS ---
+### README.md:29
+恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+- **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+- **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
+- **事件流** — 循环运行日志表格
+- 侧边栏底部显示当前循环状态与 CLI 后端
+
+**Updating README files**
+
+I need to update both the README and the UI README. It seems like I should inspect the full README to figure out what needs to be included. I’m wondering if my earlier output was truncated, which could be why I’m confused. It might be best to read the README separately to ensure I capture everything accurately. I want to make sure I do a thorough job on this!
+codex
+已确认 P006 验收点；接下来读取两个 README 的结构。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Write-Host '--- README.md ---'; Get-Content -LiteralPath 'README.md' -Raw -Encoding UTF8; Write-Host '--- ui/README.md ---'; Get-Content -LiteralPath 'ui\\README.md' -Raw -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 218ms:
+--- README.md ---
+# AutoPlan
+
+Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+
+## CLI 后端
+
+AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+
+| 后端 | 默认命令 | 说明 |
+| --- | --- | --- |
+| **Codex CLI**（默认） | `codex` | 通过 `codex exec` 非交互执行，支持会话（session）复用，失败任务重试时延续上下文 |
+| **Claude CLI** | `claude` | 通过 `claude -p` 非交互 print 模式执行，prompt 经 stdin 传入，不使用 Codex 会话机制 |
+
+- **默认仍是 Codex**：未配置过的历史项目升级后继续使用 Codex，无需重新配置。
+- **切换方式**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+- **验收命令默认空**：新建项目不会预填验收命令；留空时任务完成后跳过外部验收命令，已保存的历史命令保持不变。
+- **Claude 前置条件**：需在本机已安装 `claude` CLI 并完成认证（`claude` 已可正常登录调用）。若命令不在 PATH，可在「CLI 命令路径」填写完整路径。
+- **会话隔离**：Codex 的会话复用仅在 Codex 后端启用；切换到 Claude 不会把历史 `codex_session_id` 传给 Claude，两类上下文物理隔离。
+- **可观测性**：运行中日志、事件流、任务卡片和概览会显示当前使用的 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+
+## 开发
+
+```bash
+npm install
+npm run dev        # 启动开发模式（Vite + Electron）
+npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+npm run smoke      # 核心流程冒烟测试（含多后端 stub 覆盖）
+npm run package:win  # 打包 Windows 安装包
+```
+
+> 真实的 Claude CLI 调用需要本机安装并认证 `claude`，`npm run smoke` 通过 stub 覆盖后端路由与会话隔离核心分支，不依赖真实二进制。
+
+--- ui/README.md ---
+# AutoPlan UI 设计稿
+
+纯 HTML/CSS 设计稿，浏览器直接打开即可预览，无需依赖。
+
+项目和工作区是**两个独立的界面、各自不同的布局**，分属两个文件：
+
+## 文件
+
+| 文件 | 界面 | 布局 |
+|------|------|------|
+| `projects.html` | **项目管理** | 顶部 header + 全宽内容区（项目卡片网格 + CRUD） |
+| `workspace.html` | **工作区** | 左侧边栏导航 + 主区（概览/需求/反馈/任务/事件） |
+
+## projects.html · 项目管理
+- 顶部 sticky header：品牌 + 「打开工作区」入口 + 「创建项目」
+- 页面标题区 + 概览统计（项目总数 / 运行中 / 异常）
+- 工具栏：搜索框 + 状态分段筛选（全部/运行中/已停止/异常）
+- 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+- 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+- 完整 CRUD：
+  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+  - **复制**：生成 `-copy`，状态置为已停止
+  - **删除**：二次确认，提示不删磁盘文件
+- 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+
+## workspace.html · 工作区
+恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+- **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+- **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
+- **事件流** — 循环运行日志表格
+- 侧边栏底部显示当前循环状态与 CLI 后端
+
+## CLI 后端选择说明
+- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+
+## 设计说明
+- 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+- 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+- 状态语义化：指示灯 LED（脉冲动画）、彩色状态芯片、进度条。
+- 配色：在原蓝色基调上引入紫蓝渐变 + 中性灰阶层级，浅色主题。
+- 界面图标统一使用本地 inline SVG / icon 片段，不使用 emoji 或字符图形充当图标，确保静态 HTML 离线打开时视觉与 React 界面一致。
+
+
+**Considering composer attachment interactions**
+
+I’m noting that there haven’t been any new command changes. In the workspace section of the README, I’ll add details about composer attachments. This includes that it supports file selection through click, drag-and-drop, and image pasting. After adding attachments, a pending chip will show a thumbnail with the file name and size, with options to remove it before sending. Also, after sending successfully, I’ll clear the text and pending attachments, but failing to send will keep the attachments for a retry.
+codex
+我会补充附件说明，仅修改 `README.md` 和 `ui/README.md`。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\README.md
+diff --git a/README.md b/README.md
+index 75306f2332939d4cdb8298c7480f442ab12bca28..53afe66db7e7a7a41e57b21b48de1ec6e984fbd4
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,16 @@
+ 
+ Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+ 
++## 需求与反馈附件
++
++需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
++
++- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
++- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
++- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
++- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
++- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
++
+ ## CLI 后端
+ 
+ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+
+diff --git a/README.md b/README.md
+index 75306f2332939d4cdb8298c7480f442ab12bca28..53afe66db7e7a7a41e57b21b48de1ec6e984fbd4
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,16 @@
+ 
+ Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+ 
++## 需求与反馈附件
++
++需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
++
++- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
++- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
++- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
++- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
++- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
++
+ ## CLI 后端
+ 
+ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+
+**Evaluating apply_patch tool use**
+
+I got a warning about using "exec_command" instead of the "apply_patch" tool, which isn't in our namespace. It seems the developer suggests using the command array instead. However, it's unclear since I received a message about the user warning after the tool call. I might proceed but consider using “shell” for the apply_patch. I think I need to modify ui/README.md. Should I use PowerShell’s Set-Content for this?
+**Clarifying apply_patch use**
+
+The instruction says to use "apply_patch," but there's a warning to avoid using "shell," even though it's the only option I have right now. After applying the patch, I think I’ll need to modify the UI. The warning might be a message from the system rather than an actual user alert. If I call "apply_patch" via shell again, it could trigger that warning once more. Nevertheless, I should update the UI README and maybe add a section under workspace.
+**Updating UI requirements**
+
+The requirements indicate that I need to add instructions on how to use image attachments, mentioning that it's possible to submit just the attachments and that if sending fails, the attachments should still be kept. I’m thinking of using "update_plan," but the task seems simple enough that I might skip that step since it’s just a documentation update. I should verify the relevant sections, maybe even the entire content, before patching the UI.
+codex
+`README.md` 已补充；现在同步更新 UI 使用说明。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\ui\README.md
+diff --git a/README.md b/README.md
+index 75306f2332939d4cdb8298c7480f442ab12bca28..53afe66db7e7a7a41e57b21b48de1ec6e984fbd4
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,16 @@
+ 
+ Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+ 
++## 需求与反馈附件
++
++需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
++
++- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
++- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
++- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
++- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
++- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
++
+ ## CLI 后端
+ 
+ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+diff --git a/ui/README.md b/ui/README.md
+index f4650c066e6e0a926d57ef428472f383f33ea5a9..b756bfd25f77310052a6916d05066f51f3f79c4b
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,13 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## 需求 / 反馈附件交互
++- 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
++- 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
++- 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
++- 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
++- 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
++
+ ## CLI 后端选择说明
+ - 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+ - 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+
+diff --git a/README.md b/README.md
+index 75306f2332939d4cdb8298c7480f442ab12bca28..53afe66db7e7a7a41e57b21b48de1ec6e984fbd4
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,16 @@
+ 
+ Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+ 
++## 需求与反馈附件
++
++需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
++
++- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
++- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
++- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
++- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
++- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
++
+ ## CLI 后端
+ 
+ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+diff --git a/ui/README.md b/ui/README.md
+index f4650c066e6e0a926d57ef428472f383f33ea5a9..b756bfd25f77310052a6916d05066f51f3f79c4b
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,13 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## 需求 / 反馈附件交互
++- 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
++- 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
++- 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
++- 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
++- 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
++
+ ## CLI 后端选择说明
+ - 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+ - 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+
+**Running git status**
+
+I'm thinking about running `git status --short` to get a quick overview of changes. That will show me modified files, added files, or anything else that needs attention. I might also want to use `Select-String` to line up any new headings or changes for clarity. This step seems essential to keep everything organized and structured, especially if I’m going to make further updates. Let's see what the status reveals!
+codex
+文档已改完；我会快速核对只改了 scope 文件。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; git status --short -- README.md ui/README.md docs/plan/plan_requirement_21_20260626-033033.md; Write-Host '--- README markers ---'; Select-String -LiteralPath 'README.md' -Pattern '需求与反馈附件|添加方式|计划上下文|读取边界' | ForEach-Object { \"{0}:{1}\" -f "'$_.Path,$_.LineNumber; $_.Line }; Write-Host '"'--- UI README markers ---'; Select-String -LiteralPath 'ui\\README.md' -Pattern '需求 / 反馈附件交互|粘贴 PNG|正文为空|发送失败|本地文件路径' | ForEach-Object { \"{0}:{1}\" -f "'$_.Path,$_.LineNumber; $_.Line }' in D:\project\GitHub\autoplan
+ succeeded in 255ms:
+ M README.md
+ M ui/README.md
+?? docs/plan/plan_requirement_21_20260626-033033.md
+--- README markers ---
+D:\project\GitHub\autoplan\README.md:5
+## 需求与反馈附件
+D:\project\GitHub\autoplan\README.md:9
+- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
+D:\project\GitHub\autoplan\README.md:12
+- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
+D:\project\GitHub\autoplan\README.md:13
+- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
+--- UI README markers ---
+D:\project\GitHub\autoplan\ui\README.md:34
+## 需求 / 反馈附件交互
+D:\project\GitHub\autoplan\ui\README.md:36
+- 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
+D:\project\GitHub\autoplan\ui\README.md:37
+- 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
+D:\project\GitHub\autoplan\ui\README.md:38
+- 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
+D:\project\GitHub\autoplan\ui\README.md:39
+- 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
+
+diff --git a/README.md b/README.md
+index 75306f2332939d4cdb8298c7480f442ab12bca28..53afe66db7e7a7a41e57b21b48de1ec6e984fbd4
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,16 @@
+ 
+ Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+ 
++## 需求与反馈附件
++
++需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
++
++- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
++- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
++- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
++- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
++- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
++
+ ## CLI 后端
+ 
+ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+diff --git a/ui/README.md b/ui/README.md
+index f4650c066e6e0a926d57ef428472f383f33ea5a9..b756bfd25f77310052a6916d05066f51f3f79c4b
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,13 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## 需求 / 反馈附件交互
++- 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
++- 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
++- 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
++- 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
++- 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
++
+ ## CLI 后端选择说明
+ - 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+ - 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+
+**Investigating untracked files**
+
+I'm noticing that `git status` shows the plan file as untracked, which seems strange since we haven't modified it at all. I should mention that it's already untracked. I might want to check the state with commands like `git status --short --untracked-files=no` or `git ls-files` to confirm if it really is untracked. It's also crucial to clarify that this indicates it's untouched despite appearing untracked in the status, so users shouldn't worry.
+**Checking for changes**
+
+So, it looks like our first command didn’t show any AGENTS because the output started with --- PLAN. That’s fine, but I should probably inspect the diff stat and use `git diff --check` for checking changed files, especially whitespace. Since we’re dealing with documentation, I can keep it minimal and not run any tests. I'll use a command like `git diff --check -- README.md ui/README.md` to be thorough in checking for changes.
+codex
+scope 文件核对通过；我再做文档空白检查。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; git diff --check -- README.md ui/README.md; git diff --stat -- README.md ui/README.md" in D:\project\GitHub\autoplan
+ succeeded in 205ms:
+ README.md    | 13 ++++++++++++-
+ ui/README.md | 15 ++++++++++++++-
+ 2 files changed, 26 insertions(+), 2 deletions(-)
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ui/README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ui/README.md', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/README.md b/README.md
+index 75306f2332939d4cdb8298c7480f442ab12bca28..53afe66db7e7a7a41e57b21b48de1ec6e984fbd4
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,16 @@
+ 
+ Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+ 
++## 需求与反馈附件
++
++需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
++
++- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
++- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
++- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
++- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
++- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
++
+ ## CLI 后端
+ 
+ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+diff --git a/ui/README.md b/ui/README.md
+index f4650c066e6e0a926d57ef428472f383f33ea5a9..b756bfd25f77310052a6916d05066f51f3f79c4b
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,13 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## 需求 / 反馈附件交互
++- 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
++- 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
++- 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
++- 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
++- 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
++
+ ## CLI 后端选择说明
+ - 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+ - 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+
+**Checking git diff details**
+
+I need to verify whether `git diff --check` succeeded. It noted line ending warnings but had no errors, which is interesting. I’ll finalize it in Chinese, only mentioning completed P006 along with changes to README and ui README. There were no tests run since this is documentation, and I ran `git diff --check`. Line references must include where the changes occurred, like README.md:5 and ui/README.md:34. Should I mention the line ending warnings? They indicate that LF will be replaced by CRLF, but maybe that's not necessary.
+**Finalizing documentation notes**
+
+I’m thinking about how to finalize the documentation notes. To avoid hiding information, I might say something like, “未触碰 plan 文件,” and clarify that the plan file is untracked, based on `git status`. That could be a bit much, though. I believe a simpler version, like “未修改 plan 文件，也未勾选 checkbox,” is sufficient unless they express concern. It's important to keep it concise and note, “完成 P006.” I must ensure the final output isn’t too long, ideally under 10 lines. I should also state that no tests were run since it's just documentation changes. I like the added note about no empty errors from `git diff --check`. Maybe I should mention, “未修改 package.json.” because we didn’t change it for P006.
+codex
+已完成 P006，仅更新指定 scope 文档，未修改 plan 文件或 checkbox。
+
+- `README.md:5` 新增“需求与反馈附件”说明：粘贴图片、文件选择、拖拽上传、只传附件、失败保留、计划上下文与本地路径读取边界。
+- `ui/README.md:34` 新增“需求 / 反馈附件交互”说明：缩略图、移除、空正文提交、失败重试、prompt 不内联图片二进制。
+- 未修改 `package.json`，因为本任务未新增命令或脚本。
+- 未运行测试（仅文档变更）；已执行 `git diff --check -- README.md ui/README.md`，无空白错误，仅有 Git 行尾提示。
+diff --git a/README.md b/README.md
+index 75306f2332939d4cdb8298c7480f442ab12bca28..53afe66db7e7a7a41e57b21b48de1ec6e984fbd4
+--- a/README.md
++++ b/README.md
+@@ -2,6 +2,16 @@
+ 
+ Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+ 
++## 需求与反馈附件
++
++需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
++
++- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
++- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
++- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
++- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
++- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
++
+ ## CLI 后端
+ 
+ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**选择后端，不同项目可使用不同 CLI：
+diff --git a/ui/README.md b/ui/README.md
+index f4650c066e6e0a926d57ef428472f383f33ea5a9..b756bfd25f77310052a6916d05066f51f3f79c4b
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,13 @@
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
++## 需求 / 反馈附件交互
++- 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
++- 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
++- 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
++- 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
++- 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
++
+ ## CLI 后端选择说明
+ - 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+ - 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+
+tokens used
+32,912
+已完成 P006，仅更新指定 scope 文档，未修改 plan 文件或 checkbox。
+
+- `README.md:5` 新增“需求与反馈附件”说明：粘贴图片、文件选择、拖拽上传、只传附件、失败保留、计划上下文与本地路径读取边界。
+- `ui/README.md:34` 新增“需求 / 反馈附件交互”说明：缩略图、移除、空正文提交、失败重试、prompt 不内联图片二进制。
+- 未修改 `package.json`，因为本任务未新增命令或脚本。
+- 未运行测试（仅文档变更）；已执行 `git diff --check -- README.md ui/README.md`，无空白错误，仅有 Git 行尾提示。

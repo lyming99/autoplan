@@ -1,7 +1,40 @@
-import { DragEvent, FormEvent, KeyboardEvent, useEffect, useRef, useState } from 'react';
-import type { IntakeType, PendingAttachment } from '../types';
+import {
+  ClipboardEvent,
+  createContext,
+  DragEvent,
+  FormEvent,
+  KeyboardEvent,
+  type ReactNode,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+import { PENDING_ATTACHMENT_SOURCES } from '../types';
+import type { AgentCliOption, AgentCliProvider, CodexReasoningEffort, IntakeType, PendingAttachment } from '../types';
 import { Icon } from './icons';
 import { autoGrowTextarea, formatBytes, getFilePath } from './shared';
+
+interface ComposerCliSelectionValue {
+  options: AgentCliOption[];
+  selectedByType: Record<IntakeType, AgentCliProvider>;
+  reasoningOptions: AgentCliOption[];
+  reasoningByType: Record<IntakeType, CodexReasoningEffort>;
+  onProviderChange: (type: IntakeType, provider: AgentCliProvider) => void;
+  onReasoningChange: (type: IntakeType, effort: CodexReasoningEffort) => void;
+}
+
+const ComposerCliSelectionContext = createContext<ComposerCliSelectionValue | null>(null);
+
+export function ComposerCliSelectionProvider({
+  children,
+  value,
+}: {
+  children: ReactNode;
+  value: ComposerCliSelectionValue;
+}) {
+  return <ComposerCliSelectionContext.Provider value={value}>{children}</ComposerCliSelectionContext.Provider>;
+}
 
 interface ComposerProps {
   pendingAttachments: PendingAttachment[];
@@ -11,6 +44,16 @@ interface ComposerProps {
   onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
   onRemoveAttachment: (type: IntakeType, index: number) => void;
   onSubmit: (body: string) => Promise<boolean>;
+}
+
+function getClipboardImageFiles(event: ClipboardEvent<HTMLTextAreaElement>) {
+  const itemFiles = Array.from(event.clipboardData.items || [])
+    .filter((item) => item.kind === 'file' && item.type.startsWith('image/'))
+    .map((item) => item.getAsFile())
+    .filter((file): file is File => Boolean(file));
+
+  if (itemFiles.length) return itemFiles;
+  return Array.from(event.clipboardData.files || []).filter((file) => file.type.startsWith('image/'));
 }
 
 export function Composer({
@@ -24,6 +67,7 @@ export function Composer({
 }: ComposerProps) {
   const [body, setBody] = useState('');
   const [dragOver, setDragOver] = useState(false);
+  const cliSelection = useContext(ComposerCliSelectionContext);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -46,11 +90,20 @@ export function Composer({
     event.currentTarget.form?.requestSubmit();
   };
 
+  const handleTextareaPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    const imageFiles = getClipboardImageFiles(event);
+    if (!imageFiles.length) return;
+    addFiles(imageFiles);
+  };
+
   const clearDragState = (event: DragEvent<HTMLElement>) => {
     const relatedTarget = event.relatedTarget as Node | null;
     if (relatedTarget && event.currentTarget.contains(relatedTarget)) return;
     setDragOver(false);
   };
+
+  const selectedProvider = cliSelection?.selectedByType[type] || cliSelection?.options[0]?.value || '';
+  const isCodexProvider = selectedProvider !== 'claude';
 
   return (
     <form
@@ -72,6 +125,7 @@ export function Composer({
         onChange={(event) => setBody(event.target.value)}
         onInput={(event) => autoGrowTextarea(event.currentTarget)}
         onKeyDown={handleTextareaKeyDown}
+        onPaste={handleTextareaPaste}
         placeholder={placeholder}
         ref={textareaRef}
         value={body}
@@ -103,6 +157,42 @@ export function Composer({
             />
             <Icon name="attachment" size={20} className="attachment-trigger-icon" aria-hidden="true" />
           </div>
+          {cliSelection ? (
+            <div className="composer-cli-row">
+              <label className="composer-cli-field">
+                <span>CLI 后端</span>
+                <select
+                  aria-label="选择 CLI 后端"
+                  value={selectedProvider}
+                  onChange={(event) => cliSelection.onProviderChange(type, event.target.value)}
+                >
+                  {cliSelection.options.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {isCodexProvider ? (
+                <label className="composer-cli-field">
+                  <span>思考深度</span>
+                  <select
+                    aria-label="选择 Codex 思考深度"
+                    value={cliSelection.reasoningByType[type] || cliSelection.reasoningOptions[1]?.value || 'medium'}
+                    onChange={(event) => cliSelection.onReasoningChange(type, event.target.value)}
+                  >
+                    {cliSelection.reasoningOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <span className="composer-cli-note">Claude 不使用 Codex 思考深度</span>
+              )}
+            </div>
+          ) : null}
           <PendingAttachmentList
             attachments={pendingAttachments}
             onRemove={(index) => onRemoveAttachment(type, index)}
@@ -129,9 +219,9 @@ function PendingAttachmentList({
   return (
     <div className="attachment-list pending">
       {attachments.map((attachment, index) => (
-        <div className="pending-attachment" key={`${attachment.path}-${attachment.size}`}>
+        <div className="pending-attachment" key={attachment.id}>
           <PendingAttachmentPreview attachment={attachment} />
-          <span title={attachment.name || attachment.path}>{attachment.name || attachment.path}</span>
+          <span title={attachment.name}>{attachment.name}</span>
           <small>{formatBytes(attachment.size)}</small>
           <button type="button" onClick={() => onRemove(index)}>
             移除
@@ -153,7 +243,11 @@ function PendingAttachmentPreview({ attachment }: { attachment: PendingAttachmen
   return (
     <img
       className="pending-thumb"
-      src={window.autoplan.toFileUrl(attachment.path)}
+      src={
+        attachment.source === PENDING_ATTACHMENT_SOURCES.PATH
+          ? window.autoplan.toFileUrl(attachment.path)
+          : attachment.previewUrl
+      }
       alt={attachment.name || '附件'}
     />
   );

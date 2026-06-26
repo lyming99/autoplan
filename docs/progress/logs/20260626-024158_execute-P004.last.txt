@@ -1,0 +1,13 @@
+P004 已完成，未修改 plan 文件或其它任务 scope。
+
+**完成内容**
+- `src/agentCli.js:51`：Claude 后端改为 `--print --output-format text --dangerously-skip-permissions` 非交互调用，prompt 继续走 stdin。
+- `src/agentCli.js:168`：Claude stdout 写入现有 `lastFile`，stdout/stderr 同步进入日志。
+- `src/agentCli.js:231`：补齐 Windows `.cmd/.bat` 安全启动兼容，避免把 prompt/路径拼进 shell 命令。
+- `src/loopService.js:1256`、`src/loopService.js:1342`：Claude 分支跳过 Codex resume/new 会话流程，并清理 `codex_session_id` 相关字段。
+- `src/loopService.js:1269`：统一返回 exitCode、日志、lastFile、后端/命令、activity 和错误信息。
+
+**最小验证**
+- 已运行 `node --check src\agentCli.js`、`node --check src\loopService.js`。
+- 已运行 `agentCliSpawnSpec` 断言验证。
+- 已用临时 fake Claude 做 `runAgentCliAttempt` 端到端验证：stdin prompt、日志写入、last message 写入均通过。

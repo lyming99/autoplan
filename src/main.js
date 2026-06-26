@@ -3,7 +3,7 @@ const path = require('node:path');
 const { app, BrowserWindow, ipcMain, Menu } = require('electron');
 const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
-const { LoopService } = require('./loopService');
+const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
 
 let mainWindow;
 let db;
@@ -148,10 +148,22 @@ ipcMain.handle('tasks:stop', (_event, input = {}) => {
 ipcMain.handle('requirements:create', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const now = nowIso();
+  const agentCliConfig = nextIntakeAgentCliConfig({}, input);
   const id = db.insert(
-    `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [projectId, titleFromBody(input.body, '未命名需求'), input.body || '', input.status || 'open', now, now],
+    `INSERT INTO requirements (
+       project_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      projectId,
+      titleFromBody(input.body, '未命名需求'),
+      input.body || '',
+      input.status || 'open',
+      agentCliConfig.provider,
+      agentCliConfig.command,
+      agentCliConfig.codexReasoningEffort,
+      now,
+      now,
+    ],
   );
   saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
   loop.addEvent(projectId, 'requirement.created', `需求 #${id} 已创建，等待循环扫描生成计划`);
@@ -164,12 +176,18 @@ ipcMain.handle('requirements:update', (_event, input = {}) => {
   const current = db.get('SELECT * FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
   if (!current) throw new Error('需求不存在');
   const body = input.body ?? current.body ?? '';
+  const agentCliConfig = nextIntakeAgentCliConfig(current, input);
   db.run(
-    `UPDATE requirements SET title = ?, body = ?, status = ?, updated_at = ? WHERE id = ? AND project_id = ?`,
+    `UPDATE requirements
+     SET title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+     WHERE id = ? AND project_id = ?`,
     [
       input.title ?? titleFromBody(body, '未命名需求'),
       body,
       input.status ?? current.status ?? 'open',
+      agentCliConfig.provider,
+      agentCliConfig.command,
+      agentCliConfig.codexReasoningEffort,
       nowIso(),
       id,
       projectId,
@@ -191,15 +209,20 @@ ipcMain.handle('requirements:delete', (_event, input = {}) => {
 ipcMain.handle('feedback:create', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const now = nowIso();
+  const agentCliConfig = nextIntakeAgentCliConfig({}, input);
   const id = db.insert(
-    `INSERT INTO feedback (project_id, requirement_id, title, body, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO feedback (
+       project_id, requirement_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       projectId,
       input.requirementId || null,
       titleFromBody(input.body, '未命名反馈'),
       input.body || '',
       input.status || 'open',
+      agentCliConfig.provider,
+      agentCliConfig.command,
+      agentCliConfig.codexReasoningEffort,
       now,
       now,
     ],
@@ -215,15 +238,19 @@ ipcMain.handle('feedback:update', (_event, input = {}) => {
   const current = db.get('SELECT * FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
   if (!current) throw new Error('反馈不存在');
   const body = input.body ?? current.body ?? '';
+  const agentCliConfig = nextIntakeAgentCliConfig(current, input);
   db.run(
     `UPDATE feedback
-     SET requirement_id = ?, title = ?, body = ?, status = ?, updated_at = ?
+     SET requirement_id = ?, title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
      WHERE id = ? AND project_id = ?`,
     [
       input.requirementId === undefined ? current.requirement_id || null : input.requirementId || null,
       input.title ?? titleFromBody(body, '未命名反馈'),
       body,
       input.status ?? current.status ?? 'open',
+      agentCliConfig.provider,
+      agentCliConfig.command,
+      agentCliConfig.codexReasoningEffort,
       nowIso(),
       id,
       projectId,

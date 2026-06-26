@@ -43,7 +43,7 @@ class AppDatabase {
         running INTEGER NOT NULL DEFAULT 0,
         phase TEXT NOT NULL DEFAULT 'idle',
         interval_seconds INTEGER NOT NULL DEFAULT 5,
-        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        validation_command TEXT NOT NULL DEFAULT '',
         last_issue_hash TEXT,
         last_error TEXT,
         updated_at TEXT NOT NULL
@@ -55,6 +55,9 @@ class AppDatabase {
         title TEXT NOT NULL,
         body TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'open',
+        agent_cli_provider TEXT,
+        agent_cli_command TEXT NOT NULL DEFAULT '',
+        codex_reasoning_effort TEXT,
         source_path TEXT,
         source_hash TEXT,
         created_at TEXT NOT NULL,
@@ -68,6 +71,9 @@ class AppDatabase {
         title TEXT NOT NULL,
         body TEXT NOT NULL DEFAULT '',
         status TEXT NOT NULL DEFAULT 'open',
+        agent_cli_provider TEXT,
+        agent_cli_command TEXT NOT NULL DEFAULT '',
+        codex_reasoning_effort TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -145,7 +151,7 @@ class AppDatabase {
         phase TEXT NOT NULL DEFAULT 'idle',
         workspace_path TEXT NOT NULL DEFAULT '',
         interval_seconds INTEGER NOT NULL DEFAULT 5,
-        validation_command TEXT NOT NULL DEFAULT 'flutter analyze',
+        validation_command TEXT NOT NULL DEFAULT '',
         last_issue_hash TEXT,
         last_error TEXT,
         updated_at TEXT NOT NULL
@@ -153,13 +159,19 @@ class AppDatabase {
 
       INSERT OR IGNORE INTO loop_state (
         id, running, phase, workspace_path, interval_seconds, validation_command, updated_at
-      ) VALUES (1, 0, 'idle', '', 5, 'flutter analyze', datetime('now'));
+      ) VALUES (1, 0, 'idle', '', 5, '', datetime('now'));
     `);
 
     this.ensureColumn('requirements', 'project_id', 'INTEGER');
     this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('requirements', 'agent_cli_provider', 'TEXT');
+    this.ensureColumn('requirements', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('feedback', 'project_id', 'INTEGER');
     this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
+    this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('attachments', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'project_id', 'INTEGER');
     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
@@ -201,7 +213,7 @@ class AppDatabase {
         projectId,
         legacyState.phase || 'idle',
         Number(legacyState.interval_seconds || 5),
-        legacyState.validation_command || 'flutter analyze',
+        legacyState.validation_command ?? '',
         legacyState.last_issue_hash || null,
         legacyState.last_error || null,
         legacyState.updated_at || nowIso(),

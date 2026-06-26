@@ -1,5 +1,12 @@
 export type IntakeType = 'requirement' | 'feedback';
 export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+export type AgentCliProvider = 'codex' | 'claude' | string;
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | string;
+
+export interface AgentCliOption {
+  value: AgentCliProvider;
+  label: string;
+}
 
 export const WORKSPACE_SEARCH_SOURCE_TYPES = {
   REQUIREMENT: 'requirement',
@@ -88,8 +95,9 @@ export interface Project {
   phase?: string;
   interval_seconds?: number;
   validation_command?: string;
-  agent_cli_provider?: string;
+  agent_cli_provider?: AgentCliProvider;
   agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
 }
 
 export interface ProjectState {
@@ -100,8 +108,9 @@ export interface ProjectState {
   validation_command: string;
   last_issue_hash?: string | null;
   last_error?: string | null;
-  agent_cli_provider?: string;
+  agent_cli_provider?: AgentCliProvider;
   agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
   updated_at: string;
   /** 由 snapshot 合并自 project.workspace_path */
   workspace_path?: string;
@@ -115,6 +124,9 @@ export interface Requirement {
   status: string;
   source_path?: string | null;
   source_hash?: string | null;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
   linked_plan_id?: number | null;
   plan_status?: string | null;
   plan_completed?: number | null;
@@ -130,6 +142,9 @@ export interface Feedback {
   title: string;
   body: string;
   status: string;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
   linked_plan_id?: number | null;
   plan_status?: string | null;
   plan_completed?: number | null;
@@ -156,6 +171,7 @@ export interface Plan {
   project_id: number;
   issue_hash: string;
   file_path: string;
+  title?: string | null;
   hash: string;
   status: string;
   total_tasks: number;
@@ -212,6 +228,9 @@ export interface PlanTask extends CodexSessionInfo {
   duration_ms: number;
   run_duration_ms?: number;
   codex_session_id: string | null;
+  agentCliProvider?: string | null;
+  agentCliCommand?: string | null;
+  codexReasoningEffort?: CodexReasoningEffort | null;
   updated_at: string;
   /** JOIN plans 得到 */
   file_path: string;
@@ -277,6 +296,9 @@ export interface TaskEventMeta extends CodexSessionInfo {
   exitCode?: number | null;
   log?: string | null;
   error?: string | null;
+  agentCliProvider?: string | null;
+  agentCliCommand?: string | null;
+  codexReasoningEffort?: CodexReasoningEffort | null;
   [key: string]: unknown;
 }
 
@@ -331,6 +353,8 @@ export interface ActiveOperation extends CodexSessionInfo {
   planId: number | null;
   taskId: number | null;
   agentCliProvider?: string;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort | null;
   startedAt: string | null;
   finishedAt?: string | null;
   exitCode?: number | null;
@@ -338,12 +362,38 @@ export interface ActiveOperation extends CodexSessionInfo {
   activity: ActivityLine[];
 }
 
-export interface PendingAttachment {
-  path: string;
+export const PENDING_ATTACHMENT_SOURCES = {
+  PATH: 'path',
+  CLIPBOARD_IMAGE: 'clipboard-image',
+} as const;
+
+export type PendingAttachmentSource =
+  (typeof PENDING_ATTACHMENT_SOURCES)[keyof typeof PENDING_ATTACHMENT_SOURCES];
+
+export interface PendingAttachmentBase {
+  id: string;
+  source: PendingAttachmentSource;
   name: string;
   size: number;
+  /** MIME type */
   type: string;
+  previewUrl: string;
 }
+
+export interface PendingPathAttachment extends PendingAttachmentBase {
+  source: typeof PENDING_ATTACHMENT_SOURCES.PATH;
+  path: string;
+}
+
+export interface PendingClipboardImageAttachment extends PendingAttachmentBase {
+  source: typeof PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE;
+  dataUrl: string;
+  base64?: string;
+  dataBase64?: string;
+  bytes?: number[] | ArrayBuffer | Uint8Array;
+}
+
+export type PendingAttachment = PendingPathAttachment | PendingClipboardImageAttachment;
 
 export interface CreateIntakeInput {
   projectId: number;
@@ -353,14 +403,18 @@ export interface CreateIntakeInput {
   status?: string;
   autoRun?: boolean;
   requirementId?: number | null;
+  agentCliProvider?: AgentCliProvider;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort;
 }
 
 export interface CreateProjectInput {
   name: string;
   workspacePath: string;
   description?: string;
-  agentCliProvider?: string;
+  agentCliProvider?: AgentCliProvider;
   agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort;
 }
 
 export interface UpdateProjectInput extends CreateProjectInput {
@@ -372,8 +426,9 @@ export interface LoopConfigInput {
   workspacePath?: string;
   intervalSeconds?: number;
   validationCommand?: string;
-  agentCliProvider?: string;
+  agentCliProvider?: AgentCliProvider;
   agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort;
 }
 
 export interface ProjectIdInput {
@@ -404,6 +459,9 @@ export interface UpdateRequirementInput extends RecordIdInput {
   body?: string;
   status?: string;
   attachments?: PendingAttachment[];
+  agentCliProvider?: AgentCliProvider;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort;
 }
 
 export interface UpdateFeedbackInput extends UpdateRequirementInput {

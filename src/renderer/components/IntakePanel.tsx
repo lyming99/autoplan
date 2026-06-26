@@ -282,11 +282,13 @@ export function RecordCard({
 }: {
   actions?: ReactNode;
   attachments?: Attachment[];
-  body?: string;
+  body?: ReactNode;
   meta?: string;
   status?: string;
   title: string;
 }) {
+  const hasBody = typeof body === 'string' ? Boolean(body) : Boolean(body);
+
   return (
     <article className="item">
       <div className="item-title">
@@ -296,7 +298,9 @@ export function RecordCard({
           {actions}
         </span>
       </div>
-      {body ? <div className="item-body plain-text">{body}</div> : null}
+      {hasBody ? (
+        <div className={`item-body${typeof body === 'string' ? ' plain-text' : ''}`}>{body}</div>
+      ) : null}
       <AttachmentGrid attachments={attachments} />
       {meta ? <div className="meta">{meta}</div> : null}
     </article>
