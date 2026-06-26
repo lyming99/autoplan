@@ -1,0 +1,8 @@
+已完成 P004，仅修改 `scripts/release.py` 和 `.github/workflows/release.yml`，未修改 plan、未勾选 checkbox，也未运行测试/构建/lint/验收或发布命令。
+
+- `scripts/release.py:10` 引入临时文件写入 tag message，避免 Markdown、换行和中文在命令行参数中丢失。
+- `scripts/release.py:105` 保留说明正文内容，仅去掉末尾空白，不破坏正文内部换行。
+- `scripts/release.py:120` 创建 annotated tag 时改用 `git tag -F release-notes.md`，让 `--notes` / `--notes-file` 内容随 tag 推送传递。
+- `.github/workflows/release.yml:79` Release job 新增 checkout tag metadata，并设置 `fetch-depth: 0` 以读取 tag 对象。
+- `.github/workflows/release.yml:90` 新增 Release notes 解析：手动输入优先，其次 annotated tag message，最后用最近提交摘要兜底。
+- `.github/workflows/release.yml:121` `gh release create/edit` 改用 `--notes-file release-notes.md`，明确支持重复发布时更新正文与 `--clobber` 覆盖附件。

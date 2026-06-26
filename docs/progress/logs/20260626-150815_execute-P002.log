@@ -1,0 +1,2127 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0286-d498-7820-9b30-830fba9e7e8c
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_26_20260626-140018.md
+指定任务：
+- [ ] P002: 统一计划 CLI 展示文案 <!-- scope: src/renderer/components/shared.tsx,src/renderer/types.ts -->
+任务 scope：src/renderer/components/shared.tsx, src/renderer/types.ts
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用前序上下文，只读取 P002 相关文件并保持改动限于 scope。
+  → 查看共享展示工具
+  • 补充统一格式化类型
+  • 实现 CLI 文案函数
+  • 检查改动范围
+exec
+powershell.exe -Command 'git status --short -- src/renderer/components/shared.tsx src/renderer/types.ts docs/plan/plan_requirement_26_20260626-140018.md; rg -n "agentCliProviderLabel|codexReasoningEffortLabel|AgentCli|Reasoning|CLI|cli|provider|format" src/renderer/components/shared.tsx src/renderer/types.ts' in D:\project\GitHub\autoplan
+2026-06-26T07:08:39.401553Z ERROR codex_core::tools::router: error={"output":" M src/renderer/types.ts\n?? docs/plan/plan_requirement_26_20260626-140018.md\nrg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 130\r\n+ ... types.ts docs/plan/plan_requirement_26_20260626-140018.md; rg -n \"age ...\r\n+                                                                ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.9}}
+ exited 1 in 1860ms:
+ M src/renderer/types.ts
+?? docs/plan/plan_requirement_26_20260626-140018.md
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 130
++ ... types.ts docs/plan/plan_requirement_26_20260626-140018.md; rg -n "age ...
++                                                                ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+**Troubleshooting command issues**
+
+I encountered an issue where the command "rg" wasn't recognized. That's a bit frustrating, but it's not the end of the world. I’ll switch gears and use "Select-String" instead. The command's failure just means I need to redirect my efforts and keep going. It's important to stay adaptable and find alternative ways to accomplish what I need. I'll continue exploring options and not let this hiccup discourage me!
+codex
+`rg` 不在当前 PATH，我改用 PowerShell 原生命令定位同名函数。
+exec
+powershell.exe -Command "Select-String -Path 'src/renderer/components/shared.tsx','src/renderer/types.ts' -Pattern 'agentCliProviderLabel|codexReasoningEffortLabel|AgentCli|Reasoning|CLI|cli|provider|format' -CaseSensitive:"'$false | ForEach-Object { '"'{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- shared head'; Get-Content -LiteralPath 'src/renderer/components/shared.tsx' -Encoding UTF8 | Select-Object -First 240; Write-Host '--- types relevant'; Get-Content -LiteralPath 'src/renderer/types.ts' -Encoding UTF8 | Select-Object -First 230" in D:\project\GitHub\autoplan
+ succeeded in 600ms:
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:16: export function formatBytes(value: number) {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:27: /** CLI 后端 → 语义化显示名（默认 Codex） */
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:28: export function agentCliProviderLabel(provider?: string | null): string {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:29: const value = String(provider || '').trim().toLowerCase();
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:34: export function codexReasoningEffortLabel(effort?: string | null): string {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:76: <small>{formatBytes(attachment.size)}</small>
+D:\project\GitHub\autoplan\src\renderer\types.ts:3: export type AgentCliProvider = 'codex' | 'claude' | string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:4: export type CodexReasoningEffort = 'low' | 'medium' | 'high' | string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:6: export interface AgentCliOption {
+D:\project\GitHub\autoplan\src\renderer\types.ts:7: value: AgentCliProvider;
+D:\project\GitHub\autoplan\src\renderer\types.ts:98: agent_cli_provider?: AgentCliProvider;
+D:\project\GitHub\autoplan\src\renderer\types.ts:99: agent_cli_command?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:100: codex_reasoning_effort?: CodexReasoningEffort | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:111: agent_cli_provider?: AgentCliProvider;
+D:\project\GitHub\autoplan\src\renderer\types.ts:112: agent_cli_command?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:113: codex_reasoning_effort?: CodexReasoningEffort | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:127: agent_cli_provider?: AgentCliProvider | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:128: agent_cli_command?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:129: codex_reasoning_effort?: CodexReasoningEffort | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:145: agent_cli_provider?: AgentCliProvider | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:146: agent_cli_command?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:147: codex_reasoning_effort?: CodexReasoningEffort | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:180: agent_cli_provider?: AgentCliProvider | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:181: agent_cli_command?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:182: codex_reasoning_effort?: CodexReasoningEffort | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:271: agentCliProvider?: string | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:272: agentCliCommand?: string | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:273: codexReasoningEffort?: CodexReasoningEffort | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:341: agentCliProvider?: string | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:342: agentCliCommand?: string | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:343: codexReasoningEffort?: CodexReasoningEffort | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:397: agentCliProvider?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:398: agentCliCommand?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:399: codexReasoningEffort?: CodexReasoningEffort | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:409: CLIPBOARD_IMAGE: 'clipboard-image',
+D:\project\GitHub\autoplan\src\renderer\types.ts:430: export interface PendingClipboardImageAttachment extends PendingAttachmentBase {
+D:\project\GitHub\autoplan\src\renderer\types.ts:431: source: typeof PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE;
+D:\project\GitHub\autoplan\src\renderer\types.ts:438: export type PendingAttachment = PendingPathAttachment | PendingClipboardImageAttachment;
+D:\project\GitHub\autoplan\src\renderer\types.ts:448: agentCliProvider?: AgentCliProvider;
+D:\project\GitHub\autoplan\src\renderer\types.ts:449: agentCliCommand?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:450: codexReasoningEffort?: CodexReasoningEffort;
+D:\project\GitHub\autoplan\src\renderer\types.ts:457: agentCliProvider?: AgentCliProvider;
+D:\project\GitHub\autoplan\src\renderer\types.ts:458: agentCliCommand?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:459: codexReasoningEffort?: CodexReasoningEffort;
+D:\project\GitHub\autoplan\src\renderer\types.ts:471: agentCliProvider?: AgentCliProvider;
+D:\project\GitHub\autoplan\src\renderer\types.ts:472: agentCliCommand?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:473: codexReasoningEffort?: CodexReasoningEffort;
+D:\project\GitHub\autoplan\src\renderer\types.ts:504: agentCliProvider?: AgentCliProvider;
+D:\project\GitHub\autoplan\src\renderer\types.ts:505: agentCliCommand?: string;
+D:\project\GitHub\autoplan\src\renderer\types.ts:506: codexReasoningEffort?: CodexReasoningEffort;
+--- shared head
+import type { Attachment } from '../types';
+
+export function getFilePath(file: File) {
+  try {
+    return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+  } catch {
+    return (file as File & { path?: string }).path || '';
+  }
+}
+
+export function autoGrowTextarea(textarea: HTMLTextAreaElement) {
+  textarea.style.height = 'auto';
+  textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
+}
+
+export function formatBytes(value: number) {
+  const bytes = Number(value || 0);
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+export function sourceTypeName(type: 'requirement' | 'feedback') {
+  return type === 'feedback' ? '反馈' : '需求';
+}
+
+/** CLI 后端 → 语义化显示名（默认 Codex） */
+export function agentCliProviderLabel(provider?: string | null): string {
+  const value = String(provider || '').trim().toLowerCase();
+  if (value === 'claude') return 'Claude';
+  return 'Codex';
+}
+
+export function codexReasoningEffortLabel(effort?: string | null): string {
+  const value = String(effort || '').trim().toLowerCase();
+  if (value === 'low') return '低';
+  if (value === 'high') return '高';
+  return '中';
+}
+
+/** 状态 → 语义化 chip class */
+export function statusChipClass(status: string): string {
+  const s = status.toLowerCase();
+  if (['completed', 'done', 'passed', 'accepted', 'executed'].includes(s)) return 'chip-completed';
+  if (['failed', 'error'].includes(s)) return 'chip-failed';
+  if (['running', 'processing', 'validate', 'generate-plan', 'execute-task', 'scan'].includes(s)) return 'chip-running';
+  if (['waiting', 'pending', 'draft', 'ready_for_validation', 'validation_failed', 'open'].includes(s)) return 'chip-waiting';
+  return 'chip-pending';
+}
+
+export function AttachmentGrid({ attachments }: { attachments: Attachment[] }) {
+  if (!attachments.length) return null;
+  return (
+    <div className="attachment-grid">
+      {attachments.map((attachment) => (
+        <AttachmentView attachment={attachment} key={attachment.id} />
+      ))}
+    </div>
+  );
+}
+
+function AttachmentView({ attachment }: { attachment: Attachment }) {
+  const url = window.autoplan.toFileUrl(attachment.stored_path);
+  const name = attachment.original_name || attachment.stored_path;
+  if (String(attachment.mime_type || '').startsWith('image/')) {
+    return (
+      <a className="attachment-thumb" href={url} target="_blank" rel="noreferrer" title={name}>
+        <img src={url} alt={name} />
+        <span>{name}</span>
+      </a>
+    );
+  }
+  return (
+    <a className="attachment-file" href={url} target="_blank" rel="noreferrer">
+      <span>{name}</span>
+      <small>{formatBytes(attachment.size)}</small>
+    </a>
+  );
+}
+--- types relevant
+export type IntakeType = 'requirement' | 'feedback';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+export type AgentCliProvider = 'codex' | 'claude' | string;
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | string;
+
+export interface AgentCliOption {
+  value: AgentCliProvider;
+  label: string;
+}
+
+export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+  REQUIREMENT: 'requirement',
+  FEEDBACK: 'feedback',
+  PLAN: 'plan',
+  TASK: 'task',
+  EVENT: 'event',
+} as const;
+
+export type WorkspaceSearchSourceType =
+  (typeof WORKSPACE_SEARCH_SOURCE_TYPES)[keyof typeof WORKSPACE_SEARCH_SOURCE_TYPES];
+
+export const WORKSPACE_SEARCH_HIT_FIELDS = {
+  TITLE: 'title',
+  BODY: 'body',
+  STATUS: 'status',
+  MARKDOWN: 'markdown',
+  FILE_PATH: 'filePath',
+  SOURCE_PATH: 'sourcePath',
+  TASK_KEY: 'taskKey',
+  SCOPE: 'scope',
+  RAW_LINE: 'rawLine',
+  EVENT_TYPE: 'eventType',
+  EVENT_MESSAGE: 'eventMessage',
+  EVENT_META: 'eventMeta',
+} as const;
+
+export type WorkspaceSearchHitField =
+  (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
+
+export interface WorkspaceSearchQuery {
+  raw: string;
+  normalized: string;
+  terms: string[];
+  isEmpty: boolean;
+}
+
+export interface WorkspaceSearchSourceConfig {
+  type: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+}
+
+export interface WorkspaceSearchMatch {
+  field: WorkspaceSearchHitField;
+  label: string;
+  value: string;
+  snippet?: string;
+}
+
+export interface WorkspaceSearchResult {
+  id: string;
+  source: WorkspaceSearchSourceType;
+  targetTab: WorkspaceTab;
+  recordId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  matches: WorkspaceSearchMatch[];
+}
+
+export interface WorkspaceSearchGroup {
+  source: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+  count: number;
+  results: WorkspaceSearchResult[];
+}
+
+export interface WorkspaceSearchState {
+  query: WorkspaceSearchQuery;
+  total: number;
+  results: WorkspaceSearchResult[];
+  groups: WorkspaceSearchGroup[];
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  workspace_path: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  running?: number;
+  phase?: string;
+  interval_seconds?: number;
+  validation_command?: string;
+  agent_cli_provider?: AgentCliProvider;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+}
+
+export interface ProjectState {
+  project_id: number;
+  running: number;
+  phase: string;
+  interval_seconds: number;
+  validation_command: string;
+  last_issue_hash?: string | null;
+  last_error?: string | null;
+  agent_cli_provider?: AgentCliProvider;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  updated_at: string;
+  /** 由 snapshot 合并自 project.workspace_path */
+  workspace_path?: string;
+}
+
+export interface Requirement {
+  id: number;
+  project_id: number;
+  title: string;
+  body: string;
+  status: string;
+  source_path?: string | null;
+  source_hash?: string | null;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: number;
+  project_id: number;
+  requirement_id?: number | null;
+  title: string;
+  body: string;
+  status: string;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Attachment {
+  id: number;
+  project_id: number;
+  owner_type: IntakeType;
+  owner_id: number;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size: number;
+  hash: string;
+  created_at: string;
+}
+
+export interface Plan {
+  id: number;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  title?: string | null;
+  hash: string;
+  status: string;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  concurrency_suggestion: PlanConcurrencySuggestion;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanScopeFileInfo {
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+  canOpen: boolean;
+  isUnknown: boolean;
+  isValidation: boolean;
+  reason: string;
+}
+
+export interface PlanConcurrencyTask {
+  id: number;
+  task_key: string;
+  title: string;
+  status: string;
+  scopes: string[];
+  reason: string;
+}
+
+export interface PlanConcurrencyBatch {
+  batch: number;
+  reason: string;
+  tasks: PlanConcurrencyTask[];
+}
+
+export interface PlanConcurrencySuggestion {
+  hasSafeParallelBatches: boolean;
+  parallelTaskCount: number;
+  batchCount: number;
+  serialTaskCount: number;
+  maxParallelTasks: number;
+  batches: PlanConcurrencyBatch[];
+  serialTasks: PlanConcurrencyTask[];
+}
+
+export interface ReadPlanResult {
+  ok: boolean;
+  id: number | null;
+  project_id: number | null;
+  file_path: string;
+  markdown: string;
+  hash: string;
+  updated_at: string;
+
+codex
+共享文件已有基础标签函数，我现在读取完整小文件并扩展它。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/shared.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; '"'{0,4}: {1}' -f "'$i,$_ }' in D:\project\GitHub\autoplan
+ succeeded in 541ms:
+   1: import type { Attachment } from '../types';
+   2: 
+   3: export function getFilePath(file: File) {
+   4:   try {
+   5:     return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+   6:   } catch {
+   7:     return (file as File & { path?: string }).path || '';
+   8:   }
+   9: }
+  10: 
+  11: export function autoGrowTextarea(textarea: HTMLTextAreaElement) {
+  12:   textarea.style.height = 'auto';
+  13:   textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
+  14: }
+  15: 
+  16: export function formatBytes(value: number) {
+  17:   const bytes = Number(value || 0);
+  18:   if (bytes < 1024) return `${bytes} B`;
+  19:   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  20:   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  21: }
+  22: 
+  23: export function sourceTypeName(type: 'requirement' | 'feedback') {
+  24:   return type === 'feedback' ? '反馈' : '需求';
+  25: }
+  26: 
+  27: /** CLI 后端 → 语义化显示名（默认 Codex） */
+  28: export function agentCliProviderLabel(provider?: string | null): string {
+  29:   const value = String(provider || '').trim().toLowerCase();
+  30:   if (value === 'claude') return 'Claude';
+  31:   return 'Codex';
+  32: }
+  33: 
+  34: export function codexReasoningEffortLabel(effort?: string | null): string {
+  35:   const value = String(effort || '').trim().toLowerCase();
+  36:   if (value === 'low') return '低';
+  37:   if (value === 'high') return '高';
+  38:   return '中';
+  39: }
+  40: 
+  41: /** 状态 → 语义化 chip class */
+  42: export function statusChipClass(status: string): string {
+  43:   const s = status.toLowerCase();
+  44:   if (['completed', 'done', 'passed', 'accepted', 'executed'].includes(s)) return 'chip-completed';
+  45:   if (['failed', 'error'].includes(s)) return 'chip-failed';
+  46:   if (['running', 'processing', 'validate', 'generate-plan', 'execute-task', 'scan'].includes(s)) return 'chip-running';
+  47:   if (['waiting', 'pending', 'draft', 'ready_for_validation', 'validation_failed', 'open'].includes(s)) return 'chip-waiting';
+  48:   return 'chip-pending';
+  49: }
+  50: 
+  51: export function AttachmentGrid({ attachments }: { attachments: Attachment[] }) {
+  52:   if (!attachments.length) return null;
+  53:   return (
+  54:     <div className="attachment-grid">
+  55:       {attachments.map((attachment) => (
+  56:         <AttachmentView attachment={attachment} key={attachment.id} />
+  57:       ))}
+  58:     </div>
+  59:   );
+  60: }
+  61: 
+  62: function AttachmentView({ attachment }: { attachment: Attachment }) {
+  63:   const url = window.autoplan.toFileUrl(attachment.stored_path);
+  64:   const name = attachment.original_name || attachment.stored_path;
+  65:   if (String(attachment.mime_type || '').startsWith('image/')) {
+  66:     return (
+  67:       <a className="attachment-thumb" href={url} target="_blank" rel="noreferrer" title={name}>
+  68:         <img src={url} alt={name} />
+  69:         <span>{name}</span>
+  70:       </a>
+  71:     );
+  72:   }
+  73:   return (
+  74:     <a className="attachment-file" href={url} target="_blank" rel="noreferrer">
+  75:       <span>{name}</span>
+  76:       <small>{formatBytes(attachment.size)}</small>
+  77:     </a>
+  78:   );
+  79: }
+
+codex
+我会检查现有标签函数调用点，避免新文案破坏当前口径。
+exec
+powershell.exe -Command "Get-ChildItem -Path 'src/renderer' -Recurse -Include *.tsx,*.ts | Select-String -Pattern 'agentCliProviderLabel|codexReasoningEffortLabel' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 625ms:
+D:\project\GitHub\autoplan\src\renderer\components\CodexLog.tsx:3: import { agentCliProviderLabel } from './shared';
+D:\project\GitHub\autoplan\src\renderer\components\CodexLog.tsx:43: const providerLabel = agentCliProviderLabel(provider);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:6: import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:317: agentCliProvider ? agentCliProviderLabel(agentCliProvider) : '',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:318: agentCliProvider !== 'claude' && codexReasoningEffort ? `思考深度 ${codexReasoningEffortLabel(codexReasoningEffort)}` : '',
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:28: export function agentCliProviderLabel(provider?: string | null): string {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:34: export function codexReasoningEffortLabel(effort?: string | null): string {
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:6: import { agentCliProviderLabel } from '../components/shared';
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:204: <span className="project-cli-badge">{agentCliProviderLabel(project.agent_cli_provider)}</span>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:28: import { getFilePath, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1045: const providerLabel = agentCliProviderLabel(task.agentCliProvider || fallbackProvider);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1052: const providerLabel = agentCliProviderLabel(provider);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1054: return `${providerLabel} · 思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)}`;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1218: const operationProviderLabel = agentCliProviderLabel(operationProvider);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1220: ? `思考${codexReasoningEffortLabel(operation?.codexReasoningEffort || state?.codex_reasoning_effort)}`
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1249: value={agentCliProviderLabel(state?.agent_cli_provider)}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1251: sub={state?.agent_cli_provider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)} · 间隔 ${state?.interval_seconds || 5}s`}
+
+**Considering code structure**
+
+I need to focus on scoping shared/types without messing with PlanLists. I see I've got to add a function that hasn't been used yet and maybe think about including agent_cli_command. Additionally, I need to handle formatting, like using title cases. I should consider how to manage snake and camel case. There might also be a need to import types in types.ts and inspect relevant type rows around the PlanTask event.
+codex
+只需要提供统一函数供后续 P003/P004 使用；我会在类型文件定义通用输入形状。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/types.ts' -Encoding UTF8 | ForEach-Object { "'$i++; if(($i -ge 240 -and $i -le 355) -or ($i -ge 385 -and $i -le 410)){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 616ms:
+ 240: 
+ 241: export type CodexSessionMode = 'new' | 'resume';
+ 242: 
+ 243: export type CodexSessionState = CodexSessionMode | 'fallback-new' | string;
+ 244: 
+ 245: export interface CodexSessionInfo {
+ 246:   codexSessionId?: string | null;
+ 247:   codexSessionShortId?: string | null;
+ 248:   codexSessionMode?: CodexSessionMode | null;
+ 249:   codexSessionState?: CodexSessionState | null;
+ 250:   codexSessionLabel?: string | null;
+ 251:   codexSessionRequestedId?: string | null;
+ 252:   codexSessionRequestedShortId?: string | null;
+ 253:   codexSessionFallback?: boolean | null;
+ 254: }
+ 255: 
+ 256: export interface PlanTask extends CodexSessionInfo {
+ 257:   id: number;
+ 258:   plan_id: number;
+ 259:   task_key: string;
+ 260:   title: string;
+ 261:   raw_line: string;
+ 262:   scope: string;
+ 263:   scope_files: PlanScopeFileInfo[];
+ 264:   status: string;
+ 265:   sort_order: number;
+ 266:   started_at: string | null;
+ 267:   finished_at: string | null;
+ 268:   duration_ms: number;
+ 269:   run_duration_ms?: number;
+ 270:   codex_session_id: string | null;
+ 271:   agentCliProvider?: string | null;
+ 272:   agentCliCommand?: string | null;
+ 273:   codexReasoningEffort?: CodexReasoningEffort | null;
+ 274:   updated_at: string;
+ 275:   /** JOIN plans 得到 */
+ 276:   file_path: string;
+ 277:   /** JOIN plans 并读取计划 Markdown 标题得到 */
+ 278:   plan_title: string;
+ 279: }
+ 280: 
+ 281: export const TASK_EVENT_TYPES = {
+ 282:   STARTED: 'task.started',
+ 283:   SUCCEEDED: 'task.succeeded',
+ 284:   FAILED: 'task.failed',
+ 285:   STOP_REQUESTED: 'task.stop.requested',
+ 286:   STOPPED: 'task.stopped',
+ 287:   INTERRUPTED: 'task.interrupted',
+ 288: } as const;
+ 289: 
+ 290: export const LEGACY_TASK_EVENT_TYPES = {
+ 291:   EXECUTED: 'task.executed',
+ 292:   STOPPING: 'task.stopping',
+ 293: } as const;
+ 294: 
+ 295: export const TASK_EVENT_STATUS = {
+ 296:   PENDING: 'pending',
+ 297:   RUNNING: 'running',
+ 298:   COMPLETED: 'completed',
+ 299:   FAILED: 'failed',
+ 300:   STOPPING: 'stopping',
+ 301:   STOPPED: 'stopped',
+ 302:   INTERRUPTED: 'interrupted',
+ 303: } as const;
+ 304: 
+ 305: export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TYPES];
+ 306: export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];
+ 307: export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];
+ 308: 
+ 309: export interface TaskEventSemantics {
+ 310:   status: TaskEventStatus;
+ 311:   label: string;
+ 312: }
+ 313: 
+ 314: export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {
+ 315:   [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },
+ 316:   [TASK_EVENT_TYPES.SUCCEEDED]: { status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' },
+ 317:   [TASK_EVENT_TYPES.FAILED]: { status: TASK_EVENT_STATUS.FAILED, label: '任务失败' },
+ 318:   [TASK_EVENT_TYPES.STOP_REQUESTED]: { status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' },
+ 319:   [TASK_EVENT_TYPES.STOPPED]: { status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' },
+ 320:   [TASK_EVENT_TYPES.INTERRUPTED]: { status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' },
+ 321: };
+ 322: 
+ 323: export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType> = {
+ 324:   [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,
+ 325:   [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,
+ 326: };
+ 327: 
+ 328: export interface TaskEventMeta extends CodexSessionInfo {
+ 329:   taskId?: number | null;
+ 330:   taskKey?: string | null;
+ 331:   taskTitle?: string | null;
+ 332:   planId?: number | null;
+ 333:   status?: TaskEventStatus | string | null;
+ 334:   startedAt?: string | null;
+ 335:   finishedAt?: string | null;
+ 336:   durationMs?: number | null;
+ 337:   runDurationMs?: number | null;
+ 338:   exitCode?: number | null;
+ 339:   log?: string | null;
+ 340:   error?: string | null;
+ 341:   agentCliProvider?: string | null;
+ 342:   agentCliCommand?: string | null;
+ 343:   codexReasoningEffort?: CodexReasoningEffort | null;
+ 344:   [key: string]: unknown;
+ 345: }
+ 346: 
+ 347: export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+ 348: export type AppEventMeta = string | AppEventStructuredMeta;
+ 349: 
+ 350: export interface AppEvent<TMeta extends AppEventMeta | null = AppEventMeta | null> {
+ 351:   id: number;
+ 352:   project_id: number;
+ 353:   type: string;
+ 354:   message: string;
+ 355:   meta?: TMeta;
+ 385: 
+ 386: export interface ActivityLine {
+ 387:   role: string;
+ 388:   text: string;
+ 389:   at: string;
+ 390: }
+ 391: 
+ 392: export interface ActiveOperation extends CodexSessionInfo {
+ 393:   label: string;
+ 394:   projectId: number | null;
+ 395:   planId: number | null;
+ 396:   taskId: number | null;
+ 397:   agentCliProvider?: string;
+ 398:   agentCliCommand?: string;
+ 399:   codexReasoningEffort?: CodexReasoningEffort | null;
+ 400:   startedAt: string | null;
+ 401:   finishedAt?: string | null;
+ 402:   exitCode?: number | null;
+ 403:   logTail: string;
+ 404:   activity: ActivityLine[];
+ 405: }
+ 406: 
+ 407: export const PENDING_ATTACHMENT_SOURCES = {
+ 408:   PATH: 'path',
+ 409:   CLIPBOARD_IMAGE: 'clipboard-image',
+ 410: } as const;
+
+codex
+我会添加一个统一读取/格式化入口，支持下划线和驼峰字段。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\types.ts
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+codex
+类型入口已补上。现在扩展共享文案函数，并保持旧函数兼容。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index e917c0403d06b06ec4c1456188992398a539dbad..c3e6792694775befe5198cc3bcedd0d960e2d9c5
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -1,4 +1,4 @@
+-import type { Attachment } from '../types';
++import type { AgentCliDisplaySource, Attachment } from '../types';
+ 
+ export function getFilePath(file: File) {
+   try {
+@@ -28,14 +28,71 @@
+ export function agentCliProviderLabel(provider?: string | null): string {
+   const value = String(provider || '').trim().toLowerCase();
+   if (value === 'claude') return 'Claude';
++  if (value && value !== 'codex') return value;
+   return 'Codex';
+ }
+ 
+ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+ }
+ 
+ /** 状态 → 语义化 chip class */
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index e917c0403d06b06ec4c1456188992398a539dbad..c3e6792694775befe5198cc3bcedd0d960e2d9c5
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -1,4 +1,4 @@
+-import type { Attachment } from '../types';
++import type { AgentCliDisplaySource, Attachment } from '../types';
+ 
+ export function getFilePath(file: File) {
+   try {
+@@ -28,14 +28,71 @@
+ export function agentCliProviderLabel(provider?: string | null): string {
+   const value = String(provider || '').trim().toLowerCase();
+   if (value === 'claude') return 'Claude';
++  if (value && value !== 'codex') return value;
+   return 'Codex';
+ }
+ 
+ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+ }
+ 
+ /** 状态 → 语义化 chip class */
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+codex
+我注意到旧函数被现有页面复用；继续做一次范围内自查，确保兼容调用点。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/shared.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; '"'{0,4}: {1}' -f "'$i,$_ }; Write-Host '"'--- type head'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/types.ts' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -le 45){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 563ms:
+   1: import type { AgentCliDisplaySource, Attachment } from '../types';
+   2: 
+   3: export function getFilePath(file: File) {
+   4:   try {
+   5:     return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+   6:   } catch {
+   7:     return (file as File & { path?: string }).path || '';
+   8:   }
+   9: }
+  10: 
+  11: export function autoGrowTextarea(textarea: HTMLTextAreaElement) {
+  12:   textarea.style.height = 'auto';
+  13:   textarea.style.height = `${Math.min(textarea.scrollHeight, 220)}px`;
+  14: }
+  15: 
+  16: export function formatBytes(value: number) {
+  17:   const bytes = Number(value || 0);
+  18:   if (bytes < 1024) return `${bytes} B`;
+  19:   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  20:   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  21: }
+  22: 
+  23: export function sourceTypeName(type: 'requirement' | 'feedback') {
+  24:   return type === 'feedback' ? '反馈' : '需求';
+  25: }
+  26: 
+  27: /** CLI 后端 → 语义化显示名（默认 Codex） */
+  28: export function agentCliProviderLabel(provider?: string | null): string {
+  29:   const value = String(provider || '').trim().toLowerCase();
+  30:   if (value === 'claude') return 'Claude';
+  31:   if (value && value !== 'codex') return value;
+  32:   return 'Codex';
+  33: }
+  34: 
+  35: export function codexReasoningEffortLabel(effort?: string | null): string {
+  36:   const value = String(effort || '').trim().toLowerCase();
+  37:   if (value === 'low') return 'low';
+  38:   if (value === 'high') return 'high';
+  39:   return 'medium';
+  40: }
+  41: 
+  42: export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
+  43:   const provider = readAgentCliProvider(source);
+  44:   const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
+  45:   if (provider === 'claude') return providerLabel;
+  46:   const effort = readCodexReasoningEffort(source) || 'medium';
+  47:   return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
+  48: }
+  49: 
+  50: export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
+  51:   return normalizeAgentCliProvider(readFirstString(source, [
+  52:     'agent_cli_provider',
+  53:     'agentCliProvider',
+  54:     'cli_provider',
+  55:     'cliProvider',
+  56:     'cli_backend',
+  57:     'cliBackend',
+  58:     'provider',
+  59:   ]));
+  60: }
+  61: 
+  62: export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
+  63:   const provider = readAgentCliProvider(source);
+  64:   if (provider === 'claude') return null;
+  65:   return normalizeCodexReasoningEffort(readFirstString(source, [
+  66:     'codex_reasoning_effort',
+  67:     'codexReasoningEffort',
+  68:     'codex_thinking_depth',
+  69:     'codexThinkingDepth',
+  70:     'reasoning_effort',
+  71:     'reasoningEffort',
+  72:     'thinking_depth',
+  73:     'thinkingDepth',
+  74:   ]));
+  75: }
+  76: 
+  77: function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
+  78:   for (const key of keys) {
+  79:     const value = source?.[key];
+  80:     if (typeof value === 'string' && value.trim()) return value.trim();
+  81:   }
+  82:   return '';
+  83: }
+  84: 
+  85: function normalizeAgentCliProvider(provider?: string | null): string {
+  86:   const value = String(provider || '').trim().toLowerCase();
+  87:   if (value === 'claude') return 'claude';
+  88:   if (value && value !== 'codex') return value;
+  89:   return 'codex';
+  90: }
+  91: 
+  92: function normalizeCodexReasoningEffort(effort?: string | null): string {
+  93:   const value = String(effort || '').trim().toLowerCase();
+  94:   if (value === 'low' || value === 'high') return value;
+  95:   return 'medium';
+  96: }
+  97: 
+  98: /** 状态 → 语义化 chip class */
+  99: export function statusChipClass(status: string): string {
+ 100:   const s = status.toLowerCase();
+ 101:   if (['completed', 'done', 'passed', 'accepted', 'executed'].includes(s)) return 'chip-completed';
+ 102:   if (['failed', 'error'].includes(s)) return 'chip-failed';
+ 103:   if (['running', 'processing', 'validate', 'generate-plan', 'execute-task', 'scan'].includes(s)) return 'chip-running';
+ 104:   if (['waiting', 'pending', 'draft', 'ready_for_validation', 'validation_failed', 'open'].includes(s)) return 'chip-waiting';
+ 105:   return 'chip-pending';
+ 106: }
+ 107: 
+ 108: export function AttachmentGrid({ attachments }: { attachments: Attachment[] }) {
+ 109:   if (!attachments.length) return null;
+ 110:   return (
+ 111:     <div className="attachment-grid">
+ 112:       {attachments.map((attachment) => (
+ 113:         <AttachmentView attachment={attachment} key={attachment.id} />
+ 114:       ))}
+ 115:     </div>
+ 116:   );
+ 117: }
+ 118: 
+ 119: function AttachmentView({ attachment }: { attachment: Attachment }) {
+ 120:   const url = window.autoplan.toFileUrl(attachment.stored_path);
+ 121:   const name = attachment.original_name || attachment.stored_path;
+ 122:   if (String(attachment.mime_type || '').startsWith('image/')) {
+ 123:     return (
+ 124:       <a className="attachment-thumb" href={url} target="_blank" rel="noreferrer" title={name}>
+ 125:         <img src={url} alt={name} />
+ 126:         <span>{name}</span>
+ 127:       </a>
+ 128:     );
+ 129:   }
+ 130:   return (
+ 131:     <a className="attachment-file" href={url} target="_blank" rel="noreferrer">
+ 132:       <span>{name}</span>
+ 133:       <small>{formatBytes(attachment.size)}</small>
+ 134:     </a>
+ 135:   );
+ 136: }
+--- type head
+   1: export type IntakeType = 'requirement' | 'feedback';
+   2: export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+   3: export type AgentCliProvider = 'codex' | 'claude' | string;
+   4: export type CodexReasoningEffort = 'low' | 'medium' | 'high' | string;
+   5: 
+   6: export interface AgentCliOption {
+   7:   value: AgentCliProvider;
+   8:   label: string;
+   9: }
+  10: 
+  11: export interface AgentCliDisplaySource {
+  12:   agent_cli_provider?: AgentCliProvider | null;
+  13:   agentCliProvider?: AgentCliProvider | null;
+  14:   cli_provider?: AgentCliProvider | null;
+  15:   cliProvider?: AgentCliProvider | null;
+  16:   cli_backend?: AgentCliProvider | null;
+  17:   cliBackend?: AgentCliProvider | null;
+  18:   provider?: AgentCliProvider | null;
+  19:   agent_cli_command?: string | null;
+  20:   agentCliCommand?: string | null;
+  21:   cli_command?: string | null;
+  22:   cliCommand?: string | null;
+  23:   cli_path?: string | null;
+  24:   cliPath?: string | null;
+  25:   command?: string | null;
+  26:   codex_reasoning_effort?: CodexReasoningEffort | null;
+  27:   codexReasoningEffort?: CodexReasoningEffort | null;
+  28:   codex_thinking_depth?: CodexReasoningEffort | null;
+  29:   codexThinkingDepth?: CodexReasoningEffort | null;
+  30:   reasoning_effort?: CodexReasoningEffort | null;
+  31:   reasoningEffort?: CodexReasoningEffort | null;
+  32:   thinking_depth?: CodexReasoningEffort | null;
+  33:   thinkingDepth?: CodexReasoningEffort | null;
+  34:   [key: string]: unknown;
+  35: }
+  36: 
+  37: export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+  38:   REQUIREMENT: 'requirement',
+  39:   FEEDBACK: 'feedback',
+  40:   PLAN: 'plan',
+  41:   TASK: 'task',
+  42:   EVENT: 'event',
+  43: } as const;
+  44: 
+  45: export type WorkspaceSearchSourceType =
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index e917c0403d06b06ec4c1456188992398a539dbad..c3e6792694775befe5198cc3bcedd0d960e2d9c5
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -1,4 +1,4 @@
+-import type { Attachment } from '../types';
++import type { AgentCliDisplaySource, Attachment } from '../types';
+ 
+ export function getFilePath(file: File) {
+   try {
+@@ -28,14 +28,71 @@
+ export function agentCliProviderLabel(provider?: string | null): string {
+   const value = String(provider || '').trim().toLowerCase();
+   if (value === 'claude') return 'Claude';
++  if (value && value !== 'codex') return value;
+   return 'Codex';
+ }
+ 
+ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+ }
+ 
+ /** 状态 → 语义化 chip class */
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+codex
+实现已完成；我只做 diff 摘要和状态检查，不启动任何验证命令。
+  ✓ 查看共享展示工具
+  ✓ 补充统一格式化类型
+  ✓ 实现 CLI 文案函数
+  → 检查改动范围
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index e917c0403d06b06ec4c1456188992398a539dbad..c3e6792694775befe5198cc3bcedd0d960e2d9c5
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -1,4 +1,4 @@
+-import type { Attachment } from '../types';
++import type { AgentCliDisplaySource, Attachment } from '../types';
+ 
+ export function getFilePath(file: File) {
+   try {
+@@ -28,14 +28,71 @@
+ export function agentCliProviderLabel(provider?: string | null): string {
+   const value = String(provider || '').trim().toLowerCase();
+   if (value === 'claude') return 'Claude';
++  if (value && value !== 'codex') return value;
+   return 'Codex';
+ }
+ 
+ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+ }
+ 
+ /** 状态 → 语义化 chip class */
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+exec
+powershell.exe -Command "git diff --stat -- src/renderer/components/shared.tsx src/renderer/types.ts; Write-Host '--- changed lines'; git diff --unified=0 -- src/renderer/components/shared.tsx src/renderer/types.ts | Select-String -Pattern '"'^@@|''^'"\\+["'^+]|''^- [''^-]'"' | Select-Object -First 120; Write-Host '--- status'; git status --short -- src/renderer/components/shared.tsx src/renderer/types.ts docs/plan/plan_requirement_26_20260626-140018.md" in D:\project\GitHub\autoplan
+ succeeded in 656ms:
+ src/renderer/components/shared.tsx | 65 +++++++++++++++++++++++++++++++++---
+ src/renderer/types.ts              | 68 ++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 129 insertions(+), 4 deletions(-)
+--- changed lines
+
+@@ -1 +1 @@
++import type { AgentCliDisplaySource, Attachment } from '../types';
+@@ -30,0 +31 @@ export function agentCliProviderLabel(provider?: string | null): string {
++  if (value && value !== 'codex') return value;
+@@ -36,3 +37,59 @@ export function codexReasoningEffortLabel(effort?: string | null): string {
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+@@ -10,0 +11,26 @@ export interface AgentCliOption {
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
+@@ -179,0 +206,4 @@ export interface Plan {
++  agent_cli_provider?: AgentCliProvider | null;
++  agent_cli_command?: string;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  concurrency_suggestion: PlanConcurrencySuggestion;
+@@ -183,0 +214,35 @@ export interface Plan {
++export interface PlanScopeFileInfo {
++  path: string;
++  exists: boolean;
++  isDirectory: boolean;
++  canOpen: boolean;
++  isUnknown: boolean;
++  isValidation: boolean;
++  reason: string;
++}
++export interface PlanConcurrencyTask {
++  id: number;
++  task_key: string;
++  title: string;
++  status: string;
++  scopes: string[];
++  reason: string;
++}
++export interface PlanConcurrencyBatch {
++  batch: number;
++  reason: string;
++  tasks: PlanConcurrencyTask[];
++}
++export interface PlanConcurrencySuggestion {
++  hasSafeParallelBatches: boolean;
++  parallelTaskCount: number;
++  batchCount: number;
++  serialTaskCount: number;
+--- status
+ M src/renderer/components/shared.tsx
+ M src/renderer/types.ts
+?? docs/plan/plan_requirement_26_20260626-140018.md
+
+
+warning: in the working copy of 'src/renderer/components/shared.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/components/shared.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index e917c0403d06b06ec4c1456188992398a539dbad..c3e6792694775befe5198cc3bcedd0d960e2d9c5
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -1,4 +1,4 @@
+-import type { Attachment } from '../types';
++import type { AgentCliDisplaySource, Attachment } from '../types';
+ 
+ export function getFilePath(file: File) {
+   try {
+@@ -28,14 +28,71 @@
+ export function agentCliProviderLabel(provider?: string | null): string {
+   const value = String(provider || '').trim().toLowerCase();
+   if (value === 'claude') return 'Claude';
++  if (value && value !== 'codex') return value;
+   return 'Codex';
+ }
+ 
+ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+ }
+ 
+ /** 状态 → 语义化 chip class */
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+**Evaluating file changes**
+
+I notice that the diff shows types, including changes for P001, which has already been modified. P002 seems okay, but I need to clarify that my final report should mention the P002 changes along with the preexisting P001 changes. I'm realizing that "只修改当前任务 scope" also covers types. However, the status indicates that the plan is untracked and not modified by me, being read-only. I’ll need line numbers for shared/types, possibly using Select-String.
+codex
+检查完成，仅 scope 内文件有改动；我获取关键行号用于交付说明。
+exec
+powershell.exe -Command "Select-String -Path 'src/renderer/components/shared.tsx','src/renderer/types.ts' -Pattern 'AgentCliDisplaySource|planCliSummaryLabel|readAgentCliProvider|readCodexReasoningEffort|codexReasoningEffortLabel' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path.Replace((Get-Location).Path + '"'\\\\',''),"'$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 586ms:
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:1: import type { AgentCliDisplaySource, Attachment } from '../types';
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:35: export function codexReasoningEffortLabel(effort?: string | null): string {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:42: export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:43: const provider = readAgentCliProvider(source);
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:46: const effort = readCodexReasoningEffort(source) || 'medium';
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:47: return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:50: export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:62: export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:63: const provider = readAgentCliProvider(source);
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:77: function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
+D:\project\GitHub\autoplan\src\renderer\types.ts:11: export interface AgentCliDisplaySource {
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index e917c0403d06b06ec4c1456188992398a539dbad..c3e6792694775befe5198cc3bcedd0d960e2d9c5
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -1,4 +1,4 @@
+-import type { Attachment } from '../types';
++import type { AgentCliDisplaySource, Attachment } from '../types';
+ 
+ export function getFilePath(file: File) {
+   try {
+@@ -28,14 +28,71 @@
+ export function agentCliProviderLabel(provider?: string | null): string {
+   const value = String(provider || '').trim().toLowerCase();
+   if (value === 'claude') return 'Claude';
++  if (value && value !== 'codex') return value;
+   return 'Codex';
+ }
+ 
+ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+ }
+ 
+ /** 状态 → 语义化 chip class */
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+**Evaluating path replacement**
+
+It seems like the path replacement didn't work—maybe it was due to backslash escaping issues. I'm thinking I might need to use relative paths manually instead to get things sorted out. It's clear I'll have to create a new plan to complete this task effectively. Let's make sure to keep things efficient moving forward!
+  ✓ 查看共享展示工具
+  ✓ 补充统一格式化类型
+  ✓ 实现 CLI 文案函数
+  ✓ 检查改动范围
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index e917c0403d06b06ec4c1456188992398a539dbad..c3e6792694775befe5198cc3bcedd0d960e2d9c5
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -1,4 +1,4 @@
+-import type { Attachment } from '../types';
++import type { AgentCliDisplaySource, Attachment } from '../types';
+ 
+ export function getFilePath(file: File) {
+   try {
+@@ -28,14 +28,71 @@
+ export function agentCliProviderLabel(provider?: string | null): string {
+   const value = String(provider || '').trim().toLowerCase();
+   if (value === 'claude') return 'Claude';
++  if (value && value !== 'codex') return value;
+   return 'Codex';
+ }
+ 
+ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+ }
+ 
+ /** 状态 → 语义化 chip class */
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+codex
+已完成 P002，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint。
+
+- 在 `src/renderer/types.ts:11` 新增 `AgentCliDisplaySource`，统一覆盖计划/任务/事件里下划线与驼峰 CLI 字段。
+- 在 `src/renderer/components/shared.tsx:42` 新增 `planCliSummaryLabel()`，输出如 `Codex CLI · 思考深度 medium`。
+- 在 `src/renderer/components/shared.tsx:50` 和 `src/renderer/components/shared.tsx:62` 新增统一字段读取函数，Claude 自动隐藏 Codex 思考深度。
+- 在 `src/renderer/components/shared.tsx:35` 规范化思考深度标签为空值降级为 `medium`，避免 `undefined/null` 展示。
+- 检查结果：改动仅限 `src/renderer/components/shared.tsx`、`src/renderer/types.ts`；`docs/plan/...` 仍未修改。
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index e917c0403d06b06ec4c1456188992398a539dbad..c3e6792694775befe5198cc3bcedd0d960e2d9c5
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -1,4 +1,4 @@
+-import type { Attachment } from '../types';
++import type { AgentCliDisplaySource, Attachment } from '../types';
+ 
+ export function getFilePath(file: File) {
+   try {
+@@ -28,14 +28,71 @@
+ export function agentCliProviderLabel(provider?: string | null): string {
+   const value = String(provider || '').trim().toLowerCase();
+   if (value === 'claude') return 'Claude';
++  if (value && value !== 'codex') return value;
+   return 'Codex';
+ }
+ 
+ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low') return '低';
+-  if (value === 'high') return '高';
+-  return '中';
++  if (value === 'low') return 'low';
++  if (value === 'high') return 'high';
++  return 'medium';
++}
++
++export function planCliSummaryLabel(source?: AgentCliDisplaySource | null): string {
++  const provider = readAgentCliProvider(source);
++  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
++  if (provider === 'claude') return providerLabel;
++  const effort = readCodexReasoningEffort(source) || 'medium';
++  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
++}
++
++export function readAgentCliProvider(source?: AgentCliDisplaySource | null): string {
++  return normalizeAgentCliProvider(readFirstString(source, [
++    'agent_cli_provider',
++    'agentCliProvider',
++    'cli_provider',
++    'cliProvider',
++    'cli_backend',
++    'cliBackend',
++    'provider',
++  ]));
++}
++
++export function readCodexReasoningEffort(source?: AgentCliDisplaySource | null): string | null {
++  const provider = readAgentCliProvider(source);
++  if (provider === 'claude') return null;
++  return normalizeCodexReasoningEffort(readFirstString(source, [
++    'codex_reasoning_effort',
++    'codexReasoningEffort',
++    'codex_thinking_depth',
++    'codexThinkingDepth',
++    'reasoning_effort',
++    'reasoningEffort',
++    'thinking_depth',
++    'thinkingDepth',
++  ]));
++}
++
++function readFirstString(source: AgentCliDisplaySource | null | undefined, keys: string[]): string {
++  for (const key of keys) {
++    const value = source?.[key];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return '';
++}
++
++function normalizeAgentCliProvider(provider?: string | null): string {
++  const value = String(provider || '').trim().toLowerCase();
++  if (value === 'claude') return 'claude';
++  if (value && value !== 'codex') return value;
++  return 'codex';
++}
++
++function normalizeCodexReasoningEffort(effort?: string | null): string {
++  const value = String(effort || '').trim().toLowerCase();
++  if (value === 'low' || value === 'high') return value;
++  return 'medium';
+ }
+ 
+ /** 状态 → 语义化 chip class */
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8e7eb3bdba97de6798084695a3dee992be25fbe1..ae87bdfbe46e72dd1d6a5e0c6157651ff80e4e7c
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -8,6 +8,32 @@
+   label: string;
+ }
+ 
++export interface AgentCliDisplaySource {
++  agent_cli_provider?: AgentCliProvider | null;
++  agentCliProvider?: AgentCliProvider | null;
++  cli_provider?: AgentCliProvider | null;
++  cliProvider?: AgentCliProvider | null;
++  cli_backend?: AgentCliProvider | null;
++  cliBackend?: AgentCliProvider | null;
++  provider?: AgentCliProvider | null;
++  agent_cli_command?: string | null;
++  agentCliCommand?: string | null;
++  cli_command?: string | null;
++  cliCommand?: string | null;
++  cli_path?: string | null;
++  cliPath?: string | null;
++  command?: string | null;
++  codex_reasoning_effort?: CodexReasoningEffort | null;
++  codexReasoningEffort?: CodexReasoningEffort | null;
++  codex_thinking_depth?: CodexReasoningEffort | null;
++  codexThinkingDepth?: CodexReasoningEffort | null;
++  reasoning_effort?: CodexReasoningEffort | null;
++  reasoningEffort?: CodexReasoningEffort | null;
++  thinking_depth?: CodexReasoningEffort | null;
++  thinkingDepth?: CodexReasoningEffort | null;
++  [key: string]: unknown;
++}
++
+ export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+   REQUIREMENT: 'requirement',
+   FEEDBACK: 'feedback',
+
+tokens used
+272,005
+已完成 P002，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint。
+
+- 在 `src/renderer/types.ts:11` 新增 `AgentCliDisplaySource`，统一覆盖计划/任务/事件里下划线与驼峰 CLI 字段。
+- 在 `src/renderer/components/shared.tsx:42` 新增 `planCliSummaryLabel()`，输出如 `Codex CLI · 思考深度 medium`。
+- 在 `src/renderer/components/shared.tsx:50` 和 `src/renderer/components/shared.tsx:62` 新增统一字段读取函数，Claude 自动隐藏 Codex 思考深度。
+- 在 `src/renderer/components/shared.tsx:35` 规范化思考深度标签为空值降级为 `medium`，避免 `undefined/null` 展示。
+- 检查结果：改动仅限 `src/renderer/components/shared.tsx`、`src/renderer/types.ts`；`docs/plan/...` 仍未修改。

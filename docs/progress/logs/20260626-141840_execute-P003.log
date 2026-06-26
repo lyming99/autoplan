@@ -1,0 +1,1933 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0275-6b45-7a43-84af-3e99345d0a60
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_24_20260626-134137.md
+指定任务：
+- [ ] P003: 优化分组视觉样式 <!-- scope: src/styles.css,src/renderer/components/PlanLists.tsx -->
+任务 scope：src/styles.css, src/renderer/components/planlists.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Planning CSS Modifications**
+
+I need to modify P003, so I'll start by inspecting the existing CSS and looking at the current components. It seems there are no tests required for this. I might consider using commentary preambles as I work. I wonder if I should maybe draw up a plan since this task seems to involve multiple files. It’s likely I’ll need to use an update plan to keep everything organized.
+codex
+我会沿用前序分组实现，只查看分组渲染和现有样式后做视觉增强。
+  → 核对分组现状样式
+  • 补充分组标题摘要
+  • 添加响应式样式
+  • 静态核对改动范围
+exec
+powershell.exe -Command "Select-String -Path src\\styles.css -Pattern \"task-|\\.list|\\.item|RecordCard|compact|plan-\" -Context 2,3; "'$lines=Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; foreach("'$r in @(@(90,170),@(617,733))){ "--- PlanLists $($r[0])-$($r[1]) ---"; for($i=$r[0]; $i -le $r[1]; $i++){ if($i -le $lines.Length){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 727ms:
+
+  src\styles.css:122:.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
+  src\styles.css:123:
+> src\styles.css:124:.list { display: grid; gap: 10px; padding: 16px 18px; }
+> src\styles.css:125:.list.compact { max-height: none; overflow: auto; }
+> src\styles.css:126:.item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12p
+x; background: var(--bg-soft); }
+> src\styles.css:127:.item-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-weight:
+ 650; align-items: center; }
+> src\styles.css:128:.item-title > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: el
+lipsis; white-space: nowrap; }
+> src\styles.css:129:.item-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px
+; min-width: 0; flex: 0 0 auto; }
+> src\styles.css:130:.item-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-
+end; gap: 4px; }
+> src\styles.css:131:.item-actions .btn-link { padding: 3px 6px; font-size: 12px; white-space: nowrap; }
+> src\styles.css:132:.item-actions .danger-link { color: var(--danger); }
+> src\styles.css:133:.item-actions .btn-link:disabled { color: var(--text-4); cursor: not-allowed; text-decoration: non
+e; }
+> src\styles.css:134:.item-body { margin-top: 10px; color: var(--text-2); overflow-wrap: anywhere; }
+  src\styles.css:135:.plain-text { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+> src\styles.css:136:.plan-list-body { display: grid; gap: 4px; min-width: 0; line-height: 1.5; }
+> src\styles.css:137:.plan-list-title { color: var(--text-1); font-weight: 650; overflow-wrap: anywhere; }
+> src\styles.css:138:.plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+> src\styles.css:139:.task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+> src\styles.css:140:.task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
+> src\styles.css:141:.task-filter-tabs {
+  src\styles.css:142:  display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+  src\styles.css:143:  border-bottom: 1px solid var(--line-soft);
+  src\styles.css:144:}
+> src\styles.css:145:.task-filter-tab {
+  src\styles.css:146:  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  src\styles.css:147:  min-width: 0; min-height: 32px; flex: 1 1 0; padding: 6px 9px;
+  src\styles.css:148:  border: 1px solid var(--line); border-radius: 999px; background: var(--bg-elevated);
+  src\styles.css:150:  transition: background 0.14s, border-color 0.14s, color 0.14s;
+  src\styles.css:151:}
+> src\styles.css:152:.task-filter-tab:hover { background: var(--bg-hover); }
+> src\styles.css:153:.task-filter-tab.active { border-color: var(--brand-600); background: var(--brand-50); color: var(
+--brand-600); }
+> src\styles.css:154:.task-filter-count {
+  src\styles.css:155:  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  src\styles.css:156:  border-radius: 999px; background: var(--bg-soft); color: inherit; font-size: 11px; font-weight: 
+800;
+  src\styles.css:157:}
+> src\styles.css:158:.task-filter-tab.active .task-filter-count { background: rgba(255,255,255,0.72); }
+> src\styles.css:159:.task-file-link {
+  src\styles.css:160:  max-width: 100%; justify-content: flex-start; padding: 0; text-align: left;
+  src\styles.css:161:  white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+  src\styles.css:162:}
+  src\styles.css:175:.markdown-reader li { margin: 4px 0; }
+  src\styles.css:176:.markdown-reader li > p { margin: 6px 0; }
+> src\styles.css:177:.markdown-reader .contains-task-list { list-style: none; padding-left: 1.2em; }
+> src\styles.css:178:.markdown-reader .task-list-item { margin-left: -1.2em; }
+  src\styles.css:179:.markdown-reader input[type="checkbox"] { width: auto; margin: 0 7px 0 0; accent-color: var(--bran
+d-600); vertical-align: -2px; }
+> src\styles.css:180:.markdown-reader .task-list-item > input[type="checkbox"] { margin-top: 0.42em; }
+  src\styles.css:181:.markdown-reader blockquote { margin: 14px 0; padding: 10px 14px; border-left: 3px solid var(--bra
+nd-500); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--brand-50); color: var(--text-2); }
+  src\styles.css:182:.markdown-reader blockquote p { color: inherit; }
+  src\styles.css:183:.markdown-reader code { padding: 2px 5px; border: 1px solid var(--line-soft); border-radius: var(-
+-r-sm); background: var(--bg-soft); color: var(--text-1); font-family: var(--font-mono); font-size: 0.92em; word-break:
+ break-word; }
+  src\styles.css:207:.event-item-stopped, .event-item-stopping { border-left-color: var(--warning); }
+  src\styles.css:208:.event-item-updated { border-left-color: var(--info); }
+> src\styles.css:209:.event-item .item-body, .event-meta { margin-top: 0; }
+  src\styles.css:210:.button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+  src\styles.css:211:
+  src\styles.css:212:/* 需求/反馈卡片：进度 + 操作脚 + 追加任务 */
+  src\styles.css:213:.intake-progress { margin-top: 12px; }
+> src\styles.css:214:.intake-item .item-foot {
+  src\styles.css:215:  display: flex; align-items: center; gap: 12px; margin-top: 12px;
+  src\styles.css:216:  padding-top: 10px; border-top: 1px solid var(--line-soft);
+  src\styles.css:217:}
+> src\styles.css:218:.intake-item .item-foot .meta { margin-top: 0; margin-left: auto; }
+> src\styles.css:219:.intake-item .item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  src\styles.css:220:.intake-item .danger-link { color: var(--danger); }
+  src\styles.css:221:.intake-item .danger-link:hover { text-decoration: underline; }
+  src\styles.css:222:.append-row {
+  src\styles.css:507:.pending-attachment button { padding: 5px 8px; font-size: 12px; border: 1px solid var(--line); bor
+der-radius: var(--r-sm); background: var(--bg-elevated); }
+  src\styles.css:508:
+> src\styles.css:509:.task-main { display: grid; grid-template-rows: 1fr; gap: 16px; min-height: 0; }
+> src\styles.css:510:.task-status-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; min
+-height: 0; }
+  src\styles.css:511:.settings-layout { flex: 1 1 0; min-height: 0; overflow: auto; padding-bottom: 8px; }
+  src\styles.css:512:.settings-card { max-width: 560px; margin: 0; }
+> src\styles.css:513:.primary-section, .side-section, .task-status-grid .card { min-height: 0; overflow: hidden; displa
+y: flex; flex-direction: column; }
+> src\styles.css:514:.side-section .list, .task-status-grid .list, .primary-section .list { overflow: auto; }
+  src\styles.css:515:.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; color: var(--text-3
+); font-size: 11.5px; font-weight: 600; }
+  src\styles.css:516:.field:last-child { margin-bottom: 0; }
+  src\styles.css:517:input, textarea, select { width: 100%; border: 1px solid var(--line); border-radius: var(--r-sm); 
+padding: 9px 11px; font: inherit; font-size: 13px; color: var(--text-1); background: var(--bg-elevated); font-weight: 4
+00; }
+  src\styles.css:532:.modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px; border-top:
+ 1px solid var(--line-soft); background: var(--bg-soft); }
+  src\styles.css:533:
+> src\styles.css:534:.plan-reader-modal { width: 100%; max-width: min(920px, calc(100vw - 48px)); max-height: min(86dvh
+, 860px); display: flex; flex-direction: column; }
+> src\styles.css:535:.plan-reader-head { flex: 0 0 auto; align-items: flex-start; }
+> src\styles.css:536:.plan-reader-title { min-width: 0; display: flex; flex: 1 1 auto; flex-direction: column; gap: 5px
+; }
+> src\styles.css:537:.plan-reader-path { max-width: 100%; overflow: hidden; color: var(--text-3); font-size: 12px; font
+-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+> src\styles.css:538:.plan-reader-actions { flex: 0 0 auto; }
+> src\styles.css:539:.plan-reader-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; p
+adding: 16px 22px 22px; display: flex; flex-direction: column; gap: 14px; }
+> src\styles.css:540:.plan-reader-body:focus-visible { outline: 2px solid var(--brand-500); outline-offset: -4px; }
+> src\styles.css:541:.plan-reader-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px;
+ margin: 0; }
+> src\styles.css:542:.plan-reader-summary-item { min-width: 0; padding: 10px 12px; border: 1px solid var(--line-soft); 
+border-radius: var(--r-md); background: var(--bg-soft); }
+> src\styles.css:543:.plan-reader-summary-item dt { display: block; margin-bottom: 4px; color: var(--text-3); font-size
+: 11px; font-weight: 700; }
+> src\styles.css:544:.plan-reader-summary-item dd { display: block; min-width: 0; margin: 0; overflow: hidden; color: v
+ar(--text-1); font-size: 12.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+> src\styles.css:545:.plan-reader-content { min-width: 0; padding: 16px; overflow: visible; border: 1px solid var(--lin
+e); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
+> src\styles.css:546:.plan-reader-loading, .plan-reader-error { display: flex; align-items: center; justify-content: sp
+ace-between; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-radius: var(--r-md); font-size: 13px; line-height: 
+1.5; }
+> src\styles.css:547:.plan-reader-loading { border: 1px dashed var(--line); background: var(--bg-soft); color: var(--te
+xt-3); }
+> src\styles.css:548:.plan-reader-error { border: 1px solid rgba(229,72,77,0.28); background: var(--danger-bg); color: 
+var(--danger); }
+  src\styles.css:549:
+  src\styles.css:550:@media (max-width: 1080px) {
+  src\styles.css:551:  body { overflow: auto; }
+  src\styles.css:557:  .workspace-search + .topbar-actions { margin-left: auto; }
+  src\styles.css:558:  .search-results { margin: 14px 20px 0; }
+> src\styles.css:559:  .task-main { grid-template-rows: auto auto; }
+> src\styles.css:560:  .task-status-grid { grid-template-columns: 1fr; }
+  src\styles.css:561:  .overview-grid { grid-template-columns: 1fr; }
+  src\styles.css:562:  .overview-main-column > .live-log-card { height: 360px; }
+  src\styles.css:563:}
+  src\styles.css:576:  .stat-grid { grid-template-columns: 1fr; }
+  src\styles.css:577:  .card-head { flex-wrap: wrap; align-items: flex-start; }
+> src\styles.css:578:  .item-title { align-items: flex-start; flex-wrap: wrap; }
+> src\styles.css:579:  .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+  src\styles.css:580:  .composer-bottom { align-items: stretch; flex-direction: column; }
+  src\styles.css:581:  .composer-tools { align-items: stretch; }
+  src\styles.css:582:  .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+  src\styles.css:585:  .attachment-list.pending { flex-basis: 100%; }
+  src\styles.css:586:  .composer-actions { justify-content: flex-end; width: 100%; }
+> src\styles.css:587:  .plan-reader-modal { max-width: none; max-height: calc(100dvh - 28px); }
+> src\styles.css:588:  .plan-reader-head { padding: 16px; }
+> src\styles.css:589:  .plan-reader-actions { width: 100%; justify-content: space-between; }
+> src\styles.css:590:  .plan-reader-body { padding: 14px; }
+> src\styles.css:591:  .plan-reader-summary { grid-template-columns: 1fr; }
+> src\styles.css:592:  .plan-reader-content { padding: 12px; }
+  src\styles.css:593:  .markdown-reader { font-size: 13px; line-height: 1.68; }
+  src\styles.css:594:  .event-title { gap: 8px; }
+  src\styles.css:595:}
+--- PlanLists 90-170 ---
+  90: 
+  91: function readTaskTime(value: string | null | undefined) {
+  92:   const time = Date.parse(String(value || ''));
+  93:   return Number.isFinite(time) ? time : null;
+  94: }
+  95: 
+  96: function taskSortTime(task: TimedPlanTask) {
+  97:   return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
+  98: }
+  99: 
+ 100: function latestTaskTime(tasks: TimedPlanTask[]) {
+ 101:   const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
+ 102:   for (const fields of fieldGroups) {
+ 103:     const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
+ 104:     const validTimes = times.filter((time): time is number => time !== null);
+ 105:     if (validTimes.length) return Math.max(...validTimes);
+ 106:   }
+ 107:   return null;
+ 108: }
+ 109: 
+ 110: function taskPlanGroupTitle(task: PlanTask) {
+ 111:   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ 112: }
+ 113: 
+ 114: function taskPlanGroupKey(task: TimedPlanTask, index: number) {
+ 115:   const planId = readPlanId(task);
+ 116:   if (planId !== null) return `plan:${planId}`;
+ 117:   if (task.file_path) return `file:${task.file_path}`;
+ 118:   return `unknown:${index}`;
+ 119: }
+ 120: 
+ 121: function groupTasksByPlan(tasks: PlanTask[]) {
+ 122:   const groups = new Map<string, TaskPlanGroup>();
+ 123:   tasks.forEach((task, index) => {
+ 124:     const timedTask = task as TimedPlanTask;
+ 125:     const key = taskPlanGroupKey(timedTask, index);
+ 126:     const existingGroup = groups.get(key);
+ 127:     if (existingGroup) {
+ 128:       existingGroup.tasks.push(task);
+ 129:       if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
+ 130:       return;
+ 131:     }
+ 132: 
+ 133:     groups.set(key, {
+ 134:       key,
+ 135:       title: taskPlanGroupTitle(task),
+ 136:       tasks: [task],
+ 137:       firstIndex: index,
+ 138:       sortTime: null,
+ 139:     });
+ 140:   });
+ 141: 
+ 142:   return Array.from(groups.values())
+ 143:     .map((group) => {
+ 144:       const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
+ 145:       const sortedTasks = indexedTasks
+ 146:         .sort((left, right) => {
+ 147:           const leftTime = taskSortTime(left.task as TimedPlanTask);
+ 148:           const rightTime = taskSortTime(right.task as TimedPlanTask);
+ 149:           if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+ 150:           if (leftTime !== null && rightTime === null) return -1;
+ 151:           if (leftTime === null && rightTime !== null) return 1;
+ 152:           return left.index - right.index;
+ 153:         })
+ 154:         .map(({ task }) => task);
+ 155:       return {
+ 156:         ...group,
+ 157:         tasks: sortedTasks,
+ 158:         sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
+ 159:       };
+ 160:     })
+ 161:     .sort((left, right) => {
+ 162:       if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
+ 163:         return right.sortTime - left.sortTime;
+ 164:       }
+ 165:       if (left.sortTime !== null && right.sortTime === null) return -1;
+ 166:       if (left.sortTime === null && right.sortTime !== null) return 1;
+ 167:       return left.firstIndex - right.firstIndex;
+ 168:     });
+ 169: }
+ 170: 
+--- PlanLists 617-733 ---
+ 617: export function TaskList({
+ 618:   emptyText = '暂无任务。',
+ 619:   tasks,
+ 620:   onOpenPlan,
+ 621:   onRun,
+ 622:   onStop,
+ 623: }: {
+ 624:   emptyText?: string;
+ 625:   tasks: PlanTask[];
+ 626:   onOpenPlan?: (task: PlanTask) => void;
+ 627:   onRun?: (task: PlanTask) => void;
+ 628:   onStop?: (task: PlanTask) => void;
+ 629: }) {
+ 630:   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+ 631:   const visibleTasks = useMemo(
+ 632:     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+ 633:     [activeFilter, tasks],
+ 634:   );
+ 635:   const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+ 636:   const filterCounts = useMemo(
+ 637:     () =>
+ 638:       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+ 639:         (counts, filter) => ({
+ 640:           ...counts,
+ 641:           [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+ 642:         }),
+ 643:         { all: 0, running: 0, queued: 0, completed: 0 },
+ 644:       ),
+ 645:     [tasks],
+ 646:   );
+ 647:   const activeFilterConfig =
+ 648:     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+ 649:   const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+ 650: 
+ 651:   return (
+ 652:     <div className="task-list-panel">
+ 653:       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+ 654:         {TASK_STATUS_FILTERS.map((filter) => {
+ 655:           const active = activeFilter === filter.id;
+ 656:           return (
+ 657:             <button
+ 658:               key={filter.id}
+ 659:               type="button"
+ 660:               role="tab"
+ 661:               aria-selected={active}
+ 662:               className={`task-filter-tab${active ? ' active' : ''}`}
+ 663:               onClick={() => setActiveFilter(filter.id)}
+ 664:             >
+ 665:               <span>{filter.label}</span>
+ 666:               <span className="task-filter-count">{filterCounts[filter.id]}</span>
+ 667:             </button>
+ 668:           );
+ 669:         })}
+ 670:       </div>
+ 671:       {taskGroups.length ? (
+ 672:         <div className="list compact">
+ 673:           {taskGroups.map((group) => {
+ 674:             return (
+ 675:               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+ 676:                 <div className="task-plan-group-title">{group.title}</div>
+ 677:                 {group.tasks.map((task) => {
+ 678:                   const running = task.status === 'running';
+ 679:                   const completed = task.status === 'completed';
+ 680:                   const durationLabel = formatTaskDuration(task as TimedPlanTask);
+ 681:                   return (
+ 682:                     <RecordCard
+ 683:                       actions={
+ 684:                         <div className="item-actions">
+ 685:                           <button
+ 686:                             type="button"
+ 687:                             className="btn-link"
+ 688:                             disabled={completed || running}
+ 689:                             onClick={() => onRun?.(task)}
+ 690:                           >
+ 691:                             执行
+ 692:                           </button>
+ 693:                           <button
+ 694:                             type="button"
+ 695:                             className="btn-link danger-link"
+ 696:                             disabled={!running}
+ 697:                             onClick={() => onStop?.(task)}
+ 698:                           >
+ 699:                             停止
+ 700:                           </button>
+ 701:                         </div>
+ 702:                       }
+ 703:                       key={task.id}
+ 704:                       title={task.title}
+ 705:                       status={task.status}
+ 706:                       body={
+ 707:                         task.file_path ? (
+ 708:                           <button
+ 709:                             type="button"
+ 710:                             className="btn-link task-file-link mono"
+ 711:                             disabled={!onOpenPlan}
+ 712:                             title={task.file_path}
+ 713:                             aria-label={`预览 ${task.file_path}`}
+ 714:                             onClick={() => onOpenPlan?.(task)}
+ 715:                           >
+ 716:                             {task.file_path}
+ 717:                           </button>
+ 718:                         ) : null
+ 719:                       }
+ 720:                       meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+ 721:                     />
+ 722:                   );
+ 723:                 })}
+ 724:               </section>
+ 725:             );
+ 726:           })}
+ 727:         </div>
+ 728:       ) : (
+ 729:         <div className="empty">{currentEmptyText}</div>
+ 730:       )}
+ 731:     </div>
+ 732:   );
+ 733: }
+
+
+
+**Considering patch components**
+
+I’m thinking about the patch component that needs to add group count and the latest summary. P003 mentions visual style only, but it also includes PlanLists, which is a bit confusing. I should probably incorporate the latest complete or updated summary and consider using a helper function like formatTaskGroupSummary for that. I'll need to inspect the variables and media to make sure everything aligns with the desired style.
+codex
+已有分组只有标题；我会补任务数量和最新时间摘要，再配套 CSS。
+  ✓ 核对分组现状样式
+  → 补充分组标题摘要
+  • 添加响应式样式
+  • 静态核对改动范围
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src\\styles.css -TotalCount 260; '--- media ---'; Select-String -Path src\\styles.css -Pattern \"@media|task-plan-group|task-filter|item-actions|plan-list\" -Context 1,3" in D:\project\GitHub\autoplan
+ succeeded in 564ms:
+/* ============================================================
+   设计系统 · Design Tokens
+   ============================================================ */
+:root {
+  color-scheme: light;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+  --brand-50: #eef4ff;
+  --brand-100: #dbe7ff;
+  --brand-500: #3b6ef5;
+  --brand-600: #255fbd;
+  --brand-700: #1d4a94;
+  --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+
+  --bg-app: #f4f6fb;
+  --bg-elevated: #ffffff;
+  --bg-soft: #f8fafd;
+  --bg-hover: #eef2f9;
+  --line: #e2e8f1;
+  --line-soft: #eef2f8;
+
+  --text-1: #172033;
+  --text-2: #475067;
+  --text-3: #7c879b;
+  --text-4: #a4adc0;
+
+  --success: #18a957;
+  --success-bg: #e7f7ee;
+  --warning: #e08600;
+  --warning-bg: #fdf3e3;
+  --danger: #e5484d;
+  --danger-bg: #fdecec;
+  --info: #2563eb;
+  --info-bg: #e8f0ff;
+
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --r-xl: 20px;
+  --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+  --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+  --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+
+  background: var(--bg-app);
+  color: var(--text-1);
+}
+
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { overflow: hidden; font-size: 14px; -webkit-font-smoothing: antialiased; }
+h1, h2, h3, p { margin: 0; }
+button { font: inherit; cursor: pointer; }
+a { color: var(--brand-600); text-decoration: none; }
+.mono { font-family: var(--font-mono); }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+#root { height: 100vh; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); color: var(--text-1); font-size: 13px; font-weight: 600; transition: background 0.14s, border-color 0.14s, transform 0.06s; }
+.btn:hover { background: var(--bg-hover); }
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.btn-primary:hover { background: var(--brand-700); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-link { display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 0; color: var(--brand-600); font-size: 12px; font-weight: 600; padding: 4px 8px; }
+.btn-link:hover { text-decoration: underline; }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.btn-link:focus-visible, .modal-close:focus-visible { border-radius: var(--r-sm); box-shadow: 0 0 0 3px var(--brand-50); }
+
+.card { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.card-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
+.card-head h2 { font-size: 14.5px; font-weight: 700; }
+.card-head .hint { font-size: 12px; color: var(--text-3); }
+.card-head .spacer { margin-left: auto; }
+.card-body { padding: 16px 18px; }
+
+/* 表单型卡片（如循环控制）：head 之后给 body 留内边距 */
+.editor.card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.editor > .card-head { flex: 0 0 auto; }
+.editor > .field,
+.editor > .button-row,
+.editor > .control-row { padding: 0 18px; }
+.editor > .field:first-of-type { padding-top: 16px; }
+.editor > .button-row { padding: 4px 18px 18px; flex-wrap: wrap; }
+.editor .button-row button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 14px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--bg-elevated); color: var(--text-1); font-size: 12.5px; font-weight: 600;
+  transition: background 0.14s, border-color 0.14s;
+}
+.editor .button-row button:hover { background: var(--bg-hover); }
+.editor .button-row button[type="submit"] { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.editor .button-row button[type="submit"]:hover { background: var(--brand-700); }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip-pending { color: var(--text-3); background: var(--bg-soft); }
+.chip-running { color: var(--info); background: var(--info-bg); }
+.chip-completed { color: var(--success); background: var(--success-bg); }
+.chip-failed { color: var(--danger); background: var(--danger-bg); }
+.chip-stopped { color: var(--warning); background: var(--warning-bg); }
+.chip-waiting { color: var(--warning); background: var(--warning-bg); }
+
+.empty { color: var(--text-3); padding: 28px 18px; text-align: center; font-size: 13px; }
+.error-banner { padding: 12px 16px; margin-bottom: 16px; border-radius: var(--r-md); background: var(--danger-bg); border: 1px solid #f3c2c4; color: var(--danger); font-size: 13px; }
+.req { color: var(--danger); }
+.danger-text { color: var(--danger); }
+
+.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
+.app-icon * { vector-effect: non-scaling-stroke; }
+.app-icon-muted { color: var(--text-3); }
+.app-icon-brand { color: var(--brand-600); }
+.app-icon-success { color: var(--success); }
+.app-icon-warning { color: var(--warning); }
+.app-icon-danger { color: var(--danger); }
+.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
+.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
+.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
+.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
+.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
+.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
+
+.list { display: grid; gap: 10px; padding: 16px 18px; }
+.list.compact { max-height: none; overflow: auto; }
+.item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+.item-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-weight: 650; align-items: center; }
+.item-title > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex: 0 0 auto; }
+.item-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
+.item-actions .btn-link { padding: 3px 6px; font-size: 12px; white-space: nowrap; }
+.item-actions .danger-link { color: var(--danger); }
+.item-actions .btn-link:disabled { color: var(--text-4); cursor: not-allowed; text-decoration: none; }
+.item-body { margin-top: 10px; color: var(--text-2); overflow-wrap: anywhere; }
+.plain-text { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.plan-list-body { display: grid; gap: 4px; min-width: 0; line-height: 1.5; }
+.plan-list-title { color: var(--text-1); font-weight: 650; overflow-wrap: anywhere; }
+.plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+.task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+.task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
+.task-filter-tabs {
+  display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.task-filter-tab {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-width: 0; min-height: 32px; flex: 1 1 0; padding: 6px 9px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--bg-elevated);
+  color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.task-filter-tab:hover { background: var(--bg-hover); }
+.task-filter-tab.active { border-color: var(--brand-600); background: var(--brand-50); color: var(--brand-600); }
+.task-filter-count {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px; background: var(--bg-soft); color: inherit; font-size: 11px; font-weight: 800;
+}
+.task-filter-tab.active .task-filter-count { background: rgba(255,255,255,0.72); }
+.task-file-link {
+  max-width: 100%; justify-content: flex-start; padding: 0; text-align: left;
+  white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
+.markdown-reader { min-width: 0; max-width: 100%; color: var(--text-1); font-size: 13.5px; line-height: 1.72; overflow-wrap: anywhere; }
+.markdown-reader > :first-child { margin-top: 0; }
+.markdown-reader > :last-child { margin-bottom: 0; }
+.markdown-reader-empty { padding: 28px 18px; border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--bg-soft); color: var(--text-3); text-align: center; font-size: 13px; }
+.markdown-reader h1 { margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); font-size: 22px; line-height: 1.3; font-weight: 800; }
+.markdown-reader h2 { margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); font-size: 18px; line-height: 1.35; font-weight: 750; }
+.markdown-reader h3 { margin: 20px 0 8px; font-size: 15.5px; line-height: 1.4; font-weight: 700; }
+.markdown-reader h4, .markdown-reader h5, .markdown-reader h6 { margin: 16px 0 8px; font-size: 14px; line-height: 1.4; font-weight: 700; }
+.markdown-reader p { margin: 0 0 12px; color: var(--text-2); }
+.markdown-reader a { color: var(--brand-600); overflow-wrap: anywhere; word-break: break-word; }
+.markdown-reader a:hover { text-decoration: underline; }
+.markdown-reader ul, .markdown-reader ol { margin: 0 0 14px; padding-left: 1.45em; color: var(--text-2); }
+.markdown-reader li { margin: 4px 0; }
+.markdown-reader li > p { margin: 6px 0; }
+.markdown-reader .contains-task-list { list-style: none; padding-left: 1.2em; }
+.markdown-reader .task-list-item { margin-left: -1.2em; }
+.markdown-reader input[type="checkbox"] { width: auto; margin: 0 7px 0 0; accent-color: var(--brand-600); vertical-align: -2px; }
+.markdown-reader .task-list-item > input[type="checkbox"] { margin-top: 0.42em; }
+.markdown-reader blockquote { margin: 14px 0; padding: 10px 14px; border-left: 3px solid var(--brand-500); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--brand-50); color: var(--text-2); }
+.markdown-reader blockquote p { color: inherit; }
+.markdown-reader code { padding: 2px 5px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--bg-soft); color: var(--text-1); font-family: var(--font-mono); font-size: 0.92em; word-break: break-word; }
+.markdown-reader pre { max-width: 100%; margin: 14px 0; padding: 12px 14px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); box-shadow: inset 0 1px 0 rgba(255,255,255,0.65); }
+.markdown-reader pre code { display: block; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-1); white-space: pre; word-break: normal; overflow-wrap: normal; }
+.markdown-reader pre:focus-visible, .markdown-reader-table:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.markdown-reader-table { max-width: 100%; margin: 14px 0; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+.markdown-reader-table table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+.markdown-reader th, .markdown-reader td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.markdown-reader th { background: var(--bg-soft); color: var(--text-1); font-weight: 700; }
+.markdown-reader tr:nth-child(even) td { background: rgba(248,250,253,0.65); }
+.markdown-reader hr { margin: 20px 0; border: 0; border-top: 1px solid var(--line); }
+.markdown-reader img { max-width: 100%; height: auto; border-radius: var(--r-md); box-shadow: var(--shadow-sm); }
+.meta { margin-top: 6px; color: var(--text-3); font-size: 12px; word-break: break-all; overflow-wrap: anywhere; }
+.event-list { min-width: 0; }
+.event-item { display: grid; gap: 8px; border-left: 3px solid transparent; }
+.event-title { align-items: flex-start; }
+.event-title > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.45; }
+.event-badge { flex: 0 0 auto; display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.event-badge-start, .event-badge-updated { color: var(--info); background: var(--info-bg); }
+.event-badge-success { color: var(--success); background: var(--success-bg); }
+.event-badge-failed { color: var(--danger); background: var(--danger-bg); }
+.event-badge-stopped, .event-badge-stopping { color: var(--warning); background: var(--warning-bg); }
+.event-item-start { border-left-color: var(--info); }
+.event-item-success { border-left-color: var(--success); }
+.event-item-failed { border-left-color: var(--danger); }
+.event-item-stopped, .event-item-stopping { border-left-color: var(--warning); }
+.event-item-updated { border-left-color: var(--info); }
+.event-item .item-body, .event-meta { margin-top: 0; }
+.button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+
+/* 需求/反馈卡片：进度 + 操作脚 + 追加任务 */
+.intake-progress { margin-top: 12px; }
+.intake-item .item-foot {
+  display: flex; align-items: center; gap: 12px; margin-top: 12px;
+  padding-top: 10px; border-top: 1px solid var(--line-soft);
+}
+.intake-item .item-foot .meta { margin-top: 0; margin-left: auto; }
+.intake-item .item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.intake-item .danger-link { color: var(--danger); }
+.intake-item .danger-link:hover { text-decoration: underline; }
+.append-row {
+  display: flex; gap: 8px; margin-top: 12px;
+  padding: 10px; border-radius: var(--r-sm);
+  background: var(--bg-soft); border: 1px dashed var(--line);
+}
+.append-input { flex: 1 1 auto; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: 12.5px; }
+.append-input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+.inline-editor { display: grid; gap: 10px; margin-top: 12px; }
+.inline-editor .field { margin-bottom: 0; }
+.inline-editor textarea { min-height: 140px; }
+.attachment-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.attachment-thumb, .attachment-file { display: grid; gap: 6px; width: 120px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); }
+.attachment-thumb img { width: 100%; aspect-ratio: 1; border-radius: 4px; object-fit: cover; background: var(--brand-50); }
+.attachment-thumb span, .attachment-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.attachment-file small { color: var(--text-3); font-size: 12px; }
+
+.app-header { display: flex; align-items: center; justify-content: space-between; padding: 18px 32px; background: var(--bg-elevated); border-bottom: 1px solid var(--line); }
+.app-header .brand { display: flex; align-items: center; gap: 12px; }
+.brand-mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--brand-grad); color: #fff; font-weight: 800; font-size: 18px; box-shadow: 0 8px 18px rgba(77, 110, 255, 0.35); }
+.app-header h1 { font-size: 17px; font-weight: 700; }
+.app-header p { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.header-actions { display: flex; align-items: center; gap: 10px; }
+.projects-main { height: calc(100vh - 77px); overflow: auto; padding: 28px 32px 48px; }
+.projects-hero { display: flex; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin-bottom: 22px; }
+.projects-hero h2 { font-size: 24px; font-weight: 800; }
+.projects-hero p { font-size: 13px; color: var(--text-3); margin-top: 6px; }
+.hero-stats { margin-left: auto; display: flex; gap: 24px; }
+.hero-stat { text-align: right; }
+.hero-stat b { display: block; font-size: 22px; font-weight: 800; color: var(--text-1); }
+.hero-stat span { font-size: 11px; color: var(--text-3); }
+.projects-toolbar { margin-bottom: 20px; }
+.search-input { width: 100%; max-width: 400px; padding: 10px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); font: inherit; font-size: 13px; }
+.search-input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+.project-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; }
+.project-card { position: relative; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 18px; box-shadow: var(--shadow-sm); cursor: pointer; transition: transform 0.14s, box-shadow 0.14s, border-color 0.14s; }
+.project-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-md); border-color: #cdd8ea; }
+.project-card-top { display: flex; align-items: flex-start; gap: 12px; }
+.project-avatar { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; background: var(--brand-grad); color: #fff; font-weight: 700; font-size: 18px; display: grid; place-items: center; }
+.project-info { min-width: 0; flex: 1 1 auto; }
+--- media ---
+
+  src\styles.css:129:.item-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px
+; min-width: 0; flex: 0 0 auto; }
+> src\styles.css:130:.item-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-
+end; gap: 4px; }
+> src\styles.css:131:.item-actions .btn-link { padding: 3px 6px; font-size: 12px; white-space: nowrap; }
+> src\styles.css:132:.item-actions .danger-link { color: var(--danger); }
+> src\styles.css:133:.item-actions .btn-link:disabled { color: var(--text-4); cursor: not-allowed; text-decoration: non
+e; }
+  src\styles.css:134:.item-body { margin-top: 10px; color: var(--text-2); overflow-wrap: anywhere; }
+  src\styles.css:135:.plain-text { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+> src\styles.css:136:.plan-list-body { display: grid; gap: 4px; min-width: 0; line-height: 1.5; }
+> src\styles.css:137:.plan-list-title { color: var(--text-1); font-weight: 650; overflow-wrap: anywhere; }
+> src\styles.css:138:.plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+  src\styles.css:139:.task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+  src\styles.css:140:.task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
+> src\styles.css:141:.task-filter-tabs {
+  src\styles.css:142:  display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+  src\styles.css:143:  border-bottom: 1px solid var(--line-soft);
+  src\styles.css:144:}
+> src\styles.css:145:.task-filter-tab {
+  src\styles.css:146:  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  src\styles.css:147:  min-width: 0; min-height: 32px; flex: 1 1 0; padding: 6px 9px;
+  src\styles.css:148:  border: 1px solid var(--line); border-radius: 999px; background: var(--bg-elevated);
+  src\styles.css:151:}
+> src\styles.css:152:.task-filter-tab:hover { background: var(--bg-hover); }
+> src\styles.css:153:.task-filter-tab.active { border-color: var(--brand-600); background: var(--brand-50); color: var(
+--brand-600); }
+> src\styles.css:154:.task-filter-count {
+  src\styles.css:155:  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  src\styles.css:156:  border-radius: 999px; background: var(--bg-soft); color: inherit; font-size: 11px; font-weight: 
+800;
+  src\styles.css:157:}
+> src\styles.css:158:.task-filter-tab.active .task-filter-count { background: rgba(255,255,255,0.72); }
+  src\styles.css:159:.task-file-link {
+  src\styles.css:160:  max-width: 100%; justify-content: flex-start; padding: 0; text-align: left;
+  src\styles.css:161:  white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+  src\styles.css:218:.intake-item .item-foot .meta { margin-top: 0; margin-left: auto; }
+> src\styles.css:219:.intake-item .item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+  src\styles.css:220:.intake-item .danger-link { color: var(--danger); }
+  src\styles.css:221:.intake-item .danger-link:hover { text-decoration: underline; }
+  src\styles.css:222:.append-row {
+  src\styles.css:549:
+> src\styles.css:550:@media (max-width: 1080px) {
+  src\styles.css:551:  body { overflow: auto; }
+  src\styles.css:552:  .workspace-shell { grid-template-columns: 1fr; height: auto; }
+  src\styles.css:553:  .sidebar { height: auto; }
+  src\styles.css:564:
+> src\styles.css:565:@media (max-width: 640px) {
+  src\styles.css:566:  .view { padding: 18px 14px 24px; }
+  src\styles.css:567:  .topbar { padding: 14px; }
+  src\styles.css:568:  .topbar-actions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+
+
+
+codex
+我已定位现有 CSS 区块；下一步最小化改动组件与样式。
+exec
+powershell.exe -Command '$s=Get-Content -Encoding UTF8 src'"\\styles.css; foreach("'$r in @(@(120,170),@(540,590))){ "--- styles $($r[0])-$($r[1]) ---"; for($i=$r[0]; $i -le $r[1]; $i++){ if($i -le $s.Length){ '"'{0,4}: {1}' -f "'$i,$s[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 506ms:
+--- styles 120-170 ---
+ 120: .icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
+ 121: .icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
+ 122: .icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
+ 123: 
+ 124: .list { display: grid; gap: 10px; padding: 16px 18px; }
+ 125: .list.compact { max-height: none; overflow: auto; }
+ 126: .item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+ 127: .item-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-weight: 650; align-items: center; }
+ 128: .item-title > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+ 129: .item-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex: 0 0 auto; }
+ 130: .item-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
+ 131: .item-actions .btn-link { padding: 3px 6px; font-size: 12px; white-space: nowrap; }
+ 132: .item-actions .danger-link { color: var(--danger); }
+ 133: .item-actions .btn-link:disabled { color: var(--text-4); cursor: not-allowed; text-decoration: none; }
+ 134: .item-body { margin-top: 10px; color: var(--text-2); overflow-wrap: anywhere; }
+ 135: .plain-text { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+ 136: .plan-list-body { display: grid; gap: 4px; min-width: 0; line-height: 1.5; }
+ 137: .plan-list-title { color: var(--text-1); font-weight: 650; overflow-wrap: anywhere; }
+ 138: .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ 139: .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ 140: .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
+ 141: .task-filter-tabs {
+ 142:   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+ 143:   border-bottom: 1px solid var(--line-soft);
+ 144: }
+ 145: .task-filter-tab {
+ 146:   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+ 147:   min-width: 0; min-height: 32px; flex: 1 1 0; padding: 6px 9px;
+ 148:   border: 1px solid var(--line); border-radius: 999px; background: var(--bg-elevated);
+ 149:   color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap;
+ 150:   transition: background 0.14s, border-color 0.14s, color 0.14s;
+ 151: }
+ 152: .task-filter-tab:hover { background: var(--bg-hover); }
+ 153: .task-filter-tab.active { border-color: var(--brand-600); background: var(--brand-50); color: var(--brand-600); }
+ 154: .task-filter-count {
+ 155:   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+ 156:   border-radius: 999px; background: var(--bg-soft); color: inherit; font-size: 11px; font-weight: 800;
+ 157: }
+ 158: .task-filter-tab.active .task-filter-count { background: rgba(255,255,255,0.72); }
+ 159: .task-file-link {
+ 160:   max-width: 100%; justify-content: flex-start; padding: 0; text-align: left;
+ 161:   white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+ 162: }
+ 163: .markdown-reader { min-width: 0; max-width: 100%; color: var(--text-1); font-size: 13.5px; line-height: 1.72; overflow-wrap: anywhere; }
+ 164: .markdown-reader > :first-child { margin-top: 0; }
+ 165: .markdown-reader > :last-child { margin-bottom: 0; }
+ 166: .markdown-reader-empty { padding: 28px 18px; border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--bg-soft); color: var(--text-3); text-align: center; font-size: 13px; }
+ 167: .markdown-reader h1 { margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); font-size: 22px; line-height: 1.3; font-weight: 800; }
+ 168: .markdown-reader h2 { margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); font-size: 18px; line-height: 1.35; font-weight: 750; }
+ 169: .markdown-reader h3 { margin: 20px 0 8px; font-size: 15.5px; line-height: 1.4; font-weight: 700; }
+ 170: .markdown-reader h4, .markdown-reader h5, .markdown-reader h6 { margin: 16px 0 8px; font-size: 14px; line-height: 1.4; font-weight: 700; }
+--- styles 540-590 ---
+ 540: .plan-reader-body:focus-visible { outline: 2px solid var(--brand-500); outline-offset: -4px; }
+ 541: .plan-reader-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+ 542: .plan-reader-summary-item { min-width: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-soft); }
+ 543: .plan-reader-summary-item dt { display: block; margin-bottom: 4px; color: var(--text-3); font-size: 11px; font-weight: 700; }
+ 544: .plan-reader-summary-item dd { display: block; min-width: 0; margin: 0; overflow: hidden; color: var(--text-1); font-size: 12.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+ 545: .plan-reader-content { min-width: 0; padding: 16px; overflow: visible; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
+ 546: .plan-reader-loading, .plan-reader-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-radius: var(--r-md); font-size: 13px; line-height: 1.5; }
+ 547: .plan-reader-loading { border: 1px dashed var(--line); background: var(--bg-soft); color: var(--text-3); }
+ 548: .plan-reader-error { border: 1px solid rgba(229,72,77,0.28); background: var(--danger-bg); color: var(--danger); }
+ 549: 
+ 550: @media (max-width: 1080px) {
+ 551:   body { overflow: auto; }
+ 552:   .workspace-shell { grid-template-columns: 1fr; height: auto; }
+ 553:   .sidebar { height: auto; }
+ 554:   .workspace-main { height: auto; min-height: 100vh; }
+ 555:   .topbar { flex-wrap: wrap; align-items: flex-start; }
+ 556:   .workspace-search { order: 3; flex-basis: 100%; max-width: none; min-width: 0; margin-left: 0; }
+ 557:   .workspace-search + .topbar-actions { margin-left: auto; }
+ 558:   .search-results { margin: 14px 20px 0; }
+ 559:   .task-main { grid-template-rows: auto auto; }
+ 560:   .task-status-grid { grid-template-columns: 1fr; }
+ 561:   .overview-grid { grid-template-columns: 1fr; }
+ 562:   .overview-main-column > .live-log-card { height: 360px; }
+ 563: }
+ 564: 
+ 565: @media (max-width: 640px) {
+ 566:   .view { padding: 18px 14px 24px; }
+ 567:   .topbar { padding: 14px; }
+ 568:   .topbar-actions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+ 569:   .workspace-search { flex-direction: column; align-items: stretch; gap: 6px; }
+ 570:   .workspace-search-count { padding-left: 2px; }
+ 571:   .search-results { margin: 12px 14px 0; }
+ 572:   .search-results-head, .search-results-empty { align-items: stretch; flex-direction: column; }
+ 573:   .search-results-clear, .search-results-empty .btn { width: 100%; }
+ 574:   .search-result-groups { grid-template-columns: 1fr; }
+ 575:   .search-result-meta { flex-direction: column; gap: 3px; }
+ 576:   .stat-grid { grid-template-columns: 1fr; }
+ 577:   .card-head { flex-wrap: wrap; align-items: flex-start; }
+ 578:   .item-title { align-items: flex-start; flex-wrap: wrap; }
+ 579:   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+ 580:   .composer-bottom { align-items: stretch; flex-direction: column; }
+ 581:   .composer-tools { align-items: stretch; }
+ 582:   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+ 583:   .composer-cli-field { align-items: flex-start; flex-direction: column; gap: 5px; }
+ 584:   .composer-cli-field select { width: 100%; min-width: 0; }
+ 585:   .attachment-list.pending { flex-basis: 100%; }
+ 586:   .composer-actions { justify-content: flex-end; width: 100%; }
+ 587:   .plan-reader-modal { max-width: none; max-height: calc(100dvh - 28px); }
+ 588:   .plan-reader-head { padding: 16px; }
+ 589:   .plan-reader-actions { width: 100%; justify-content: space-between; }
+ 590:   .plan-reader-body { padding: 14px; }
+
+codex
+我会用现有时间工具生成分组摘要，不触碰排序或其它任务逻辑。
+exec
+powershell.exe -Command '$s=Get-Content -Encoding UTF8 src'"\\styles.css; for("'$i=590;$i -le 620;$i++){ if($i -le $s.Length){ '"'{0,4}: {1}' -f "'$i,$s[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 581ms:
+ 590:   .plan-reader-body { padding: 14px; }
+ 591:   .plan-reader-summary { grid-template-columns: 1fr; }
+ 592:   .plan-reader-content { padding: 12px; }
+ 593:   .markdown-reader { font-size: 13px; line-height: 1.68; }
+ 594:   .event-title { gap: 8px; }
+ 595: }
+ 596: 
+ 597: ::-webkit-scrollbar { width: 9px; height: 9px; }
+ 598: ::-webkit-scrollbar-thumb { background: #d4dce8; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+ 599: ::-webkit-scrollbar-thumb:hover { background: #b9c5d8; background-clip: content-box; }
+ 600: ::-webkit-scrollbar-track { background: transparent; }
+
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src\\renderer\\utils\\time.ts" in D:\project\GitHub\autoplan
+ succeeded in 480ms:
+const CHINA_TIME_ZONE = 'Asia/Shanghai';
+
+function parseTimestamp(value?: string | null) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  if (!raw) return null;
+
+  if (/^\d{2}:\d{2}:\d{2}$/.test(raw)) {
+    return new Date(`${new Date().toISOString().slice(0, 10)}T${raw}Z`);
+  }
+
+  let normalized = raw.includes(' ') ? raw.replace(' ', 'T') : raw;
+  if (!/[zZ]$|[+-]\d{2}:?\d{2}$/.test(normalized)) normalized += 'Z';
+
+  const date = new Date(normalized);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function normalizeDurationMs(value?: number | null) {
+  if (value === null || typeof value === 'undefined') return null;
+  const duration = Number(value);
+  if (!Number.isFinite(duration) || duration < 0) return null;
+  return duration;
+}
+
+export function getTimestampMs(value?: string | null) {
+  const date = parseTimestamp(value);
+  return date?.getTime() ?? 0;
+}
+
+function chinaParts(date: Date) {
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: CHINA_TIME_ZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+
+  return Object.fromEntries(parts.map((part) => [part.type, part.value]));
+}
+
+export function formatChinaTime(value?: string | null) {
+  const date = parseTimestamp(value);
+  if (!date) return value || '';
+  const parts = chinaParts(date);
+  return `${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+export function formatChinaDateTime(value?: string | null) {
+  const date = parseTimestamp(value);
+  if (!date) return value || '';
+  const parts = chinaParts(date);
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+}
+
+export function formatDuration(milliseconds?: number | null, fallback = '未开始') {
+  const duration = normalizeDurationMs(milliseconds);
+  if (duration === null) return fallback;
+
+  const totalSeconds = duration > 0 ? Math.max(1, Math.round(duration / 1000)) : 0;
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) {
+    return minutes > 0 ? `${hours}小时${minutes}分` : `${hours}小时`;
+  }
+
+  if (minutes > 0) {
+    return seconds > 0 ? `${minutes}分${seconds}秒` : `${minutes}分`;
+  }
+
+  return `${seconds}秒`;
+}
+
+export function getRunningDurationMs(durationMs?: number | null, startedAt?: string | null, now = Date.now()) {
+  const baseDuration = normalizeDurationMs(durationMs) ?? 0;
+  const startedDate = parseTimestamp(startedAt);
+  if (!startedDate) return normalizeDurationMs(durationMs);
+
+  return baseDuration + Math.max(0, now - startedDate.getTime());
+}
+
+**Implementing task timestamp**
+
+I need to ensure I'm using string instead of milliseconds. The method latestTaskTimestamp should return a string. I've realized that readTaskTime only gives milliseconds. I need to iterate through the tasks to implement latestTaskTimestamp properly. I might need a patch and to be cautious with the fieldGroups type. The latest time summary should read "最新完成 202..." or "最新更新 ..." or "暂无时间" if there's none. I should also consider the length of group.tasks when rendering the header with title and metadata, plus CSS styling!
+codex
+我会加入摘要 helper，并把标题行改成可换行的头部结构。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+
+codex
+组件摘要已补齐；现在添加分组层级、长文本和窄屏样式。
+  ✓ 核对分组现状样式
+  ✓ 补充分组标题摘要
+  → 添加响应式样式
+  • 静态核对改动范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\styles.css
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+diff --git a/src/styles.css b/src/styles.css
+index 7bd1dc4209e3300b87c70fc8db00a5198111f1e9..8fea1abdbdf8676598aff2ee037132d6aafdf628
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -138,6 +138,23 @@
+ .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
++.task-plan-group {
++  display: grid; gap: 8px; min-width: 0; padding: 10px;
++  border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-elevated);
++}
++.task-plan-group-head {
++  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
++  min-width: 0; padding: 2px 2px 4px;
++}
++.task-plan-group-title {
++  min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
++  font-size: 13px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group-summary {
++  flex: 0 0 auto; max-width: 46%; color: var(--text-3); font-size: 12px; line-height: 1.45;
++  overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group .item { background: var(--bg-soft); }
+ .task-filter-tabs {
+   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+   border-bottom: 1px solid var(--line-soft);
+@@ -577,6 +594,9 @@
+   .card-head { flex-wrap: wrap; align-items: flex-start; }
+   .item-title { align-items: flex-start; flex-wrap: wrap; }
+   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
++  .task-plan-group { padding: 9px; }
++  .task-plan-group-head { flex-direction: column; gap: 3px; }
++  .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+   .composer-bottom { align-items: stretch; flex-direction: column; }
+   .composer-tools { align-items: stretch; }
+   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+diff --git a/src/styles.css b/src/styles.css
+index 7bd1dc4209e3300b87c70fc8db00a5198111f1e9..8fea1abdbdf8676598aff2ee037132d6aafdf628
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -138,6 +138,23 @@
+ .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
++.task-plan-group {
++  display: grid; gap: 8px; min-width: 0; padding: 10px;
++  border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-elevated);
++}
++.task-plan-group-head {
++  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
++  min-width: 0; padding: 2px 2px 4px;
++}
++.task-plan-group-title {
++  min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
++  font-size: 13px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group-summary {
++  flex: 0 0 auto; max-width: 46%; color: var(--text-3); font-size: 12px; line-height: 1.45;
++  overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group .item { background: var(--bg-soft); }
+ .task-filter-tabs {
+   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+   border-bottom: 1px solid var(--line-soft);
+@@ -577,6 +594,9 @@
+   .card-head { flex-wrap: wrap; align-items: flex-start; }
+   .item-title { align-items: flex-start; flex-wrap: wrap; }
+   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
++  .task-plan-group { padding: 9px; }
++  .task-plan-group-head { flex-direction: column; gap: 3px; }
++  .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+   .composer-bottom { align-items: stretch; flex-direction: column; }
+   .composer-tools { align-items: stretch; }
+   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+
+codex
+样式已补充；我会做静态核对和改动范围确认，不运行验证命令。
+  ✓ 核对分组现状样式
+  ✓ 补充分组标题摘要
+  ✓ 添加响应式样式
+  → 静态核对改动范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+diff --git a/src/styles.css b/src/styles.css
+index 7bd1dc4209e3300b87c70fc8db00a5198111f1e9..8fea1abdbdf8676598aff2ee037132d6aafdf628
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -138,6 +138,23 @@
+ .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
++.task-plan-group {
++  display: grid; gap: 8px; min-width: 0; padding: 10px;
++  border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-elevated);
++}
++.task-plan-group-head {
++  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
++  min-width: 0; padding: 2px 2px 4px;
++}
++.task-plan-group-title {
++  min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
++  font-size: 13px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group-summary {
++  flex: 0 0 auto; max-width: 46%; color: var(--text-3); font-size: 12px; line-height: 1.45;
++  overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group .item { background: var(--bg-soft); }
+ .task-filter-tabs {
+   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+   border-bottom: 1px solid var(--line-soft);
+@@ -577,6 +594,9 @@
+   .card-head { flex-wrap: wrap; align-items: flex-start; }
+   .item-title { align-items: flex-start; flex-wrap: wrap; }
+   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
++  .task-plan-group { padding: 9px; }
++  .task-plan-group-head { flex-direction: column; gap: 3px; }
++  .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+   .composer-bottom { align-items: stretch; flex-direction: column; }
+   .composer-tools { align-items: stretch; }
+   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+
+exec
+powershell.exe -Command '$p=Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; foreach("'$r in @(@(100,135),@(675,685))){ "--- PlanLists $($r[0])-$($r[1]) ---"; for($i=$r[0]; $i -le $r[1]; $i++){ if($i -le $p.Length){ '"'{0,4}: {1}' -f "'$i,$p[$i-1] } } }; $s=Get-Content -Encoding UTF8 src'"\\styles.css; foreach("'$r in @(@(136,175),@(575,590))){ "--- styles $($r[0])-$($r[1]) ---"; for($i=$r[0]; $i -le $r[1]; $i++){ if($i -le $s.Length){ '"'{0,4}: {1}' -f "'$i,$s[$i-1] } } }; git status --short -- src'"\\renderer\\components\\PlanLists.tsx src\\styles.css docs\\plan\\plan_requirement_24_20260626-134137.md" in D:\project\GitHub\autoplan
+ succeeded in 556ms:
+--- PlanLists 100-135 ---
+ 100: function latestTaskTime(tasks: TimedPlanTask[]) {
+ 101:   const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
+ 102:   for (const fields of fieldGroups) {
+ 103:     const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
+ 104:     const validTimes = times.filter((time): time is number => time !== null);
+ 105:     if (validTimes.length) return Math.max(...validTimes);
+ 106:   }
+ 107:   return null;
+ 108: }
+ 109: 
+ 110: function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
+ 111:   let latestValue = '';
+ 112:   let latestTime: number | null = null;
+ 113:   tasks.forEach((task) => {
+ 114:     const value = task[field];
+ 115:     const time = readTaskTime(value);
+ 116:     if (time === null) return;
+ 117:     if (latestTime === null || time > latestTime) {
+ 118:       latestTime = time;
+ 119:       latestValue = value || '';
+ 120:     }
+ 121:   });
+ 122:   return latestValue;
+ 123: }
+ 124: 
+ 125: function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
+ 126:   const timedTasks = group.tasks as TimedPlanTask[];
+ 127:   const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
+ 128:   const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
+ 129:   const timeSummary = latestFinishedAt
+ 130:     ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
+ 131:     : latestUpdatedAt
+ 132:       ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
+ 133:       : '暂无时间记录';
+ 134:   return `${group.tasks.length} 个任务 · ${timeSummary}`;
+ 135: }
+--- PlanLists 675-685 ---
+ 675:     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+ 676:   const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+ 677: 
+ 678:   return (
+ 679:     <div className="task-list-panel">
+ 680:       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+ 681:         {TASK_STATUS_FILTERS.map((filter) => {
+ 682:           const active = activeFilter === filter.id;
+ 683:           return (
+ 684:             <button
+ 685:               key={filter.id}
+--- styles 136-175 ---
+ 136: .plan-list-body { display: grid; gap: 4px; min-width: 0; line-height: 1.5; }
+ 137: .plan-list-title { color: var(--text-1); font-weight: 650; overflow-wrap: anywhere; }
+ 138: .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ 139: .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ 140: .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
+ 141: .task-plan-group {
+ 142:   display: grid; gap: 8px; min-width: 0; padding: 10px;
+ 143:   border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-elevated);
+ 144: }
+ 145: .task-plan-group-head {
+ 146:   display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
+ 147:   min-width: 0; padding: 2px 2px 4px;
+ 148: }
+ 149: .task-plan-group-title {
+ 150:   min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
+ 151:   font-size: 13px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
+ 152: }
+ 153: .task-plan-group-summary {
+ 154:   flex: 0 0 auto; max-width: 46%; color: var(--text-3); font-size: 12px; line-height: 1.45;
+ 155:   overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
+ 156: }
+ 157: .task-plan-group .item { background: var(--bg-soft); }
+ 158: .task-filter-tabs {
+ 159:   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+ 160:   border-bottom: 1px solid var(--line-soft);
+ 161: }
+ 162: .task-filter-tab {
+ 163:   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+ 164:   min-width: 0; min-height: 32px; flex: 1 1 0; padding: 6px 9px;
+ 165:   border: 1px solid var(--line); border-radius: 999px; background: var(--bg-elevated);
+ 166:   color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap;
+ 167:   transition: background 0.14s, border-color 0.14s, color 0.14s;
+ 168: }
+ 169: .task-filter-tab:hover { background: var(--bg-hover); }
+ 170: .task-filter-tab.active { border-color: var(--brand-600); background: var(--brand-50); color: var(--brand-600); }
+ 171: .task-filter-count {
+ 172:   display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+ 173:   border-radius: 999px; background: var(--bg-soft); color: inherit; font-size: 11px; font-weight: 800;
+ 174: }
+ 175: .task-filter-tab.active .task-filter-count { background: rgba(255,255,255,0.72); }
+--- styles 575-590 ---
+ 575:   .search-results { margin: 14px 20px 0; }
+ 576:   .task-main { grid-template-rows: auto auto; }
+ 577:   .task-status-grid { grid-template-columns: 1fr; }
+ 578:   .overview-grid { grid-template-columns: 1fr; }
+ 579:   .overview-main-column > .live-log-card { height: 360px; }
+ 580: }
+ 581: 
+ 582: @media (max-width: 640px) {
+ 583:   .view { padding: 18px 14px 24px; }
+ 584:   .topbar { padding: 14px; }
+ 585:   .topbar-actions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+ 586:   .workspace-search { flex-direction: column; align-items: stretch; gap: 6px; }
+ 587:   .workspace-search-count { padding-left: 2px; }
+ 588:   .search-results { margin: 12px 14px 0; }
+ 589:   .search-results-head, .search-results-empty { align-items: stretch; flex-direction: column; }
+ 590:   .search-results-clear, .search-results-empty .btn { width: 100%; }
+ M src/renderer/components/PlanLists.tsx
+ M src/styles.css
+?? docs/plan/plan_requirement_24_20260626-134137.md
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+diff --git a/src/styles.css b/src/styles.css
+index 7bd1dc4209e3300b87c70fc8db00a5198111f1e9..8fea1abdbdf8676598aff2ee037132d6aafdf628
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -138,6 +138,23 @@
+ .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
++.task-plan-group {
++  display: grid; gap: 8px; min-width: 0; padding: 10px;
++  border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-elevated);
++}
++.task-plan-group-head {
++  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
++  min-width: 0; padding: 2px 2px 4px;
++}
++.task-plan-group-title {
++  min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
++  font-size: 13px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group-summary {
++  flex: 0 0 auto; max-width: 46%; color: var(--text-3); font-size: 12px; line-height: 1.45;
++  overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group .item { background: var(--bg-soft); }
+ .task-filter-tabs {
+   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+   border-bottom: 1px solid var(--line-soft);
+@@ -577,6 +594,9 @@
+   .card-head { flex-wrap: wrap; align-items: flex-start; }
+   .item-title { align-items: flex-start; flex-wrap: wrap; }
+   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
++  .task-plan-group { padding: 9px; }
++  .task-plan-group-head { flex-direction: column; gap: 3px; }
++  .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+   .composer-bottom { align-items: stretch; flex-direction: column; }
+   .composer-tools { align-items: stretch; }
+   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+
+**Considering file status**
+
+I need to remember that the user said not to modify anything. It looks like there’s an existing untracked file, but we didn't change it. Maybe I should check the status to see if it includes that untracked file. I’ll need to inspect specific lines, like 705, to understand the situation better before making any decisions. I want to be careful and thorough!
+codex
+状态显示 plan 文件未纳入跟踪但我未修改；我会再核对分组头部实际渲染行。
+exec
+powershell.exe -Command '$p=Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; for("'$i=700;$i -le 725;$i++){ if($i -le $p.Length){ '"'{0,4}: {1}' -f "'$i,$p[$i-1] } }; $s=Get-Content -Encoding UTF8 src'"\\styles.css; for("'$i=592;$i -le 610;$i++){ if($i -le $s.Length){ '"'{0,4}: {1}' -f "'$i,$s[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 519ms:
+ 700:           {taskGroups.map((group) => {
+ 701:             return (
+ 702:               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+ 703:                 <div className="task-plan-group-head">
+ 704:                   <div className="task-plan-group-title" title={group.title}>{group.title}</div>
+ 705:                   <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
+ 706:                 </div>
+ 707:                 {group.tasks.map((task) => {
+ 708:                   const running = task.status === 'running';
+ 709:                   const completed = task.status === 'completed';
+ 710:                   const durationLabel = formatTaskDuration(task as TimedPlanTask);
+ 711:                   return (
+ 712:                     <RecordCard
+ 713:                       actions={
+ 714:                         <div className="item-actions">
+ 715:                           <button
+ 716:                             type="button"
+ 717:                             className="btn-link"
+ 718:                             disabled={completed || running}
+ 719:                             onClick={() => onRun?.(task)}
+ 720:                           >
+ 721:                             执行
+ 722:                           </button>
+ 723:                           <button
+ 724:                             type="button"
+ 725:                             className="btn-link danger-link"
+ 592:   .search-result-meta { flex-direction: column; gap: 3px; }
+ 593:   .stat-grid { grid-template-columns: 1fr; }
+ 594:   .card-head { flex-wrap: wrap; align-items: flex-start; }
+ 595:   .item-title { align-items: flex-start; flex-wrap: wrap; }
+ 596:   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+ 597:   .task-plan-group { padding: 9px; }
+ 598:   .task-plan-group-head { flex-direction: column; gap: 3px; }
+ 599:   .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+ 600:   .composer-bottom { align-items: stretch; flex-direction: column; }
+ 601:   .composer-tools { align-items: stretch; }
+ 602:   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+ 603:   .composer-cli-field { align-items: flex-start; flex-direction: column; gap: 5px; }
+ 604:   .composer-cli-field select { width: 100%; min-width: 0; }
+ 605:   .attachment-list.pending { flex-basis: 100%; }
+ 606:   .composer-actions { justify-content: flex-end; width: 100%; }
+ 607:   .plan-reader-modal { max-width: none; max-height: calc(100dvh - 28px); }
+ 608:   .plan-reader-head { padding: 16px; }
+ 609:   .plan-reader-actions { width: 100%; justify-content: space-between; }
+ 610:   .plan-reader-body { padding: 14px; }
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+diff --git a/src/styles.css b/src/styles.css
+index 7bd1dc4209e3300b87c70fc8db00a5198111f1e9..8fea1abdbdf8676598aff2ee037132d6aafdf628
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -138,6 +138,23 @@
+ .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
++.task-plan-group {
++  display: grid; gap: 8px; min-width: 0; padding: 10px;
++  border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-elevated);
++}
++.task-plan-group-head {
++  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
++  min-width: 0; padding: 2px 2px 4px;
++}
++.task-plan-group-title {
++  min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
++  font-size: 13px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group-summary {
++  flex: 0 0 auto; max-width: 46%; color: var(--text-3); font-size: 12px; line-height: 1.45;
++  overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group .item { background: var(--bg-soft); }
+ .task-filter-tabs {
+   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+   border-bottom: 1px solid var(--line-soft);
+@@ -577,6 +594,9 @@
+   .card-head { flex-wrap: wrap; align-items: flex-start; }
+   .item-title { align-items: flex-start; flex-wrap: wrap; }
+   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
++  .task-plan-group { padding: 9px; }
++  .task-plan-group-head { flex-direction: column; gap: 3px; }
++  .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+   .composer-bottom { align-items: stretch; flex-direction: column; }
+   .composer-tools { align-items: stretch; }
+   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+
+  ✓ 核对分组现状样式
+  ✓ 补充分组标题摘要
+  ✓ 添加响应式样式
+  ✓ 静态核对改动范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+diff --git a/src/styles.css b/src/styles.css
+index 7bd1dc4209e3300b87c70fc8db00a5198111f1e9..8fea1abdbdf8676598aff2ee037132d6aafdf628
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -138,6 +138,23 @@
+ .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
++.task-plan-group {
++  display: grid; gap: 8px; min-width: 0; padding: 10px;
++  border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-elevated);
++}
++.task-plan-group-head {
++  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
++  min-width: 0; padding: 2px 2px 4px;
++}
++.task-plan-group-title {
++  min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
++  font-size: 13px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group-summary {
++  flex: 0 0 auto; max-width: 46%; color: var(--text-3); font-size: 12px; line-height: 1.45;
++  overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group .item { background: var(--bg-soft); }
+ .task-filter-tabs {
+   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+   border-bottom: 1px solid var(--line-soft);
+@@ -577,6 +594,9 @@
+   .card-head { flex-wrap: wrap; align-items: flex-start; }
+   .item-title { align-items: flex-start; flex-wrap: wrap; }
+   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
++  .task-plan-group { padding: 9px; }
++  .task-plan-group-head { flex-direction: column; gap: 3px; }
++  .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+   .composer-bottom { align-items: stretch; flex-direction: column; }
+   .composer-tools { align-items: stretch; }
+   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+
+codex
+已完成 P003，仅修改任务 scope 内文件；未修改 plan 文件、未勾选 checkbox，也未运行测试/构建/lint。
+
+- 在 `src/renderer/components/PlanLists.tsx:110` 增加分组最新完成/更新时间摘要计算。
+- 在 `src/renderer/components/PlanLists.tsx:703` 将分组标题改为标题 + 任务数量 + 最新时间摘要结构。
+- 在 `src/styles.css:141` 增加计划分组卡片、标题层级、摘要对齐和长文本截断样式。
+- 在 `src/styles.css:597` 增加窄屏下分组标题与摘要换行、防溢出样式。
+- 保留原任务卡片状态样式、执行/停止/打开计划按钮结构与行为。
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 60585f0a13ec1622329f31d504b78c02712a86ca..f2d997d1c60a0152287685fbaf14cba52a83f019
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -107,6 +107,33 @@
+   return null;
+ }
+ 
++function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
++  let latestValue = '';
++  let latestTime: number | null = null;
++  tasks.forEach((task) => {
++    const value = task[field];
++    const time = readTaskTime(value);
++    if (time === null) return;
++    if (latestTime === null || time > latestTime) {
++      latestTime = time;
++      latestValue = value || '';
++    }
++  });
++  return latestValue;
++}
++
++function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
++  const timedTasks = group.tasks as TimedPlanTask[];
++  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
++  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
++  const timeSummary = latestFinishedAt
++    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
++    : latestUpdatedAt
++      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
++      : '暂无时间记录';
++  return `${group.tasks.length} 个任务 · ${timeSummary}`;
++}
++
+ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+@@ -673,7 +700,10 @@
+           {taskGroups.map((group) => {
+             return (
+               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+-                <div className="task-plan-group-title">{group.title}</div>
++                <div className="task-plan-group-head">
++                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
++                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
++                </div>
+                 {group.tasks.map((task) => {
+                   const running = task.status === 'running';
+                   const completed = task.status === 'completed';
+diff --git a/src/styles.css b/src/styles.css
+index 7bd1dc4209e3300b87c70fc8db00a5198111f1e9..8fea1abdbdf8676598aff2ee037132d6aafdf628
+--- a/src/styles.css
++++ b/src/styles.css
+@@ -138,6 +138,23 @@
+ .plan-list-summary { color: var(--text-2); overflow-wrap: anywhere; }
+ .task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+ .task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 8px; }
++.task-plan-group {
++  display: grid; gap: 8px; min-width: 0; padding: 10px;
++  border: 1px solid var(--line-soft); border-radius: var(--r-lg); background: var(--bg-elevated);
++}
++.task-plan-group-head {
++  display: flex; align-items: flex-start; justify-content: space-between; gap: 12px;
++  min-width: 0; padding: 2px 2px 4px;
++}
++.task-plan-group-title {
++  min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
++  font-size: 13px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group-summary {
++  flex: 0 0 auto; max-width: 46%; color: var(--text-3); font-size: 12px; line-height: 1.45;
++  overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
++}
++.task-plan-group .item { background: var(--bg-soft); }
+ .task-filter-tabs {
+   display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+   border-bottom: 1px solid var(--line-soft);
+@@ -577,6 +594,9 @@
+   .card-head { flex-wrap: wrap; align-items: flex-start; }
+   .item-title { align-items: flex-start; flex-wrap: wrap; }
+   .item-title-right { width: 100%; justify-content: space-between; flex-wrap: wrap; }
++  .task-plan-group { padding: 9px; }
++  .task-plan-group-head { flex-direction: column; gap: 3px; }
++  .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+   .composer-bottom { align-items: stretch; flex-direction: column; }
+   .composer-tools { align-items: stretch; }
+   .composer-cli-row { align-items: stretch; flex: 1 1 100%; flex-direction: column; }
+
+tokens used
+159,928
+已完成 P003，仅修改任务 scope 内文件；未修改 plan 文件、未勾选 checkbox，也未运行测试/构建/lint。
+
+- 在 `src/renderer/components/PlanLists.tsx:110` 增加分组最新完成/更新时间摘要计算。
+- 在 `src/renderer/components/PlanLists.tsx:703` 将分组标题改为标题 + 任务数量 + 最新时间摘要结构。
+- 在 `src/styles.css:141` 增加计划分组卡片、标题层级、摘要对齐和长文本截断样式。
+- 在 `src/styles.css:597` 增加窄屏下分组标题与摘要换行、防溢出样式。
+- 保留原任务卡片状态样式、执行/停止/打开计划按钮结构与行为。

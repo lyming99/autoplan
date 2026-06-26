@@ -1,0 +1,1640 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0286-d498-7820-9b30-830fba9e7e8c
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_26_20260626-140018.md
+指定任务：
+- [ ] P003: 在计划列表展示当前 CLI 信息 <!-- scope: src/renderer/components/PlanLists.tsx -->
+任务 scope：src/renderer/components/planlists.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用前两步的共享格式化函数，只查看并修改 `PlanLists.tsx`。
+  → 查看计划列表结构
+  • 接入统一 CLI 文案
+  • 检查改动范围
+exec
+powershell.exe -Command "git status --short -- src/renderer/components/PlanLists.tsx docs/plan/plan_requirement_26_20260626-140018.md; Select-String -Path 'src/renderer/components/PlanLists.tsx' -Pattern 'agentCliProviderLabel|codexReasoningEffortLabel|planCli|meta|concurrency|计划|CLI|provider|reasoning' -CaseSensitive:"'$false | ForEach-Object { '"'{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- head'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/components/PlanLists.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -le 380){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 718ms:
+ M src/renderer/components/PlanLists.tsx
+?? docs/plan/plan_requirement_26_20260626-140018.md
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:6: import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:16: type EventMetaRecord = Record<string, unknown>;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:23: meta: string;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:143: return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:151: if (title !== '未命名计划') return `title:${title}`;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:163: if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:226: function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:230: return toEventMetaRecord(JSON.parse(value));
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:235: if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:239: function readEventMeta(event: AppEvent) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:240: return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:243: function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:244: if (!meta) return '';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:246: const value = meta[key];
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:256: function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:257: const text = readMetaText(meta, keys);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:267: function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:268: const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:287: function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:288: const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:289: const taskId = readMetaText(meta, ['taskId', 'task_id']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:290: const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:291: const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:294: const tone = classifyTaskEvent(event, meta);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:300: const planId = readMetaText(meta, ['planId', 'plan_id']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:301: const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:302: const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:303: const codexReasoningEffort = readMetaText(meta, [
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:304: 'codexReasoningEffort',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:305: 'codex_reasoning_effort',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:308: 'reasoningEffort',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:309: 'reasoning_effort',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:313: const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:314: const metaParts = [
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:317: agentCliProvider ? agentCliProviderLabel(agentCliProvider) : '',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:318: agentCliProvider !== 'claude' && codexReasoningEffort ? `思考深度 ${codexReasoningEffortLabel(codexReasoningEffort)}` : '',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:326: meta: metaParts.join(' · '),
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:333: const meta = readEventMeta(event);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:334: const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:335: ? formatTaskEvent(event, meta)
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:342: meta: formatChinaDateTime(event.created_at),
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:360: const meta = readEventMeta(event);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:367: display.meta,
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:368: toSearchText(meta),
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:405: (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:410: if (hasRunningTask) return '该计划已有任务执行中';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:411: if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:412: if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:544: const suggestion = plan.concurrency_suggestion;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:557: onClick={() => setConfirmingPlan(plan)}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:569: onClick={() => onOpenReader(plan)}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:590: meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:600: <div className="modal-mask" onClick={() => setConfirmingPlan(null)}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:601: <div className="modal parallel-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:604: <button type="button" className="modal-close" onClick={() => setConfirmingPlan(null)} aria-label="关闭并发执行确认">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:610: {confirmingPlan.concurrency_suggestion.batches.map((batch) => (
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:626: {confirmingPlan.concurrency_suggestion.serialTasks.length ? (
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:630: {confirmingPlan.concurrency_suggestion.serialTasks.map((task) => (
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:638: <button type="button" className="btn" onClick={() => setConfirmingPlan(null)}>取消</button>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:642: onClick={() => {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:647: batches: plan.concurrency_suggestion.batches.map((batch) => ({
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:661: <div className="modal-mask" onClick={onCloseReader}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:671: onClick={(event) => event.stopPropagation()}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:689: onClick={onRefreshReader}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:694: <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:720: <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:728: <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:742: emptyMessage="暂无计划正文"
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:801: onClick={() => setActiveFilter(filter.id)}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:813: <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:830: onClick={() => onRun?.(task)}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:838: onClick={() => onStop?.(task)}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:856: onClick={() => onOpenPlan?.(task)}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:877: meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:906: <div className="meta event-meta">{display.meta}</div>
+--- head
+   1: import type { KeyboardEvent } from 'react';
+   2: import { useEffect, useId, useMemo, useRef, useState } from 'react';
+   3: import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+   4: import { RecordCard } from './IntakePanel';
+   5: import { MarkdownReader } from './MarkdownReader';
+   6: import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
+   7: import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+   8: 
+   9: type TimedPlanTask = PlanTask & {
+  10:   plan_id?: number | null;
+  11:   started_at?: string | null;
+  12:   finished_at?: string | null;
+  13:   duration_ms?: number | null;
+  14: };
+  15: 
+  16: type EventMetaRecord = Record<string, unknown>;
+  17: 
+  18: type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+  19: 
+  20: type TaskEventDisplay = {
+  21:   title: string;
+  22:   body: string;
+  23:   meta: string;
+  24:   badge?: string;
+  25:   tone?: TaskEventTone;
+  26: };
+  27: 
+  28: type TaskPlanGroup = {
+  29:   key: string;
+  30:   title: string;
+  31:   tasks: PlanTask[];
+  32:   firstIndex: number;
+  33:   sortTime: number | null;
+  34: };
+  35: 
+  36: type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+  37: 
+  38: type ParallelRunRequest = {
+  39:   plan: Plan;
+  40:   batches: Array<{ taskIds: number[] }>;
+  41: };
+  42: 
+  43: const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+  44:   { id: 'all', label: '全部', emptyText: '暂无任务。' },
+  45:   { id: 'running', label: '进行中', emptyText: '暂无进行中任务。' },
+  46:   { id: 'queued', label: '队列中', emptyText: '暂无队列中任务。' },
+  47:   { id: 'completed', label: '已完成', emptyText: '暂无已完成任务。' },
+  48: ];
+  49: 
+  50: const TASK_EVENT_PRESENTATION: Record<TaskEventTone, { action: string; badge: string }> = {
+  51:   start: { action: '开始了', badge: '开始' },
+  52:   success: { action: '结束了', badge: '成功' },
+  53:   failed: { action: '执行失败', badge: '失败' },
+  54:   stopped: { action: '停止了', badge: '停止' },
+  55:   stopping: { action: '请求停止', badge: '停止中' },
+  56:   updated: { action: '更新了', badge: '任务' },
+  57: };
+  58: 
+  59: function readDurationMs(task: TimedPlanTask) {
+  60:   if (task.duration_ms === null || typeof task.duration_ms === 'undefined') return null;
+  61:   const duration = Number(task.duration_ms);
+  62:   return Number.isFinite(duration) && duration >= 0 ? duration : null;
+  63: }
+  64: 
+  65: function getTaskDurationMs(task: TimedPlanTask) {
+  66:   if (task.status === 'running') return getRunningDurationMs(readDurationMs(task), task.started_at);
+  67:   return readDurationMs(task);
+  68: }
+  69: 
+  70: function readPlanId(task: TimedPlanTask) {
+  71:   if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+  72:   const planId = Number(task.plan_id);
+  73:   return Number.isFinite(planId) ? planId : null;
+  74: }
+  75: 
+  76: function formatTaskDuration(task: TimedPlanTask) {
+  77:   const duration = getTaskDurationMs(task);
+  78:   if (task.status === 'running') return `已运行 ${formatDuration(duration, '0秒')}`;
+  79:   if (duration === null || (duration === 0 && !task.started_at && !task.finished_at)) return '未开始';
+  80:   return `耗时 ${formatDuration(duration, '0秒')}`;
+  81: }
+  82: 
+  83: function normalizeTaskStatus(status: string | null | undefined) {
+  84:   return String(status || '').trim().toLowerCase();
+  85: }
+  86: 
+  87: function matchesTaskStatusFilter(task: PlanTask, filter: TaskStatusFilter) {
+  88:   const status = normalizeTaskStatus(task.status);
+  89:   if (filter === 'all') return true;
+  90:   if (filter === 'running') return ['running', 'processing', 'stopping'].includes(status);
+  91:   if (filter === 'queued') return ['pending', 'queued', 'waiting'].includes(status);
+  92:   if (filter === 'completed') return ['completed', 'done', 'passed', 'accepted'].includes(status);
+  93:   return true;
+  94: }
+  95: 
+  96: function readTaskTime(value: string | null | undefined) {
+  97:   const time = Date.parse(String(value || ''));
+  98:   return Number.isFinite(time) ? time : null;
+  99: }
+ 100: 
+ 101: function taskSortTime(task: TimedPlanTask) {
+ 102:   return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
+ 103: }
+ 104: 
+ 105: function latestTaskTime(tasks: TimedPlanTask[]) {
+ 106:   const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
+ 107:   for (const fields of fieldGroups) {
+ 108:     const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
+ 109:     const validTimes = times.filter((time): time is number => time !== null);
+ 110:     if (validTimes.length) return Math.max(...validTimes);
+ 111:   }
+ 112:   return null;
+ 113: }
+ 114: 
+ 115: function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
+ 116:   let latestValue = '';
+ 117:   let latestTime: number | null = null;
+ 118:   tasks.forEach((task) => {
+ 119:     const value = task[field];
+ 120:     const time = readTaskTime(value);
+ 121:     if (time === null) return;
+ 122:     if (latestTime === null || time > latestTime) {
+ 123:       latestTime = time;
+ 124:       latestValue = value || '';
+ 125:     }
+ 126:   });
+ 127:   return latestValue;
+ 128: }
+ 129: 
+ 130: function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
+ 131:   const timedTasks = group.tasks as TimedPlanTask[];
+ 132:   const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
+ 133:   const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
+ 134:   const timeSummary = latestFinishedAt
+ 135:     ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
+ 136:     : latestUpdatedAt
+ 137:       ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
+ 138:       : '暂无时间记录';
+ 139:   return `${group.tasks.length} 个任务 · ${timeSummary}`;
+ 140: }
+ 141: 
+ 142: function taskPlanGroupTitle(task: PlanTask) {
+ 143:   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ 144: }
+ 145: 
+ 146: function taskPlanGroupKey(task: TimedPlanTask) {
+ 147:   const planId = readPlanId(task);
+ 148:   if (planId !== null) return `plan:${planId}`;
+ 149:   if (task.file_path) return `file:${task.file_path}`;
+ 150:   const title = taskPlanGroupTitle(task);
+ 151:   if (title !== '未命名计划') return `title:${title}`;
+ 152:   return 'unknown-plan';
+ 153: }
+ 154: 
+ 155: function groupTasksByPlan(tasks: PlanTask[]) {
+ 156:   const groups = new Map<string, TaskPlanGroup>();
+ 157:   tasks.forEach((task, index) => {
+ 158:     const timedTask = task as TimedPlanTask;
+ 159:     const key = taskPlanGroupKey(timedTask);
+ 160:     const existingGroup = groups.get(key);
+ 161:     if (existingGroup) {
+ 162:       existingGroup.tasks.push(task);
+ 163:       if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
+ 164:       return;
+ 165:     }
+ 166: 
+ 167:     groups.set(key, {
+ 168:       key,
+ 169:       title: taskPlanGroupTitle(task),
+ 170:       tasks: [task],
+ 171:       firstIndex: index,
+ 172:       sortTime: null,
+ 173:     });
+ 174:   });
+ 175: 
+ 176:   return Array.from(groups.values())
+ 177:     .map((group) => {
+ 178:       const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
+ 179:       const sortedTasks = indexedTasks
+ 180:         .sort((left, right) => {
+ 181:           const leftTime = taskSortTime(left.task as TimedPlanTask);
+ 182:           const rightTime = taskSortTime(right.task as TimedPlanTask);
+ 183:           if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+ 184:           if (leftTime !== null && rightTime === null) return -1;
+ 185:           if (leftTime === null && rightTime !== null) return 1;
+ 186:           return left.index - right.index;
+ 187:         })
+ 188:         .map(({ task }) => task);
+ 189:       return {
+ 190:         ...group,
+ 191:         tasks: sortedTasks,
+ 192:         sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
+ 193:       };
+ 194:     })
+ 195:     .sort((left, right) => {
+ 196:       if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
+ 197:         return right.sortTime - left.sortTime;
+ 198:       }
+ 199:       if (left.sortTime !== null && right.sortTime === null) return -1;
+ 200:       if (left.sortTime === null && right.sortTime !== null) return 1;
+ 201:       return left.firstIndex - right.firstIndex;
+ 202:     });
+ 203: }
+ 204: 
+ 205: function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+ 206:   const timedTasks = tasks as TimedPlanTask[];
+ 207:   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+ 208:   if (!hasPlanIds) return planCount === 1 ? timedTasks : [];
+ 209:   return timedTasks.filter((task) => readPlanId(task) === plan.id);
+ 210: }
+ 211: 
+ 212: function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+ 213:   const totalMs = tasks.reduce((sum, task) => sum + (getTaskDurationMs(task) ?? 0), 0);
+ 214:   const completedMs = tasks.reduce(
+ 215:     (sum, task) => sum + (task.status === 'completed' ? getTaskDurationMs(task) ?? 0 : 0),
+ 216:     0,
+ 217:   );
+ 218: 
+ 219:   return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
+ 220: }
+ 221: 
+ 222: function planTitle(plan: Plan) {
+ 223:   return String((plan as Plan & { title?: string | null }).title || '').trim();
+ 224: }
+ 225: 
+ 226: function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+ 227:   if (!value) return null;
+ 228:   if (typeof value === 'string') {
+ 229:     try {
+ 230:       return toEventMetaRecord(JSON.parse(value));
+ 231:     } catch {
+ 232:       return null;
+ 233:     }
+ 234:   }
+ 235:   if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+ 236:   return null;
+ 237: }
+ 238: 
+ 239: function readEventMeta(event: AppEvent) {
+ 240:   return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+ 241: }
+ 242: 
+ 243: function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+ 244:   if (!meta) return '';
+ 245:   for (const key of keys) {
+ 246:     const value = meta[key];
+ 247:     if (typeof value === 'string') {
+ 248:       const text = value.trim();
+ 249:       if (text) return text;
+ 250:     }
+ 251:     if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+ 252:   }
+ 253:   return '';
+ 254: }
+ 255: 
+ 256: function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+ 257:   const text = readMetaText(meta, keys);
+ 258:   if (!text) return null;
+ 259:   const value = Number(text);
+ 260:   return Number.isFinite(value) ? value : null;
+ 261: }
+ 262: 
+ 263: function includesAny(text: string, keywords: string[]) {
+ 264:   return keywords.some((keyword) => text.includes(keyword));
+ 265: }
+ 266: 
+ 267: function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+ 268:   const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+ 269:   if (includesAny(eventText, ['stop_requested', 'stop-requested', 'stop.requested', 'request_stop', 'stopping'])) {
+ 270:     return 'stopping';
+ 271:   }
+ 272:   if (includesAny(eventText, ['fail', 'error', 'errored'])) return 'failed';
+ 273:   if (includesAny(eventText, ['stop', 'interrupt', 'cancel'])) return 'stopped';
+ 274:   if (includesAny(eventText, ['start', 'begin', 'running'])) return 'start';
+ 275:   if (includesAny(eventText, ['complete', 'finish', 'success', 'succeed', 'executed', 'done'])) return 'success';
+ 276:   return 'updated';
+ 277: }
+ 278: 
+ 279: function isTaskEventType(type: string) {
+ 280:   return /^task[.:_-]/i.test(type);
+ 281: }
+ 282: 
+ 283: function sameEventText(left: string, right: string) {
+ 284:   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ 285: }
+ 286: 
+ 287: function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
+ 288:   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+ 289:   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+ 290:   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+ 291:   const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+ 292:   if (!hasTaskIdentity) return null;
+ 293: 
+ 294:   const tone = classifyTaskEvent(event, meta);
+ 295:   const presentation = TASK_EVENT_PRESENTATION[tone];
+ 296:   const taskLabel = taskKey ? `${taskKey} 任务` : taskId ? `任务 #${taskId}` : '任务';
+ 297:   const separator = taskLabel === '任务' ? '' : ' ';
+ 298:   const title = `${presentation.action}${separator}${taskLabel}：${taskTitle}`;
+ 299:   const originalMessage = event.message?.trim() || '';
+ 300:   const planId = readMetaText(meta, ['planId', 'plan_id']);
+ 301:   const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+ 302:   const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+ 303:   const codexReasoningEffort = readMetaText(meta, [
+ 304:     'codexReasoningEffort',
+ 305:     'codex_reasoning_effort',
+ 306:     'codexThinkingDepth',
+ 307:     'codex_thinking_depth',
+ 308:     'reasoningEffort',
+ 309:     'reasoning_effort',
+ 310:     'thinkingDepth',
+ 311:     'thinking_depth',
+ 312:   ]);
+ 313:   const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+ 314:   const metaParts = [
+ 315:     formatChinaDateTime(event.created_at),
+ 316:     planId ? `Plan #${planId}` : '',
+ 317:     agentCliProvider ? agentCliProviderLabel(agentCliProvider) : '',
+ 318:     agentCliProvider !== 'claude' && codexReasoningEffort ? `思考深度 ${codexReasoningEffortLabel(codexReasoningEffort)}` : '',
+ 319:     status ? `状态 ${status}` : '',
+ 320:     durationMs !== null ? `耗时 ${formatDuration(durationMs, '0秒')}` : '',
+ 321:   ].filter(Boolean);
+ 322: 
+ 323:   return {
+ 324:     title,
+ 325:     body: originalMessage && !sameEventText(originalMessage, title) ? originalMessage : '',
+ 326:     meta: metaParts.join(' · '),
+ 327:     badge: presentation.badge,
+ 328:     tone,
+ 329:   };
+ 330: }
+ 331: 
+ 332: function formatEvent(event: AppEvent): TaskEventDisplay {
+ 333:   const meta = readEventMeta(event);
+ 334:   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+ 335:     ? formatTaskEvent(event, meta)
+ 336:     : null;
+ 337:   if (taskDisplay) return taskDisplay;
+ 338: 
+ 339:   return {
+ 340:     title: event.type || '事件',
+ 341:     body: event.message || '',
+ 342:     meta: formatChinaDateTime(event.created_at),
+ 343:   };
+ 344: }
+ 345: 
+ 346: function toSearchText(value: unknown, depth = 0): string {
+ 347:   if (value === null || value === undefined || depth > 6) return '';
+ 348:   if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+ 349:   if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+ 350:   if (typeof value === 'object') {
+ 351:     return Object.values(value as Record<string, unknown>)
+ 352:       .map((item) => toSearchText(item, depth + 1))
+ 353:       .join(' ');
+ 354:   }
+ 355:   return '';
+ 356: }
+ 357: 
+ 358: export function getEventSearchText(event: AppEvent) {
+ 359:   const display = formatEvent(event);
+ 360:   const meta = readEventMeta(event);
+ 361:   return [
+ 362:     event.type,
+ 363:     event.message,
+ 364:     display.title,
+ 365:     display.body,
+ 366:     display.badge,
+ 367:     display.meta,
+ 368:     toSearchText(meta),
+ 369:     toSearchText(event),
+ 370:   ]
+ 371:     .filter(Boolean)
+ 372:     .join(' ');
+ 373: }
+ 374: 
+ 375: function hasPlanReaderUpdate(
+ 376:   readingPlan: Plan | null,
+ 377:   latestPlan: Plan | null | undefined,
+ 378:   result: WorkspacePlanReadState['result'],
+ 379: ) {
+ 380:   if (!readingPlan || !latestPlan) return false;
+
+codex
+已有文件有未提交改动；我只做 P003 所需的导入和卡片元信息改动。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/PlanLists.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if(($i -le 40) -or ($i -ge 380 -and $i -le 620)){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 565ms:
+   1: import type { KeyboardEvent } from 'react';
+   2: import { useEffect, useId, useMemo, useRef, useState } from 'react';
+   3: import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+   4: import { RecordCard } from './IntakePanel';
+   5: import { MarkdownReader } from './MarkdownReader';
+   6: import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
+   7: import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+   8: 
+   9: type TimedPlanTask = PlanTask & {
+  10:   plan_id?: number | null;
+  11:   started_at?: string | null;
+  12:   finished_at?: string | null;
+  13:   duration_ms?: number | null;
+  14: };
+  15: 
+  16: type EventMetaRecord = Record<string, unknown>;
+  17: 
+  18: type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+  19: 
+  20: type TaskEventDisplay = {
+  21:   title: string;
+  22:   body: string;
+  23:   meta: string;
+  24:   badge?: string;
+  25:   tone?: TaskEventTone;
+  26: };
+  27: 
+  28: type TaskPlanGroup = {
+  29:   key: string;
+  30:   title: string;
+  31:   tasks: PlanTask[];
+  32:   firstIndex: number;
+  33:   sortTime: number | null;
+  34: };
+  35: 
+  36: type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+  37: 
+  38: type ParallelRunRequest = {
+  39:   plan: Plan;
+  40:   batches: Array<{ taskIds: number[] }>;
+ 380:   if (!readingPlan || !latestPlan) return false;
+ 381:   if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+ 382: 
+ 383:   const readFilePath = result?.file_path || readingPlan.file_path || '';
+ 384:   const readHash = result?.hash || readingPlan.hash || '';
+ 385:   const readUpdatedAt = result?.updated_at || readingPlan.updated_at || '';
+ 386:   return (
+ 387:     (latestPlan.file_path || '') !== readFilePath ||
+ 388:     (latestPlan.hash || '') !== readHash ||
+ 389:     (latestPlan.updated_at || '') !== readUpdatedAt ||
+ 390:     (latestPlan.status || '') !== (readingPlan.status || '')
+ 391:   );
+ 392: }
+ 393: 
+ 394: const PLAN_READER_FOCUSABLE_SELECTOR = [
+ 395:   'a[href]',
+ 396:   'button:not([disabled])',
+ 397:   'input:not([disabled]):not([type="hidden"])',
+ 398:   'select:not([disabled])',
+ 399:   'textarea:not([disabled])',
+ 400:   '[tabindex]:not([tabindex="-1"])',
+ 401: ].join(',');
+ 402: 
+ 403: function getPlanReaderFocusableElements(container: HTMLElement) {
+ 404:   return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+ 405:     (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+ 406:   );
+ 407: }
+ 408: 
+ 409: function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+ 410:   if (hasRunningTask) return '该计划已有任务执行中';
+ 411:   if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+ 412:   if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+ 413:   return '';
+ 414: }
+ 415: 
+ 416: function scopeFileLabel(file: PlanTask['scope_files'][number]) {
+ 417:   if (file.isUnknown) return 'unknown';
+ 418:   if (file.isValidation) return 'validation';
+ 419:   return file.path;
+ 420: }
+ 421: 
+ 422: function scopeFileStatus(file: PlanTask['scope_files'][number]) {
+ 423:   if (file.isUnknown) return '无法判断影响范围';
+ 424:   if (file.isValidation) return '完整验收任务';
+ 425:   if (file.canOpen) return '可打开';
+ 426:   return file.reason || (file.exists ? '不可打开' : '文件不存在');
+ 427: }
+ 428: 
+ 429: export function PlanList({
+ 430:   emptyText = '暂无 plan。',
+ 431:   latestReadingPlan,
+ 432:   onCloseReader,
+ 433:   onOpenReader,
+ 434:   onRunParallel,
+ 435:   onRefreshReader,
+ 436:   plans,
+ 437:   readerState,
+ 438:   tasks = [],
+ 439:   totalPlanCount = plans.length,
+ 440: }: {
+ 441:   emptyText?: string;
+ 442:   latestReadingPlan?: Plan | null;
+ 443:   onCloseReader: () => void;
+ 444:   onOpenReader: (plan: Plan) => void;
+ 445:   onRunParallel?: (request: ParallelRunRequest) => void;
+ 446:   onRefreshReader: () => void;
+ 447:   plans: Plan[];
+ 448:   readerState: WorkspacePlanReadState;
+ 449:   tasks?: PlanTask[];
+ 450:   totalPlanCount?: number;
+ 451: }) {
+ 452:   const readingPlan = readerState.plan;
+ 453:   const planReadResult = readerState.result;
+ 454:   const planReadError = readerState.error;
+ 455:   const planReading = readerState.loading;
+ 456:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+ 457:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+ 458:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+ 459:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+ 460:   const readerDialogId = useId();
+ 461:   const readerTitleId = useId();
+ 462:   const readerDescriptionId = useId();
+ 463:   const readerContentId = useId();
+ 464:   const readerDialogRef = useRef<HTMLDivElement>(null);
+ 465:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+ 466:   const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+ 467:   const readerStatusText = planReadError
+ 468:     ? `读取失败：${planReadError}`
+ 469:     : planReading
+ 470:       ? '正在读取 Plan 全文。'
+ 471:       : latestPlanUpdated
+ 472:         ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+ 473:         : 'Plan 全文已加载，当前为只读阅读模式。';
+ 474: 
+ 475:   useEffect(() => {
+ 476:     if (!readingPlan) return undefined;
+ 477: 
+ 478:     previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+ 479:     const focusFrame = window.requestAnimationFrame(() => {
+ 480:       readerDialogRef.current?.focus();
+ 481:     });
+ 482: 
+ 483:     return () => {
+ 484:       window.cancelAnimationFrame(focusFrame);
+ 485:       previouslyFocusedElementRef.current?.focus();
+ 486:     };
+ 487:   }, [readingPlan?.id, readingPlan?.project_id]);
+ 488: 
+ 489:   function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+ 490:     if (event.key === 'Escape') {
+ 491:       event.stopPropagation();
+ 492:       onCloseReader();
+ 493:       return;
+ 494:     }
+ 495: 
+ 496:     if (event.key !== 'Tab') return;
+ 497: 
+ 498:     const dialog = readerDialogRef.current;
+ 499:     if (!dialog) return;
+ 500: 
+ 501:     const focusableElements = getPlanReaderFocusableElements(dialog);
+ 502:     if (!focusableElements.length) {
+ 503:       event.preventDefault();
+ 504:       dialog.focus();
+ 505:       return;
+ 506:     }
+ 507: 
+ 508:     const firstFocusableElement = focusableElements[0];
+ 509:     const lastFocusableElement = focusableElements[focusableElements.length - 1];
+ 510: 
+ 511:     if (document.activeElement === dialog) {
+ 512:       event.preventDefault();
+ 513:       (event.shiftKey ? lastFocusableElement : firstFocusableElement).focus();
+ 514:       return;
+ 515:     }
+ 516: 
+ 517:     if (event.shiftKey && document.activeElement === firstFocusableElement) {
+ 518:       event.preventDefault();
+ 519:       lastFocusableElement.focus();
+ 520:       return;
+ 521:     }
+ 522: 
+ 523:     if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+ 524:       event.preventDefault();
+ 525:       firstFocusableElement.focus();
+ 526:     }
+ 527:   }
+ 528: 
+ 529:   return (
+ 530:     <>
+ 531:       {plans.length ? (
+ 532:         <div className="list compact">
+ 533:           {plans.map((plan) => {
+ 534:             const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+ 535:             const durationSummary = formatPlanDurationSummary(planTasks);
+ 536:             const title = planTitle(plan);
+ 537:             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+ 538:               plan.validation_passed ? 'passed' : 'pending'
+ 539:             }`;
+ 540:             const readingThisPlan = Boolean(
+ 541:               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+ 542:             );
+ 543:             const disableRead = planReading && readingThisPlan;
+ 544:             const suggestion = plan.concurrency_suggestion;
+ 545:             const runningInPlan = planTasks.some((task) => task.status === 'running');
+ 546:             const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
+ 547:             const canRunParallel = Boolean(onRunParallel && suggestion?.hasSafeParallelBatches && !parallelDisabledReason);
+ 548:             return (
+ 549:               <RecordCard
+ 550:                 actions={
+ 551:                   <div className="item-actions">
+ 552:                     <button
+ 553:                       type="button"
+ 554:                       className="btn-link plan-parallel-link"
+ 555:                       disabled={!canRunParallel}
+ 556:                       title={parallelDisabledReason || undefined}
+ 557:                       onClick={() => setConfirmingPlan(plan)}
+ 558:                     >
+ 559:                       并发执行
+ 560:                     </button>
+ 561:                     <button
+ 562:                       type="button"
+ 563:                       className="btn-link plan-read-link"
+ 564:                       aria-haspopup="dialog"
+ 565:                       aria-controls={readingThisPlan ? readerDialogId : undefined}
+ 566:                       aria-expanded={readingThisPlan}
+ 567:                       aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+ 568:                       disabled={disableRead}
+ 569:                       onClick={() => onOpenReader(plan)}
+ 570:                     >
+ 571:                       {disableRead ? '读取中…' : '阅读全文'}
+ 572:                     </button>
+ 573:                   </div>
+ 574:                 }
+ 575:                 key={plan.id}
+ 576:                 title={plan.file_path}
+ 577:                 status={plan.status}
+ 578:                 body={
+ 579:                   <div className="plan-list-body">
+ 580:                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
+ 581:                     <div className="plan-list-summary">{progressSummary}</div>
+ 582:                     <div className="plan-parallel-summary">
+ 583:                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+ 584:                       <span>建议 {suggestion?.batchCount || 0} 批</span>
+ 585:                       <span>串行 {suggestion?.serialTaskCount || 0} 个</span>
+ 586:                       {parallelDisabledReason ? <span title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
+ 587:                     </div>
+ 588:                   </div>
+ 589:                 }
+ 590:                 meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+ 591:               />
+ 592:             );
+ 593:           })}
+ 594:         </div>
+ 595:       ) : (
+ 596:         <div className="empty">{emptyText}</div>
+ 597:       )}
+ 598: 
+ 599:       {confirmingPlan ? (
+ 600:         <div className="modal-mask" onClick={() => setConfirmingPlan(null)}>
+ 601:           <div className="modal parallel-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+ 602:             <div className="modal-head">
+ 603:               <h3>确认并发执行</h3>
+ 604:               <button type="button" className="modal-close" onClick={() => setConfirmingPlan(null)} aria-label="关闭并发执行确认">
+ 605:                 ×
+ 606:               </button>
+ 607:             </div>
+ 608:             <div className="parallel-confirm-body">
+ 609:               <p>确认后将按以下安全批次启动；取消不会改变任务状态。</p>
+ 610:               {confirmingPlan.concurrency_suggestion.batches.map((batch) => (
+ 611:                 <section className="parallel-batch-card" key={batch.batch}>
+ 612:                   <div className="parallel-batch-head">
+ 613:                     <strong>批次 {batch.batch}</strong>
+ 614:                     <span>{batch.reason}</span>
+ 615:                   </div>
+ 616:                   <ul>
+ 617:                     {batch.tasks.map((task) => (
+ 618:                       <li key={task.id}>
+ 619:                         <span>{task.task_key} · {task.title}</span>
+ 620:                         <small className="mono">{task.scopes.join(', ')}</small>
+
+codex
+定位到计划卡片元信息区，接下来接入 `planCliSummaryLabel(plan)`。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/PlanLists.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -ge 460 -and $i -le 545){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 599ms:
+ 460:   const readerDialogId = useId();
+ 461:   const readerTitleId = useId();
+ 462:   const readerDescriptionId = useId();
+ 463:   const readerContentId = useId();
+ 464:   const readerDialogRef = useRef<HTMLDivElement>(null);
+ 465:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+ 466:   const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+ 467:   const readerStatusText = planReadError
+ 468:     ? `读取失败：${planReadError}`
+ 469:     : planReading
+ 470:       ? '正在读取 Plan 全文。'
+ 471:       : latestPlanUpdated
+ 472:         ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+ 473:         : 'Plan 全文已加载，当前为只读阅读模式。';
+ 474: 
+ 475:   useEffect(() => {
+ 476:     if (!readingPlan) return undefined;
+ 477: 
+ 478:     previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+ 479:     const focusFrame = window.requestAnimationFrame(() => {
+ 480:       readerDialogRef.current?.focus();
+ 481:     });
+ 482: 
+ 483:     return () => {
+ 484:       window.cancelAnimationFrame(focusFrame);
+ 485:       previouslyFocusedElementRef.current?.focus();
+ 486:     };
+ 487:   }, [readingPlan?.id, readingPlan?.project_id]);
+ 488: 
+ 489:   function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+ 490:     if (event.key === 'Escape') {
+ 491:       event.stopPropagation();
+ 492:       onCloseReader();
+ 493:       return;
+ 494:     }
+ 495: 
+ 496:     if (event.key !== 'Tab') return;
+ 497: 
+ 498:     const dialog = readerDialogRef.current;
+ 499:     if (!dialog) return;
+ 500: 
+ 501:     const focusableElements = getPlanReaderFocusableElements(dialog);
+ 502:     if (!focusableElements.length) {
+ 503:       event.preventDefault();
+ 504:       dialog.focus();
+ 505:       return;
+ 506:     }
+ 507: 
+ 508:     const firstFocusableElement = focusableElements[0];
+ 509:     const lastFocusableElement = focusableElements[focusableElements.length - 1];
+ 510: 
+ 511:     if (document.activeElement === dialog) {
+ 512:       event.preventDefault();
+ 513:       (event.shiftKey ? lastFocusableElement : firstFocusableElement).focus();
+ 514:       return;
+ 515:     }
+ 516: 
+ 517:     if (event.shiftKey && document.activeElement === firstFocusableElement) {
+ 518:       event.preventDefault();
+ 519:       lastFocusableElement.focus();
+ 520:       return;
+ 521:     }
+ 522: 
+ 523:     if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+ 524:       event.preventDefault();
+ 525:       firstFocusableElement.focus();
+ 526:     }
+ 527:   }
+ 528: 
+ 529:   return (
+ 530:     <>
+ 531:       {plans.length ? (
+ 532:         <div className="list compact">
+ 533:           {plans.map((plan) => {
+ 534:             const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+ 535:             const durationSummary = formatPlanDurationSummary(planTasks);
+ 536:             const title = planTitle(plan);
+ 537:             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+ 538:               plan.validation_passed ? 'passed' : 'pending'
+ 539:             }`;
+ 540:             const readingThisPlan = Boolean(
+ 541:               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+ 542:             );
+ 543:             const disableRead = planReading && readingThisPlan;
+ 544:             const suggestion = plan.concurrency_suggestion;
+ 545:             const runningInPlan = planTasks.some((task) => task.status === 'running');
+
+codex
+我会把 CLI 摘要放进卡片 meta，命令路径只放 title，避免挤压现有进度信息。
+exec
+powershell.exe -Command "Select-String -Path 'src/renderer/components/IntakePanel.tsx','src/renderer/**/*.css','src/renderer/**/*.tsx' -Pattern 'function RecordCard|RecordCard|record-card|item-meta|meta' -CaseSensitive:"'$false | Select-Object -First 80 | ForEach-Object { '"'{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 649ms:
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:227: <span className="meta">{formatChinaDateTime(item.updated_at)}</span>
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:275: export function RecordCard({
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:279: meta,
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:286: meta?: string;
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:305: {meta ? <div className="meta">{meta}</div> : null}
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:227: <span className="meta">{formatChinaDateTime(item.updated_at)}</span>
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:275: export function RecordCard({
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:279: meta,
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:286: meta?: string;
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:305: {meta ? <div className="meta">{meta}</div> : null}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:4: import { RecordCard } from './IntakePanel';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:16: type EventMetaRecord = Record<string, unknown>;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:23: meta: string;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:226: function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:230: return toEventMetaRecord(JSON.parse(value));
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:235: if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:239: function readEventMeta(event: AppEvent) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:240: return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:243: function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:244: if (!meta) return '';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:246: const value = meta[key];
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:256: function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:257: const text = readMetaText(meta, keys);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:267: function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:268: const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:287: function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:288: const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:289: const taskId = readMetaText(meta, ['taskId', 'task_id']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:290: const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:291: const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:294: const tone = classifyTaskEvent(event, meta);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:300: const planId = readMetaText(meta, ['planId', 'plan_id']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:301: const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:302: const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:303: const codexReasoningEffort = readMetaText(meta, [
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:313: const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:314: const metaParts = [
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:326: meta: metaParts.join(' · '),
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:333: const meta = readEventMeta(event);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:334: const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:335: ? formatTaskEvent(event, meta)
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:342: meta: formatChinaDateTime(event.created_at),
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:360: const meta = readEventMeta(event);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:367: display.meta,
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:368: toSearchText(meta),
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:549: <RecordCard
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:590: meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:823: <RecordCard
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:877: meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:906: <div className="meta event-meta">{display.meta}</div>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:149: <span className="search-result-meta">
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:207: <div className="project-meta">#{project.id} · 更新于 {formatChinaDateTime(project.updated_at)}</div>
+
+codex
+我会把可见摘要保持短文本，命令路径仅作为悬浮说明。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..abfc428e46dc2cc5c2d1f8a5fdf1378485bba5f2
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -578,6 +581,7 @@
+                 body={
+                   <div className="plan-list-body">
+                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
++                    <div className="plan-list-summary" title={cliTitle}>{cliSummary}</div>
+                     <div className="plan-list-summary">{progressSummary}</div>
+                     <div className="plan-parallel-summary">
+                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+@@ -587,7 +591,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..abfc428e46dc2cc5c2d1f8a5fdf1378485bba5f2
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -578,6 +581,7 @@
+                 body={
+                   <div className="plan-list-body">
+                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
++                    <div className="plan-list-summary" title={cliTitle}>{cliSummary}</div>
+                     <div className="plan-list-summary">{progressSummary}</div>
+                     <div className="plan-parallel-summary">
+                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+@@ -587,7 +591,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+codex
+接入已完成；我现在只做改动范围和关键位置检查，不运行测试。
+  ✓ 查看计划列表结构
+  ✓ 接入统一 CLI 文案
+  → 检查改动范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..abfc428e46dc2cc5c2d1f8a5fdf1378485bba5f2
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -578,6 +581,7 @@
+                 body={
+                   <div className="plan-list-body">
+                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
++                    <div className="plan-list-summary" title={cliTitle}>{cliSummary}</div>
+                     <div className="plan-list-summary">{progressSummary}</div>
+                     <div className="plan-parallel-summary">
+                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+@@ -587,7 +591,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+exec
+powershell.exe -Command "git diff --stat -- src/renderer/components/PlanLists.tsx; Write-Host '--- key lines'; Select-String -Path 'src/renderer/components/PlanLists.tsx' -Pattern 'planCliSummaryLabel|cliSummary|cliCommand|cliTitle|meta=' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path.Replace((Get-Location).Path + '"'\\\\',''),"'$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- status'; git status --short -- src/renderer/components/PlanLists.tsx docs/plan/plan_requirement_26_20260626-140018.md" in D:\project\GitHub\autoplan
+ succeeded in 629ms:
+ src/renderer/components/PlanLists.tsx | 343 ++++++++++++++++++++++++++++++----
+ 1 file changed, 305 insertions(+), 38 deletions(-)
+--- key lines
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:6: import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:540: const cliSummary = planCliSummaryLabel(plan);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:541: const cliCommand = String(plan.agent_cli_command || '').trim();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:542: const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:584: <div className="plan-list-summary" title={cliTitle}>{cliSummary}</div>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:594: meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:881: meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+--- status
+ M src/renderer/components/PlanLists.tsx
+?? docs/plan/plan_requirement_26_20260626-140018.md
+warning: in the working copy of 'src/renderer/components/PlanLists.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..abfc428e46dc2cc5c2d1f8a5fdf1378485bba5f2
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -578,6 +581,7 @@
+                 body={
+                   <div className="plan-list-body">
+                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
++                    <div className="plan-list-summary" title={cliTitle}>{cliSummary}</div>
+                     <div className="plan-list-summary">{progressSummary}</div>
+                     <div className="plan-parallel-summary">
+                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+@@ -587,7 +591,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+**Evaluating git modifications**
+
+I’m considering the diff status, which shows existing changes. It seems that PlanLists were modified before P003. The final output only mentions the current file, so I might need to check the git diff to understand the extent of user modifications without reverting anything. I only changed a few lines. It might be worth noting that the file had modifications prior, but I need to keep my final response concise. I should also think about if mentioning the CLI twice is necessary.
+codex
+我发现同一张卡片里 CLI 会同时出现在正文和 meta；为避免重复挤压，保留 meta 展示并把命令路径放到文件标题提示里。
+2026-06-26T07:16:52.597490Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:
+                title={plan.file_path}
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..abfc428e46dc2cc5c2d1f8a5fdf1378485bba5f2
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -578,6 +581,7 @@
+                 body={
+                   <div className="plan-list-body">
+                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
++                    <div className="plan-list-summary" title={cliTitle}>{cliSummary}</div>
+                     <div className="plan-list-summary">{progressSummary}</div>
+                     <div className="plan-parallel-summary">
+                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+@@ -587,7 +591,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+**Inspecting patch issue**
+
+It looks like the patch failed, and I need to investigate why that happened. I'm wondering if the problem lies in the title line before the patch itself. I should take a closer look at that to determine what went wrong. Understanding the issue will help me figure out how to fix it. Let's see what I can find! It’s essential to get to the bottom of this.
+codex
+补丁上下文不匹配，我读取该小段后精确调整。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/PlanLists.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -ge 570 -and $i -le 600){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 511ms:
+ 570:                       aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+ 571:                       disabled={disableRead}
+ 572:                       onClick={() => onOpenReader(plan)}
+ 573:                     >
+ 574:                       {disableRead ? '读取中…' : '阅读全文'}
+ 575:                     </button>
+ 576:                   </div>
+ 577:                 }
+ 578:                 key={plan.id}
+ 579:                 title={plan.file_path}
+ 580:                 status={plan.status}
+ 581:                 body={
+ 582:                   <div className="plan-list-body">
+ 583:                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
+ 584:                     <div className="plan-list-summary" title={cliTitle}>{cliSummary}</div>
+ 585:                     <div className="plan-list-summary">{progressSummary}</div>
+ 586:                     <div className="plan-parallel-summary">
+ 587:                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+ 588:                       <span>建议 {suggestion?.batchCount || 0} 批</span>
+ 589:                       <span>串行 {suggestion?.serialTaskCount || 0} 个</span>
+ 590:                       {parallelDisabledReason ? <span title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
+ 591:                     </div>
+ 592:                   </div>
+ 593:                 }
+ 594:                 meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+ 595:               />
+ 596:             );
+ 597:           })}
+ 598:         </div>
+ 599:       ) : (
+ 600:         <div className="empty">{emptyText}</div>
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..abfc428e46dc2cc5c2d1f8a5fdf1378485bba5f2
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -578,6 +581,7 @@
+                 body={
+                   <div className="plan-list-body">
+                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
++                    <div className="plan-list-summary" title={cliTitle}>{cliSummary}</div>
+                     <div className="plan-list-summary">{progressSummary}</div>
+                     <div className="plan-parallel-summary">
+                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+@@ -587,7 +591,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+codex
+现在精确移除重复正文行，并把命令提示挂到卡片标题上。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..65ed8b4d6a4afd54312078bedc818cfc707297c9
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -573,7 +576,7 @@
+                   </div>
+                 }
+                 key={plan.id}
+-                title={plan.file_path}
++                title={`${plan.file_path} · ${cliTitle}`}
+                 status={plan.status}
+                 body={
+                   <div className="plan-list-body">
+@@ -587,7 +590,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..65ed8b4d6a4afd54312078bedc818cfc707297c9
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -573,7 +576,7 @@
+                   </div>
+                 }
+                 key={plan.id}
+-                title={plan.file_path}
++                title={`${plan.file_path} · ${cliTitle}`}
+                 status={plan.status}
+                 body={
+                   <div className="plan-list-body">
+@@ -587,7 +590,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+**Inspecting title attributes**
+
+I’m considering the potential concern with P003 acceptance, especially how each plan card’s metadata area displays CLI. It seems we put the meta string there. The long command title is in the title attribute, but I’m unsure if the RecordCard's title prop corresponds to that. I should inspect the RecordCard to clarify. If we change the title from file_path to include cliTitle, it might duplicate and cause issues. I’ll check around IntakePanel as well for visibility.
+codex
+我会确认 `RecordCard` 的 `title` 是否可见，避免把 CLI 命令挤到主标题里。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/IntakePanel.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -ge 270 -and $i -le 310){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 517ms:
+ 270:       />
+ 271:     </div>
+ 272:   );
+ 273: }
+ 274: 
+ 275: export function RecordCard({
+ 276:   actions,
+ 277:   attachments = [],
+ 278:   body,
+ 279:   meta,
+ 280:   status,
+ 281:   title,
+ 282: }: {
+ 283:   actions?: ReactNode;
+ 284:   attachments?: Attachment[];
+ 285:   body?: ReactNode;
+ 286:   meta?: string;
+ 287:   status?: string;
+ 288:   title: string;
+ 289: }) {
+ 290:   const hasBody = typeof body === 'string' ? Boolean(body) : Boolean(body);
+ 291: 
+ 292:   return (
+ 293:     <article className="item">
+ 294:       <div className="item-title">
+ 295:         <span>{title}</span>
+ 296:         <span className="item-title-right">
+ 297:           {status ? <span className={`chip ${statusChip(status)}`}>{status}</span> : null}
+ 298:           {actions}
+ 299:         </span>
+ 300:       </div>
+ 301:       {hasBody ? (
+ 302:         <div className={`item-body${typeof body === 'string' ? ' plain-text' : ''}`}>{body}</div>
+ 303:       ) : null}
+ 304:       <AttachmentGrid attachments={attachments} />
+ 305:       {meta ? <div className="meta">{meta}</div> : null}
+ 306:     </article>
+ 307:   );
+ 308: }
+ 309: 
+ 310: function statusChip(status: string) {
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..65ed8b4d6a4afd54312078bedc818cfc707297c9
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,9 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
++            const cliCommand = String(plan.agent_cli_command || '').trim();
++            const cliTitle = cliCommand ? `${cliSummary} · 命令 ${cliCommand}` : cliSummary;
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -573,7 +576,7 @@
+                   </div>
+                 }
+                 key={plan.id}
+-                title={plan.file_path}
++                title={`${plan.file_path} · ${cliTitle}`}
+                 status={plan.status}
+                 body={
+                   <div className="plan-list-body">
+@@ -587,7 +590,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+**Analyzing UI modifications**
+
+I'm exploring the idea of adding something visually hidden, but CSS might not be the best approach. Maybe modifying PlanLists to pass ReactNode could work, but I can't adjust RecordCard or modify the IntakePanel. Alternatively, the title attribute isn't feasible, and the user specifically requested only PlanLists. It seems we can avoid showing commands altogether since the summary captures the provider and depth. I think I should remove the unused props then; that seems like the right call!
+codex
+`RecordCard` 的标题是可见文本，我会撤掉命令拼接，避免挤压标题。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..2a468beecd2072a0d2402026e0c9910b16b2945e
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,7 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -587,7 +588,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..2a468beecd2072a0d2402026e0c9910b16b2945e
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,7 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -587,7 +588,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+codex
+我已去掉会挤压标题的命令拼接，只保留紧凑 CLI 摘要在 meta 区。
+exec
+powershell.exe -Command "git diff --stat -- src/renderer/components/PlanLists.tsx; Write-Host '--- key lines'; Select-String -Path 'src/renderer/components/PlanLists.tsx' -Pattern 'planCliSummaryLabel|cliSummary|meta=' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path.Replace((Get-Location).Path + '"'\\\\',''),"'$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- status'; git status --short -- src/renderer/components/PlanLists.tsx docs/plan/plan_requirement_26_20260626-140018.md" in D:\project\GitHub\autoplan
+ succeeded in 611ms:
+ src/renderer/components/PlanLists.tsx | 340 ++++++++++++++++++++++++++++++----
+ 1 file changed, 302 insertions(+), 38 deletions(-)
+--- key lines
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:6: import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:540: const cliSummary = planCliSummaryLabel(plan);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:591: meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:878: meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+--- status
+ M src/renderer/components/PlanLists.tsx
+?? docs/plan/plan_requirement_26_20260626-140018.md
+warning: in the working copy of 'src/renderer/components/PlanLists.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..2a468beecd2072a0d2402026e0c9910b16b2945e
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,7 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -587,7 +588,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+**Addressing updates and changes**
+
+I think I need to mention that different statistics might include prior uncommitted changes that aren't ours. The current note says that PlanLists had existing modifications before P003. It might be better to avoid stating that 302 was inserted. So, I should focus on ensuring that the update plan is completed properly. Actually, keeping clarity on these aspects will help everyone stay on the same page!
+  ✓ 查看计划列表结构
+  ✓ 接入统一 CLI 文案
+  ✓ 检查改动范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..2a468beecd2072a0d2402026e0c9910b16b2945e
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,7 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -587,7 +588,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+codex
+已完成 P003，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint。
+
+- 在 `src/renderer/components/PlanLists.tsx:6` 接入 P002 的 `planCliSummaryLabel` 统一格式化函数。
+- 在 `src/renderer/components/PlanLists.tsx:540` 对每个计划基于计划级字段生成 CLI 摘要。
+- 在 `src/renderer/components/PlanLists.tsx:591` 将 CLI 摘要加入计划卡片 meta 区：如 `Codex CLI · 思考深度 medium` 或 `Claude CLI`。
+- 保留现有进度、验收状态、并发建议和按钮布局；未把长命令路径拼到可见标题里，避免挤压现有信息。
+- 检查结果：本任务仅修改 `src/renderer/components/PlanLists.tsx`；`docs/plan/...` 仍未修改。
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 3321ef30e7f487b19e5fdc13865e8ae6598f9bf9..2a468beecd2072a0d2402026e0c9910b16b2945e
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -3,7 +3,7 @@
+ import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+ import { RecordCard } from './IntakePanel';
+ import { MarkdownReader } from './MarkdownReader';
+-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
++import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+ import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+ 
+ type TimedPlanTask = PlanTask & {
+@@ -537,6 +537,7 @@
+             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+               plan.validation_passed ? 'passed' : 'pending'
+             }`;
++            const cliSummary = planCliSummaryLabel(plan);
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+             );
+@@ -587,7 +588,7 @@
+                     </div>
+                   </div>
+                 }
+-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
++                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+               />
+             );
+           })}
+
+已完成 P003，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint。
+
+- 在 `src/renderer/components/PlanLists.tsx:6` 接入 P002 的 `planCliSummaryLabel` 统一格式化函数。
+- 在 `src/renderer/components/PlanLists.tsx:540` 对每个计划基于计划级字段生成 CLI 摘要。
+- 在 `src/renderer/components/PlanLists.tsx:591` 将 CLI 摘要加入计划卡片 meta 区：如 `Codex CLI · 思考深度 medium` 或 `Claude CLI`。
+- 保留现有进度、验收状态、并发建议和按钮布局；未把长命令路径拼到可见标题里，避免挤压现有信息。
+- 检查结果：本任务仅修改 `src/renderer/components/PlanLists.tsx`；`docs/plan/...` 仍未修改。
+tokens used
+316,625

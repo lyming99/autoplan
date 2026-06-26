@@ -1,0 +1,125 @@
+﻿name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish, for example v0.2.0'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes body. Leave empty to use a default message.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            package_script: package:win
+          - platform: macos
+            runner: macos-latest
+            package_script: package:mac
+          - platform: linux
+            runner: ubuntu-latest
+            package_script: package:linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package ${{ matrix.platform }}
+        run: npm run ${{ matrix.package_script }}
+
+      - name: Upload ${{ matrix.platform }} artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+          path: release/**/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout tag metadata
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Resolve release notes
+        shell: bash
+        env:
+          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${DISPATCH_NOTES}" ]]; then
+            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
+          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
+            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
+          else
+            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
+          fi
+
+          if [[ ! -s release-notes.md ]]; then
+            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+          fi
+
+      - name: Create or update release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' files < <(find dist-artifacts -type f -print0)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No release artifacts found." >&2
+            exit 1
+          fi
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+            gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+          fi

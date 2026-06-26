@@ -28,14 +28,72 @@ export function sourceTypeName(type: 'requirement' | 'feedback') {
 export function agentCliProviderLabel(provider?: string | null): string {
   const value = String(provider || '').trim().toLowerCase();
   if (value === 'claude') return 'Claude';
+  if (value && value !== 'codex') return value;
   return 'Codex';
 }
 
 export function codexReasoningEffortLabel(effort?: string | null): string {
   const value = String(effort || '').trim().toLowerCase();
-  if (value === 'low') return '低';
-  if (value === 'high') return '高';
-  return '中';
+  if (value === 'low') return 'low';
+  if (value === 'high') return 'high';
+  return 'medium';
+}
+
+export function planCliSummaryLabel(source?: object | null): string {
+  const provider = readAgentCliProvider(source);
+  const providerLabel = `${agentCliProviderLabel(provider)} CLI`;
+  if (provider === 'claude') return providerLabel;
+  const effort = readCodexReasoningEffort(source) || 'medium';
+  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
+}
+
+export function readAgentCliProvider(source?: object | null): string {
+  return normalizeAgentCliProvider(readFirstString(source, [
+    'agent_cli_provider',
+    'agentCliProvider',
+    'cli_provider',
+    'cliProvider',
+    'cli_backend',
+    'cliBackend',
+    'provider',
+  ]));
+}
+
+export function readCodexReasoningEffort(source?: object | null): string | null {
+  const provider = readAgentCliProvider(source);
+  if (provider === 'claude') return null;
+  return normalizeCodexReasoningEffort(readFirstString(source, [
+    'codex_reasoning_effort',
+    'codexReasoningEffort',
+    'codex_thinking_depth',
+    'codexThinkingDepth',
+    'reasoning_effort',
+    'reasoningEffort',
+    'thinking_depth',
+    'thinkingDepth',
+  ]));
+}
+
+function readFirstString(source: object | null | undefined, keys: string[]): string {
+  const record = source as Record<string, unknown> | null | undefined;
+  for (const key of keys) {
+    const value = record?.[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function normalizeAgentCliProvider(provider?: string | null): string {
+  const value = String(provider || '').trim().toLowerCase();
+  if (value === 'claude') return 'claude';
+  if (value && value !== 'codex') return value;
+  return 'codex';
+}
+
+function normalizeCodexReasoningEffort(effort?: string | null): string {
+  const value = String(effort || '').trim().toLowerCase();
+  if (value === 'low' || value === 'high') return value;
+  return 'medium';
 }
 
 /** 状态 → 语义化 chip class */

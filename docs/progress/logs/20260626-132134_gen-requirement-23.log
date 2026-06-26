@@ -1,0 +1,353 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0260-544d-7cf2-8a44-0f777a9fdfbf
+--------
+user
+你是需求整理与开发计划生成者。
+请根据以下需求，生成一个开发计划和验收标准。
+
+输出文件：D:\project\GitHub\autoplan\docs\plan\plan_requirement_23_20260626-132134.md
+
+格式要求：
+- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->
+- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行
+- 每个任务要有验收要点
+- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收
+- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准
+- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试
+- 必须包含总体验收标准和进度区
+- 只写 plan 文件，不要改业务代码
+
+需求 #23 内容：
+实现一个github action,自动发布release版本打包编译windows、macos、linux三端程序，然后写个python脚本，一键推送release版本，可以指定tag、版本说明
+**Considering file creation**
+
+I need to create a file only, but maybe I should inspect the repo too. I’m wondering if it's necessary to plan a document — perhaps not. However, it might be a good idea to check the directories first. I think using the shell will help with that. Overall, I'm trying to figure out the best approach while keeping things organized and efficient. Let's see what steps I should take!
+codex
+我会先快速查看仓库结构和现有文档风格，再只写入指定 plan 文件。
+exec
+powershell.exe -Command "Get-ChildItem -Force; if (Test-Path AGENTS.md) { Get-Content AGENTS.md } ; if (Test-Path docs\\plan) { Get-ChildItem docs\\plan | Select-Object -First 5 }" in D:\project\GitHub\autoplan
+ succeeded in 372ms:
+
+
+    目录: D:\project\GitHub\autoplan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----         2026/6/26     13:21                .autoplan-runtime                                                    
+d-----         2026/6/25     22:13                .claude                                                              
+d--h--         2026/6/26     13:17                .git                                                                 
+d-----         2026/6/24     23:46                assets                                                               
+d-----         2026/6/26     13:09                dist                                                                 
+d-----         2026/6/25      0:34                docs                                                                 
+d-----         2026/6/25      4:01                node_modules                                                         
+d-----         2026/6/26     13:15                release                                                              
+d-----         2026/6/24     23:36                release-test                                                         
+d-----         2026/6/25     21:12                scripts                                                              
+d-----         2026/6/26      2:32                src                                                                  
+d-----         2026/6/25     21:00                ui                                                                   
+-a----         2026/6/24     23:18         109404 .codex-autoplan-overview-final.png                                   
+-a----         2026/6/24     23:17         108438 .codex-autoplan-overview-left-log.png                                
+-a----         2026/6/24     23:21          79462 .codex-autoplan-overview-merged-log.png                              
+-a----         2026/6/24     23:14         102400 .codex-autoplan-overview.png                                         
+-a----         2026/6/24     22:52            288 .codex-dev-20260624-225246.log                                       
+-a----         2026/6/24     22:57            546 .codex-dev-20260624-225652.log                                       
+-a----         2026/6/24     23:01            686 .codex-dev-20260624-225837.log                                       
+-a----         2026/6/25     21:01          35405 .codex-dev-20260624-230150.log                                       
+-a----         2026/6/24     22:48            419 .codex-dev.log                                                       
+-a----         2026/6/25      0:11             66 .gitattributes                                                       
+-a----         2026/6/25      5:37             42 .gitignore                                                           
+-a----         2026/6/24     19:10            307 index.html                                                           
+-a----         2026/6/25      5:38          11524 LICENSE                                                              
+-a----         2026/6/25      4:01         232205 package-lock.json                                                    
+-a----         2026/6/26      6:08           1835 package.json                                                         
+-a----         2026/6/26      6:09           4745 README.md                                                            
+-a----         2026/6/24     23:45           7191 System.Drawing.Drawing2D.GraphicsPath                                
+-a----         2026/6/24     19:10            555 tsconfig.json                                                        
+-a----         2026/6/24     23:41            287 vite.config.ts                                                       
+
+
+    目录: D:\project\GitHub\autoplan\docs\plan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----         2026/6/26      6:11           8118 plan_feedback_10_20260626-034659.md                                  
+-a----         2026/6/25      6:42           4730 plan_feedback_5_20260625-040346.md                                   
+-a----         2026/6/25      6:31           7767 plan_requirement_11_20260625-035545.md                               
+-a----         2026/6/26      4:18           9360 plan_requirement_12_20260625-202919.md                               
+-a----         2026/6/26      4:42           9227 plan_requirement_21_20260626-033033.md                               
+
+
+
+**Inspecting package scripts**
+
+I think I need to inspect the package scripts to ensure that the scopes are accurate and fit into the existing plan format. It's important to make sure everything aligns properly, so I'll take a closer look at how these scripts are structured. By doing this, I can figure out what adjustments are necessary to keep everything consistent and well-organized. Let's make sure we get this right!
+codex
+已确认这是 Electron/Vite 项目；接下来参考现有计划格式和发布脚本结构。
+exec
+powershell.exe -Command "Get-Content package.json; ''; Get-ChildItem scripts -Force; ''; Get-Content docs\\plan\\plan_requirement_21_20260626-033033.md -TotalCount 120" in D:\project\GitHub\autoplan
+ succeeded in 232ms:
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+
+
+    目录: D:\project\GitHub\autoplan\scripts
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----         2026/6/24     19:16           2001 dev.js                                                               
+-a----         2026/6/26     12:20          83635 smoke-test.js                                                        
+
+# 闇€姹?#21 寮€鍙戣鍒掞細闇€姹?鍙嶉杈撳叆妗嗘敮鎸佺矘璐村浘鐗囧苟纭繚闄勪欢鍙
+
+## 鑳屾櫙
+
+褰撳墠闇€姹傘€佸弽棣堢晫闈㈠凡缁忔敮鎸侀€氳繃鏂囦欢閫夋嫨鍜屾嫋鎷芥坊鍔犻檮浠讹紝闄勪欢浼氭寔涔呭寲鍒版湰鍦伴檮浠剁洰褰曞苟鍦ㄥ揩鐓т腑杩斿洖銆備絾杈撳叆妗嗗皻鏈槑纭敮鎸佷粠鍓创鏉跨洿鎺ョ矘璐村浘鐗囷紱鍚屾椂锛岄渶姹?鍙嶉杩涘叆璁″垝鐢熸垚娴佺▼鏃讹紝AI 宸ュ叿鍙湅鍒版鏂囧唴瀹癸紝闄勪欢璺緞涓庡彲璇诲彇璇存槑娌℃湁琚ǔ瀹氭敞鍏ュ埌 prompt 鎴栬鍒掍笂涓嬫枃涓€?
+鏈渶姹傜洰鏍囨槸锛氱敤鎴峰彲浠ュ湪闇€姹傘€佸弽棣堣緭鍏ユ鍐呯洿鎺ョ矘璐存埅鍥炬垨鍥剧墖锛屽浘鐗囨寜闄勪欢杩涘叆鐜版湁淇濆瓨閾捐矾锛涘綋杩欎簺闇€姹?鍙嶉瑙﹀彂璁″垝鐢熸垚鍜屽悗缁紑鍙戞墽琛屾椂锛屽伐鍏疯兘鐪嬪埌闄勪欢娓呭崟銆佽鍙栧埌闄勪欢鏂囦欢鍐呭锛屽苟鑳藉湪蹇呰鏃跺熀浜庡浘鐗囧唴瀹规暣鐞嗚鍒掋€?
+## 璁捐绾︽潫
+
+- 闇€姹備笌鍙嶉鍏辩敤鍚屼竴濂楄緭鍏ョ粍浠惰兘鍔涳紝涓嶈兘鍙敮鎸佸叾涓竴涓〉闈€?- 绮樿创绾枃鏈€佽緭鍏ユ鏂囥€丒nter 鍙戦€併€佹枃浠堕€夋嫨銆佹嫋鎷戒笂浼犵瓑鏃㈡湁浜や簰涓嶈兘鍥炲綊銆?- 绮樿创鍥剧墖搴旇繘鍏ョ幇鏈夊緟鎻愪氦闄勪欢鍒楄〃锛屾彁浜ゅ墠鍏佽棰勮鍜岀Щ闄わ紱鍙矘璐村浘鐗囥€佹鏂囦负绌烘椂浠嶅厑璁告彁浜ゃ€?- 鍓创鏉垮浘鐗囬€氬父娌℃湁绋冲畾鏂囦欢璺緞锛屼繚瀛橀摼璺渶瑕佹敮鎸佹棤璺緞鐨勪簩杩涘埗鍥剧墖鏉ユ簮锛屼笉鑳戒緷璧?`File.path`銆?- 闄勪欢淇濆瓨鍚庨渶瑕佺户缁褰曞師濮嬪悕绉般€丮IME銆佸ぇ灏忋€乭ash銆佹寔涔呭寲璺緞锛屽苟淇濇寔鐜版湁蹇収涓庢悳绱?灞曠ず琛屼负鍏煎銆?- 璁″垝鐢熸垚 prompt 蹇呴』鍖呭惈闇€姹?鍙嶉闄勪欢娓呭崟鍜屽彲璇诲彇璺緞锛涘鏋滈檮浠剁己澶辨垨璇诲彇澶辫触锛岃鏈夊彲杩借釜鐨勬棩蹇楁垨浜嬩欢鎻愮ず銆?- 涓嶅簲鎶婂ぇ浣撶Н鍥剧墖鐩存帴鍐呰仈杩?prompt锛沺rompt 涓紶璺緞銆乭ash銆丮IME 鍜岃鍙栬鏄庯紝鐢卞伐鍏锋寜闇€璇诲彇鏂囦欢鍐呭銆?
+## 浠诲姟鎷嗚В
+
+- [ ] P001: 缁熶竴绮樿创鍥剧墖闄勪欢鏁版嵁妯″瀷 <!-- scope: src/renderer/types.ts,src/renderer/components/Composer.tsx,src/renderer/pages/WorkspacePage.tsx -->
+  - 楠屾敹瑕佺偣锛歚PendingAttachment` 鎴栫瓑浠风被鍨嬭兘澶熷尯鍒嗚矾寰勯檮浠朵笌鍓创鏉垮浘鐗囬檮浠讹紝鑷冲皯鍖呭惈鏉ユ簮绫诲瀷銆佸悕绉般€丮IME銆佸ぇ灏忋€侀瑙堟墍闇€淇℃伅鍜屼繚瀛樻墍闇€杞借嵎銆?  - 楠屾敹瑕佺偣锛歚WorkspacePage` 鐨勫緟鎻愪氦闄勪欢鐘舵€佸彲浠ュ悓鏃跺绾虫枃浠堕€夋嫨/鎷栨嫿闄勪欢鍜岀矘璐村浘鐗囬檮浠讹紝鍘婚噸銆佺Щ闄ゃ€佹彁浜ゅ悗娓呯┖閫昏緫鍧囦笉鐮村潖鐜版湁璺緞闄勪欢銆?  - 楠屾敹瑕佺偣锛氶渶姹備笌鍙嶉涓や釜 `Composer` 瀹炰緥浣跨敤鐩稿悓鐨勬暟鎹ā鍨嬪拰鍥炶皟锛屼笉鍑虹幇涓€绔彲绮樿创銆佷竴绔笉鍙矘璐寸殑鍒嗗弶瀹炵幇銆?  - 楠屾敹瑕佺偣锛歍ypeScript 绫诲瀷妫€鏌ヨ兘瑕嗙洊 create/update 鍏ュ弬涓殑涓ょ被闄勪欢鏉ユ簮锛岄伩鍏嶄富杩涚▼鏀跺埌缁撴瀯涓嶆槑鐨勯檮浠跺璞°€?
+- [ ] P002: 瀹炵幇杈撳叆妗嗙矘璐村浘鐗囦氦浜?<!-- scope: src/renderer/components/Composer.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氬湪闇€姹傝緭鍏ユ鍜屽弽棣堣緭鍏ユ涓矘璐存埅鍥俱€丳NG銆丣PEG銆乄ebP 绛夊浘鐗囨椂锛屽浘鐗囦細绔嬪嵆鍑虹幇鍦ㄥ緟鎻愪氦闄勪欢鍒楄〃涓€?  - 楠屾敹瑕佺偣锛氱矘璐寸函鏂囨湰鏃朵粛鎸夋祻瑙堝櫒榛樿琛屼负杩涘叆姝ｆ枃锛屼笉浼氳闄勪欢澶勭悊閫昏緫闃绘柇锛涘悓鏃剁矘璐存枃鏈拰鍥剧墖鏃讹紝鏂囨湰涓庡浘鐗囬兘鑳戒繚鐣欍€?  - 楠屾敹瑕佺偣锛氬涓壀璐存澘鍥剧墖椤瑰彲浠ヤ竴娆℃€у姞鍏ワ紱涓嶆敮鎸佺殑鍓创鏉块」浼氳蹇界暐涓斾笉寮瑰嚭璇鎬ч敊璇€?  - 楠屾敹瑕佺偣锛氬緟鎻愪氦鍥剧墖鏄剧ず缂╃暐鍥俱€佹枃浠跺悕銆佸ぇ灏忥紝骞跺彲鍦ㄦ彁浜ゅ墠绉婚櫎锛涢檮浠跺垪琛ㄨ繃闀挎椂甯冨眬涓嶉伄鎸″彂閫佹寜閽€?  - 楠屾敹瑕佺偣锛氫粎鏈夌矘璐村浘鐗囥€佹鏂囦负绌烘椂鍏佽鍙戦€侊紱鍙戦€佹垚鍔熷悗姝ｆ枃涓庡緟鎻愪氦闄勪欢閮芥竻绌猴紝鍙戦€佸け璐ユ椂淇濈暀寰呮彁浜ら檮浠躲€?
+- [x] P003: 鏀寔鍓创鏉垮浘鐗囨寔涔呭寲淇濆瓨 <!-- scope: src/attachments.js,src/main.js,src/renderer/types.ts -->
+  - 楠屾敹瑕佺偣锛歚saveAttachments` 鎴栫瓑浠蜂繚瀛樺嚱鏁版棦鏀寔鐜版湁 `path` 鏂囦欢澶嶅埗锛屼篃鏀寔鍓创鏉垮浘鐗囩殑浜岃繘鍒?base64 杞借嵎鍐欏叆鎸佷箙鍖栭檮浠剁洰褰曘€?  - 楠屾敹瑕佺偣锛氬壀璐存澘鍥剧墖淇濆瓨鍚庡啓鍏?`attachments` 琛紝瀛楁鍖呭惈 `project_id`銆乣owner_type`銆乣owner_id`銆乣original_name`銆乣stored_path`銆乣mime_type`銆乣size`銆乣hash`銆乣created_at`銆?  - 楠屾敹瑕佺偣锛氫繚瀛樻椂鏍规嵁 MIME 鎺ㄥ瀹夊叏鎵╁睍鍚嶅拰榛樿鏂囦欢鍚嶏紝鏂囦欢鍚嶇粡杩囨竻娲楋紝涓嶈兘浜х敓璺緞绌胯秺鎴栬鐩栧叾浠栭檮浠剁殑闂銆?  - 楠屾敹瑕佺偣锛氫繚瀛樺悗鐨?`size` 涓庡疄闄呭啓鍏ュ瓧鑺傛暟涓€鑷达紝`hash` 鍩轰簬鐪熷疄鏂囦欢鍐呭璁＄畻锛涢噸澶嶇矘璐村悓涓€鍥剧墖涓嶄細瀵艰嚧鏁版嵁搴撹褰曟寚鍚戦敊璇枃浠躲€?  - 楠屾敹瑕佺偣锛氱幇鏈夋枃浠堕€夋嫨銆佹嫋鎷戒笂浼犮€侀渶姹傛洿鏂般€佸弽棣堟洿鏂扮殑闄勪欢淇濆瓨琛屼负淇濇寔鍏煎銆?
+- [x] P004: 娉ㄥ叆闄勪欢鍙娓呭崟鍒拌鍒掔敓鎴?<!-- scope: src/loopService.js -->
+  - 楠屾敹瑕佺偣锛氫负鍗曟潯闇€姹傛垨鍙嶉鐢熸垚璁″垝鏃讹紝`generatePlanForIntake` 浼氭煡璇㈣璁板綍缁戝畾鐨勯檮浠讹紝骞跺湪 prompt 涓拷鍔犫€滈檮浠舵竻鍗曗€濄€?  - 楠屾敹瑕佺偣锛氶檮浠舵竻鍗曡嚦灏戝寘鍚師濮嬪悕绉般€丮IME銆佸ぇ灏忋€丼HA256銆佹寔涔呭寲鏈湴璺緞锛屽苟鏄庣‘璇存槑宸ュ叿鍙互閫氳繃璇ヨ矾寰勮鍙栭檮浠跺唴瀹广€?  - 楠屾敹瑕佺偣锛氭湁闄勪欢鏃讹紝鐢熸垚鍑虹殑 plan 鏂囦欢搴旇姹備繚鐣欏繀瑕佺殑闄勪欢璺緞鎴栧紩鐢紝閬垮厤鍚庣画鎵ц浠诲姟鏃跺け鍘诲浘鐗囦笂涓嬫枃銆?  - 楠屾敹瑕佺偣锛氶檮浠舵枃浠跺瓨鍦ㄤ笖鍙鏃讹紝璁″垝鐢熸垚鍓嶈兘閫氳繃 `fs.stat`/`fs.access` 鎴栫瓑浠锋柟寮忕‘璁わ紱涓嶅彲璇绘椂 prompt 鍜屼簨浠舵棩蹇楅兘鑳芥彁绀哄叿浣撻檮浠跺紓甯搞€?  - 楠屾敹瑕佺偣锛氭棤闄勪欢鐨勯渶姹?鍙嶉缁х画鐢熸垚鍘熸湁绠€娲?prompt锛屼笉棰濆寮曞叆绌烘竻鍗曟垨鏃犳剰涔夊櫔澹般€?
+- [x] P005: 琛ュ厖鑷姩鍖?smoke 楠岃瘉 <!-- scope: scripts/smoke-test.js -->
+  - 楠屾敹瑕佺偣锛氭柊澧炵敤渚嬭鐩栬矾寰勯檮浠朵笌鍓创鏉垮浘鐗囪浇鑽蜂袱绉嶄繚瀛樿矾寰勶紝鏂█鏂囦欢钀界洏銆丼QLite 璁板綍銆丮IME銆佸ぇ灏忋€乭ash 鍧囨纭€?  - 楠屾敹瑕佺偣锛氭柊澧炵敤渚嬫ā鎷熼渶姹傚拰鍙嶉鍚勮嚜鎼哄甫鍥剧墖闄勪欢锛屾柇瑷€蹇収涓殑闄勪欢 `owner_type`銆乣owner_id`銆乣project_id` 缁戝畾姝ｇ‘銆?  - 楠屾敹瑕佺偣锛氭柊澧炶鍒掔敓鎴?stub 鏂█ prompt 鍖呭惈闄勪欢娓呭崟銆佸彲璇昏矾寰勩€丮IME銆乭ash锛屽苟鑳藉湪娴嬭瘯杩涚▼涓鍙栬璺緞鐨勬枃浠跺唴瀹广€?  - 楠屾敹瑕佺偣锛氫繚鐣欑幇鏈?smoke 瑕嗙洊鐨勯」鐩殧绂汇€佽鍒掕鍙栥€佹悳绱€佷换鍔℃墽琛屻€佸鍚庣绛夋柇瑷€锛屼笉鍥犻檮浠舵敼閫犺€屽洖褰掋€?  - 楠屾敹瑕佺偣锛氬畬鎴愬悗 `npm run check` 涓?`npm run smoke` 鍧囬€氳繃銆?
+- [x] P006: 鏇存柊闄勪欢浣跨敤璇存槑 <!-- scope: README.md,ui/README.md -->
+  - 楠屾敹瑕佺偣锛歊EADME 琛ュ厖闇€姹?鍙嶉鏀寔绮樿创鍥剧墖銆佹枃浠堕€夋嫨銆佹嫋鎷戒笂浼犵殑璇存槑锛屼互鍙婇檮浠朵細浣滀负璁″垝鐢熸垚涓婁笅鏂囨彁渚涚粰 AI 宸ュ叿璇诲彇銆?  - 楠屾敹瑕佺偣锛歎I 璇存槑琛ュ厖绮樿创鍥剧墖鐨勪娇鐢ㄦ柟寮忋€佸彧浼犻檮浠朵篃鍙彁浜ゃ€佸彂閫佸け璐ヤ細淇濈暀寰呮彁浜ら檮浠剁瓑鐢ㄦ埛鍙劅鐭ヨ涓恒€?  - 楠屾敹瑕佺偣锛氭枃妗ｆ槑纭檮浠朵互鏈湴鏂囦欢璺緞鎻愪緵缁欏伐鍏凤紝涓嶆妸鍥剧墖浜岃繘鍒剁洿鎺ュ唴鑱旇繘 prompt锛屼究浜庣悊瑙ｉ殣绉佸拰浣撶Н杈圭晫銆?  - 楠屾敹瑕佺偣锛氬瀹炵幇杩囩▼涓病鏈夋柊澧炲懡浠わ紝涓嶄慨鏀?`package.json`锛涘鏂板娴嬭瘯鍛戒护鎴栨鏌ヨ剼鏈紝鍒欏悓姝ユ洿鏂版枃妗ｅ拰鑴氭湰璇存槑銆?
+## 鎬讳綋楠屾敹鏍囧噯
+
+- 闇€姹傜晫闈㈠拰鍙嶉鐣岄潰鐨勮緭鍏ユ鍧囨敮鎸佺洿鎺ョ矘璐村浘鐗囷紝绮樿创鍚庡浘鐗囪繘鍏ュ緟鎻愪氦闄勪欢鍒楄〃骞跺彲棰勮銆佺Щ闄ゅ拰闅忔鏂囦竴璧锋彁浜ゃ€?- 绮樿创鏂囨湰銆佽緭鍏ユ鏂囥€佹枃浠堕€夋嫨銆佹嫋鎷戒笂浼犮€佷粎姝ｆ枃鎻愪氦銆佷粎闄勪欢鎻愪氦銆佸彂閫佸け璐ヤ繚鐣欒崏绋跨瓑鏍稿績浜や簰鍧囩鍚堥鏈熴€?- 璺緞鏂囦欢闄勪欢涓庡壀璐存澘鍥剧墖闄勪欢閮借兘鎸佷箙鍖栧埌鏈湴闄勪欢鐩綍锛屽苟鍦ㄦ暟鎹簱銆侀」鐩揩鐓у拰鍓嶇灞曠ず涓繚鎸佹纭?owner 鍏崇郴銆?- 闇€姹?鍙嶉瑙﹀彂璁″垝鐢熸垚鏃讹紝AI CLI prompt 鑳借幏寰楅檮浠舵竻鍗曞拰鏈湴鍙璺緞锛涘伐鍏锋寜璇ヨ矾寰勮鍙栧埌鐨勬枃浠跺唴瀹逛笌鏁版嵁搴撹褰曠殑澶у皬/hash 涓€鑷淬€?- 闄勪欢缂哄け銆佷笉鍙銆佺被鍨嬪紓甯告垨淇濆瓨澶辫触鏃讹紝鐢ㄦ埛鐣岄潰鎴栦簨浠舵棩蹇楄兘鐪嬪埌鍙畾浣嶇殑閿欒淇℃伅锛屼笉浼氶潤榛樼敓鎴愮己澶变笂涓嬫枃鐨勮鍒掋€?- 瀹夊叏鎬ф弧瓒冲熀鏈竟鐣岋細鏂囦欢鍚嶆竻娲椼€佽矾寰勭┛瓒婇槻鎶ゃ€丮IME/鎵╁睍鍚嶅悎鐞嗘帹瀵笺€佸ぇ浣撶Н闄勪欢涓嶅唴鑱斿埌 prompt銆佸浘鐗囬瑙堜笉鎵ц鑴氭湰銆?- 楠岃瘉閫氳繃锛歚npm run check` 涓?`npm run smoke` 鍧囬€氳繃锛涙墜鍔ㄩ獙鏀惰嚦灏戣鐩栦粠鎴浘宸ュ叿澶嶅埗鍥剧墖鍚庡垎鍒矘璐村埌闇€姹傚拰鍙嶉杈撳叆妗嗗苟鐢熸垚璁″垝銆?
+## 杩涘害鍖?
+| 浠诲姟 | 鐘舵€?| 璇存槑 |
+| --- | --- | --- |
+| P001 | 鏈紑濮?| 寰呯粺涓€鍓嶇闄勪欢绫诲瀷锛屾敮鎸佽矾寰勯檮浠朵笌鍓创鏉垮浘鐗囬檮浠跺叡瀛?|
+| P002 | 鏈紑濮?| 寰呭疄鐜拌緭鍏ユ onPaste 澶勭悊銆佸緟鎻愪氦灞曠ず涓庝氦浜掓牱寮?|
+| P003 | 鏈紑濮?| 寰呮墿灞曢檮浠朵繚瀛橀摼璺紝鏀寔鏃犺矾寰勫浘鐗囦簩杩涘埗鍐欏叆 |
+| P004 | 鏈紑濮?| 寰呭湪璁″垝鐢熸垚 prompt 涓敞鍏ラ檮浠舵竻鍗曚笌鍙璺緞 |
+| P005 | 鏈紑濮?| 寰呰ˉ鍏?smoke 瑕嗙洊淇濆瓨銆佸揩鐓с€乸rompt 涓庡伐鍏疯鍙栭獙璇?|
+| P006 | 鏈紑濮?| 寰呮洿鏂?README 涓?UI 浣跨敤璇存槑 |
+
+褰撳墠鎬讳綋杩涘害锛?/6銆?- P004 AutoPlan 瀹屾垚锛?026-06-25T19:46:55.776Z锛涙棩蹇楋細docs/progress/logs/20260626-033820_execute-P004.log
+- P003 AutoPlan 瀹屾垚锛?026-06-25T20:29:51.975Z锛涙棩蹇楋細docs/progress/logs/20260626-041853_execute-P003.log
+- P005 AutoPlan 瀹屾垚锛?026-06-25T20:38:57.608Z锛涙棩蹇楋細docs/progress/logs/20260626-042954_execute-P005.log
+- P006 AutoPlan 瀹屾垚锛?026-06-25T20:42:07.605Z锛涙棩蹇楋細docs/progress/logs/20260626-043900_execute-P006.log
+
+
+
+codex
+我已看到当前只有 Windows 打包脚本；现在生成包含三端发布流水线和 Python 推送脚本的计划。
+exec
+powershell.exe -Command '$path = '"'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_23_20260626-132134.md';
+"'$dir = Split-Path $path -Parent;
+New-Item -ItemType Directory -Force -Path $dir | Out-Null;
+$content = @'"'
+# 需求 #23 开发计划：GitHub Action 自动三端发布与一键推送 Release
+
+## 背景
+
+当前项目是 Electron 桌面应用，"'`package.json` 已有 `package:win` Windows 打包命令，`electron-builder` 配置也已有 Windows NSIS 目标，但还缺少 macOS、Linux 打包配置、跨平台 CI 发布流水线，以及本地一键创建/推送 Release 的脚本。
+
+本需求目标是：实现一个 GitHub Action，在发布 Release 版本时自动编译并打包 Windows、macOS、Linux 三端程序；同时新增一个 Python 脚本，支持开发者在本地一键指定 tag 和版本说明，推送 tag 并触发 GitHub Release 发布流程。
+
+## 设计约束
+
+- 发布流程应优先复用 `electron-builder`，避免引入与现有 Electron 构建体系冲突的新打包工具。
+- 三端产物应在对应系统 runner 上构建，Windows、macOS、Linux 分别使用 `windows-latest`、`macos-latest`、`ubuntu-latest`。
+- GitHub Action 应支持手动触发和 tag 触发，便于本地脚本推送 tag 后自动发布。
+- Release 产物命名应稳定、可区分平台、版本和架构，便于用户下载和脚本校验。
+- Python 脚本应只负责本地发布编排：参数校验、tag 创建/推送、版本说明传递或生成；不应在脚本中重复执行三端构建。
+- 脚本应对常见失败场景给出明确提示，包括未安装 Git、非 Git 仓库、工作区未清理、tag 已存在、远端推送失败、缺少 GitHub CLI 或 token 等。
+- Release 说明应支持命令行直接传入文本，也支持从文件读取，避免长说明在 shell 中转义困难。
+- 不在本计划中实现代码签名、公证、自动更新服务器；如需后续支持，应预留配置位置但不阻塞基础发布能力。
+
+## 任务列表
+
+- [ ] P001: 补齐三端打包配置 <!-- scope: package.json -->
+  - 验收要点：`package.json` 中新增或调整 Windows、macOS、Linux 打包脚本，能够分别调用 `electron-builder` 的对应平台目标。
+  - 验收要点：`build` 配置包含 macOS 与 Linux 的基础 target、artifactName、输出目录等信息，且不破坏现有 Windows NSIS 配置。
+  - 验收要点：产物命名包含产品名、版本、平台或架构信息，三端产物不会互相覆盖。
+  - 验收要点：新增脚本命名清晰，例如 `package:mac`、`package:linux`、`package:all` 或等价命令，便于 GitHub Action 调用。
+
+- [ ] P002: 新增 Release 工作流 <!-- scope: .github/workflows/release.yml -->
+  - 验收要点：新增 GitHub Action workflow，支持 `push` tag 触发，tag 规则覆盖发布版本格式，例如 `v*`。
+  - 验收要点：workflow 支持 `workflow_dispatch` 手动触发，并允许输入 tag、版本说明或说明文件来源的必要信息。
+  - 验收要点：workflow 使用 matrix 或等价 jobs 在 Windows、macOS、Linux runner 上分别安装依赖、执行构建和打包。
+  - 验收要点：workflow 上传每个平台生成的安装包或压缩包为 artifact，并在发布 job 中统一附加到 GitHub Release。
+  - 验收要点：workflow 使用仓库内置 `GITHUB_TOKEN` 完成 Release 创建或更新，不要求用户手动配置额外 token 才能完成基础发布。
+
+- [ ] P003: 实现本地发布脚本 <!-- scope: scripts/release.py -->
+  - 验收要点：新增 Python 脚本支持指定 `--tag`，并校验 tag 格式、是否已在本地或远端存在。
+  - 验收要点：脚本支持指定版本说明，至少包含 `--notes` 直接传入和 `--notes-file` 从文件读取两种方式。
+  - 验收要点：脚本在推送前检查当前目录是 Git 仓库、远端存在、工作区状态符合发布要求，并输出可操作的错误信息。
+  - 验收要点：脚本能够创建本地 tag 并推送到远端，成功后明确提示 GitHub Action 将由 tag 推送触发。
+  - 验收要点：脚本提供 dry-run 或确认机制，避免误发布不可撤销的 tag。
+
+- [ ] P004: 串联版本说明传递 <!-- scope: scripts/release.py,.github/workflows/release.yml -->
+  - 验收要点：本地脚本生成或提交的版本说明能够被 Release workflow 获取，作为 GitHub Release 正文使用。
+  - 验收要点：当没有显式版本说明时，流程应提供合理兜底，例如使用最近提交摘要或默认模板。
+  - 验收要点：版本说明中的换行、中文、Markdown 列表、链接等内容在脚本、Git、workflow 和 Release 页面中保持可读。
+  - 验收要点：重复运行同一 tag 的发布流程时，Release 正文与附件处理策略明确，例如更新已有 Release 或失败提示。
+
+- [ ] P005: 补充发布使用文档 <!-- scope: README.md,docs/release.md -->
+  - 验收要点：文档说明 GitHub Action 的触发方式、tag 命名规范、三端产物位置和发布权限要求。
+  - 验收要点：文档给出 Python 脚本的典型用法，包括指定 tag、直接传入版本说明、从文件读取版本说明、dry-run 示例。
+  - 验收要点：文档列出发布前检查项，包括依赖安装、版本号更新、工作区干净、远端权限、GitHub Actions 权限设置。
+  - 验收要点：文档说明当前不包含代码签名、公证和自动更新能力，避免使用者误解发布产物能力边界。
+
+- [ ] P006: 完整验收 <!-- scope: validation -->
+  - 验收要点：最终验收命令包含 `npm run check`，确认现有静态检查、主进程脚本检查和 smoke 脚本语法检查通过。
+  - 验收要点：最终验收命令包含三端打包命令的可执行性检查；在当前本地平台至少实际运行本平台打包命令，其他平台通过 GitHub Action 配置和脚本命令审查确认。
+  - 验收要点：最终验收命令包含 `python scripts/release.py --help` 和一次 dry-run 示例，确认参数解析、帮助信息、错误提示和非破坏性流程可用。
+  - 验收要点：在 GitHub Actions 页面手动触发或推送测试 tag 后，Windows、macOS、Linux 三个平台 job 均成功，Release 页面生成并附带三端产物。
+  - 验收要点：总体验收通过标准为检查命令无失败、dry-run 不产生远端 tag、实际发布流程可生成目标 tag 的 GitHub Release，且 Release 正文与附件符合预期。
+
+## 总体验收标准
+
+- GitHub Action 能在推送符合规则的 tag 后自动执行发布流程，并构建 Windows、macOS、Linux 三端安装包或压缩包。
+- Release 页面能自动创建或更新，正文使用用户指定的版本说明，附件包含三端产物且命名清晰不冲突。
+- `scripts/release.py` 能在本地一键发起发布，支持 `--tag`、`--notes`、`--notes-file` 和 dry-run 或确认机制，并对异常状态给出明确错误提示。
+- 文档覆盖发布前准备、脚本用法、Action 触发方式、产物说明、权限要求和能力边界。
+- 最终验收命令：`npm run check`、本平台打包命令、`python scripts/release.py --help`、`python scripts/release.py --tag v0.0.0-test --notes "test release" --dry-run`，以及 GitHub Actions 中一次测试 tag 发布验证。
+- 通过标准：所有本地命令退出码为 0；dry-run 不创建本地或远端 tag；GitHub Actions 三端 job 全部成功；GitHub Release 正文、tag、附件与输入参数一致。
+
+## 进度区
+
+| 任务 | 状态 | 说明 |
+| --- | --- | --- |
+| P001 | 未开始 | 待补齐 `electron-builder` 三端打包脚本与配置 |
+| P002 | 未开始 | 待新增 GitHub Release workflow |
+| P003 | 未开始 | 待实现本地 Python 一键发布脚本 |
+| P004 | 未开始 | 待打通版本说明在脚本与 workflow 间的传递 |
+| P005 | 未开始 | 待补充发布流程和使用文档 |
+| P006 | 未开始 | 待执行完整验收并记录结果 |
+
+当前总体进度：0/6。
+'"'@;
+Set-Content -Path "'$path -Value $content -Encoding UTF8;
+Get-Item $path | Select-Object FullName,Length' in D:\project\GitHub\autoplan
+ succeeded in 285ms:
+
+FullName                                                                    Length
+--------                                                                    ------
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_23_20260626-132134.md   7809
+
+
+
+codex
+计划文件已写入；我再做一次格式检查，确保任务、scope 和最终验收节点符合要求。
+exec
+powershell.exe -Command '$path='"'docs\\plan\\plan_requirement_23_20260626-132134.md';
+"'$content=Get-Content $path -Raw -Encoding UTF8;
+'"'Has overall acceptance: ' + ("'$content -match '"'## 总体验收标准');
+'Has progress: ' + ("'$content -match '"'## 进度区');
+"'$tasks=[regex]::Matches($content,'"'- \\[ \\] P\\d{3}: .+ <"'!-- scope: .+ -->'"');
+'Task count: ' + "'$tasks.Count;
+'"'Last task: ' + "'$tasks[$tasks.Count-1].Value' in D:\project\GitHub\autoplan
+ succeeded in 210ms:
+Has overall acceptance: True
+Has progress: True
+Task count: 6
+Last task: - [ ] P006: 完整验收 <!-- scope: validation -->
+
+codex
+已生成计划文件：
+
+- `docs/plan/plan_requirement_23_20260626-132134.md:1`
+
+已确认：
+- 包含任务列表、每项 `scope`、每项验收要点
+- 最后任务为 `P006: 完整验收 <!-- scope: validation -->`
+- 包含总体验收标准和进度区
+- 未修改业务代码
+tokens used
+28,595
+已生成计划文件：
+
+- `docs/plan/plan_requirement_23_20260626-132134.md:1`
+
+已确认：
+- 包含任务列表、每项 `scope`、每项验收要点
+- 最后任务为 `P006: 完整验收 <!-- scope: validation -->`
+- 包含总体验收标准和进度区
+- 未修改业务代码

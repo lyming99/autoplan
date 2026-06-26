@@ -115,6 +115,9 @@ class AppDatabase {
         total_tasks INTEGER NOT NULL DEFAULT 0,
         completed_tasks INTEGER NOT NULL DEFAULT 0,
         validation_passed INTEGER NOT NULL DEFAULT 0,
+        agent_cli_provider TEXT,
+        agent_cli_command TEXT NOT NULL DEFAULT '',
+        codex_reasoning_effort TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -135,6 +138,9 @@ class AppDatabase {
         updated_at TEXT NOT NULL,
         UNIQUE(plan_id, task_key)
       );
+
+      CREATE INDEX IF NOT EXISTS idx_plan_tasks_plan_status_sort
+      ON plan_tasks (plan_id, status, sort_order, id);
 
       CREATE TABLE IF NOT EXISTS events (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -174,6 +180,9 @@ class AppDatabase {
     this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('attachments', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'project_id', 'INTEGER');
+    this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
+    this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');

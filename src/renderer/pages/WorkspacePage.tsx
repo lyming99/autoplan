@@ -77,6 +77,15 @@ type LoopFormState = {
   codexReasoningEffort: CodexReasoningEffort;
 };
 
+type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+
+type ScopeFileOpenSettings = {
+  mode: ScopeFileOpenMode;
+  command: string;
+};
+
+const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+
 type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
 
 function createEmptyPlanReadState(): WorkspacePlanReadState {
@@ -204,6 +213,17 @@ export function WorkspacePage() {
     agentCliCommand: '',
     codexReasoningEffort: defaultCodexReasoningEffort,
   });
+  const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+      const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+        ? parsed.mode
+        : 'system';
+      return { mode, command: String(parsed?.command || '') };
+    } catch {
+      return defaultScopeFileOpenSettings;
+    }
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
   const planReadRequestRef = useRef(0);
@@ -285,6 +305,10 @@ export function WorkspacePage() {
   useEffect(() => {
     setSearchQuery('');
   }, [projectId]);
+
+  useEffect(() => {
+    window.localStorage.setItem('autoplan.scopeFileOpenSettings', JSON.stringify(scopeFileOpenSettings));
+  }, [scopeFileOpenSettings]);
 
   useEffect(() => {
     const nextTab = resolveWorkspaceTab(tabParam);
@@ -737,6 +761,18 @@ export function WorkspacePage() {
                     latestReadingPlan={latestReadingPlan}
                     onCloseReader={closePlanReader}
                     onOpenReader={openPlanReader}
+                    onRunParallel={({ plan, batches }) =>
+                      runLoopAction(() =>
+                        (window.autoplan as typeof window.autoplan & {
+                          runTaskBatches: (input: {
+                            projectId: number;
+                            planId: number;
+                            batches: Array<{ taskIds: number[] }>;
+                            manual: true;
+                          }) => Promise<AppSnapshot>;
+                        }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+                      )
+                    }
                     onRefreshReader={refreshPlanReader}
                     plans={filteredItems.plans}
                     readerState={planReadState}
@@ -765,7 +801,9 @@ export function WorkspacePage() {
           {activeTab === 'settings' ? (
             <SettingsView
               loopForm={loopForm}
+              scopeFileOpenSettings={scopeFileOpenSettings}
               setLoopForm={setLoopForm}
+              setScopeFileOpenSettings={setScopeFileOpenSettings}
               onSubmit={submitLoopConfig}
               onToggleRun={() =>
                 runLoopAction(() =>
@@ -957,6 +995,9 @@ function createFilteredWorkspaceItems(
     };
   }
 
+  const plans = filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
+  const tasks = filterTasksBySearchGroups(snapshot.tasks, plans, searchState.groups);
+
   return {
     requirements: filterItemsBySearchGroup(
       snapshot.requirements,
@@ -964,8 +1005,8 @@ function createFilteredWorkspaceItems(
       WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
     ),
     feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
-    plans: filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN),
-    tasks: filterItemsBySearchGroup(snapshot.tasks, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.TASK),
+    plans,
+    tasks,
     events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
   };
 }
@@ -980,6 +1021,24 @@ function filterItemsBySearchGroup<T extends { id: number }>(
 
   const recordIds = new Set(group.results.map((result) => result.recordId));
   return items.filter((item) => recordIds.has(item.id));
+}
+
+function filterTasksBySearchGroups(
+  tasks: PlanTask[],
+  plans: Plan[],
+  groups: WorkspaceSearchGroup[],
+) {
+  const directTasks = filterItemsBySearchGroup(tasks, groups, WORKSPACE_SEARCH_SOURCE_TYPES.TASK);
+  if (!plans.length) return directTasks;
+
+  const taskIds = new Set(directTasks.map((task) => task.id));
+  const planIds = new Set(plans.map((plan) => plan.id));
+  const planFilePaths = new Set(plans.map((plan) => plan.file_path).filter(Boolean));
+  const planTasks = tasks.filter(
+    (task) => planIds.has(task.plan_id) || (!!task.file_path && planFilePaths.has(task.file_path)),
+  );
+
+  return [...directTasks, ...planTasks.filter((task) => !taskIds.has(task.id))];
 }
 
 function withTaskCliProviderTitle(task: PlanTask, fallbackProvider?: string | null): PlanTask {
@@ -997,13 +1056,17 @@ function agentCliConfigSummary(state?: ProjectState | null) {
 
 function SettingsView({
   loopForm,
+  scopeFileOpenSettings,
   setLoopForm,
+  setScopeFileOpenSettings,
   onSubmit,
   onToggleRun,
   running,
 }: {
   loopForm: LoopFormState;
+  scopeFileOpenSettings: ScopeFileOpenSettings;
   setLoopForm: Dispatch<SetStateAction<LoopFormState>>;
+  setScopeFileOpenSettings: Dispatch<SetStateAction<ScopeFileOpenSettings>>;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleRun: () => void;
   running: boolean;
@@ -1090,6 +1153,36 @@ function SettingsView({
             placeholder={loopForm.agentCliProvider === 'claude' ? 'claude' : 'codex'}
           />
         </label>
+        <label className="field">
+          scope 文件打开方式
+          <select
+            value={scopeFileOpenSettings.mode}
+            onChange={(event) =>
+              setScopeFileOpenSettings((current) => ({
+                ...current,
+                mode: event.target.value as ScopeFileOpenMode,
+              }))
+            }
+          >
+            <option value="system">系统默认方式</option>
+            <option value="folder">系统文件夹定位</option>
+            <option value="vscode">VSCode</option>
+            <option value="command">第三方编辑器命令</option>
+          </select>
+          <small className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内</small>
+        </label>
+        {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+          <label className="field">
+            编辑器命令
+            <input
+              className="mono"
+              value={scopeFileOpenSettings.command}
+              onChange={(event) => setScopeFileOpenSettings((current) => ({ ...current, command: event.target.value }))}
+              placeholder={scopeFileOpenSettings.mode === 'vscode' ? 'code' : '编辑器命令，例如 cursor'}
+            />
+            <small className="field-hint">留空选择 VSCode 时默认使用 code；第三方命令可用 {'{file}'} 占位</small>
+          </label>
+        ) : null}
         <div className="button-row">
           <button type="submit">保存配置</button>
           <button type="button" onClick={onToggleRun}>

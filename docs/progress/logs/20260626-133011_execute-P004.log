@@ -1,0 +1,1140 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0262-3483-7b61-b1c9-be1a555864b1
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_23_20260626-132134.md
+指定任务：
+- [ ] P004: 串联版本说明传递 <!-- scope: scripts/release.py,.github/workflows/release.yml -->
+任务 scope：scripts/release.py, .github/workflows/release.yml
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Evaluating file modifications**
+
+I need to modify two files and inspect the current relevant ones. It seems I should use a plan, but I must make sure not to run tests yet. There's something about using the apply_patch tool through the shell, but I only have access to the shell and not the apply_patch namespace. The developer mentioned using the tool through the shell, so I might not need a strict plan after all. This seems like a multi-step process.
+codex
+我会沿用 P002/P003 的发布链路，只查看两个 scope 文件的相关段落。
+  → 定位说明传递缺口
+  • 改造 tag notes 写入
+  • 改造 workflow 读取说明
+  • 静态核对关键路径
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'scripts\\release.py' -Encoding UTF8; Write-Output '---WORKFLOW---'; Get-Content -LiteralPath '.github\\workflows\\release.yml' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 544ms:
+#!/usr/bin/env python3
+"""Create and push a release tag for the GitHub Actions release workflow."""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+TAG_PREFIX = "v"
+
+
+class ReleaseError(RuntimeError):
+    """A user-facing release preflight error."""
+
+
+def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            check=False,
+            capture_output=capture,
+            text=True,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
+
+
+def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        if detail:
+            raise ReleaseError(f"{message}\n{detail}")
+        raise ReleaseError(message)
+
+
+def ensure_git_available() -> None:
+    if shutil.which("git") is None:
+        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
+
+
+def ensure_gh_hint() -> None:
+    if shutil.which("gh") is None:
+        print(
+            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
+            file=sys.stderr,
+        )
+
+
+def validate_tag(tag: str) -> None:
+    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
+        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
+    if any(char.isspace() for char in tag):
+        raise ReleaseError("tag 不能包含空白字符。")
+    invalid_chars = set("~^:?*[\\")
+    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
+        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
+    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
+    require_success(result, "tag 格式不符合 Git ref 规范。")
+
+
+def ensure_repository() -> None:
+    result = run_git(["rev-parse", "--is-inside-work-tree"])
+    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
+    if result.stdout.strip() != "true":
+        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
+
+
+def ensure_clean_worktree() -> None:
+    result = run_git(["status", "--porcelain"])
+    require_success(result, "无法读取 Git 工作区状态。")
+    if result.stdout.strip():
+        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
+
+
+def ensure_remote(remote: str) -> None:
+    result = run_git(["remote", "get-url", remote])
+    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
+
+
+def ensure_tag_absent(tag: str, remote: str) -> None:
+    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
+    if local.returncode == 0:
+        raise ReleaseError(f"本地 tag 已存在：{tag}。")
+
+    remote_result = run_git(["ls-remote", "--tags", remote, tag])
+    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
+    if remote_result.stdout.strip():
+        raise ReleaseError(f"远端 tag 已存在：{tag}。")
+
+
+def read_notes(args: argparse.Namespace) -> str:
+    if args.notes and args.notes_file:
+        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
+    if args.notes:
+        return args.notes
+    if args.notes_file:
+        path = Path(args.notes_file)
+        try:
+            return path.read_text(encoding="utf-8").strip()
+        except FileNotFoundError as exc:
+            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+        except OSError as exc:
+            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
+    return ""
+
+
+def confirm_release(tag: str, remote: str) -> None:
+    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
+    if answer.strip().lower() not in {"y", "yes"}:
+        raise ReleaseError("已取消发布。")
+
+
+def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+
+    push_result = run_git(["push", remote, tag])
+    if push_result.returncode != 0:
+        run_git(["tag", "-d", tag])
+        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
+    )
+    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
+    parser.add_argument("--notes", help="直接传入版本说明文本。")
+    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
+    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
+    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
+    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        notes = read_notes(args)
+        ensure_git_available()
+        validate_tag(args.tag)
+        ensure_repository()
+        ensure_clean_worktree()
+        ensure_remote(args.remote)
+        ensure_tag_absent(args.tag, args.remote)
+        ensure_gh_hint()
+
+        print(f"发布 tag：{args.tag}")
+        print(f"目标远端：{args.remote}")
+        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
+
+        if args.dry_run:
+            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
+            return 0
+
+        if not args.yes:
+            confirm_release(args.tag, args.remote)
+
+        create_and_push_tag(args.tag, notes, args.remote)
+        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
+        return 0
+    except ReleaseError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+---WORKFLOW---
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish, for example v0.2.0'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes body. Leave empty to use a default message.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            package_script: package:win
+          - platform: macos
+            runner: macos-latest
+            package_script: package:mac
+          - platform: linux
+            runner: ubuntu-latest
+            package_script: package:linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Package ${{ matrix.platform }}
+        run: npm run ${{ matrix.package_script }}
+
+      - name: Upload ${{ matrix.platform }} artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+          path: release/**/*
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+      RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+
+    steps:
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Create or update release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${RELEASE_NOTES}" ]]; then
+            RELEASE_NOTES="Automated release for ${RELEASE_TAG}."
+          fi
+
+          mapfile -d '' files < <(find dist-artifacts -type f -print0)
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No release artifacts found." >&2
+            exit 1
+          fi
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+            gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+          fi
+
+**Implementing automated release notes**
+
+I need to implement P004, and it involves thinking through the current setup. The local script creates an annotated tag with a notes message, while the workflow on push has RELEASE_NOTES output as empty. I'm considering whether the local script can pass notes through the tag annotation. For the release job, it doesn't currently checkout, which might need the git tag annotation via the GitHub API. Adding a checkout step with fetch-depth 0 seems essential to ensure notes are managed correctly in the release body.
+**Preserving multiline release notes**
+
+I need to find a way to use a notes file that preserves newlines for the `gh release --notes` command. I’m wondering if environment variables can hold multiline strings and if GitHub YAML expressions might handle this correctly. It seems like it might be better to create a separate body file. For the workflow_dispatch input, I suspect the release_notes can be multiline too. I might write a `release-notes.md` file using a heredoc, but I'm not entirely sure about safely embedding expressions there. However, it seems multi-line environment variables are possible, so I’ll explore that option further. I also want to ensure the release job checks out before download.
+codex
+缺口是 tag 推送时 workflow 没读取 annotated tag 说明；我会让脚本写 tag message，workflow 解析成 Release body 文件。
+  ✓ 定位说明传递缺口
+  → 改造 tag notes 写入
+  • 改造 workflow 读取说明
+  • 静态核对关键路径
+**Modifying release process**
+
+I need to modify `release.py`, particularly the tagging message for releases. I'm thinking about ensuring that notes aren’t stripped—maybe leaving leading/trailing spaces would keep it readable. Right now, it strips these out, but altering it to only rstrip might preserve more. I want to implement meaningful default notes and ensure the workflow uses recent commit summaries if there aren't any explicit notes. I'll consider using temporary files for multiline support with `git tag -a -F file`.
+**Preserving tag notes**
+
+I need to consider importing `tempfile`. I want to preserve notes from files without stripping them. Maybe I can use `return path.read_text(encoding="utf-8").rstrip()` for string arguments. If the tag message is empty, I can default to using `Release {tag}`. Regarding markdown preservation, using a temporary file with `-F` is a good idea. I might also need to append a newline. Creating and writing to a temporary file will help keep things organized in UTF-8 format, tweaking the workflow as I go.
+codex
+先改本地脚本，使用临时 UTF-8 文件写入 annotated tag message，避免换行和 Markdown 被破坏。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\scripts\release.py
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+codex
+脚本已保持 Markdown 原文写入 tag；现在改 workflow 从 tag 或手动输入生成 notes 文件。
+  ✓ 定位说明传递缺口
+  ✓ 改造 tag notes 写入
+  → 改造 workflow 读取说明
+  • 静态核对关键路径
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+codex
+接下来只更新 Release job 的 checkout、说明解析和 `gh release --notes-file` 调用。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\.github\workflows\release.yml
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 50e35bd5cc39e5c72b8975e417c70ea0f6618767..1ef721901a5573bf254dba599a2dbc2111d9f2c9
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -74,23 +74,43 @@
+     env:
+       GH_TOKEN: ${{ github.token }}
+       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+-      RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+ 
+     steps:
++      - name: Checkout tag metadata
++        uses: actions/checkout@v4
++        with:
++          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
++          fetch-depth: 0
++
+       - name: Download packaged artifacts
+         uses: actions/download-artifact@v4
+         with:
+           path: dist-artifacts
+ 
+-      - name: Create or update release
++      - name: Resolve release notes
+         shell: bash
++        env:
++          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+         run: |
+           set -euo pipefail
+ 
+-          if [[ -z "${RELEASE_NOTES}" ]]; then
+-            RELEASE_NOTES="Automated release for ${RELEASE_TAG}."
++          if [[ -n "${DISPATCH_NOTES}" ]]; then
++            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
++          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
++            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
++          else
++            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
++          fi
++
++          if [[ ! -s release-notes.md ]]; then
++            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+           fi
+ 
++      - name: Create or update release
++        shell: bash
++        run: |
++          set -euo pipefail
++
+           mapfile -d '' files < <(find dist-artifacts -type f -print0)
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+@@ -98,8 +118,8 @@
+           fi
+ 
+           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+-            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
++            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+           else
+-            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+-          fi
++            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
++          fi
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 50e35bd5cc39e5c72b8975e417c70ea0f6618767..1ef721901a5573bf254dba599a2dbc2111d9f2c9
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -74,23 +74,43 @@
+     env:
+       GH_TOKEN: ${{ github.token }}
+       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+-      RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+ 
+     steps:
++      - name: Checkout tag metadata
++        uses: actions/checkout@v4
++        with:
++          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
++          fetch-depth: 0
++
+       - name: Download packaged artifacts
+         uses: actions/download-artifact@v4
+         with:
+           path: dist-artifacts
+ 
+-      - name: Create or update release
++      - name: Resolve release notes
+         shell: bash
++        env:
++          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+         run: |
+           set -euo pipefail
+ 
+-          if [[ -z "${RELEASE_NOTES}" ]]; then
+-            RELEASE_NOTES="Automated release for ${RELEASE_TAG}."
++          if [[ -n "${DISPATCH_NOTES}" ]]; then
++            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
++          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
++            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
++          else
++            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
++          fi
++
++          if [[ ! -s release-notes.md ]]; then
++            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+           fi
+ 
++      - name: Create or update release
++        shell: bash
++        run: |
++          set -euo pipefail
++
+           mapfile -d '' files < <(find dist-artifacts -type f -print0)
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+@@ -98,8 +118,8 @@
+           fi
+ 
+           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+-            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
++            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+           else
+-            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+-          fi
++            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
++          fi
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+codex
+说明传递已串上；我只做静态内容检查，不运行 workflow、Python 或 Git 命令。
+  ✓ 定位说明传递缺口
+  ✓ 改造 tag notes 写入
+  ✓ 改造 workflow 读取说明
+  → 静态核对关键路径
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 50e35bd5cc39e5c72b8975e417c70ea0f6618767..1ef721901a5573bf254dba599a2dbc2111d9f2c9
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -74,23 +74,43 @@
+     env:
+       GH_TOKEN: ${{ github.token }}
+       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+-      RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+ 
+     steps:
++      - name: Checkout tag metadata
++        uses: actions/checkout@v4
++        with:
++          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
++          fetch-depth: 0
++
+       - name: Download packaged artifacts
+         uses: actions/download-artifact@v4
+         with:
+           path: dist-artifacts
+ 
+-      - name: Create or update release
++      - name: Resolve release notes
+         shell: bash
++        env:
++          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+         run: |
+           set -euo pipefail
+ 
+-          if [[ -z "${RELEASE_NOTES}" ]]; then
+-            RELEASE_NOTES="Automated release for ${RELEASE_TAG}."
++          if [[ -n "${DISPATCH_NOTES}" ]]; then
++            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
++          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
++            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
++          else
++            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
++          fi
++
++          if [[ ! -s release-notes.md ]]; then
++            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+           fi
+ 
++      - name: Create or update release
++        shell: bash
++        run: |
++          set -euo pipefail
++
+           mapfile -d '' files < <(find dist-artifacts -type f -print0)
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+@@ -98,8 +118,8 @@
+           fi
+ 
+           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+-            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
++            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+           else
+-            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+-          fi
++            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
++          fi
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+exec
+powershell.exe -Command "Select-String -LiteralPath 'scripts\\release.py' -Pattern 'tempfile|rstrip|release-notes.md|tag_args|\"-F\"|--notes-file'; Write-Output '---WORKFLOW---'; Select-String -LiteralPath '.github\\workflows\\release.yml' -Pattern 'Checkout tag metadata|fetch-depth|Resolve release notes|DISPATCH_NOTES|cat-file|git tag -l|git log -1|notes-file|clobber'" in D:\project\GitHub\autoplan
+ succeeded in 633ms:
+
+scripts\release.py:10:import tempfile
+scripts\release.py:99:        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
+scripts\release.py:105:            return path.read_text(encoding="utf-8").rstrip()
+scripts\release.py:120:    tag_message = notes.rstrip() or f"Release {tag}"
+scripts\release.py:121:    with tempfile.TemporaryDirectory() as temp_dir:
+scripts\release.py:122:        notes_path = Path(temp_dir) / "release-notes.md"
+scripts\release.py:124:        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
+scripts\release.py:125:        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+scripts\release.py:139:    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
+---WORKFLOW---
+.github\workflows\release.yml:79:      - name: Checkout tag metadata
+.github\workflows\release.yml:83:          fetch-depth: 0
+.github\workflows\release.yml:90:      - name: Resolve release notes
+.github\workflows\release.yml:93:          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.relea
+se_notes || '' }}
+.github\workflows\release.yml:97:          if [[ -n "${DISPATCH_NOTES}" ]]; then
+.github\workflows\release.yml:98:            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
+.github\workflows\release.yml:99:          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
+.github\workflows\release.yml:100:            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
+.github\workflows\release.yml:102:            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
+.github\workflows\release.yml:121:            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file re
+lease-notes.md
+.github\workflows\release.yml:122:            gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+.github\workflows\release.yml:124:            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}"
+ --notes-file release-notes.md
+
+
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 50e35bd5cc39e5c72b8975e417c70ea0f6618767..1ef721901a5573bf254dba599a2dbc2111d9f2c9
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -74,23 +74,43 @@
+     env:
+       GH_TOKEN: ${{ github.token }}
+       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+-      RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+ 
+     steps:
++      - name: Checkout tag metadata
++        uses: actions/checkout@v4
++        with:
++          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
++          fetch-depth: 0
++
+       - name: Download packaged artifacts
+         uses: actions/download-artifact@v4
+         with:
+           path: dist-artifacts
+ 
+-      - name: Create or update release
++      - name: Resolve release notes
+         shell: bash
++        env:
++          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+         run: |
+           set -euo pipefail
+ 
+-          if [[ -z "${RELEASE_NOTES}" ]]; then
+-            RELEASE_NOTES="Automated release for ${RELEASE_TAG}."
++          if [[ -n "${DISPATCH_NOTES}" ]]; then
++            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
++          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
++            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
++          else
++            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
++          fi
++
++          if [[ ! -s release-notes.md ]]; then
++            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+           fi
+ 
++      - name: Create or update release
++        shell: bash
++        run: |
++          set -euo pipefail
++
+           mapfile -d '' files < <(find dist-artifacts -type f -print0)
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+@@ -98,8 +118,8 @@
+           fi
+ 
+           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+-            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
++            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+           else
+-            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+-          fi
++            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
++          fi
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+**Updating plan for completion**
+
+I realize we need to finalize this by being concise. It seems like I didn't run any commands, except for the static select-string one. So, I must update my plan to ensure everything is complete and organized. Let's aim for clarity and precision in whatever we produce moving forward, and make sure I summarize what we have effectively. This keeps everything straightforward for the user!
+  ✓ 定位说明传递缺口
+  ✓ 改造 tag notes 写入
+  ✓ 改造 workflow 读取说明
+  ✓ 静态核对关键路径
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 50e35bd5cc39e5c72b8975e417c70ea0f6618767..1ef721901a5573bf254dba599a2dbc2111d9f2c9
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -74,23 +74,43 @@
+     env:
+       GH_TOKEN: ${{ github.token }}
+       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+-      RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+ 
+     steps:
++      - name: Checkout tag metadata
++        uses: actions/checkout@v4
++        with:
++          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
++          fetch-depth: 0
++
+       - name: Download packaged artifacts
+         uses: actions/download-artifact@v4
+         with:
+           path: dist-artifacts
+ 
+-      - name: Create or update release
++      - name: Resolve release notes
+         shell: bash
++        env:
++          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+         run: |
+           set -euo pipefail
+ 
+-          if [[ -z "${RELEASE_NOTES}" ]]; then
+-            RELEASE_NOTES="Automated release for ${RELEASE_TAG}."
++          if [[ -n "${DISPATCH_NOTES}" ]]; then
++            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
++          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
++            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
++          else
++            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
++          fi
++
++          if [[ ! -s release-notes.md ]]; then
++            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+           fi
+ 
++      - name: Create or update release
++        shell: bash
++        run: |
++          set -euo pipefail
++
+           mapfile -d '' files < <(find dist-artifacts -type f -print0)
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+@@ -98,8 +118,8 @@
+           fi
+ 
+           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+-            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
++            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+           else
+-            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+-          fi
++            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
++          fi
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+codex
+已完成 P004，仅修改 `scripts/release.py` 和 `.github/workflows/release.yml`，未修改 plan、未勾选 checkbox，也未运行测试/构建/lint/验收或发布命令。
+
+- `scripts/release.py:10` 引入临时文件写入 tag message，避免 Markdown、换行和中文在命令行参数中丢失。
+- `scripts/release.py:105` 保留说明正文内容，仅去掉末尾空白，不破坏正文内部换行。
+- `scripts/release.py:120` 创建 annotated tag 时改用 `git tag -F release-notes.md`，让 `--notes` / `--notes-file` 内容随 tag 推送传递。
+- `.github/workflows/release.yml:79` Release job 新增 checkout tag metadata，并设置 `fetch-depth: 0` 以读取 tag 对象。
+- `.github/workflows/release.yml:90` 新增 Release notes 解析：手动输入优先，其次 annotated tag message，最后用最近提交摘要兜底。
+- `.github/workflows/release.yml:121` `gh release create/edit` 改用 `--notes-file release-notes.md`，明确支持重复发布时更新正文与 `--clobber` 覆盖附件。
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 50e35bd5cc39e5c72b8975e417c70ea0f6618767..1ef721901a5573bf254dba599a2dbc2111d9f2c9
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -74,23 +74,43 @@
+     env:
+       GH_TOKEN: ${{ github.token }}
+       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+-      RELEASE_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+ 
+     steps:
++      - name: Checkout tag metadata
++        uses: actions/checkout@v4
++        with:
++          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
++          fetch-depth: 0
++
+       - name: Download packaged artifacts
+         uses: actions/download-artifact@v4
+         with:
+           path: dist-artifacts
+ 
+-      - name: Create or update release
++      - name: Resolve release notes
+         shell: bash
++        env:
++          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+         run: |
+           set -euo pipefail
+ 
+-          if [[ -z "${RELEASE_NOTES}" ]]; then
+-            RELEASE_NOTES="Automated release for ${RELEASE_TAG}."
++          if [[ -n "${DISPATCH_NOTES}" ]]; then
++            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
++          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
++            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
++          else
++            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
++          fi
++
++          if [[ ! -s release-notes.md ]]; then
++            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+           fi
+ 
++      - name: Create or update release
++        shell: bash
++        run: |
++          set -euo pipefail
++
+           mapfile -d '' files < <(find dist-artifacts -type f -print0)
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+@@ -98,8 +118,8 @@
+           fi
+ 
+           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+-            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
++            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+           else
+-            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes "${RELEASE_NOTES}"
+-          fi
++            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
++          fi
+diff --git a/scripts/release.py b/scripts/release.py
+index fb62024d11977d64255c4f94955da8b5178049c6..bb92c22fac341f7623714a09f8ab123c38672389
+--- a/scripts/release.py
++++ b/scripts/release.py
+@@ -7,6 +7,7 @@
+ import shutil
+ import subprocess
+ import sys
++import tempfile
+ from pathlib import Path
+ 
+ 
+@@ -101,7 +102,7 @@
+     if args.notes_file:
+         path = Path(args.notes_file)
+         try:
+-            return path.read_text(encoding="utf-8").strip()
++            return path.read_text(encoding="utf-8").rstrip()
+         except FileNotFoundError as exc:
+             raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+         except OSError as exc:
+@@ -116,8 +117,12 @@
+ 
+ 
+ def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+-    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
+-    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++    tag_message = notes.rstrip() or f"Release {tag}"
++    with tempfile.TemporaryDirectory() as temp_dir:
++        notes_path = Path(temp_dir) / "release-notes.md"
++        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
++        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
++        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+ 
+     push_result = run_git(["push", remote, tag])
+     if push_result.returncode != 0:
+
+tokens used
+70,069
+已完成 P004，仅修改 `scripts/release.py` 和 `.github/workflows/release.yml`，未修改 plan、未勾选 checkbox，也未运行测试/构建/lint/验收或发布命令。
+
+- `scripts/release.py:10` 引入临时文件写入 tag message，避免 Markdown、换行和中文在命令行参数中丢失。
+- `scripts/release.py:105` 保留说明正文内容，仅去掉末尾空白，不破坏正文内部换行。
+- `scripts/release.py:120` 创建 annotated tag 时改用 `git tag -F release-notes.md`，让 `--notes` / `--notes-file` 内容随 tag 推送传递。
+- `.github/workflows/release.yml:79` Release job 新增 checkout tag metadata，并设置 `fetch-depth: 0` 以读取 tag 对象。
+- `.github/workflows/release.yml:90` 新增 Release notes 解析：手动输入优先，其次 annotated tag message，最后用最近提交摘要兜底。
+- `.github/workflows/release.yml:121` `gh release create/edit` 改用 `--notes-file release-notes.md`，明确支持重复发布时更新正文与 `--clobber` 覆盖附件。

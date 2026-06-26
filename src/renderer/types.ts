@@ -8,6 +8,32 @@ export interface AgentCliOption {
   label: string;
 }
 
+export interface AgentCliDisplaySource {
+  agent_cli_provider?: AgentCliProvider | null;
+  agentCliProvider?: AgentCliProvider | null;
+  cli_provider?: AgentCliProvider | null;
+  cliProvider?: AgentCliProvider | null;
+  cli_backend?: AgentCliProvider | null;
+  cliBackend?: AgentCliProvider | null;
+  provider?: AgentCliProvider | null;
+  agent_cli_command?: string | null;
+  agentCliCommand?: string | null;
+  cli_command?: string | null;
+  cliCommand?: string | null;
+  cli_path?: string | null;
+  cliPath?: string | null;
+  command?: string | null;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  codexReasoningEffort?: CodexReasoningEffort | null;
+  codex_thinking_depth?: CodexReasoningEffort | null;
+  codexThinkingDepth?: CodexReasoningEffort | null;
+  reasoning_effort?: CodexReasoningEffort | null;
+  reasoningEffort?: CodexReasoningEffort | null;
+  thinking_depth?: CodexReasoningEffort | null;
+  thinkingDepth?: CodexReasoningEffort | null;
+  [key: string]: unknown;
+}
+
 export const WORKSPACE_SEARCH_SOURCE_TYPES = {
   REQUIREMENT: 'requirement',
   FEEDBACK: 'feedback',
@@ -177,8 +203,47 @@ export interface Plan {
   total_tasks: number;
   completed_tasks: number;
   validation_passed: number;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  concurrency_suggestion: PlanConcurrencySuggestion;
   created_at: string;
   updated_at: string;
+}
+
+export interface PlanScopeFileInfo {
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+  canOpen: boolean;
+  isUnknown: boolean;
+  isValidation: boolean;
+  reason: string;
+}
+
+export interface PlanConcurrencyTask {
+  id: number;
+  task_key: string;
+  title: string;
+  status: string;
+  scopes: string[];
+  reason: string;
+}
+
+export interface PlanConcurrencyBatch {
+  batch: number;
+  reason: string;
+  tasks: PlanConcurrencyTask[];
+}
+
+export interface PlanConcurrencySuggestion {
+  hasSafeParallelBatches: boolean;
+  parallelTaskCount: number;
+  batchCount: number;
+  serialTaskCount: number;
+  maxParallelTasks: number;
+  batches: PlanConcurrencyBatch[];
+  serialTasks: PlanConcurrencyTask[];
 }
 
 export interface ReadPlanResult {
@@ -221,6 +286,7 @@ export interface PlanTask extends CodexSessionInfo {
   title: string;
   raw_line: string;
   scope: string;
+  scope_files: PlanScopeFileInfo[];
   status: string;
   sort_order: number;
   started_at: string | null;
@@ -234,6 +300,8 @@ export interface PlanTask extends CodexSessionInfo {
   updated_at: string;
   /** JOIN plans 得到 */
   file_path: string;
+  /** JOIN plans 并读取计划 Markdown 标题得到 */
+  plan_title: string;
 }
 
 export const TASK_EVENT_TYPES = {

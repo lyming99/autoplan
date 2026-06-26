@@ -1,0 +1,3124 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0275-6b45-7a43-84af-3e99345d0a60
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_24_20260626-134137.md
+指定任务：
+- [ ] P002: 实现计划分组排序 <!-- scope: src/renderer/components/PlanLists.tsx -->
+任务 scope：src/renderer/components/planlists.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Modifying PlanLists.tsx**
+
+I need to focus on making modifications to the PlanLists.tsx file. It’s important to carefully inspect it first to understand what changes are necessary. The preamble is a key part, so I'll pay close attention to that as I get started. Let’s ensure each adjustment aligns with the overall goals I have for this project to keep everything running smoothly!
+codex
+我会沿用 P001 已补充的 `plan_title` 字段，只查看并修改 `PlanLists.tsx`。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src\\renderer\\components\\PlanLists.tsx" in D:\project\GitHub\autoplan
+ succeeded in 530ms:
+import type { KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+import { RecordCard } from './IntakePanel';
+import { MarkdownReader } from './MarkdownReader';
+import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
+import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+
+type TimedPlanTask = PlanTask & {
+  plan_id?: number | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number | null;
+};
+
+type EventMetaRecord = Record<string, unknown>;
+
+type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+
+type TaskEventDisplay = {
+  title: string;
+  body: string;
+  meta: string;
+  badge?: string;
+  tone?: TaskEventTone;
+};
+
+type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+
+const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+  { id: 'all', label: '全部', emptyText: '暂无任务。' },
+  { id: 'running', label: '进行中', emptyText: '暂无进行中任务。' },
+  { id: 'queued', label: '队列中', emptyText: '暂无队列中任务。' },
+  { id: 'completed', label: '已完成', emptyText: '暂无已完成任务。' },
+];
+
+const TASK_EVENT_PRESENTATION: Record<TaskEventTone, { action: string; badge: string }> = {
+  start: { action: '开始了', badge: '开始' },
+  success: { action: '结束了', badge: '成功' },
+  failed: { action: '执行失败', badge: '失败' },
+  stopped: { action: '停止了', badge: '停止' },
+  stopping: { action: '请求停止', badge: '停止中' },
+  updated: { action: '更新了', badge: '任务' },
+};
+
+function readDurationMs(task: TimedPlanTask) {
+  if (task.duration_ms === null || typeof task.duration_ms === 'undefined') return null;
+  const duration = Number(task.duration_ms);
+  return Number.isFinite(duration) && duration >= 0 ? duration : null;
+}
+
+function getTaskDurationMs(task: TimedPlanTask) {
+  if (task.status === 'running') return getRunningDurationMs(readDurationMs(task), task.started_at);
+  return readDurationMs(task);
+}
+
+function readPlanId(task: TimedPlanTask) {
+  if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+  const planId = Number(task.plan_id);
+  return Number.isFinite(planId) ? planId : null;
+}
+
+function formatTaskDuration(task: TimedPlanTask) {
+  const duration = getTaskDurationMs(task);
+  if (task.status === 'running') return `已运行 ${formatDuration(duration, '0秒')}`;
+  if (duration === null || (duration === 0 && !task.started_at && !task.finished_at)) return '未开始';
+  return `耗时 ${formatDuration(duration, '0秒')}`;
+}
+
+function normalizeTaskStatus(status: string | null | undefined) {
+  return String(status || '').trim().toLowerCase();
+}
+
+function matchesTaskStatusFilter(task: PlanTask, filter: TaskStatusFilter) {
+  const status = normalizeTaskStatus(task.status);
+  if (filter === 'all') return true;
+  if (filter === 'running') return ['running', 'processing', 'stopping'].includes(status);
+  if (filter === 'queued') return ['pending', 'queued', 'waiting'].includes(status);
+  if (filter === 'completed') return ['completed', 'done', 'passed', 'accepted'].includes(status);
+  return true;
+}
+
+function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+  const timedTasks = tasks as TimedPlanTask[];
+  const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+  if (!hasPlanIds) return planCount === 1 ? timedTasks : [];
+  return timedTasks.filter((task) => readPlanId(task) === plan.id);
+}
+
+function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+  const totalMs = tasks.reduce((sum, task) => sum + (getTaskDurationMs(task) ?? 0), 0);
+  const completedMs = tasks.reduce(
+    (sum, task) => sum + (task.status === 'completed' ? getTaskDurationMs(task) ?? 0 : 0),
+    0,
+  );
+
+  return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
+}
+
+function planTitle(plan: Plan) {
+  return String((plan as Plan & { title?: string | null }).title || '').trim();
+}
+
+function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      return toEventMetaRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+  return null;
+}
+
+function readEventMeta(event: AppEvent) {
+  return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+}
+
+function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+  if (!meta) return '';
+  for (const key of keys) {
+    const value = meta[key];
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text) return text;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+  const text = readMetaText(meta, keys);
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function includesAny(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+  const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+  if (includesAny(eventText, ['stop_requested', 'stop-requested', 'stop.requested', 'request_stop', 'stopping'])) {
+    return 'stopping';
+  }
+  if (includesAny(eventText, ['fail', 'error', 'errored'])) return 'failed';
+  if (includesAny(eventText, ['stop', 'interrupt', 'cancel'])) return 'stopped';
+  if (includesAny(eventText, ['start', 'begin', 'running'])) return 'start';
+  if (includesAny(eventText, ['complete', 'finish', 'success', 'succeed', 'executed', 'done'])) return 'success';
+  return 'updated';
+}
+
+function isTaskEventType(type: string) {
+  return /^task[.:_-]/i.test(type);
+}
+
+function sameEventText(left: string, right: string) {
+  return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+}
+
+function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
+  const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+  const taskId = readMetaText(meta, ['taskId', 'task_id']);
+  const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+  const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+  if (!hasTaskIdentity) return null;
+
+  const tone = classifyTaskEvent(event, meta);
+  const presentation = TASK_EVENT_PRESENTATION[tone];
+  const taskLabel = taskKey ? `${taskKey} 任务` : taskId ? `任务 #${taskId}` : '任务';
+  const separator = taskLabel === '任务' ? '' : ' ';
+  const title = `${presentation.action}${separator}${taskLabel}：${taskTitle}`;
+  const originalMessage = event.message?.trim() || '';
+  const planId = readMetaText(meta, ['planId', 'plan_id']);
+  const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+  const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+  const codexReasoningEffort = readMetaText(meta, [
+    'codexReasoningEffort',
+    'codex_reasoning_effort',
+    'codexThinkingDepth',
+    'codex_thinking_depth',
+    'reasoningEffort',
+    'reasoning_effort',
+    'thinkingDepth',
+    'thinking_depth',
+  ]);
+  const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+  const metaParts = [
+    formatChinaDateTime(event.created_at),
+    planId ? `Plan #${planId}` : '',
+    agentCliProvider ? agentCliProviderLabel(agentCliProvider) : '',
+    agentCliProvider !== 'claude' && codexReasoningEffort ? `思考深度 ${codexReasoningEffortLabel(codexReasoningEffort)}` : '',
+    status ? `状态 ${status}` : '',
+    durationMs !== null ? `耗时 ${formatDuration(durationMs, '0秒')}` : '',
+  ].filter(Boolean);
+
+  return {
+    title,
+    body: originalMessage && !sameEventText(originalMessage, title) ? originalMessage : '',
+    meta: metaParts.join(' · '),
+    badge: presentation.badge,
+    tone,
+  };
+}
+
+function formatEvent(event: AppEvent): TaskEventDisplay {
+  const meta = readEventMeta(event);
+  const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+    ? formatTaskEvent(event, meta)
+    : null;
+  if (taskDisplay) return taskDisplay;
+
+  return {
+    title: event.type || '事件',
+    body: event.message || '',
+    meta: formatChinaDateTime(event.created_at),
+  };
+}
+
+function toSearchText(value: unknown, depth = 0): string {
+  if (value === null || value === undefined || depth > 6) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => toSearchText(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+export function getEventSearchText(event: AppEvent) {
+  const display = formatEvent(event);
+  const meta = readEventMeta(event);
+  return [
+    event.type,
+    event.message,
+    display.title,
+    display.body,
+    display.badge,
+    display.meta,
+    toSearchText(meta),
+    toSearchText(event),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function hasPlanReaderUpdate(
+  readingPlan: Plan | null,
+  latestPlan: Plan | null | undefined,
+  result: WorkspacePlanReadState['result'],
+) {
+  if (!readingPlan || !latestPlan) return false;
+  if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+
+  const readFilePath = result?.file_path || readingPlan.file_path || '';
+  const readHash = result?.hash || readingPlan.hash || '';
+  const readUpdatedAt = result?.updated_at || readingPlan.updated_at || '';
+  return (
+    (latestPlan.file_path || '') !== readFilePath ||
+    (latestPlan.hash || '') !== readHash ||
+    (latestPlan.updated_at || '') !== readUpdatedAt ||
+    (latestPlan.status || '') !== (readingPlan.status || '')
+  );
+}
+
+const PLAN_READER_FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function getPlanReaderFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+    (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+  );
+}
+
+export function PlanList({
+  emptyText = '暂无 plan。',
+  latestReadingPlan,
+  onCloseReader,
+  onOpenReader,
+  onRefreshReader,
+  plans,
+  readerState,
+  tasks = [],
+  totalPlanCount = plans.length,
+}: {
+  emptyText?: string;
+  latestReadingPlan?: Plan | null;
+  onCloseReader: () => void;
+  onOpenReader: (plan: Plan) => void;
+  onRefreshReader: () => void;
+  plans: Plan[];
+  readerState: WorkspacePlanReadState;
+  tasks?: PlanTask[];
+  totalPlanCount?: number;
+}) {
+  const readingPlan = readerState.plan;
+  const planReadResult = readerState.result;
+  const planReadError = readerState.error;
+  const planReading = readerState.loading;
+  const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+  const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+  const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+  const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+  const readerDialogId = useId();
+  const readerTitleId = useId();
+  const readerDescriptionId = useId();
+  const readerContentId = useId();
+  const readerDialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+  const readerStatusText = planReadError
+    ? `读取失败：${planReadError}`
+    : planReading
+      ? '正在读取 Plan 全文。'
+      : latestPlanUpdated
+        ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+        : 'Plan 全文已加载，当前为只读阅读模式。';
+
+  useEffect(() => {
+    if (!readingPlan) return undefined;
+
+    previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      readerDialogRef.current?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      previouslyFocusedElementRef.current?.focus();
+    };
+  }, [readingPlan?.id, readingPlan?.project_id]);
+
+  function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      onCloseReader();
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+
+    const dialog = readerDialogRef.current;
+    if (!dialog) return;
+
+    const focusableElements = getPlanReaderFocusableElements(dialog);
+    if (!focusableElements.length) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const firstFocusableElement = focusableElements[0];
+    const lastFocusableElement = focusableElements[focusableElements.length - 1];
+
+    if (document.activeElement === dialog) {
+      event.preventDefault();
+      (event.shiftKey ? lastFocusableElement : firstFocusableElement).focus();
+      return;
+    }
+
+    if (event.shiftKey && document.activeElement === firstFocusableElement) {
+      event.preventDefault();
+      lastFocusableElement.focus();
+      return;
+    }
+
+    if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+      event.preventDefault();
+      firstFocusableElement.focus();
+    }
+  }
+
+  return (
+    <>
+      {plans.length ? (
+        <div className="list compact">
+          {plans.map((plan) => {
+            const durationSummary = formatPlanDurationSummary(tasksForPlan(tasks, plan, totalPlanCount));
+            const title = planTitle(plan);
+            const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+              plan.validation_passed ? 'passed' : 'pending'
+            }`;
+            const readingThisPlan = Boolean(
+              readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+            );
+            const disableRead = planReading && readingThisPlan;
+            return (
+              <RecordCard
+                actions={
+                  <div className="item-actions">
+                    <button
+                      type="button"
+                      className="btn-link plan-read-link"
+                      aria-haspopup="dialog"
+                      aria-controls={readingThisPlan ? readerDialogId : undefined}
+                      aria-expanded={readingThisPlan}
+                      aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+                      disabled={disableRead}
+                      onClick={() => onOpenReader(plan)}
+                    >
+                      {disableRead ? '读取中…' : '阅读全文'}
+                    </button>
+                  </div>
+                }
+                key={plan.id}
+                title={plan.file_path}
+                status={plan.status}
+                body={
+                  <div className="plan-list-body">
+                    {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
+                    <div className="plan-list-summary">{progressSummary}</div>
+                  </div>
+                }
+                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+              />
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty">{emptyText}</div>
+      )}
+
+      {readingPlan ? (
+        <div className="modal-mask" onClick={onCloseReader}>
+          <div
+            id={readerDialogId}
+            ref={readerDialogRef}
+            className="modal plan-reader-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={readerTitleId}
+            aria-describedby={readerDescriptionId}
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={handleReaderKeyDown}
+          >
+            <div className="modal-head plan-reader-head">
+              <div className="plan-reader-title">
+                <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+                <span className="plan-reader-path mono" title={readerFilePath}>
+                  {readerFilePath || '未记录文件路径'}
+                </span>
+                <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+                  {readerStatusText}
+                </p>
+              </div>
+              <div className="item-actions plan-reader-actions">
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={planReading}
+                  onClick={onRefreshReader}
+                  aria-label="重新读取 Plan 全文"
+                >
+                  {planReading ? '读取中…' : '刷新'}
+                </button>
+                <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+              <dl className="plan-reader-summary" aria-label="Plan 摘要">
+                <div className="plan-reader-summary-item">
+                  <dt>状态</dt>
+                  <dd>{readingPlan.status}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>更新时间</dt>
+                  <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>哈希</dt>
+                  <dd className="mono" title={readerHash}>
+                    {readerHash?.slice(0, 12) || '-'}
+                  </dd>
+                </div>
+              </dl>
+
+              {latestPlanUpdated ? (
+                <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+                  Plan 列表信息已更新，可刷新读取最新正文。
+                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+                    刷新读取
+                  </button>
+                </div>
+              ) : null}
+              {planReadError ? (
+                <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+                  <span>{planReadError}</span>
+                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+                    重试
+                  </button>
+                </div>
+              ) : null}
+              {planReading ? (
+                <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                  正在读取 Plan 全文…
+                </div>
+              ) : null}
+              {!planReading && !planReadError ? (
+                <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                  <MarkdownReader
+                    markdown={planReadResult?.markdown ?? ''}
+                    emptyMessage="暂无计划正文"
+                    ariaLabel="Plan Markdown 正文内容"
+                  />
+                </section>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function TaskList({
+  emptyText = '暂无任务。',
+  tasks,
+  onOpenPlan,
+  onRun,
+  onStop,
+}: {
+  emptyText?: string;
+  tasks: PlanTask[];
+  onOpenPlan?: (task: PlanTask) => void;
+  onRun?: (task: PlanTask) => void;
+  onStop?: (task: PlanTask) => void;
+}) {
+  const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+    [activeFilter, tasks],
+  );
+  const filterCounts = useMemo(
+    () =>
+      TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+        (counts, filter) => ({
+          ...counts,
+          [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+        }),
+        { all: 0, running: 0, queued: 0, completed: 0 },
+      ),
+    [tasks],
+  );
+  const activeFilterConfig =
+    TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+
+  return (
+    <div className="task-list-panel">
+      <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+        {TASK_STATUS_FILTERS.map((filter) => {
+          const active = activeFilter === filter.id;
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`task-filter-tab${active ? ' active' : ''}`}
+              onClick={() => setActiveFilter(filter.id)}
+            >
+              <span>{filter.label}</span>
+              <span className="task-filter-count">{filterCounts[filter.id]}</span>
+            </button>
+          );
+        })}
+      </div>
+      {visibleTasks.length ? (
+        <div className="list compact">
+          {visibleTasks.map((task) => {
+            const running = task.status === 'running';
+            const completed = task.status === 'completed';
+            const durationLabel = formatTaskDuration(task as TimedPlanTask);
+            return (
+              <RecordCard
+                actions={
+                  <div className="item-actions">
+                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+                      执行
+                    </button>
+                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+                      停止
+                    </button>
+                  </div>
+                }
+                key={task.id}
+                title={task.title}
+                status={task.status}
+                body={
+                  task.file_path ? (
+                    <button
+                      type="button"
+                      className="btn-link task-file-link mono"
+                      disabled={!onOpenPlan}
+                      title={task.file_path}
+                      aria-label={`预览 ${task.file_path}`}
+                      onClick={() => onOpenPlan?.(task)}
+                    >
+                      {task.file_path}
+                    </button>
+                  ) : null
+                }
+                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+              />
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty">{currentEmptyText}</div>
+      )}
+    </div>
+  );
+}
+
+export function EventList({ emptyText = '暂无事件。', events }: { emptyText?: string; events: AppEvent[] }) {
+  if (!events.length) return <div className="empty">{emptyText}</div>;
+
+  return (
+    <div className="list compact event-list">
+      {events.map((event) => {
+        const display = formatEvent(event);
+        return (
+          <article className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`} key={event.id}>
+            <div className="item-title event-title">
+              <span>{display.title}</span>
+              {display.badge ? <span className={`event-badge event-badge-${display.tone}`}>{display.badge}</span> : null}
+            </div>
+            {display.body ? <div className="item-body plain-text">{display.body}</div> : null}
+            <div className="meta event-meta">{display.meta}</div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+codex
+`TaskList` 当前仍是扁平渲染；我会读取周边工具函数后加入分组排序。
+exec
+powershell.exe -Command "rg -n \"function TaskList|tasksForPlan|formatPlanDurationSummary|planTitle|TaskList\\(\" src\\renderer\\components\\PlanLists.tsx; "'$lines=Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; foreach("'$r in @(@(1,150),@(500,625))){ "--- lines $($r[0])-$($r[1]) ---"; for($i=$r[0]; $i -le $r[1]; $i++){ if($i -le $lines.Length){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 1638ms:
+--- lines 1-150 ---
+   1: import type { KeyboardEvent } from 'react';
+   2: import { useEffect, useId, useMemo, useRef, useState } from 'react';
+   3: import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+   4: import { RecordCard } from './IntakePanel';
+   5: import { MarkdownReader } from './MarkdownReader';
+   6: import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
+   7: import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+   8: 
+   9: type TimedPlanTask = PlanTask & {
+  10:   plan_id?: number | null;
+  11:   started_at?: string | null;
+  12:   finished_at?: string | null;
+  13:   duration_ms?: number | null;
+  14: };
+  15: 
+  16: type EventMetaRecord = Record<string, unknown>;
+  17: 
+  18: type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+  19: 
+  20: type TaskEventDisplay = {
+  21:   title: string;
+  22:   body: string;
+  23:   meta: string;
+  24:   badge?: string;
+  25:   tone?: TaskEventTone;
+  26: };
+  27: 
+  28: type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+  29: 
+  30: const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+  31:   { id: 'all', label: '全部', emptyText: '暂无任务。' },
+  32:   { id: 'running', label: '进行中', emptyText: '暂无进行中任务。' },
+  33:   { id: 'queued', label: '队列中', emptyText: '暂无队列中任务。' },
+  34:   { id: 'completed', label: '已完成', emptyText: '暂无已完成任务。' },
+  35: ];
+  36: 
+  37: const TASK_EVENT_PRESENTATION: Record<TaskEventTone, { action: string; badge: string }> = {
+  38:   start: { action: '开始了', badge: '开始' },
+  39:   success: { action: '结束了', badge: '成功' },
+  40:   failed: { action: '执行失败', badge: '失败' },
+  41:   stopped: { action: '停止了', badge: '停止' },
+  42:   stopping: { action: '请求停止', badge: '停止中' },
+  43:   updated: { action: '更新了', badge: '任务' },
+  44: };
+  45: 
+  46: function readDurationMs(task: TimedPlanTask) {
+  47:   if (task.duration_ms === null || typeof task.duration_ms === 'undefined') return null;
+  48:   const duration = Number(task.duration_ms);
+  49:   return Number.isFinite(duration) && duration >= 0 ? duration : null;
+  50: }
+  51: 
+  52: function getTaskDurationMs(task: TimedPlanTask) {
+  53:   if (task.status === 'running') return getRunningDurationMs(readDurationMs(task), task.started_at);
+  54:   return readDurationMs(task);
+  55: }
+  56: 
+  57: function readPlanId(task: TimedPlanTask) {
+  58:   if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+  59:   const planId = Number(task.plan_id);
+  60:   return Number.isFinite(planId) ? planId : null;
+  61: }
+  62: 
+  63: function formatTaskDuration(task: TimedPlanTask) {
+  64:   const duration = getTaskDurationMs(task);
+  65:   if (task.status === 'running') return `已运行 ${formatDuration(duration, '0秒')}`;
+  66:   if (duration === null || (duration === 0 && !task.started_at && !task.finished_at)) return '未开始';
+  67:   return `耗时 ${formatDuration(duration, '0秒')}`;
+  68: }
+  69: 
+  70: function normalizeTaskStatus(status: string | null | undefined) {
+  71:   return String(status || '').trim().toLowerCase();
+  72: }
+  73: 
+  74: function matchesTaskStatusFilter(task: PlanTask, filter: TaskStatusFilter) {
+  75:   const status = normalizeTaskStatus(task.status);
+  76:   if (filter === 'all') return true;
+  77:   if (filter === 'running') return ['running', 'processing', 'stopping'].includes(status);
+  78:   if (filter === 'queued') return ['pending', 'queued', 'waiting'].includes(status);
+  79:   if (filter === 'completed') return ['completed', 'done', 'passed', 'accepted'].includes(status);
+  80:   return true;
+  81: }
+  82: 
+  83: function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+  84:   const timedTasks = tasks as TimedPlanTask[];
+  85:   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+  86:   if (!hasPlanIds) return planCount === 1 ? timedTasks : [];
+  87:   return timedTasks.filter((task) => readPlanId(task) === plan.id);
+  88: }
+  89: 
+  90: function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+  91:   const totalMs = tasks.reduce((sum, task) => sum + (getTaskDurationMs(task) ?? 0), 0);
+  92:   const completedMs = tasks.reduce(
+  93:     (sum, task) => sum + (task.status === 'completed' ? getTaskDurationMs(task) ?? 0 : 0),
+  94:     0,
+  95:   );
+  96: 
+  97:   return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
+  98: }
+  99: 
+ 100: function planTitle(plan: Plan) {
+ 101:   return String((plan as Plan & { title?: string | null }).title || '').trim();
+ 102: }
+ 103: 
+ 104: function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+ 105:   if (!value) return null;
+ 106:   if (typeof value === 'string') {
+ 107:     try {
+ 108:       return toEventMetaRecord(JSON.parse(value));
+ 109:     } catch {
+ 110:       return null;
+ 111:     }
+ 112:   }
+ 113:   if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+ 114:   return null;
+ 115: }
+ 116: 
+ 117: function readEventMeta(event: AppEvent) {
+ 118:   return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+ 119: }
+ 120: 
+ 121: function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+ 122:   if (!meta) return '';
+ 123:   for (const key of keys) {
+ 124:     const value = meta[key];
+ 125:     if (typeof value === 'string') {
+ 126:       const text = value.trim();
+ 127:       if (text) return text;
+ 128:     }
+ 129:     if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+ 130:   }
+ 131:   return '';
+ 132: }
+ 133: 
+ 134: function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+ 135:   const text = readMetaText(meta, keys);
+ 136:   if (!text) return null;
+ 137:   const value = Number(text);
+ 138:   return Number.isFinite(value) ? value : null;
+ 139: }
+ 140: 
+ 141: function includesAny(text: string, keywords: string[]) {
+ 142:   return keywords.some((keyword) => text.includes(keyword));
+ 143: }
+ 144: 
+ 145: function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+ 146:   const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+ 147:   if (includesAny(eventText, ['stop_requested', 'stop-requested', 'stop.requested', 'request_stop', 'stopping'])) {
+ 148:     return 'stopping';
+ 149:   }
+ 150:   if (includesAny(eventText, ['fail', 'error', 'errored'])) return 'failed';
+--- lines 500-625 ---
+ 500:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+ 501:                   <span>{planReadError}</span>
+ 502:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 503:                     重试
+ 504:                   </button>
+ 505:                 </div>
+ 506:               ) : null}
+ 507:               {planReading ? (
+ 508:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+ 509:                   正在读取 Plan 全文…
+ 510:                 </div>
+ 511:               ) : null}
+ 512:               {!planReading && !planReadError ? (
+ 513:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+ 514:                   <MarkdownReader
+ 515:                     markdown={planReadResult?.markdown ?? ''}
+ 516:                     emptyMessage="暂无计划正文"
+ 517:                     ariaLabel="Plan Markdown 正文内容"
+ 518:                   />
+ 519:                 </section>
+ 520:               ) : null}
+ 521:             </div>
+ 522:           </div>
+ 523:         </div>
+ 524:       ) : null}
+ 525:     </>
+ 526:   );
+ 527: }
+ 528: 
+ 529: export function TaskList({
+ 530:   emptyText = '暂无任务。',
+ 531:   tasks,
+ 532:   onOpenPlan,
+ 533:   onRun,
+ 534:   onStop,
+ 535: }: {
+ 536:   emptyText?: string;
+ 537:   tasks: PlanTask[];
+ 538:   onOpenPlan?: (task: PlanTask) => void;
+ 539:   onRun?: (task: PlanTask) => void;
+ 540:   onStop?: (task: PlanTask) => void;
+ 541: }) {
+ 542:   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+ 543:   const visibleTasks = useMemo(
+ 544:     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+ 545:     [activeFilter, tasks],
+ 546:   );
+ 547:   const filterCounts = useMemo(
+ 548:     () =>
+ 549:       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+ 550:         (counts, filter) => ({
+ 551:           ...counts,
+ 552:           [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+ 553:         }),
+ 554:         { all: 0, running: 0, queued: 0, completed: 0 },
+ 555:       ),
+ 556:     [tasks],
+ 557:   );
+ 558:   const activeFilterConfig =
+ 559:     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+ 560:   const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+ 561: 
+ 562:   return (
+ 563:     <div className="task-list-panel">
+ 564:       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+ 565:         {TASK_STATUS_FILTERS.map((filter) => {
+ 566:           const active = activeFilter === filter.id;
+ 567:           return (
+ 568:             <button
+ 569:               key={filter.id}
+ 570:               type="button"
+ 571:               role="tab"
+ 572:               aria-selected={active}
+ 573:               className={`task-filter-tab${active ? ' active' : ''}`}
+ 574:               onClick={() => setActiveFilter(filter.id)}
+ 575:             >
+ 576:               <span>{filter.label}</span>
+ 577:               <span className="task-filter-count">{filterCounts[filter.id]}</span>
+ 578:             </button>
+ 579:           );
+ 580:         })}
+ 581:       </div>
+ 582:       {visibleTasks.length ? (
+ 583:         <div className="list compact">
+ 584:           {visibleTasks.map((task) => {
+ 585:             const running = task.status === 'running';
+ 586:             const completed = task.status === 'completed';
+ 587:             const durationLabel = formatTaskDuration(task as TimedPlanTask);
+ 588:             return (
+ 589:               <RecordCard
+ 590:                 actions={
+ 591:                   <div className="item-actions">
+ 592:                     <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+ 593:                       执行
+ 594:                     </button>
+ 595:                     <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+ 596:                       停止
+ 597:                     </button>
+ 598:                   </div>
+ 599:                 }
+ 600:                 key={task.id}
+ 601:                 title={task.title}
+ 602:                 status={task.status}
+ 603:                 body={
+ 604:                   task.file_path ? (
+ 605:                     <button
+ 606:                       type="button"
+ 607:                       className="btn-link task-file-link mono"
+ 608:                       disabled={!onOpenPlan}
+ 609:                       title={task.file_path}
+ 610:                       aria-label={`预览 ${task.file_path}`}
+ 611:                       onClick={() => onOpenPlan?.(task)}
+ 612:                     >
+ 613:                       {task.file_path}
+ 614:                     </button>
+ 615:                   ) : null
+ 616:                 }
+ 617:                 meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+ 618:               />
+ 619:             );
+ 620:           })}
+ 621:         </div>
+ 622:       ) : (
+ 623:         <div className="empty">{currentEmptyText}</div>
+ 624:       )}
+ 625:     </div>
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 1
++ rg -n "function TaskList|tasksForPlan|formatPlanDurationSummary|planT ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+**Evaluating command issues**
+
+I’m trying to figure out why the command "rg" isn’t found. It seems like Powershell doesn’t actually include it by default? That's interesting. I might need to look into the PlanList component instead, especially focusing on the tasksForPlan function from earlier. It could be useful to inspect around 300 to 500 units as I dig deeper into this! Let’s see where that takes me.
+codex
+已有计划列表工具函数可保留；我会只在任务列表内新增分组工具。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\components\\PlanLists.tsx -Pattern \"tasksForPlan|formatPlanDurationSummary|planTitle|export function PlanList|TaskList\"; "'$lines=Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; foreach("'$r in @(@(300,500),@(625,649))){ "--- lines $($r[0])-$($r[1]) ---"; for($i=$r[0]; $i -le $r[1]; $i++){ if($i -le $lines.Length){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 562ms:
+
+src\renderer\components\PlanLists.tsx:83:function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+src\renderer\components\PlanLists.tsx:90:function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+src\renderer\components\PlanLists.tsx:100:function planTitle(plan: Plan) {
+src\renderer\components\PlanLists.tsx:287:export function PlanList({
+src\renderer\components\PlanLists.tsx:389:            const durationSummary = formatPlanDurationSummary(tasksForPlan(ta
+sks, plan, totalPlanCount));
+src\renderer\components\PlanLists.tsx:390:            const title = planTitle(plan);
+src\renderer\components\PlanLists.tsx:529:export function TaskList({
+--- lines 300-500 ---
+ 300:   onCloseReader: () => void;
+ 301:   onOpenReader: (plan: Plan) => void;
+ 302:   onRefreshReader: () => void;
+ 303:   plans: Plan[];
+ 304:   readerState: WorkspacePlanReadState;
+ 305:   tasks?: PlanTask[];
+ 306:   totalPlanCount?: number;
+ 307: }) {
+ 308:   const readingPlan = readerState.plan;
+ 309:   const planReadResult = readerState.result;
+ 310:   const planReadError = readerState.error;
+ 311:   const planReading = readerState.loading;
+ 312:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+ 313:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+ 314:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+ 315:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+ 316:   const readerDialogId = useId();
+ 317:   const readerTitleId = useId();
+ 318:   const readerDescriptionId = useId();
+ 319:   const readerContentId = useId();
+ 320:   const readerDialogRef = useRef<HTMLDivElement>(null);
+ 321:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+ 322:   const readerStatusText = planReadError
+ 323:     ? `读取失败：${planReadError}`
+ 324:     : planReading
+ 325:       ? '正在读取 Plan 全文。'
+ 326:       : latestPlanUpdated
+ 327:         ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+ 328:         : 'Plan 全文已加载，当前为只读阅读模式。';
+ 329: 
+ 330:   useEffect(() => {
+ 331:     if (!readingPlan) return undefined;
+ 332: 
+ 333:     previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+ 334:     const focusFrame = window.requestAnimationFrame(() => {
+ 335:       readerDialogRef.current?.focus();
+ 336:     });
+ 337: 
+ 338:     return () => {
+ 339:       window.cancelAnimationFrame(focusFrame);
+ 340:       previouslyFocusedElementRef.current?.focus();
+ 341:     };
+ 342:   }, [readingPlan?.id, readingPlan?.project_id]);
+ 343: 
+ 344:   function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+ 345:     if (event.key === 'Escape') {
+ 346:       event.stopPropagation();
+ 347:       onCloseReader();
+ 348:       return;
+ 349:     }
+ 350: 
+ 351:     if (event.key !== 'Tab') return;
+ 352: 
+ 353:     const dialog = readerDialogRef.current;
+ 354:     if (!dialog) return;
+ 355: 
+ 356:     const focusableElements = getPlanReaderFocusableElements(dialog);
+ 357:     if (!focusableElements.length) {
+ 358:       event.preventDefault();
+ 359:       dialog.focus();
+ 360:       return;
+ 361:     }
+ 362: 
+ 363:     const firstFocusableElement = focusableElements[0];
+ 364:     const lastFocusableElement = focusableElements[focusableElements.length - 1];
+ 365: 
+ 366:     if (document.activeElement === dialog) {
+ 367:       event.preventDefault();
+ 368:       (event.shiftKey ? lastFocusableElement : firstFocusableElement).focus();
+ 369:       return;
+ 370:     }
+ 371: 
+ 372:     if (event.shiftKey && document.activeElement === firstFocusableElement) {
+ 373:       event.preventDefault();
+ 374:       lastFocusableElement.focus();
+ 375:       return;
+ 376:     }
+ 377: 
+ 378:     if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+ 379:       event.preventDefault();
+ 380:       firstFocusableElement.focus();
+ 381:     }
+ 382:   }
+ 383: 
+ 384:   return (
+ 385:     <>
+ 386:       {plans.length ? (
+ 387:         <div className="list compact">
+ 388:           {plans.map((plan) => {
+ 389:             const durationSummary = formatPlanDurationSummary(tasksForPlan(tasks, plan, totalPlanCount));
+ 390:             const title = planTitle(plan);
+ 391:             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+ 392:               plan.validation_passed ? 'passed' : 'pending'
+ 393:             }`;
+ 394:             const readingThisPlan = Boolean(
+ 395:               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+ 396:             );
+ 397:             const disableRead = planReading && readingThisPlan;
+ 398:             return (
+ 399:               <RecordCard
+ 400:                 actions={
+ 401:                   <div className="item-actions">
+ 402:                     <button
+ 403:                       type="button"
+ 404:                       className="btn-link plan-read-link"
+ 405:                       aria-haspopup="dialog"
+ 406:                       aria-controls={readingThisPlan ? readerDialogId : undefined}
+ 407:                       aria-expanded={readingThisPlan}
+ 408:                       aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+ 409:                       disabled={disableRead}
+ 410:                       onClick={() => onOpenReader(plan)}
+ 411:                     >
+ 412:                       {disableRead ? '读取中…' : '阅读全文'}
+ 413:                     </button>
+ 414:                   </div>
+ 415:                 }
+ 416:                 key={plan.id}
+ 417:                 title={plan.file_path}
+ 418:                 status={plan.status}
+ 419:                 body={
+ 420:                   <div className="plan-list-body">
+ 421:                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
+ 422:                     <div className="plan-list-summary">{progressSummary}</div>
+ 423:                   </div>
+ 424:                 }
+ 425:                 meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+ 426:               />
+ 427:             );
+ 428:           })}
+ 429:         </div>
+ 430:       ) : (
+ 431:         <div className="empty">{emptyText}</div>
+ 432:       )}
+ 433: 
+ 434:       {readingPlan ? (
+ 435:         <div className="modal-mask" onClick={onCloseReader}>
+ 436:           <div
+ 437:             id={readerDialogId}
+ 438:             ref={readerDialogRef}
+ 439:             className="modal plan-reader-modal"
+ 440:             role="dialog"
+ 441:             aria-modal="true"
+ 442:             aria-labelledby={readerTitleId}
+ 443:             aria-describedby={readerDescriptionId}
+ 444:             tabIndex={-1}
+ 445:             onClick={(event) => event.stopPropagation()}
+ 446:             onKeyDown={handleReaderKeyDown}
+ 447:           >
+ 448:             <div className="modal-head plan-reader-head">
+ 449:               <div className="plan-reader-title">
+ 450:                 <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+ 451:                 <span className="plan-reader-path mono" title={readerFilePath}>
+ 452:                   {readerFilePath || '未记录文件路径'}
+ 453:                 </span>
+ 454:                 <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+ 455:                   {readerStatusText}
+ 456:                 </p>
+ 457:               </div>
+ 458:               <div className="item-actions plan-reader-actions">
+ 459:                 <button
+ 460:                   type="button"
+ 461:                   className="btn-link"
+ 462:                   disabled={planReading}
+ 463:                   onClick={onRefreshReader}
+ 464:                   aria-label="重新读取 Plan 全文"
+ 465:                 >
+ 466:                   {planReading ? '读取中…' : '刷新'}
+ 467:                 </button>
+ 468:                 <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+ 469:                   ×
+ 470:                 </button>
+ 471:               </div>
+ 472:             </div>
+ 473:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+ 474:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+ 475:                 <div className="plan-reader-summary-item">
+ 476:                   <dt>状态</dt>
+ 477:                   <dd>{readingPlan.status}</dd>
+ 478:                 </div>
+ 479:                 <div className="plan-reader-summary-item">
+ 480:                   <dt>更新时间</dt>
+ 481:                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+ 482:                 </div>
+ 483:                 <div className="plan-reader-summary-item">
+ 484:                   <dt>哈希</dt>
+ 485:                   <dd className="mono" title={readerHash}>
+ 486:                     {readerHash?.slice(0, 12) || '-'}
+ 487:                   </dd>
+ 488:                 </div>
+ 489:               </dl>
+ 490: 
+ 491:               {latestPlanUpdated ? (
+ 492:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+ 493:                   Plan 列表信息已更新，可刷新读取最新正文。
+ 494:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 495:                     刷新读取
+ 496:                   </button>
+ 497:                 </div>
+ 498:               ) : null}
+ 499:               {planReadError ? (
+ 500:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+--- lines 625-649 ---
+ 625:     </div>
+ 626:   );
+ 627: }
+ 628: 
+ 629: export function EventList({ emptyText = '暂无事件。', events }: { emptyText?: string; events: AppEvent[] }) {
+ 630:   if (!events.length) return <div className="empty">{emptyText}</div>;
+ 631: 
+ 632:   return (
+ 633:     <div className="list compact event-list">
+ 634:       {events.map((event) => {
+ 635:         const display = formatEvent(event);
+ 636:         return (
+ 637:           <article className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`} key={event.id}>
+ 638:             <div className="item-title event-title">
+ 639:               <span>{display.title}</span>
+ 640:               {display.badge ? <span className={`event-badge event-badge-${display.tone}`}>{display.badge}</span> : null}
+ 641:             </div>
+ 642:             {display.body ? <div className="item-body plain-text">{display.body}</div> : null}
+ 643:             <div className="meta event-meta">{display.meta}</div>
+ 644:           </article>
+ 645:         );
+ 646:       })}
+ 647:     </div>
+ 648:   );
+ 649: }
+
+
+
+**Considering group title creation**
+
+I'm thinking about setting a group title, especially when the existing one may not fit well, or if it's unknown. It could help to create a new title that works better for our purpose. I might need a helper for this process to ensure we come up with something suitable that really encompasses what we want to convey. It's all about making sure it resonates with the group.
+codex
+我会添加纯前端分组/排序 helper，并保持任务按钮行为不变。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index d3783cb2202c3a258f5af9da7f63ff1d1e2d71b8..1b1522488425429bb1312554089574ca8df904a9
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -25,6 +25,14 @@
+   tone?: TaskEventTone;
+ };
+ 
++type TaskPlanGroup = {
++  key: string;
++  title: string;
++  tasks: PlanTask[];
++  firstIndex: number;
++  sortTime: number | null;
++};
++
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+ 
+ const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+@@ -80,6 +88,86 @@
+   return true;
+ }
+ 
++function readTaskTime(value: string | null | undefined) {
++  const time = Date.parse(String(value || ''));
++  return Number.isFinite(time) ? time : null;
++}
++
++function taskSortTime(task: TimedPlanTask) {
++  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
++}
++
++function latestTaskTime(tasks: TimedPlanTask[]) {
++  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
++  for (const fields of fieldGroups) {
++    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
++    const validTimes = times.filter((time): time is number => time !== null);
++    if (validTimes.length) return Math.max(...validTimes);
++  }
++  return null;
++}
++
++function taskPlanGroupTitle(task: PlanTask) {
++  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
++}
++
++function taskPlanGroupKey(task: TimedPlanTask, index: number) {
++  const planId = readPlanId(task);
++  if (planId !== null) return `plan:${planId}`;
++  if (task.file_path) return `file:${task.file_path}`;
++  return `unknown:${index}`;
++}
++
++function groupTasksByPlan(tasks: PlanTask[]) {
++  const groups = new Map<string, TaskPlanGroup>();
++  tasks.forEach((task, index) => {
++    const timedTask = task as TimedPlanTask;
++    const key = taskPlanGroupKey(timedTask, index);
++    const existingGroup = groups.get(key);
++    if (existingGroup) {
++      existingGroup.tasks.push(task);
++      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
++      return;
++    }
++
++    groups.set(key, {
++      key,
++      title: taskPlanGroupTitle(task),
++      tasks: [task],
++      firstIndex: index,
++      sortTime: null,
++    });
++  });
++
++  return Array.from(groups.values())
++    .map((group) => {
++      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
++      const sortedTasks = indexedTasks
++        .sort((left, right) => {
++          const leftTime = taskSortTime(left.task as TimedPlanTask);
++          const rightTime = taskSortTime(right.task as TimedPlanTask);
++          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
++          if (leftTime !== null && rightTime === null) return -1;
++          if (leftTime === null && rightTime !== null) return 1;
++          return left.index - right.index;
++        })
++        .map(({ task }) => task);
++      return {
++        ...group,
++        tasks: sortedTasks,
++        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++      };
++    })
++    .sort((left, right) => {
++      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
++        return right.sortTime - left.sortTime;
++      }
++      if (left.sortTime !== null && right.sortTime === null) return -1;
++      if (left.sortTime === null && right.sortTime !== null) return 1;
++      return left.firstIndex - right.firstIndex;
++    });
++}
++
+ function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+   const timedTasks = tasks as TimedPlanTask[];
+   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index d3783cb2202c3a258f5af9da7f63ff1d1e2d71b8..1b1522488425429bb1312554089574ca8df904a9
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -25,6 +25,14 @@
+   tone?: TaskEventTone;
+ };
+ 
++type TaskPlanGroup = {
++  key: string;
++  title: string;
++  tasks: PlanTask[];
++  firstIndex: number;
++  sortTime: number | null;
++};
++
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+ 
+ const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+@@ -80,6 +88,86 @@
+   return true;
+ }
+ 
++function readTaskTime(value: string | null | undefined) {
++  const time = Date.parse(String(value || ''));
++  return Number.isFinite(time) ? time : null;
++}
++
++function taskSortTime(task: TimedPlanTask) {
++  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
++}
++
++function latestTaskTime(tasks: TimedPlanTask[]) {
++  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
++  for (const fields of fieldGroups) {
++    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
++    const validTimes = times.filter((time): time is number => time !== null);
++    if (validTimes.length) return Math.max(...validTimes);
++  }
++  return null;
++}
++
++function taskPlanGroupTitle(task: PlanTask) {
++  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
++}
++
++function taskPlanGroupKey(task: TimedPlanTask, index: number) {
++  const planId = readPlanId(task);
++  if (planId !== null) return `plan:${planId}`;
++  if (task.file_path) return `file:${task.file_path}`;
++  return `unknown:${index}`;
++}
++
++function groupTasksByPlan(tasks: PlanTask[]) {
++  const groups = new Map<string, TaskPlanGroup>();
++  tasks.forEach((task, index) => {
++    const timedTask = task as TimedPlanTask;
++    const key = taskPlanGroupKey(timedTask, index);
++    const existingGroup = groups.get(key);
++    if (existingGroup) {
++      existingGroup.tasks.push(task);
++      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
++      return;
++    }
++
++    groups.set(key, {
++      key,
++      title: taskPlanGroupTitle(task),
++      tasks: [task],
++      firstIndex: index,
++      sortTime: null,
++    });
++  });
++
++  return Array.from(groups.values())
++    .map((group) => {
++      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
++      const sortedTasks = indexedTasks
++        .sort((left, right) => {
++          const leftTime = taskSortTime(left.task as TimedPlanTask);
++          const rightTime = taskSortTime(right.task as TimedPlanTask);
++          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
++          if (leftTime !== null && rightTime === null) return -1;
++          if (leftTime === null && rightTime !== null) return 1;
++          return left.index - right.index;
++        })
++        .map(({ task }) => task);
++      return {
++        ...group,
++        tasks: sortedTasks,
++        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++      };
++    })
++    .sort((left, right) => {
++      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
++        return right.sortTime - left.sortTime;
++      }
++      if (left.sortTime !== null && right.sortTime === null) return -1;
++      if (left.sortTime === null && right.sortTime !== null) return 1;
++      return left.firstIndex - right.firstIndex;
++    });
++}
++
+ function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+   const timedTasks = tasks as TimedPlanTask[];
+   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+
+codex
+分组 helper 已加入；现在把 `TaskList` 的渲染从扁平列表改为分组列表。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index d3783cb2202c3a258f5af9da7f63ff1d1e2d71b8..60585f0a13ec1622329f31d504b78c02712a86ca
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -25,6 +25,14 @@
+   tone?: TaskEventTone;
+ };
+ 
++type TaskPlanGroup = {
++  key: string;
++  title: string;
++  tasks: PlanTask[];
++  firstIndex: number;
++  sortTime: number | null;
++};
++
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+ 
+ const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+@@ -80,6 +88,86 @@
+   return true;
+ }
+ 
++function readTaskTime(value: string | null | undefined) {
++  const time = Date.parse(String(value || ''));
++  return Number.isFinite(time) ? time : null;
++}
++
++function taskSortTime(task: TimedPlanTask) {
++  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
++}
++
++function latestTaskTime(tasks: TimedPlanTask[]) {
++  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
++  for (const fields of fieldGroups) {
++    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
++    const validTimes = times.filter((time): time is number => time !== null);
++    if (validTimes.length) return Math.max(...validTimes);
++  }
++  return null;
++}
++
++function taskPlanGroupTitle(task: PlanTask) {
++  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
++}
++
++function taskPlanGroupKey(task: TimedPlanTask, index: number) {
++  const planId = readPlanId(task);
++  if (planId !== null) return `plan:${planId}`;
++  if (task.file_path) return `file:${task.file_path}`;
++  return `unknown:${index}`;
++}
++
++function groupTasksByPlan(tasks: PlanTask[]) {
++  const groups = new Map<string, TaskPlanGroup>();
++  tasks.forEach((task, index) => {
++    const timedTask = task as TimedPlanTask;
++    const key = taskPlanGroupKey(timedTask, index);
++    const existingGroup = groups.get(key);
++    if (existingGroup) {
++      existingGroup.tasks.push(task);
++      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
++      return;
++    }
++
++    groups.set(key, {
++      key,
++      title: taskPlanGroupTitle(task),
++      tasks: [task],
++      firstIndex: index,
++      sortTime: null,
++    });
++  });
++
++  return Array.from(groups.values())
++    .map((group) => {
++      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
++      const sortedTasks = indexedTasks
++        .sort((left, right) => {
++          const leftTime = taskSortTime(left.task as TimedPlanTask);
++          const rightTime = taskSortTime(right.task as TimedPlanTask);
++          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
++          if (leftTime !== null && rightTime === null) return -1;
++          if (leftTime === null && rightTime !== null) return 1;
++          return left.index - right.index;
++        })
++        .map(({ task }) => task);
++      return {
++        ...group,
++        tasks: sortedTasks,
++        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++      };
++    })
++    .sort((left, right) => {
++      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
++        return right.sortTime - left.sortTime;
++      }
++      if (left.sortTime !== null && right.sortTime === null) return -1;
++      if (left.sortTime === null && right.sortTime !== null) return 1;
++      return left.firstIndex - right.firstIndex;
++    });
++}
++
+ function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+   const timedTasks = tasks as TimedPlanTask[];
+   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+@@ -544,6 +632,7 @@
+     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+     [activeFilter, tasks],
+   );
++  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+   const filterCounts = useMemo(
+     () =>
+       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+@@ -579,43 +668,60 @@
+           );
+         })}
+       </div>
+-      {visibleTasks.length ? (
++      {taskGroups.length ? (
+         <div className="list compact">
+-          {visibleTasks.map((task) => {
+-            const running = task.status === 'running';
+-            const completed = task.status === 'completed';
+-            const durationLabel = formatTaskDuration(task as TimedPlanTask);
++          {taskGroups.map((group) => {
+             return (
+-              <RecordCard
+-                actions={
+-                  <div className="item-actions">
+-                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+-                      执行
+-                    </button>
+-                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+-                      停止
+-                    </button>
+-                  </div>
+-                }
+-                key={task.id}
+-                title={task.title}
+-                status={task.status}
+-                body={
+-                  task.file_path ? (
+-                    <button
+-                      type="button"
+-                      className="btn-link task-file-link mono"
+-                      disabled={!onOpenPlan}
+-                      title={task.file_path}
+-                      aria-label={`预览 ${task.file_path}`}
+-                      onClick={() => onOpenPlan?.(task)}
+-                    >
+-                      {task.file_path}
+-                    </button>
+-                  ) : null
+-                }
+-                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+-              />
++              <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
++                <div className="task-plan-group-title">{group.title}</div>
++                {group.tasks.map((task) => {
++                  const running = task.status === 'running';
++                  const completed = task.status === 'completed';
++                  const durationLabel = formatTaskDuration(task as TimedPlanTask);
++                  return (
++                    <RecordCard
++                      actions={
++                        <div className="item-actions">
++                          <button
++                            type="button"
++                            className="btn-link"
++                            disabled={completed || running}
++                            onClick={() => onRun?.(task)}
++                          >
++                            执行
++                          </button>
++                          <button
++                            type="button"
++                            className="btn-link danger-link"
++                            disabled={!running}
++                            onClick={() => onStop?.(task)}
++                          >
++                            停止
++                          </button>
++                        </div>
++                      }
++                      key={task.id}
++                      title={task.title}
++                      status={task.status}
++                      body={
++                        task.file_path ? (
++                          <button
++                            type="button"
++                            className="btn-link task-file-link mono"
++                            disabled={!onOpenPlan}
++                            title={task.file_path}
++                            aria-label={`预览 ${task.file_path}`}
++                            onClick={() => onOpenPlan?.(task)}
++                          >
++                            {task.file_path}
++                          </button>
++                        ) : null
++                      }
++                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
++                    />
++                  );
++                })}
++              </section>
+             );
+           })}
+         </div>
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index d3783cb2202c3a258f5af9da7f63ff1d1e2d71b8..60585f0a13ec1622329f31d504b78c02712a86ca
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -25,6 +25,14 @@
+   tone?: TaskEventTone;
+ };
+ 
++type TaskPlanGroup = {
++  key: string;
++  title: string;
++  tasks: PlanTask[];
++  firstIndex: number;
++  sortTime: number | null;
++};
++
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+ 
+ const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+@@ -80,6 +88,86 @@
+   return true;
+ }
+ 
++function readTaskTime(value: string | null | undefined) {
++  const time = Date.parse(String(value || ''));
++  return Number.isFinite(time) ? time : null;
++}
++
++function taskSortTime(task: TimedPlanTask) {
++  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
++}
++
++function latestTaskTime(tasks: TimedPlanTask[]) {
++  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
++  for (const fields of fieldGroups) {
++    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
++    const validTimes = times.filter((time): time is number => time !== null);
++    if (validTimes.length) return Math.max(...validTimes);
++  }
++  return null;
++}
++
++function taskPlanGroupTitle(task: PlanTask) {
++  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
++}
++
++function taskPlanGroupKey(task: TimedPlanTask, index: number) {
++  const planId = readPlanId(task);
++  if (planId !== null) return `plan:${planId}`;
++  if (task.file_path) return `file:${task.file_path}`;
++  return `unknown:${index}`;
++}
++
++function groupTasksByPlan(tasks: PlanTask[]) {
++  const groups = new Map<string, TaskPlanGroup>();
++  tasks.forEach((task, index) => {
++    const timedTask = task as TimedPlanTask;
++    const key = taskPlanGroupKey(timedTask, index);
++    const existingGroup = groups.get(key);
++    if (existingGroup) {
++      existingGroup.tasks.push(task);
++      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
++      return;
++    }
++
++    groups.set(key, {
++      key,
++      title: taskPlanGroupTitle(task),
++      tasks: [task],
++      firstIndex: index,
++      sortTime: null,
++    });
++  });
++
++  return Array.from(groups.values())
++    .map((group) => {
++      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
++      const sortedTasks = indexedTasks
++        .sort((left, right) => {
++          const leftTime = taskSortTime(left.task as TimedPlanTask);
++          const rightTime = taskSortTime(right.task as TimedPlanTask);
++          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
++          if (leftTime !== null && rightTime === null) return -1;
++          if (leftTime === null && rightTime !== null) return 1;
++          return left.index - right.index;
++        })
++        .map(({ task }) => task);
++      return {
++        ...group,
++        tasks: sortedTasks,
++        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++      };
++    })
++    .sort((left, right) => {
++      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
++        return right.sortTime - left.sortTime;
++      }
++      if (left.sortTime !== null && right.sortTime === null) return -1;
++      if (left.sortTime === null && right.sortTime !== null) return 1;
++      return left.firstIndex - right.firstIndex;
++    });
++}
++
+ function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+   const timedTasks = tasks as TimedPlanTask[];
+   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+@@ -544,6 +632,7 @@
+     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+     [activeFilter, tasks],
+   );
++  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+   const filterCounts = useMemo(
+     () =>
+       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+@@ -579,43 +668,60 @@
+           );
+         })}
+       </div>
+-      {visibleTasks.length ? (
++      {taskGroups.length ? (
+         <div className="list compact">
+-          {visibleTasks.map((task) => {
+-            const running = task.status === 'running';
+-            const completed = task.status === 'completed';
+-            const durationLabel = formatTaskDuration(task as TimedPlanTask);
++          {taskGroups.map((group) => {
+             return (
+-              <RecordCard
+-                actions={
+-                  <div className="item-actions">
+-                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+-                      执行
+-                    </button>
+-                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+-                      停止
+-                    </button>
+-                  </div>
+-                }
+-                key={task.id}
+-                title={task.title}
+-                status={task.status}
+-                body={
+-                  task.file_path ? (
+-                    <button
+-                      type="button"
+-                      className="btn-link task-file-link mono"
+-                      disabled={!onOpenPlan}
+-                      title={task.file_path}
+-                      aria-label={`预览 ${task.file_path}`}
+-                      onClick={() => onOpenPlan?.(task)}
+-                    >
+-                      {task.file_path}
+-                    </button>
+-                  ) : null
+-                }
+-                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+-              />
++              <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
++                <div className="task-plan-group-title">{group.title}</div>
++                {group.tasks.map((task) => {
++                  const running = task.status === 'running';
++                  const completed = task.status === 'completed';
++                  const durationLabel = formatTaskDuration(task as TimedPlanTask);
++                  return (
++                    <RecordCard
++                      actions={
++                        <div className="item-actions">
++                          <button
++                            type="button"
++                            className="btn-link"
++                            disabled={completed || running}
++                            onClick={() => onRun?.(task)}
++                          >
++                            执行
++                          </button>
++                          <button
++                            type="button"
++                            className="btn-link danger-link"
++                            disabled={!running}
++                            onClick={() => onStop?.(task)}
++                          >
++                            停止
++                          </button>
++                        </div>
++                      }
++                      key={task.id}
++                      title={task.title}
++                      status={task.status}
++                      body={
++                        task.file_path ? (
++                          <button
++                            type="button"
++                            className="btn-link task-file-link mono"
++                            disabled={!onOpenPlan}
++                            title={task.file_path}
++                            aria-label={`预览 ${task.file_path}`}
++                            onClick={() => onOpenPlan?.(task)}
++                          >
++                            {task.file_path}
++                          </button>
++                        ) : null
++                      }
++                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
++                    />
++                  );
++                })}
++              </section>
+             );
+           })}
+         </div>
+
+codex
+分组渲染已替换；我做一次局部代码核对，不启动任何验证命令。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; foreach("'$r in @(@(20,150),@(560,660))){ "--- lines $($r[0])-$($r[1]) ---"; for($i=$r[0]; $i -le $r[1]; $i++){ if($i -le $lines.Length){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 588ms:
+--- lines 20-150 ---
+  20: type TaskEventDisplay = {
+  21:   title: string;
+  22:   body: string;
+  23:   meta: string;
+  24:   badge?: string;
+  25:   tone?: TaskEventTone;
+  26: };
+  27: 
+  28: type TaskPlanGroup = {
+  29:   key: string;
+  30:   title: string;
+  31:   tasks: PlanTask[];
+  32:   firstIndex: number;
+  33:   sortTime: number | null;
+  34: };
+  35: 
+  36: type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+  37: 
+  38: const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+  39:   { id: 'all', label: '全部', emptyText: '暂无任务。' },
+  40:   { id: 'running', label: '进行中', emptyText: '暂无进行中任务。' },
+  41:   { id: 'queued', label: '队列中', emptyText: '暂无队列中任务。' },
+  42:   { id: 'completed', label: '已完成', emptyText: '暂无已完成任务。' },
+  43: ];
+  44: 
+  45: const TASK_EVENT_PRESENTATION: Record<TaskEventTone, { action: string; badge: string }> = {
+  46:   start: { action: '开始了', badge: '开始' },
+  47:   success: { action: '结束了', badge: '成功' },
+  48:   failed: { action: '执行失败', badge: '失败' },
+  49:   stopped: { action: '停止了', badge: '停止' },
+  50:   stopping: { action: '请求停止', badge: '停止中' },
+  51:   updated: { action: '更新了', badge: '任务' },
+  52: };
+  53: 
+  54: function readDurationMs(task: TimedPlanTask) {
+  55:   if (task.duration_ms === null || typeof task.duration_ms === 'undefined') return null;
+  56:   const duration = Number(task.duration_ms);
+  57:   return Number.isFinite(duration) && duration >= 0 ? duration : null;
+  58: }
+  59: 
+  60: function getTaskDurationMs(task: TimedPlanTask) {
+  61:   if (task.status === 'running') return getRunningDurationMs(readDurationMs(task), task.started_at);
+  62:   return readDurationMs(task);
+  63: }
+  64: 
+  65: function readPlanId(task: TimedPlanTask) {
+  66:   if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+  67:   const planId = Number(task.plan_id);
+  68:   return Number.isFinite(planId) ? planId : null;
+  69: }
+  70: 
+  71: function formatTaskDuration(task: TimedPlanTask) {
+  72:   const duration = getTaskDurationMs(task);
+  73:   if (task.status === 'running') return `已运行 ${formatDuration(duration, '0秒')}`;
+  74:   if (duration === null || (duration === 0 && !task.started_at && !task.finished_at)) return '未开始';
+  75:   return `耗时 ${formatDuration(duration, '0秒')}`;
+  76: }
+  77: 
+  78: function normalizeTaskStatus(status: string | null | undefined) {
+  79:   return String(status || '').trim().toLowerCase();
+  80: }
+  81: 
+  82: function matchesTaskStatusFilter(task: PlanTask, filter: TaskStatusFilter) {
+  83:   const status = normalizeTaskStatus(task.status);
+  84:   if (filter === 'all') return true;
+  85:   if (filter === 'running') return ['running', 'processing', 'stopping'].includes(status);
+  86:   if (filter === 'queued') return ['pending', 'queued', 'waiting'].includes(status);
+  87:   if (filter === 'completed') return ['completed', 'done', 'passed', 'accepted'].includes(status);
+  88:   return true;
+  89: }
+  90: 
+  91: function readTaskTime(value: string | null | undefined) {
+  92:   const time = Date.parse(String(value || ''));
+  93:   return Number.isFinite(time) ? time : null;
+  94: }
+  95: 
+  96: function taskSortTime(task: TimedPlanTask) {
+  97:   return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
+  98: }
+  99: 
+ 100: function latestTaskTime(tasks: TimedPlanTask[]) {
+ 101:   const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
+ 102:   for (const fields of fieldGroups) {
+ 103:     const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
+ 104:     const validTimes = times.filter((time): time is number => time !== null);
+ 105:     if (validTimes.length) return Math.max(...validTimes);
+ 106:   }
+ 107:   return null;
+ 108: }
+ 109: 
+ 110: function taskPlanGroupTitle(task: PlanTask) {
+ 111:   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ 112: }
+ 113: 
+ 114: function taskPlanGroupKey(task: TimedPlanTask, index: number) {
+ 115:   const planId = readPlanId(task);
+ 116:   if (planId !== null) return `plan:${planId}`;
+ 117:   if (task.file_path) return `file:${task.file_path}`;
+ 118:   return `unknown:${index}`;
+ 119: }
+ 120: 
+ 121: function groupTasksByPlan(tasks: PlanTask[]) {
+ 122:   const groups = new Map<string, TaskPlanGroup>();
+ 123:   tasks.forEach((task, index) => {
+ 124:     const timedTask = task as TimedPlanTask;
+ 125:     const key = taskPlanGroupKey(timedTask, index);
+ 126:     const existingGroup = groups.get(key);
+ 127:     if (existingGroup) {
+ 128:       existingGroup.tasks.push(task);
+ 129:       if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
+ 130:       return;
+ 131:     }
+ 132: 
+ 133:     groups.set(key, {
+ 134:       key,
+ 135:       title: taskPlanGroupTitle(task),
+ 136:       tasks: [task],
+ 137:       firstIndex: index,
+ 138:       sortTime: null,
+ 139:     });
+ 140:   });
+ 141: 
+ 142:   return Array.from(groups.values())
+ 143:     .map((group) => {
+ 144:       const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
+ 145:       const sortedTasks = indexedTasks
+ 146:         .sort((left, right) => {
+ 147:           const leftTime = taskSortTime(left.task as TimedPlanTask);
+ 148:           const rightTime = taskSortTime(right.task as TimedPlanTask);
+ 149:           if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+ 150:           if (leftTime !== null && rightTime === null) return -1;
+--- lines 560-660 ---
+ 560:             </div>
+ 561:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+ 562:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+ 563:                 <div className="plan-reader-summary-item">
+ 564:                   <dt>状态</dt>
+ 565:                   <dd>{readingPlan.status}</dd>
+ 566:                 </div>
+ 567:                 <div className="plan-reader-summary-item">
+ 568:                   <dt>更新时间</dt>
+ 569:                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+ 570:                 </div>
+ 571:                 <div className="plan-reader-summary-item">
+ 572:                   <dt>哈希</dt>
+ 573:                   <dd className="mono" title={readerHash}>
+ 574:                     {readerHash?.slice(0, 12) || '-'}
+ 575:                   </dd>
+ 576:                 </div>
+ 577:               </dl>
+ 578: 
+ 579:               {latestPlanUpdated ? (
+ 580:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+ 581:                   Plan 列表信息已更新，可刷新读取最新正文。
+ 582:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 583:                     刷新读取
+ 584:                   </button>
+ 585:                 </div>
+ 586:               ) : null}
+ 587:               {planReadError ? (
+ 588:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+ 589:                   <span>{planReadError}</span>
+ 590:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 591:                     重试
+ 592:                   </button>
+ 593:                 </div>
+ 594:               ) : null}
+ 595:               {planReading ? (
+ 596:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+ 597:                   正在读取 Plan 全文…
+ 598:                 </div>
+ 599:               ) : null}
+ 600:               {!planReading && !planReadError ? (
+ 601:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+ 602:                   <MarkdownReader
+ 603:                     markdown={planReadResult?.markdown ?? ''}
+ 604:                     emptyMessage="暂无计划正文"
+ 605:                     ariaLabel="Plan Markdown 正文内容"
+ 606:                   />
+ 607:                 </section>
+ 608:               ) : null}
+ 609:             </div>
+ 610:           </div>
+ 611:         </div>
+ 612:       ) : null}
+ 613:     </>
+ 614:   );
+ 615: }
+ 616: 
+ 617: export function TaskList({
+ 618:   emptyText = '暂无任务。',
+ 619:   tasks,
+ 620:   onOpenPlan,
+ 621:   onRun,
+ 622:   onStop,
+ 623: }: {
+ 624:   emptyText?: string;
+ 625:   tasks: PlanTask[];
+ 626:   onOpenPlan?: (task: PlanTask) => void;
+ 627:   onRun?: (task: PlanTask) => void;
+ 628:   onStop?: (task: PlanTask) => void;
+ 629: }) {
+ 630:   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+ 631:   const visibleTasks = useMemo(
+ 632:     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+ 633:     [activeFilter, tasks],
+ 634:   );
+ 635:   const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+ 636:   const filterCounts = useMemo(
+ 637:     () =>
+ 638:       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+ 639:         (counts, filter) => ({
+ 640:           ...counts,
+ 641:           [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+ 642:         }),
+ 643:         { all: 0, running: 0, queued: 0, completed: 0 },
+ 644:       ),
+ 645:     [tasks],
+ 646:   );
+ 647:   const activeFilterConfig =
+ 648:     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+ 649:   const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+ 650: 
+ 651:   return (
+ 652:     <div className="task-list-panel">
+ 653:       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+ 654:         {TASK_STATUS_FILTERS.map((filter) => {
+ 655:           const active = activeFilter === filter.id;
+ 656:           return (
+ 657:             <button
+ 658:               key={filter.id}
+ 659:               type="button"
+ 660:               role="tab"
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index d3783cb2202c3a258f5af9da7f63ff1d1e2d71b8..60585f0a13ec1622329f31d504b78c02712a86ca
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -25,6 +25,14 @@
+   tone?: TaskEventTone;
+ };
+ 
++type TaskPlanGroup = {
++  key: string;
++  title: string;
++  tasks: PlanTask[];
++  firstIndex: number;
++  sortTime: number | null;
++};
++
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+ 
+ const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+@@ -80,6 +88,86 @@
+   return true;
+ }
+ 
++function readTaskTime(value: string | null | undefined) {
++  const time = Date.parse(String(value || ''));
++  return Number.isFinite(time) ? time : null;
++}
++
++function taskSortTime(task: TimedPlanTask) {
++  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
++}
++
++function latestTaskTime(tasks: TimedPlanTask[]) {
++  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
++  for (const fields of fieldGroups) {
++    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
++    const validTimes = times.filter((time): time is number => time !== null);
++    if (validTimes.length) return Math.max(...validTimes);
++  }
++  return null;
++}
++
++function taskPlanGroupTitle(task: PlanTask) {
++  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
++}
++
++function taskPlanGroupKey(task: TimedPlanTask, index: number) {
++  const planId = readPlanId(task);
++  if (planId !== null) return `plan:${planId}`;
++  if (task.file_path) return `file:${task.file_path}`;
++  return `unknown:${index}`;
++}
++
++function groupTasksByPlan(tasks: PlanTask[]) {
++  const groups = new Map<string, TaskPlanGroup>();
++  tasks.forEach((task, index) => {
++    const timedTask = task as TimedPlanTask;
++    const key = taskPlanGroupKey(timedTask, index);
++    const existingGroup = groups.get(key);
++    if (existingGroup) {
++      existingGroup.tasks.push(task);
++      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
++      return;
++    }
++
++    groups.set(key, {
++      key,
++      title: taskPlanGroupTitle(task),
++      tasks: [task],
++      firstIndex: index,
++      sortTime: null,
++    });
++  });
++
++  return Array.from(groups.values())
++    .map((group) => {
++      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
++      const sortedTasks = indexedTasks
++        .sort((left, right) => {
++          const leftTime = taskSortTime(left.task as TimedPlanTask);
++          const rightTime = taskSortTime(right.task as TimedPlanTask);
++          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
++          if (leftTime !== null && rightTime === null) return -1;
++          if (leftTime === null && rightTime !== null) return 1;
++          return left.index - right.index;
++        })
++        .map(({ task }) => task);
++      return {
++        ...group,
++        tasks: sortedTasks,
++        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++      };
++    })
++    .sort((left, right) => {
++      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
++        return right.sortTime - left.sortTime;
++      }
++      if (left.sortTime !== null && right.sortTime === null) return -1;
++      if (left.sortTime === null && right.sortTime !== null) return 1;
++      return left.firstIndex - right.firstIndex;
++    });
++}
++
+ function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+   const timedTasks = tasks as TimedPlanTask[];
+   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+@@ -544,6 +632,7 @@
+     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+     [activeFilter, tasks],
+   );
++  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+   const filterCounts = useMemo(
+     () =>
+       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+@@ -579,43 +668,60 @@
+           );
+         })}
+       </div>
+-      {visibleTasks.length ? (
++      {taskGroups.length ? (
+         <div className="list compact">
+-          {visibleTasks.map((task) => {
+-            const running = task.status === 'running';
+-            const completed = task.status === 'completed';
+-            const durationLabel = formatTaskDuration(task as TimedPlanTask);
++          {taskGroups.map((group) => {
+             return (
+-              <RecordCard
+-                actions={
+-                  <div className="item-actions">
+-                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+-                      执行
+-                    </button>
+-                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+-                      停止
+-                    </button>
+-                  </div>
+-                }
+-                key={task.id}
+-                title={task.title}
+-                status={task.status}
+-                body={
+-                  task.file_path ? (
+-                    <button
+-                      type="button"
+-                      className="btn-link task-file-link mono"
+-                      disabled={!onOpenPlan}
+-                      title={task.file_path}
+-                      aria-label={`预览 ${task.file_path}`}
+-                      onClick={() => onOpenPlan?.(task)}
+-                    >
+-                      {task.file_path}
+-                    </button>
+-                  ) : null
+-                }
+-                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+-              />
++              <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
++                <div className="task-plan-group-title">{group.title}</div>
++                {group.tasks.map((task) => {
++                  const running = task.status === 'running';
++                  const completed = task.status === 'completed';
++                  const durationLabel = formatTaskDuration(task as TimedPlanTask);
++                  return (
++                    <RecordCard
++                      actions={
++                        <div className="item-actions">
++                          <button
++                            type="button"
++                            className="btn-link"
++                            disabled={completed || running}
++                            onClick={() => onRun?.(task)}
++                          >
++                            执行
++                          </button>
++                          <button
++                            type="button"
++                            className="btn-link danger-link"
++                            disabled={!running}
++                            onClick={() => onStop?.(task)}
++                          >
++                            停止
++                          </button>
++                        </div>
++                      }
++                      key={task.id}
++                      title={task.title}
++                      status={task.status}
++                      body={
++                        task.file_path ? (
++                          <button
++                            type="button"
++                            className="btn-link task-file-link mono"
++                            disabled={!onOpenPlan}
++                            title={task.file_path}
++                            aria-label={`预览 ${task.file_path}`}
++                            onClick={() => onOpenPlan?.(task)}
++                          >
++                            {task.file_path}
++                          </button>
++                        ) : null
++                      }
++                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
++                    />
++                  );
++                })}
++              </section>
+             );
+           })}
+         </div>
+
+codex
+局部输出被截断了，我会再看分组函数中段和渲染尾部。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; foreach("'$r in @(@(121,180),@(675,745))){ "--- lines $($r[0])-$($r[1]) ---"; for($i=$r[0]; $i -le $r[1]; $i++){ if($i -le $lines.Length){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 516ms:
+--- lines 121-180 ---
+ 121: function groupTasksByPlan(tasks: PlanTask[]) {
+ 122:   const groups = new Map<string, TaskPlanGroup>();
+ 123:   tasks.forEach((task, index) => {
+ 124:     const timedTask = task as TimedPlanTask;
+ 125:     const key = taskPlanGroupKey(timedTask, index);
+ 126:     const existingGroup = groups.get(key);
+ 127:     if (existingGroup) {
+ 128:       existingGroup.tasks.push(task);
+ 129:       if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
+ 130:       return;
+ 131:     }
+ 132: 
+ 133:     groups.set(key, {
+ 134:       key,
+ 135:       title: taskPlanGroupTitle(task),
+ 136:       tasks: [task],
+ 137:       firstIndex: index,
+ 138:       sortTime: null,
+ 139:     });
+ 140:   });
+ 141: 
+ 142:   return Array.from(groups.values())
+ 143:     .map((group) => {
+ 144:       const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
+ 145:       const sortedTasks = indexedTasks
+ 146:         .sort((left, right) => {
+ 147:           const leftTime = taskSortTime(left.task as TimedPlanTask);
+ 148:           const rightTime = taskSortTime(right.task as TimedPlanTask);
+ 149:           if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+ 150:           if (leftTime !== null && rightTime === null) return -1;
+ 151:           if (leftTime === null && rightTime !== null) return 1;
+ 152:           return left.index - right.index;
+ 153:         })
+ 154:         .map(({ task }) => task);
+ 155:       return {
+ 156:         ...group,
+ 157:         tasks: sortedTasks,
+ 158:         sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
+ 159:       };
+ 160:     })
+ 161:     .sort((left, right) => {
+ 162:       if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
+ 163:         return right.sortTime - left.sortTime;
+ 164:       }
+ 165:       if (left.sortTime !== null && right.sortTime === null) return -1;
+ 166:       if (left.sortTime === null && right.sortTime !== null) return 1;
+ 167:       return left.firstIndex - right.firstIndex;
+ 168:     });
+ 169: }
+ 170: 
+ 171: function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+ 172:   const timedTasks = tasks as TimedPlanTask[];
+ 173:   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+ 174:   if (!hasPlanIds) return planCount === 1 ? timedTasks : [];
+ 175:   return timedTasks.filter((task) => readPlanId(task) === plan.id);
+ 176: }
+ 177: 
+ 178: function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+ 179:   const totalMs = tasks.reduce((sum, task) => sum + (getTaskDurationMs(task) ?? 0), 0);
+ 180:   const completedMs = tasks.reduce(
+--- lines 675-745 ---
+ 675:               <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+ 676:                 <div className="task-plan-group-title">{group.title}</div>
+ 677:                 {group.tasks.map((task) => {
+ 678:                   const running = task.status === 'running';
+ 679:                   const completed = task.status === 'completed';
+ 680:                   const durationLabel = formatTaskDuration(task as TimedPlanTask);
+ 681:                   return (
+ 682:                     <RecordCard
+ 683:                       actions={
+ 684:                         <div className="item-actions">
+ 685:                           <button
+ 686:                             type="button"
+ 687:                             className="btn-link"
+ 688:                             disabled={completed || running}
+ 689:                             onClick={() => onRun?.(task)}
+ 690:                           >
+ 691:                             执行
+ 692:                           </button>
+ 693:                           <button
+ 694:                             type="button"
+ 695:                             className="btn-link danger-link"
+ 696:                             disabled={!running}
+ 697:                             onClick={() => onStop?.(task)}
+ 698:                           >
+ 699:                             停止
+ 700:                           </button>
+ 701:                         </div>
+ 702:                       }
+ 703:                       key={task.id}
+ 704:                       title={task.title}
+ 705:                       status={task.status}
+ 706:                       body={
+ 707:                         task.file_path ? (
+ 708:                           <button
+ 709:                             type="button"
+ 710:                             className="btn-link task-file-link mono"
+ 711:                             disabled={!onOpenPlan}
+ 712:                             title={task.file_path}
+ 713:                             aria-label={`预览 ${task.file_path}`}
+ 714:                             onClick={() => onOpenPlan?.(task)}
+ 715:                           >
+ 716:                             {task.file_path}
+ 717:                           </button>
+ 718:                         ) : null
+ 719:                       }
+ 720:                       meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+ 721:                     />
+ 722:                   );
+ 723:                 })}
+ 724:               </section>
+ 725:             );
+ 726:           })}
+ 727:         </div>
+ 728:       ) : (
+ 729:         <div className="empty">{currentEmptyText}</div>
+ 730:       )}
+ 731:     </div>
+ 732:   );
+ 733: }
+ 734: 
+ 735: export function EventList({ emptyText = '暂无事件。', events }: { emptyText?: string; events: AppEvent[] }) {
+ 736:   if (!events.length) return <div className="empty">{emptyText}</div>;
+ 737: 
+ 738:   return (
+ 739:     <div className="list compact event-list">
+ 740:       {events.map((event) => {
+ 741:         const display = formatEvent(event);
+ 742:         return (
+ 743:           <article className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`} key={event.id}>
+ 744:             <div className="item-title event-title">
+ 745:               <span>{display.title}</span>
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index d3783cb2202c3a258f5af9da7f63ff1d1e2d71b8..60585f0a13ec1622329f31d504b78c02712a86ca
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -25,6 +25,14 @@
+   tone?: TaskEventTone;
+ };
+ 
++type TaskPlanGroup = {
++  key: string;
++  title: string;
++  tasks: PlanTask[];
++  firstIndex: number;
++  sortTime: number | null;
++};
++
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+ 
+ const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+@@ -80,6 +88,86 @@
+   return true;
+ }
+ 
++function readTaskTime(value: string | null | undefined) {
++  const time = Date.parse(String(value || ''));
++  return Number.isFinite(time) ? time : null;
++}
++
++function taskSortTime(task: TimedPlanTask) {
++  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
++}
++
++function latestTaskTime(tasks: TimedPlanTask[]) {
++  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
++  for (const fields of fieldGroups) {
++    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
++    const validTimes = times.filter((time): time is number => time !== null);
++    if (validTimes.length) return Math.max(...validTimes);
++  }
++  return null;
++}
++
++function taskPlanGroupTitle(task: PlanTask) {
++  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
++}
++
++function taskPlanGroupKey(task: TimedPlanTask, index: number) {
++  const planId = readPlanId(task);
++  if (planId !== null) return `plan:${planId}`;
++  if (task.file_path) return `file:${task.file_path}`;
++  return `unknown:${index}`;
++}
++
++function groupTasksByPlan(tasks: PlanTask[]) {
++  const groups = new Map<string, TaskPlanGroup>();
++  tasks.forEach((task, index) => {
++    const timedTask = task as TimedPlanTask;
++    const key = taskPlanGroupKey(timedTask, index);
++    const existingGroup = groups.get(key);
++    if (existingGroup) {
++      existingGroup.tasks.push(task);
++      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
++      return;
++    }
++
++    groups.set(key, {
++      key,
++      title: taskPlanGroupTitle(task),
++      tasks: [task],
++      firstIndex: index,
++      sortTime: null,
++    });
++  });
++
++  return Array.from(groups.values())
++    .map((group) => {
++      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
++      const sortedTasks = indexedTasks
++        .sort((left, right) => {
++          const leftTime = taskSortTime(left.task as TimedPlanTask);
++          const rightTime = taskSortTime(right.task as TimedPlanTask);
++          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
++          if (leftTime !== null && rightTime === null) return -1;
++          if (leftTime === null && rightTime !== null) return 1;
++          return left.index - right.index;
++        })
++        .map(({ task }) => task);
++      return {
++        ...group,
++        tasks: sortedTasks,
++        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++      };
++    })
++    .sort((left, right) => {
++      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
++        return right.sortTime - left.sortTime;
++      }
++      if (left.sortTime !== null && right.sortTime === null) return -1;
++      if (left.sortTime === null && right.sortTime !== null) return 1;
++      return left.firstIndex - right.firstIndex;
++    });
++}
++
+ function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+   const timedTasks = tasks as TimedPlanTask[];
+   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+@@ -544,6 +632,7 @@
+     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+     [activeFilter, tasks],
+   );
++  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+   const filterCounts = useMemo(
+     () =>
+       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+@@ -579,43 +668,60 @@
+           );
+         })}
+       </div>
+-      {visibleTasks.length ? (
++      {taskGroups.length ? (
+         <div className="list compact">
+-          {visibleTasks.map((task) => {
+-            const running = task.status === 'running';
+-            const completed = task.status === 'completed';
+-            const durationLabel = formatTaskDuration(task as TimedPlanTask);
++          {taskGroups.map((group) => {
+             return (
+-              <RecordCard
+-                actions={
+-                  <div className="item-actions">
+-                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+-                      执行
+-                    </button>
+-                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+-                      停止
+-                    </button>
+-                  </div>
+-                }
+-                key={task.id}
+-                title={task.title}
+-                status={task.status}
+-                body={
+-                  task.file_path ? (
+-                    <button
+-                      type="button"
+-                      className="btn-link task-file-link mono"
+-                      disabled={!onOpenPlan}
+-                      title={task.file_path}
+-                      aria-label={`预览 ${task.file_path}`}
+-                      onClick={() => onOpenPlan?.(task)}
+-                    >
+-                      {task.file_path}
+-                    </button>
+-                  ) : null
+-                }
+-                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+-              />
++              <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
++                <div className="task-plan-group-title">{group.title}</div>
++                {group.tasks.map((task) => {
++                  const running = task.status === 'running';
++                  const completed = task.status === 'completed';
++                  const durationLabel = formatTaskDuration(task as TimedPlanTask);
++                  return (
++                    <RecordCard
++                      actions={
++                        <div className="item-actions">
++                          <button
++                            type="button"
++                            className="btn-link"
++                            disabled={completed || running}
++                            onClick={() => onRun?.(task)}
++                          >
++                            执行
++                          </button>
++                          <button
++                            type="button"
++                            className="btn-link danger-link"
++                            disabled={!running}
++                            onClick={() => onStop?.(task)}
++                          >
++                            停止
++                          </button>
++                        </div>
++                      }
++                      key={task.id}
++                      title={task.title}
++                      status={task.status}
++                      body={
++                        task.file_path ? (
++                          <button
++                            type="button"
++                            className="btn-link task-file-link mono"
++                            disabled={!onOpenPlan}
++                            title={task.file_path}
++                            aria-label={`预览 ${task.file_path}`}
++                            onClick={() => onOpenPlan?.(task)}
++                          >
++                            {task.file_path}
++                          </button>
++                        ) : null
++                      }
++                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
++                    />
++                  );
++                })}
++              </section>
+             );
+           })}
+         </div>
+
+codex
+代码核对通过范围检查；最后只确认本次改动文件，没有运行验收命令。
+exec
+powershell.exe -Command "git status --short -- src\\renderer\\components\\PlanLists.tsx" in D:\project\GitHub\autoplan
+ succeeded in 380ms:
+ M src/renderer/components/PlanLists.tsx
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index d3783cb2202c3a258f5af9da7f63ff1d1e2d71b8..60585f0a13ec1622329f31d504b78c02712a86ca
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -25,6 +25,14 @@
+   tone?: TaskEventTone;
+ };
+ 
++type TaskPlanGroup = {
++  key: string;
++  title: string;
++  tasks: PlanTask[];
++  firstIndex: number;
++  sortTime: number | null;
++};
++
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+ 
+ const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+@@ -80,6 +88,86 @@
+   return true;
+ }
+ 
++function readTaskTime(value: string | null | undefined) {
++  const time = Date.parse(String(value || ''));
++  return Number.isFinite(time) ? time : null;
++}
++
++function taskSortTime(task: TimedPlanTask) {
++  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
++}
++
++function latestTaskTime(tasks: TimedPlanTask[]) {
++  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
++  for (const fields of fieldGroups) {
++    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
++    const validTimes = times.filter((time): time is number => time !== null);
++    if (validTimes.length) return Math.max(...validTimes);
++  }
++  return null;
++}
++
++function taskPlanGroupTitle(task: PlanTask) {
++  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
++}
++
++function taskPlanGroupKey(task: TimedPlanTask, index: number) {
++  const planId = readPlanId(task);
++  if (planId !== null) return `plan:${planId}`;
++  if (task.file_path) return `file:${task.file_path}`;
++  return `unknown:${index}`;
++}
++
++function groupTasksByPlan(tasks: PlanTask[]) {
++  const groups = new Map<string, TaskPlanGroup>();
++  tasks.forEach((task, index) => {
++    const timedTask = task as TimedPlanTask;
++    const key = taskPlanGroupKey(timedTask, index);
++    const existingGroup = groups.get(key);
++    if (existingGroup) {
++      existingGroup.tasks.push(task);
++      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
++      return;
++    }
++
++    groups.set(key, {
++      key,
++      title: taskPlanGroupTitle(task),
++      tasks: [task],
++      firstIndex: index,
++      sortTime: null,
++    });
++  });
++
++  return Array.from(groups.values())
++    .map((group) => {
++      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
++      const sortedTasks = indexedTasks
++        .sort((left, right) => {
++          const leftTime = taskSortTime(left.task as TimedPlanTask);
++          const rightTime = taskSortTime(right.task as TimedPlanTask);
++          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
++          if (leftTime !== null && rightTime === null) return -1;
++          if (leftTime === null && rightTime !== null) return 1;
++          return left.index - right.index;
++        })
++        .map(({ task }) => task);
++      return {
++        ...group,
++        tasks: sortedTasks,
++        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++      };
++    })
++    .sort((left, right) => {
++      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
++        return right.sortTime - left.sortTime;
++      }
++      if (left.sortTime !== null && right.sortTime === null) return -1;
++      if (left.sortTime === null && right.sortTime !== null) return 1;
++      return left.firstIndex - right.firstIndex;
++    });
++}
++
+ function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+   const timedTasks = tasks as TimedPlanTask[];
+   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+@@ -544,6 +632,7 @@
+     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+     [activeFilter, tasks],
+   );
++  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+   const filterCounts = useMemo(
+     () =>
+       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+@@ -579,43 +668,60 @@
+           );
+         })}
+       </div>
+-      {visibleTasks.length ? (
++      {taskGroups.length ? (
+         <div className="list compact">
+-          {visibleTasks.map((task) => {
+-            const running = task.status === 'running';
+-            const completed = task.status === 'completed';
+-            const durationLabel = formatTaskDuration(task as TimedPlanTask);
++          {taskGroups.map((group) => {
+             return (
+-              <RecordCard
+-                actions={
+-                  <div className="item-actions">
+-                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+-                      执行
+-                    </button>
+-                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+-                      停止
+-                    </button>
+-                  </div>
+-                }
+-                key={task.id}
+-                title={task.title}
+-                status={task.status}
+-                body={
+-                  task.file_path ? (
+-                    <button
+-                      type="button"
+-                      className="btn-link task-file-link mono"
+-                      disabled={!onOpenPlan}
+-                      title={task.file_path}
+-                      aria-label={`预览 ${task.file_path}`}
+-                      onClick={() => onOpenPlan?.(task)}
+-                    >
+-                      {task.file_path}
+-                    </button>
+-                  ) : null
+-                }
+-                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+-              />
++              <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
++                <div className="task-plan-group-title">{group.title}</div>
++                {group.tasks.map((task) => {
++                  const running = task.status === 'running';
++                  const completed = task.status === 'completed';
++                  const durationLabel = formatTaskDuration(task as TimedPlanTask);
++                  return (
++                    <RecordCard
++                      actions={
++                        <div className="item-actions">
++                          <button
++                            type="button"
++                            className="btn-link"
++                            disabled={completed || running}
++                            onClick={() => onRun?.(task)}
++                          >
++                            执行
++                          </button>
++                          <button
++                            type="button"
++                            className="btn-link danger-link"
++                            disabled={!running}
++                            onClick={() => onStop?.(task)}
++                          >
++                            停止
++                          </button>
++                        </div>
++                      }
++                      key={task.id}
++                      title={task.title}
++                      status={task.status}
++                      body={
++                        task.file_path ? (
++                          <button
++                            type="button"
++                            className="btn-link task-file-link mono"
++                            disabled={!onOpenPlan}
++                            title={task.file_path}
++                            aria-label={`预览 ${task.file_path}`}
++                            onClick={() => onOpenPlan?.(task)}
++                          >
++                            {task.file_path}
++                          </button>
++                        ) : null
++                      }
++                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
++                    />
++                  );
++                })}
++              </section>
+             );
+           })}
+         </div>
+
+codex
+已完成 P002，仅修改任务 scope 内文件，未修改 plan 文件、未勾选 checkbox，也未运行测试/构建/lint。
+
+- 在 `src/renderer/components/PlanLists.tsx:28` 新增任务计划分组结构。
+- 在 `src/renderer/components/PlanLists.tsx:91` 新增按 `finished_at`、`started_at`、`updated_at` 读取排序时间的工具逻辑。
+- 在 `src/renderer/components/PlanLists.tsx:121` 实现按 `plan_id` 优先、`file_path` 兜底的计划分组，并按组内最新时间倒序排序。
+- 在 `src/renderer/components/PlanLists.tsx:635` 让状态筛选先过滤任务，再生成分组。
+- 在 `src/renderer/components/PlanLists.tsx:675` 将任务列表渲染为计划分组，保留执行、停止、预览计划按钮行为。
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index d3783cb2202c3a258f5af9da7f63ff1d1e2d71b8..60585f0a13ec1622329f31d504b78c02712a86ca
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -25,6 +25,14 @@
+   tone?: TaskEventTone;
+ };
+ 
++type TaskPlanGroup = {
++  key: string;
++  title: string;
++  tasks: PlanTask[];
++  firstIndex: number;
++  sortTime: number | null;
++};
++
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+ 
+ const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+@@ -80,6 +88,86 @@
+   return true;
+ }
+ 
++function readTaskTime(value: string | null | undefined) {
++  const time = Date.parse(String(value || ''));
++  return Number.isFinite(time) ? time : null;
++}
++
++function taskSortTime(task: TimedPlanTask) {
++  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
++}
++
++function latestTaskTime(tasks: TimedPlanTask[]) {
++  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
++  for (const fields of fieldGroups) {
++    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
++    const validTimes = times.filter((time): time is number => time !== null);
++    if (validTimes.length) return Math.max(...validTimes);
++  }
++  return null;
++}
++
++function taskPlanGroupTitle(task: PlanTask) {
++  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
++}
++
++function taskPlanGroupKey(task: TimedPlanTask, index: number) {
++  const planId = readPlanId(task);
++  if (planId !== null) return `plan:${planId}`;
++  if (task.file_path) return `file:${task.file_path}`;
++  return `unknown:${index}`;
++}
++
++function groupTasksByPlan(tasks: PlanTask[]) {
++  const groups = new Map<string, TaskPlanGroup>();
++  tasks.forEach((task, index) => {
++    const timedTask = task as TimedPlanTask;
++    const key = taskPlanGroupKey(timedTask, index);
++    const existingGroup = groups.get(key);
++    if (existingGroup) {
++      existingGroup.tasks.push(task);
++      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
++      return;
++    }
++
++    groups.set(key, {
++      key,
++      title: taskPlanGroupTitle(task),
++      tasks: [task],
++      firstIndex: index,
++      sortTime: null,
++    });
++  });
++
++  return Array.from(groups.values())
++    .map((group) => {
++      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
++      const sortedTasks = indexedTasks
++        .sort((left, right) => {
++          const leftTime = taskSortTime(left.task as TimedPlanTask);
++          const rightTime = taskSortTime(right.task as TimedPlanTask);
++          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
++          if (leftTime !== null && rightTime === null) return -1;
++          if (leftTime === null && rightTime !== null) return 1;
++          return left.index - right.index;
++        })
++        .map(({ task }) => task);
++      return {
++        ...group,
++        tasks: sortedTasks,
++        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++      };
++    })
++    .sort((left, right) => {
++      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
++        return right.sortTime - left.sortTime;
++      }
++      if (left.sortTime !== null && right.sortTime === null) return -1;
++      if (left.sortTime === null && right.sortTime !== null) return 1;
++      return left.firstIndex - right.firstIndex;
++    });
++}
++
+ function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+   const timedTasks = tasks as TimedPlanTask[];
+   const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+@@ -544,6 +632,7 @@
+     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+     [activeFilter, tasks],
+   );
++  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+   const filterCounts = useMemo(
+     () =>
+       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+@@ -579,43 +668,60 @@
+           );
+         })}
+       </div>
+-      {visibleTasks.length ? (
++      {taskGroups.length ? (
+         <div className="list compact">
+-          {visibleTasks.map((task) => {
+-            const running = task.status === 'running';
+-            const completed = task.status === 'completed';
+-            const durationLabel = formatTaskDuration(task as TimedPlanTask);
++          {taskGroups.map((group) => {
+             return (
+-              <RecordCard
+-                actions={
+-                  <div className="item-actions">
+-                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
+-                      执行
+-                    </button>
+-                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
+-                      停止
+-                    </button>
+-                  </div>
+-                }
+-                key={task.id}
+-                title={task.title}
+-                status={task.status}
+-                body={
+-                  task.file_path ? (
+-                    <button
+-                      type="button"
+-                      className="btn-link task-file-link mono"
+-                      disabled={!onOpenPlan}
+-                      title={task.file_path}
+-                      aria-label={`预览 ${task.file_path}`}
+-                      onClick={() => onOpenPlan?.(task)}
+-                    >
+-                      {task.file_path}
+-                    </button>
+-                  ) : null
+-                }
+-                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+-              />
++              <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
++                <div className="task-plan-group-title">{group.title}</div>
++                {group.tasks.map((task) => {
++                  const running = task.status === 'running';
++                  const completed = task.status === 'completed';
++                  const durationLabel = formatTaskDuration(task as TimedPlanTask);
++                  return (
++                    <RecordCard
++                      actions={
++                        <div className="item-actions">
++                          <button
++                            type="button"
++                            className="btn-link"
++                            disabled={completed || running}
++                            onClick={() => onRun?.(task)}
++                          >
++                            执行
++                          </button>
++                          <button
++                            type="button"
++                            className="btn-link danger-link"
++                            disabled={!running}
++                            onClick={() => onStop?.(task)}
++                          >
++                            停止
++                          </button>
++                        </div>
++                      }
++                      key={task.id}
++                      title={task.title}
++                      status={task.status}
++                      body={
++                        task.file_path ? (
++                          <button
++                            type="button"
++                            className="btn-link task-file-link mono"
++                            disabled={!onOpenPlan}
++                            title={task.file_path}
++                            aria-label={`预览 ${task.file_path}`}
++                            onClick={() => onOpenPlan?.(task)}
++                          >
++                            {task.file_path}
++                          </button>
++                        ) : null
++                      }
++                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
++                    />
++                  );
++                })}
++              </section>
+             );
+           })}
+         </div>
+
+tokens used
+116,772
+已完成 P002，仅修改任务 scope 内文件，未修改 plan 文件、未勾选 checkbox，也未运行测试/构建/lint。
+
+- 在 `src/renderer/components/PlanLists.tsx:28` 新增任务计划分组结构。
+- 在 `src/renderer/components/PlanLists.tsx:91` 新增按 `finished_at`、`started_at`、`updated_at` 读取排序时间的工具逻辑。
+- 在 `src/renderer/components/PlanLists.tsx:121` 实现按 `plan_id` 优先、`file_path` 兜底的计划分组，并按组内最新时间倒序排序。
+- 在 `src/renderer/components/PlanLists.tsx:635` 让状态筛选先过滤任务，再生成分组。
+- 在 `src/renderer/components/PlanLists.tsx:675` 将任务列表渲染为计划分组，保留执行、停止、预览计划按钮行为。

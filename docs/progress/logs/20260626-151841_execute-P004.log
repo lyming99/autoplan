@@ -1,0 +1,1370 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0286-d498-7820-9b30-830fba9e7e8c
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_26_20260626-140018.md
+指定任务：
+- [ ] P004: 在 Plan 全文阅读器补充 CLI 摘要 <!-- scope: src/renderer/components/PlanLists.tsx,src/renderer/pages/WorkspacePage.tsx -->
+任务 scope：src/renderer/components/planlists.tsx, src/renderer/pages/workspacepage.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Inspecting scope modifications**
+
+I need to modify P004 specifically for PlanLists.tsx and WorkspacePage.tsx, carefully inspecting the relevant areas. I shouldn't run tests right now, but I need to be cautious about previous uncommitted changes. The developer mentioned using the apply_patch tool, but it seems I only have the shell option available. I should double-check any warnings from the harness before applying. I don't need to modify shared/types. I’ll also add the CLI summary to the Plan full reader modal. Let’s take a look at how things are structured!
+codex
+我会沿用 P002/P003 的统一文案，只查看阅读器相关代码并限于本任务 scope。
+  → 定位全文阅读器摘要
+  • 补充 CLI 摘要展示
+  • 同步最新计划记录
+  • 检查改动范围
+exec
+powershell.exe -Command "git status --short -- src/renderer/components/PlanLists.tsx src/renderer/pages/WorkspacePage.tsx docs/plan/plan_requirement_26_20260626-140018.md; Select-String -Path 'src/renderer/components/PlanLists.tsx','src/renderer/pages/WorkspacePage.tsx' -Pattern 'reader|ReadPlan|planRead|latestReadingPlan|Plan 全文|阅读全文|modal|summary|planCliSummaryLabel|agentCliProviderLabel|codexReasoningEffortLabel' -CaseSensitive:"'$false | ForEach-Object { '"'{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 611ms:
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+?? docs/plan/plan_requirement_26_20260626-140018.md
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:3: import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:5: import { MarkdownReader } from './MarkdownReader';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:6: import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:70: function readPlanId(task: TimedPlanTask) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:130: function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:134: const timeSummary = latestFinishedAt
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:139: return `${group.tasks.length} 个任务 · ${timeSummary}`;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:147: const planId = readPlanId(task);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:207: const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:209: return timedTasks.filter((task) => readPlanId(task) === plan.id);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:212: function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:317: agentCliProvider ? agentCliProviderLabel(agentCliProvider) : '',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:318: agentCliProvider !== 'claude' && codexReasoningEffort ? `思考深度 ${codexReasoningEffortLabel(codexReasoningEffort)}` : '',
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:375: function hasPlanReaderUpdate(
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:378: result: WorkspacePlanReadState['result'],
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:394: const PLAN_READER_FOCUSABLE_SELECTOR = [
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:403: function getPlanReaderFocusableElements(container: HTMLElement) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:404: return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:431: latestReadingPlan,
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:432: onCloseReader,
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:433: onOpenReader,
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:435: onRefreshReader,
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:437: readerState,
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:442: latestReadingPlan?: Plan | null;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:443: onCloseReader: () => void;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:444: onOpenReader: (plan: Plan) => void;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:446: onRefreshReader: () => void;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:448: readerState: WorkspacePlanReadState;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:452: const readingPlan = readerState.plan;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:453: const planReadResult = readerState.result;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:454: const planReadError = readerState.error;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:455: const planReading = readerState.loading;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:456: const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:457: const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:458: const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:459: const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:460: const readerDialogId = useId();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:461: const readerTitleId = useId();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:462: const readerDescriptionId = useId();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:463: const readerContentId = useId();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:464: const readerDialogRef = useRef<HTMLDivElement>(null);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:467: const readerStatusText = planReadError
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:468: ? `读取失败：${planReadError}`
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:469: : planReading
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:470: ? '正在读取 Plan 全文。'
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:473: : 'Plan 全文已加载，当前为只读阅读模式。';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:480: readerDialogRef.current?.focus();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:489: function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:492: onCloseReader();
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:498: const dialog = readerDialogRef.current;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:501: const focusableElements = getPlanReaderFocusableElements(dialog);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:535: const durationSummary = formatPlanDurationSummary(planTasks);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:537: const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:540: const cliSummary = planCliSummaryLabel(plan);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:544: const disableRead = planReading && readingThisPlan;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:566: aria-controls={readingThisPlan ? readerDialogId : undefined}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:568: aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:570: onClick={() => onOpenReader(plan)}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:572: {disableRead ? '读取中…' : '阅读全文'}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:582: <div className="plan-list-summary">{progressSummary}</div>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:583: <div className="plan-parallel-summary">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:591: meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:601: <div className="modal-mask" onClick={() => setConfirmingPlan(null)}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:602: <div className="modal parallel-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:603: <div className="modal-head">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:605: <button type="button" className="modal-close" onClick={() => setConfirmingPlan(null)} aria-label="关闭并发执行确认">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:629: <summary>查看不建议并发原因</summary>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:638: <div className="modal-foot">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:662: <div className="modal-mask" onClick={onCloseReader}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:664: id={readerDialogId}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:665: ref={readerDialogRef}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:666: className="modal plan-reader-modal"
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:668: aria-modal="true"
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:669: aria-labelledby={readerTitleId}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:670: aria-describedby={readerDescriptionId}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:673: onKeyDown={handleReaderKeyDown}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:675: <div className="modal-head plan-reader-head">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:676: <div className="plan-reader-title">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:677: <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:678: <span className="plan-reader-path mono" title={readerFilePath}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:679: {readerFilePath || '未记录文件路径'}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:681: <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:682: {readerStatusText}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:685: <div className="item-actions plan-reader-actions">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:689: disabled={planReading}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:690: onClick={onRefreshReader}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:691: aria-label="重新读取 Plan 全文"
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:693: {planReading ? '读取中…' : '刷新'}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:695: <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:700: <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:701: <dl className="plan-reader-summary" aria-label="Plan 摘要">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:702: <div className="plan-reader-summary-item">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:706: <div className="plan-reader-summary-item">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:708: <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:710: <div className="plan-reader-summary-item">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:712: <dd className="mono" title={readerHash}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:713: {readerHash?.slice(0, 12) || '-'}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:721: <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:726: {planReadError ? (
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:727: <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:728: <span>{planReadError}</span>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:729: <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:734: {planReading ? (
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:735: <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:736: 正在读取 Plan 全文…
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:739: {!planReading && !planReadError ? (
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:740: <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:741: <MarkdownReader
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:742: markdown={planReadResult?.markdown ?? ''}
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:817: <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:15: WorkspacePlanReadState,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:28: import { getFilePath, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:91: function createEmptyPlanReadState(): WorkspacePlanReadState {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:125: const reader = new FileReader();
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:126: reader.onload = () => resolve(String(reader.result || ''));
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:127: reader.onerror = () => reject(reader.error || new Error('读取剪贴板图片失败'));
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:128: reader.readAsDataURL(file);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:228: const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:229: const planReadRequestRef = useRef(0);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:247: const latestReadingPlan = useMemo(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:248: if (!planReadState.plan) return null;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:251: (plan) => plan.id === planReadState.plan?.id && plan.project_id === planReadState.plan?.project_id,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:252: ) || planReadState.plan
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:254: }, [planReadState.plan, snapshot?.plans]);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:319: planReadRequestRef.current += 1;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:320: setPlanReadState(createEmptyPlanReadState());
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:322: planReadRequestRef.current += 1;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:545: const readPlanForReader = useCallback(async (plan: Plan) => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:546: const requestId = planReadRequestRef.current + 1;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:547: planReadRequestRef.current = requestId;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:548: setPlanReadState({ plan, result: null, loading: true, error: null });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:551: const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:552: if (planReadRequestRef.current !== requestId) return;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:554: setPlanReadState({
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:563: error: result.ok ? null : result.error || '读取 Plan 全文失败',
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:566: if (planReadRequestRef.current !== requestId) return;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:567: setPlanReadState({
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:571: error: getErrorMessage(e, '读取 Plan 全文失败'),
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:576: const openPlanReader = useCallback(
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:578: const currentPlan = planReadState.plan;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:579: if (planReadState.loading && currentPlan && currentPlan.id === plan.id && currentPlan.project_id === plan.project_id) {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:582: void readPlanForReader(plan);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:584: [planReadState.loading, planReadState.plan?.id, planReadState.plan?.project_id, readPlanForReader],
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:587: const closePlanReader = useCallback(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:588: planReadRequestRef.current += 1;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:589: setPlanReadState(createEmptyPlanReadState());
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:592: const refreshPlanReader = useCallback(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:593: if (planReadState.loading) return;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:594: const plan = latestReadingPlan || planReadState.plan;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:596: void readPlanForReader(plan);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:597: }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:599: const openTaskPlanReader = useCallback(
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:604: if (plan) openPlanReader(plan);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:606: [openPlanReader, snapshot?.plans],
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:761: latestReadingPlan={latestReadingPlan}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:762: onCloseReader={closePlanReader}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:763: onOpenReader={openPlanReader}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:776: onRefreshReader={refreshPlanReader}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:778: readerState={planReadState}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:790: onOpenPlan={openTaskPlanReader}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:825: <span className="hint">最近 80 条 · 实时更新 · 当前 {agentCliConfigSummary(state)}</span>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:909: {agentCliConfigSummary(state)}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1045: const providerLabel = agentCliProviderLabel(task.agentCliProvider || fallbackProvider);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1050: function agentCliConfigSummary(state?: ProjectState | null) {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1052: const providerLabel = agentCliProviderLabel(provider);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1054: return `${providerLabel} · 思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)}`;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1172: <small className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内</small>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1218: const operationProviderLabel = agentCliProviderLabel(operationProvider);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1220: ? `思考${codexReasoningEffortLabel(operation?.codexReasoningEffort || state?.codex_reasoning_effort)}`
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1249: value={agentCliProviderLabel(state?.agent_cli_provider)}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1251: sub={state?.agent_cli_provider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${codexReasoningEffortLabel(state?.codex_reasoning_effort)} · 间隔 ${state?.interval_seconds || 5}s`}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1269: <div className="log-summary">
+
+codex
+我会读取阅读弹窗和 WorkspacePage 的读取状态段，找最小接入点。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/PlanLists.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if(($i -ge 450 -and $i -le 700) -or ($i -ge 700 -and $i -le 790)){ '"'{0,4}: {1}' -f "'$i,$_ } }; Write-Host '"'--- Workspace'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/pages/WorkspacePage.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if(($i -ge 500 -and $i -le 610) -or ($i -ge 730 -and $i -le 785)){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 616ms:
+ 450:   totalPlanCount?: number;
+ 451: }) {
+ 452:   const readingPlan = readerState.plan;
+ 453:   const planReadResult = readerState.result;
+ 454:   const planReadError = readerState.error;
+ 455:   const planReading = readerState.loading;
+ 456:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+ 457:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+ 458:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+ 459:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+ 460:   const readerDialogId = useId();
+ 461:   const readerTitleId = useId();
+ 462:   const readerDescriptionId = useId();
+ 463:   const readerContentId = useId();
+ 464:   const readerDialogRef = useRef<HTMLDivElement>(null);
+ 465:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+ 466:   const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+ 467:   const readerStatusText = planReadError
+ 468:     ? `读取失败：${planReadError}`
+ 469:     : planReading
+ 470:       ? '正在读取 Plan 全文。'
+ 471:       : latestPlanUpdated
+ 472:         ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+ 473:         : 'Plan 全文已加载，当前为只读阅读模式。';
+ 474: 
+ 475:   useEffect(() => {
+ 476:     if (!readingPlan) return undefined;
+ 477: 
+ 478:     previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+ 479:     const focusFrame = window.requestAnimationFrame(() => {
+ 480:       readerDialogRef.current?.focus();
+ 481:     });
+ 482: 
+ 483:     return () => {
+ 484:       window.cancelAnimationFrame(focusFrame);
+ 485:       previouslyFocusedElementRef.current?.focus();
+ 486:     };
+ 487:   }, [readingPlan?.id, readingPlan?.project_id]);
+ 488: 
+ 489:   function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+ 490:     if (event.key === 'Escape') {
+ 491:       event.stopPropagation();
+ 492:       onCloseReader();
+ 493:       return;
+ 494:     }
+ 495: 
+ 496:     if (event.key !== 'Tab') return;
+ 497: 
+ 498:     const dialog = readerDialogRef.current;
+ 499:     if (!dialog) return;
+ 500: 
+ 501:     const focusableElements = getPlanReaderFocusableElements(dialog);
+ 502:     if (!focusableElements.length) {
+ 503:       event.preventDefault();
+ 504:       dialog.focus();
+ 505:       return;
+ 506:     }
+ 507: 
+ 508:     const firstFocusableElement = focusableElements[0];
+ 509:     const lastFocusableElement = focusableElements[focusableElements.length - 1];
+ 510: 
+ 511:     if (document.activeElement === dialog) {
+ 512:       event.preventDefault();
+ 513:       (event.shiftKey ? lastFocusableElement : firstFocusableElement).focus();
+ 514:       return;
+ 515:     }
+ 516: 
+ 517:     if (event.shiftKey && document.activeElement === firstFocusableElement) {
+ 518:       event.preventDefault();
+ 519:       lastFocusableElement.focus();
+ 520:       return;
+ 521:     }
+ 522: 
+ 523:     if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+ 524:       event.preventDefault();
+ 525:       firstFocusableElement.focus();
+ 526:     }
+ 527:   }
+ 528: 
+ 529:   return (
+ 530:     <>
+ 531:       {plans.length ? (
+ 532:         <div className="list compact">
+ 533:           {plans.map((plan) => {
+ 534:             const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+ 535:             const durationSummary = formatPlanDurationSummary(planTasks);
+ 536:             const title = planTitle(plan);
+ 537:             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+ 538:               plan.validation_passed ? 'passed' : 'pending'
+ 539:             }`;
+ 540:             const cliSummary = planCliSummaryLabel(plan);
+ 541:             const readingThisPlan = Boolean(
+ 542:               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+ 543:             );
+ 544:             const disableRead = planReading && readingThisPlan;
+ 545:             const suggestion = plan.concurrency_suggestion;
+ 546:             const runningInPlan = planTasks.some((task) => task.status === 'running');
+ 547:             const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
+ 548:             const canRunParallel = Boolean(onRunParallel && suggestion?.hasSafeParallelBatches && !parallelDisabledReason);
+ 549:             return (
+ 550:               <RecordCard
+ 551:                 actions={
+ 552:                   <div className="item-actions">
+ 553:                     <button
+ 554:                       type="button"
+ 555:                       className="btn-link plan-parallel-link"
+ 556:                       disabled={!canRunParallel}
+ 557:                       title={parallelDisabledReason || undefined}
+ 558:                       onClick={() => setConfirmingPlan(plan)}
+ 559:                     >
+ 560:                       并发执行
+ 561:                     </button>
+ 562:                     <button
+ 563:                       type="button"
+ 564:                       className="btn-link plan-read-link"
+ 565:                       aria-haspopup="dialog"
+ 566:                       aria-controls={readingThisPlan ? readerDialogId : undefined}
+ 567:                       aria-expanded={readingThisPlan}
+ 568:                       aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+ 569:                       disabled={disableRead}
+ 570:                       onClick={() => onOpenReader(plan)}
+ 571:                     >
+ 572:                       {disableRead ? '读取中…' : '阅读全文'}
+ 573:                     </button>
+ 574:                   </div>
+ 575:                 }
+ 576:                 key={plan.id}
+ 577:                 title={plan.file_path}
+ 578:                 status={plan.status}
+ 579:                 body={
+ 580:                   <div className="plan-list-body">
+ 581:                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
+ 582:                     <div className="plan-list-summary">{progressSummary}</div>
+ 583:                     <div className="plan-parallel-summary">
+ 584:                       <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+ 585:                       <span>建议 {suggestion?.batchCount || 0} 批</span>
+ 586:                       <span>串行 {suggestion?.serialTaskCount || 0} 个</span>
+ 587:                       {parallelDisabledReason ? <span title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
+ 588:                     </div>
+ 589:                   </div>
+ 590:                 }
+ 591:                 meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+ 592:               />
+ 593:             );
+ 594:           })}
+ 595:         </div>
+ 596:       ) : (
+ 597:         <div className="empty">{emptyText}</div>
+ 598:       )}
+ 599: 
+ 600:       {confirmingPlan ? (
+ 601:         <div className="modal-mask" onClick={() => setConfirmingPlan(null)}>
+ 602:           <div className="modal parallel-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+ 603:             <div className="modal-head">
+ 604:               <h3>确认并发执行</h3>
+ 605:               <button type="button" className="modal-close" onClick={() => setConfirmingPlan(null)} aria-label="关闭并发执行确认">
+ 606:                 ×
+ 607:               </button>
+ 608:             </div>
+ 609:             <div className="parallel-confirm-body">
+ 610:               <p>确认后将按以下安全批次启动；取消不会改变任务状态。</p>
+ 611:               {confirmingPlan.concurrency_suggestion.batches.map((batch) => (
+ 612:                 <section className="parallel-batch-card" key={batch.batch}>
+ 613:                   <div className="parallel-batch-head">
+ 614:                     <strong>批次 {batch.batch}</strong>
+ 615:                     <span>{batch.reason}</span>
+ 616:                   </div>
+ 617:                   <ul>
+ 618:                     {batch.tasks.map((task) => (
+ 619:                       <li key={task.id}>
+ 620:                         <span>{task.task_key} · {task.title}</span>
+ 621:                         <small className="mono">{task.scopes.join(', ')}</small>
+ 622:                       </li>
+ 623:                     ))}
+ 624:                   </ul>
+ 625:                 </section>
+ 626:               ))}
+ 627:               {confirmingPlan.concurrency_suggestion.serialTasks.length ? (
+ 628:                 <details className="parallel-serial-reasons">
+ 629:                   <summary>查看不建议并发原因</summary>
+ 630:                   <ul>
+ 631:                     {confirmingPlan.concurrency_suggestion.serialTasks.map((task) => (
+ 632:                       <li key={task.id}>{task.task_key}：{task.reason}</li>
+ 633:                     ))}
+ 634:                   </ul>
+ 635:                 </details>
+ 636:               ) : null}
+ 637:             </div>
+ 638:             <div className="modal-foot">
+ 639:               <button type="button" className="btn" onClick={() => setConfirmingPlan(null)}>取消</button>
+ 640:               <button
+ 641:                 type="button"
+ 642:                 className="btn btn-primary"
+ 643:                 onClick={() => {
+ 644:                   const plan = confirmingPlan;
+ 645:                   setConfirmingPlan(null);
+ 646:                   onRunParallel?.({
+ 647:                     plan,
+ 648:                     batches: plan.concurrency_suggestion.batches.map((batch) => ({
+ 649:                       taskIds: batch.tasks.map((task) => task.id),
+ 650:                     })),
+ 651:                   });
+ 652:                 }}
+ 653:               >
+ 654:                 确认并发执行
+ 655:               </button>
+ 656:             </div>
+ 657:           </div>
+ 658:         </div>
+ 659:       ) : null}
+ 660: 
+ 661:       {readingPlan ? (
+ 662:         <div className="modal-mask" onClick={onCloseReader}>
+ 663:           <div
+ 664:             id={readerDialogId}
+ 665:             ref={readerDialogRef}
+ 666:             className="modal plan-reader-modal"
+ 667:             role="dialog"
+ 668:             aria-modal="true"
+ 669:             aria-labelledby={readerTitleId}
+ 670:             aria-describedby={readerDescriptionId}
+ 671:             tabIndex={-1}
+ 672:             onClick={(event) => event.stopPropagation()}
+ 673:             onKeyDown={handleReaderKeyDown}
+ 674:           >
+ 675:             <div className="modal-head plan-reader-head">
+ 676:               <div className="plan-reader-title">
+ 677:                 <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+ 678:                 <span className="plan-reader-path mono" title={readerFilePath}>
+ 679:                   {readerFilePath || '未记录文件路径'}
+ 680:                 </span>
+ 681:                 <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+ 682:                   {readerStatusText}
+ 683:                 </p>
+ 684:               </div>
+ 685:               <div className="item-actions plan-reader-actions">
+ 686:                 <button
+ 687:                   type="button"
+ 688:                   className="btn-link"
+ 689:                   disabled={planReading}
+ 690:                   onClick={onRefreshReader}
+ 691:                   aria-label="重新读取 Plan 全文"
+ 692:                 >
+ 693:                   {planReading ? '读取中…' : '刷新'}
+ 694:                 </button>
+ 695:                 <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+ 696:                   ×
+ 697:                 </button>
+ 698:               </div>
+ 699:             </div>
+ 700:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+ 701:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+ 702:                 <div className="plan-reader-summary-item">
+ 703:                   <dt>状态</dt>
+ 704:                   <dd>{readingPlan.status}</dd>
+ 705:                 </div>
+ 706:                 <div className="plan-reader-summary-item">
+ 707:                   <dt>更新时间</dt>
+ 708:                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+ 709:                 </div>
+ 710:                 <div className="plan-reader-summary-item">
+ 711:                   <dt>哈希</dt>
+ 712:                   <dd className="mono" title={readerHash}>
+ 713:                     {readerHash?.slice(0, 12) || '-'}
+ 714:                   </dd>
+ 715:                 </div>
+ 716:               </dl>
+ 717: 
+ 718:               {latestPlanUpdated ? (
+ 719:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+ 720:                   Plan 列表信息已更新，可刷新读取最新正文。
+ 721:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 722:                     刷新读取
+ 723:                   </button>
+ 724:                 </div>
+ 725:               ) : null}
+ 726:               {planReadError ? (
+ 727:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+ 728:                   <span>{planReadError}</span>
+ 729:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 730:                     重试
+ 731:                   </button>
+ 732:                 </div>
+ 733:               ) : null}
+ 734:               {planReading ? (
+ 735:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+ 736:                   正在读取 Plan 全文…
+ 737:                 </div>
+ 738:               ) : null}
+ 739:               {!planReading && !planReadError ? (
+ 740:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+ 741:                   <MarkdownReader
+ 742:                     markdown={planReadResult?.markdown ?? ''}
+ 743:                     emptyMessage="暂无计划正文"
+ 744:                     ariaLabel="Plan Markdown 正文内容"
+ 745:                   />
+ 746:                 </section>
+ 747:               ) : null}
+ 748:             </div>
+ 749:           </div>
+ 750:         </div>
+ 751:       ) : null}
+ 752:     </>
+ 753:   );
+ 754: }
+ 755: 
+ 756: export function TaskList({
+ 757:   emptyText = '暂无任务。',
+ 758:   tasks,
+ 759:   onOpenPlan,
+ 760:   onRun,
+ 761:   onStop,
+ 762: }: {
+ 763:   emptyText?: string;
+ 764:   tasks: PlanTask[];
+ 765:   onOpenPlan?: (task: PlanTask) => void;
+ 766:   onRun?: (task: PlanTask) => void;
+ 767:   onStop?: (task: PlanTask) => void;
+ 768: }) {
+ 769:   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+ 770:   const visibleTasks = useMemo(
+ 771:     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+ 772:     [activeFilter, tasks],
+ 773:   );
+ 774:   const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+ 775:   const filterCounts = useMemo(
+ 776:     () =>
+ 777:       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+ 778:         (counts, filter) => ({
+ 779:           ...counts,
+ 780:           [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+ 781:         }),
+ 782:         { all: 0, running: 0, queued: 0, completed: 0 },
+ 783:       ),
+ 784:     [tasks],
+ 785:   );
+ 786:   const activeFilterConfig =
+ 787:     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+ 788:   const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+ 789: 
+ 790:   return (
+--- Workspace
+ 500:       setError(null);
+ 501:     } catch (e) {
+ 502:       showError(e);
+ 503:     }
+ 504:   };
+ 505: 
+ 506:   const interruptIntake = useCallback(
+ 507:     async (type: IntakeType, id: number) => {
+ 508:       try {
+ 509:         const next = await window.autoplan.interruptIntake({ projectId, type, id });
+ 510:         setSnapshot(next);
+ 511:         setError(null);
+ 512:       } catch (e) {
+ 513:         showError(e);
+ 514:       }
+ 515:     },
+ 516:     [projectId, setSnapshot, setError, showError],
+ 517:   );
+ 518: 
+ 519:   const resumeIntake = useCallback(
+ 520:     async (type: IntakeType, id: number) => {
+ 521:       try {
+ 522:         const next = await window.autoplan.resumeIntake({ projectId, type, id });
+ 523:         setSnapshot(next);
+ 524:         setError(null);
+ 525:       } catch (e) {
+ 526:         showError(e);
+ 527:       }
+ 528:     },
+ 529:     [projectId, setSnapshot, setError, showError],
+ 530:   );
+ 531: 
+ 532:   const appendIntakeTask = useCallback(
+ 533:     async (type: IntakeType, id: number, title: string) => {
+ 534:       try {
+ 535:         const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+ 536:         setSnapshot(next);
+ 537:         setError(null);
+ 538:       } catch (e) {
+ 539:         showError(e);
+ 540:       }
+ 541:     },
+ 542:     [projectId, setSnapshot, setError, showError],
+ 543:   );
+ 544: 
+ 545:   const readPlanForReader = useCallback(async (plan: Plan) => {
+ 546:     const requestId = planReadRequestRef.current + 1;
+ 547:     planReadRequestRef.current = requestId;
+ 548:     setPlanReadState({ plan, result: null, loading: true, error: null });
+ 549: 
+ 550:     try {
+ 551:       const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+ 552:       if (planReadRequestRef.current !== requestId) return;
+ 553: 
+ 554:       setPlanReadState({
+ 555:         plan: {
+ 556:           ...plan,
+ 557:           file_path: result.file_path || plan.file_path,
+ 558:           hash: result.hash || plan.hash,
+ 559:           updated_at: result.updated_at || plan.updated_at,
+ 560:         },
+ 561:         result,
+ 562:         loading: false,
+ 563:         error: result.ok ? null : result.error || '读取 Plan 全文失败',
+ 564:       });
+ 565:     } catch (e) {
+ 566:       if (planReadRequestRef.current !== requestId) return;
+ 567:       setPlanReadState({
+ 568:         plan,
+ 569:         result: null,
+ 570:         loading: false,
+ 571:         error: getErrorMessage(e, '读取 Plan 全文失败'),
+ 572:       });
+ 573:     }
+ 574:   }, []);
+ 575: 
+ 576:   const openPlanReader = useCallback(
+ 577:     (plan: Plan) => {
+ 578:       const currentPlan = planReadState.plan;
+ 579:       if (planReadState.loading && currentPlan && currentPlan.id === plan.id && currentPlan.project_id === plan.project_id) {
+ 580:         return;
+ 581:       }
+ 582:       void readPlanForReader(plan);
+ 583:     },
+ 584:     [planReadState.loading, planReadState.plan?.id, planReadState.plan?.project_id, readPlanForReader],
+ 585:   );
+ 586: 
+ 587:   const closePlanReader = useCallback(() => {
+ 588:     planReadRequestRef.current += 1;
+ 589:     setPlanReadState(createEmptyPlanReadState());
+ 590:   }, []);
+ 591: 
+ 592:   const refreshPlanReader = useCallback(() => {
+ 593:     if (planReadState.loading) return;
+ 594:     const plan = latestReadingPlan || planReadState.plan;
+ 595:     if (!plan) return;
+ 596:     void readPlanForReader(plan);
+ 597:   }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
+ 598: 
+ 599:   const openTaskPlanReader = useCallback(
+ 600:     (task: PlanTask) => {
+ 601:       const plan = snapshot?.plans.find(
+ 602:         (item) => item.id === task.plan_id || (!!task.file_path && item.file_path === task.file_path),
+ 603:       );
+ 604:       if (plan) openPlanReader(plan);
+ 605:     },
+ 606:     [openPlanReader, snapshot?.plans],
+ 607:   );
+ 608: 
+ 609:   const switchProject = (nextId: number) => {
+ 610:     if (nextId && nextId !== projectId) navigate(`/projects/${nextId}${activeTab === 'overview' ? '' : `?tab=${activeTab}`}`);
+ 730:                 heading="反馈记录"
+ 731:                 items={filteredItems.feedback}
+ 732:                 pendingAttachments={pendingAttachments.feedback}
+ 733:                 placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+ 734:                 submitLabel="发送反馈"
+ 735:                 subtitle="循环开启后自动扫描并生成计划"
+ 736:                 type="feedback"
+ 737:                 attachments={snapshot.attachments}
+ 738:                 onAddFiles={addPendingFiles}
+ 739:                 onDelete={deleteFeedback}
+ 740:                 onRemoveAttachment={removePendingAttachment}
+ 741:                 onSubmit={createFeedback}
+ 742:                 onUpdate={updateFeedback}
+ 743:                 onInterrupt={interruptIntake}
+ 744:                 onResume={resumeIntake}
+ 745:                 onAppendTask={appendIntakeTask}
+ 746:               />
+ 747:             </ComposerCliSelectionProvider>
+ 748:           ) : null}
+ 749:         </section>
+ 750: 
+ 751:         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+ 752:           {activeTab === 'tasks' ? (
+ 753:             <div className="task-main">
+ 754:               <div className="task-status-grid">
+ 755:                 <section className="card">
+ 756:                   <div className="card-head">
+ 757:                     <h2>Plan</h2>
+ 758:                   </div>
+ 759:                   <PlanList
+ 760:                     emptyText={filteredEmptyText}
+ 761:                     latestReadingPlan={latestReadingPlan}
+ 762:                     onCloseReader={closePlanReader}
+ 763:                     onOpenReader={openPlanReader}
+ 764:                     onRunParallel={({ plan, batches }) =>
+ 765:                       runLoopAction(() =>
+ 766:                         (window.autoplan as typeof window.autoplan & {
+ 767:                           runTaskBatches: (input: {
+ 768:                             projectId: number;
+ 769:                             planId: number;
+ 770:                             batches: Array<{ taskIds: number[] }>;
+ 771:                             manual: true;
+ 772:                           }) => Promise<AppSnapshot>;
+ 773:                         }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+ 774:                       )
+ 775:                     }
+ 776:                     onRefreshReader={refreshPlanReader}
+ 777:                     plans={filteredItems.plans}
+ 778:                     readerState={planReadState}
+ 779:                     tasks={snapshot.tasks}
+ 780:                     totalPlanCount={snapshot.plans.length}
+ 781:                   />
+ 782:                 </section>
+ 783:                 <section className="card">
+ 784:                   <div className="card-head">
+ 785:                     <h2>任务</h2>
+
+codex
+输出截断了，我再分段查看弹窗摘要和 `latestReadingPlan` 定义。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/PlanLists.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -ge 620 -and $i -le 735){ '"'{0,4}: {1}' -f "'$i,$_ } }; Write-Host '"'--- Workspace 520'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/pages/WorkspacePage.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -ge 500 -and $i -le 570){ '"'{0,4}: {1}' -f "'$i,$_ } }; Write-Host '"'--- latest'; Select-String -Path 'src/renderer/pages/WorkspacePage.tsx' -Pattern 'latestReadingPlan|createEmptyPlanReadState|setPlanReadState|readPlanForReader' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 658ms:
+ 620:                         <span>{task.task_key} · {task.title}</span>
+ 621:                         <small className="mono">{task.scopes.join(', ')}</small>
+ 622:                       </li>
+ 623:                     ))}
+ 624:                   </ul>
+ 625:                 </section>
+ 626:               ))}
+ 627:               {confirmingPlan.concurrency_suggestion.serialTasks.length ? (
+ 628:                 <details className="parallel-serial-reasons">
+ 629:                   <summary>查看不建议并发原因</summary>
+ 630:                   <ul>
+ 631:                     {confirmingPlan.concurrency_suggestion.serialTasks.map((task) => (
+ 632:                       <li key={task.id}>{task.task_key}：{task.reason}</li>
+ 633:                     ))}
+ 634:                   </ul>
+ 635:                 </details>
+ 636:               ) : null}
+ 637:             </div>
+ 638:             <div className="modal-foot">
+ 639:               <button type="button" className="btn" onClick={() => setConfirmingPlan(null)}>取消</button>
+ 640:               <button
+ 641:                 type="button"
+ 642:                 className="btn btn-primary"
+ 643:                 onClick={() => {
+ 644:                   const plan = confirmingPlan;
+ 645:                   setConfirmingPlan(null);
+ 646:                   onRunParallel?.({
+ 647:                     plan,
+ 648:                     batches: plan.concurrency_suggestion.batches.map((batch) => ({
+ 649:                       taskIds: batch.tasks.map((task) => task.id),
+ 650:                     })),
+ 651:                   });
+ 652:                 }}
+ 653:               >
+ 654:                 确认并发执行
+ 655:               </button>
+ 656:             </div>
+ 657:           </div>
+ 658:         </div>
+ 659:       ) : null}
+ 660: 
+ 661:       {readingPlan ? (
+ 662:         <div className="modal-mask" onClick={onCloseReader}>
+ 663:           <div
+ 664:             id={readerDialogId}
+ 665:             ref={readerDialogRef}
+ 666:             className="modal plan-reader-modal"
+ 667:             role="dialog"
+ 668:             aria-modal="true"
+ 669:             aria-labelledby={readerTitleId}
+ 670:             aria-describedby={readerDescriptionId}
+ 671:             tabIndex={-1}
+ 672:             onClick={(event) => event.stopPropagation()}
+ 673:             onKeyDown={handleReaderKeyDown}
+ 674:           >
+ 675:             <div className="modal-head plan-reader-head">
+ 676:               <div className="plan-reader-title">
+ 677:                 <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+ 678:                 <span className="plan-reader-path mono" title={readerFilePath}>
+ 679:                   {readerFilePath || '未记录文件路径'}
+ 680:                 </span>
+ 681:                 <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+ 682:                   {readerStatusText}
+ 683:                 </p>
+ 684:               </div>
+ 685:               <div className="item-actions plan-reader-actions">
+ 686:                 <button
+ 687:                   type="button"
+ 688:                   className="btn-link"
+ 689:                   disabled={planReading}
+ 690:                   onClick={onRefreshReader}
+ 691:                   aria-label="重新读取 Plan 全文"
+ 692:                 >
+ 693:                   {planReading ? '读取中…' : '刷新'}
+ 694:                 </button>
+ 695:                 <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+ 696:                   ×
+ 697:                 </button>
+ 698:               </div>
+ 699:             </div>
+ 700:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+ 701:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+ 702:                 <div className="plan-reader-summary-item">
+ 703:                   <dt>状态</dt>
+ 704:                   <dd>{readingPlan.status}</dd>
+ 705:                 </div>
+ 706:                 <div className="plan-reader-summary-item">
+ 707:                   <dt>更新时间</dt>
+ 708:                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+ 709:                 </div>
+ 710:                 <div className="plan-reader-summary-item">
+ 711:                   <dt>哈希</dt>
+ 712:                   <dd className="mono" title={readerHash}>
+ 713:                     {readerHash?.slice(0, 12) || '-'}
+ 714:                   </dd>
+ 715:                 </div>
+ 716:               </dl>
+ 717: 
+ 718:               {latestPlanUpdated ? (
+ 719:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+ 720:                   Plan 列表信息已更新，可刷新读取最新正文。
+ 721:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 722:                     刷新读取
+ 723:                   </button>
+ 724:                 </div>
+ 725:               ) : null}
+ 726:               {planReadError ? (
+ 727:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+ 728:                   <span>{planReadError}</span>
+ 729:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 730:                     重试
+ 731:                   </button>
+ 732:                 </div>
+ 733:               ) : null}
+ 734:               {planReading ? (
+ 735:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+--- Workspace 520
+ 500:       setError(null);
+ 501:     } catch (e) {
+ 502:       showError(e);
+ 503:     }
+ 504:   };
+ 505: 
+ 506:   const interruptIntake = useCallback(
+ 507:     async (type: IntakeType, id: number) => {
+ 508:       try {
+ 509:         const next = await window.autoplan.interruptIntake({ projectId, type, id });
+ 510:         setSnapshot(next);
+ 511:         setError(null);
+ 512:       } catch (e) {
+ 513:         showError(e);
+ 514:       }
+ 515:     },
+ 516:     [projectId, setSnapshot, setError, showError],
+ 517:   );
+ 518: 
+ 519:   const resumeIntake = useCallback(
+ 520:     async (type: IntakeType, id: number) => {
+ 521:       try {
+ 522:         const next = await window.autoplan.resumeIntake({ projectId, type, id });
+ 523:         setSnapshot(next);
+ 524:         setError(null);
+ 525:       } catch (e) {
+ 526:         showError(e);
+ 527:       }
+ 528:     },
+ 529:     [projectId, setSnapshot, setError, showError],
+ 530:   );
+ 531: 
+ 532:   const appendIntakeTask = useCallback(
+ 533:     async (type: IntakeType, id: number, title: string) => {
+ 534:       try {
+ 535:         const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+ 536:         setSnapshot(next);
+ 537:         setError(null);
+ 538:       } catch (e) {
+ 539:         showError(e);
+ 540:       }
+ 541:     },
+ 542:     [projectId, setSnapshot, setError, showError],
+ 543:   );
+ 544: 
+ 545:   const readPlanForReader = useCallback(async (plan: Plan) => {
+ 546:     const requestId = planReadRequestRef.current + 1;
+ 547:     planReadRequestRef.current = requestId;
+ 548:     setPlanReadState({ plan, result: null, loading: true, error: null });
+ 549: 
+ 550:     try {
+ 551:       const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+ 552:       if (planReadRequestRef.current !== requestId) return;
+ 553: 
+ 554:       setPlanReadState({
+ 555:         plan: {
+ 556:           ...plan,
+ 557:           file_path: result.file_path || plan.file_path,
+ 558:           hash: result.hash || plan.hash,
+ 559:           updated_at: result.updated_at || plan.updated_at,
+ 560:         },
+ 561:         result,
+ 562:         loading: false,
+ 563:         error: result.ok ? null : result.error || '读取 Plan 全文失败',
+ 564:       });
+ 565:     } catch (e) {
+ 566:       if (planReadRequestRef.current !== requestId) return;
+ 567:       setPlanReadState({
+ 568:         plan,
+ 569:         result: null,
+ 570:         loading: false,
+--- latest
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:91: function createEmptyPlanReadState(): WorkspacePlanReadState {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:228: const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:247: const latestReadingPlan = useMemo(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:320: setPlanReadState(createEmptyPlanReadState());
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:545: const readPlanForReader = useCallback(async (plan: Plan) => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:548: setPlanReadState({ plan, result: null, loading: true, error: null });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:554: setPlanReadState({
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:567: setPlanReadState({
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:582: void readPlanForReader(plan);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:584: [planReadState.loading, planReadState.plan?.id, planReadState.plan?.project_id, readPlanForReader],
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:589: setPlanReadState(createEmptyPlanReadState());
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:594: const plan = latestReadingPlan || planReadState.plan;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:596: void readPlanForReader(plan);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:597: }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:761: latestReadingPlan={latestReadingPlan}
+
+codex
+我还需要完整弹窗底部和 `latestReadingPlan` 合并逻辑，确保刷新后用最新快照。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src/renderer/components/PlanLists.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if($i -ge 716 -and $i -le 770){ '"'{0,4}: {1}' -f "'$i,$_ } }; Write-Host '"'--- Workspace top/latest'; "'$i=0; Get-Content -LiteralPath '"'src/renderer/pages/WorkspacePage.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if(($i -le 105) -or ($i -ge 220 -and $i -le 260)){ '"'{0,4}: {1}' -f "'$i,$_ } }' in D:\project\GitHub\autoplan
+ succeeded in 615ms:
+ 716:               </dl>
+ 717: 
+ 718:               {latestPlanUpdated ? (
+ 719:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+ 720:                   Plan 列表信息已更新，可刷新读取最新正文。
+ 721:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 722:                     刷新读取
+ 723:                   </button>
+ 724:                 </div>
+ 725:               ) : null}
+ 726:               {planReadError ? (
+ 727:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+ 728:                   <span>{planReadError}</span>
+ 729:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 730:                     重试
+ 731:                   </button>
+ 732:                 </div>
+ 733:               ) : null}
+ 734:               {planReading ? (
+ 735:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+ 736:                   正在读取 Plan 全文…
+ 737:                 </div>
+ 738:               ) : null}
+ 739:               {!planReading && !planReadError ? (
+ 740:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+ 741:                   <MarkdownReader
+ 742:                     markdown={planReadResult?.markdown ?? ''}
+ 743:                     emptyMessage="暂无计划正文"
+ 744:                     ariaLabel="Plan Markdown 正文内容"
+ 745:                   />
+ 746:                 </section>
+ 747:               ) : null}
+ 748:             </div>
+ 749:           </div>
+ 750:         </div>
+ 751:       ) : null}
+ 752:     </>
+ 753:   );
+ 754: }
+ 755: 
+ 756: export function TaskList({
+ 757:   emptyText = '暂无任务。',
+ 758:   tasks,
+ 759:   onOpenPlan,
+ 760:   onRun,
+ 761:   onStop,
+ 762: }: {
+ 763:   emptyText?: string;
+ 764:   tasks: PlanTask[];
+ 765:   onOpenPlan?: (task: PlanTask) => void;
+ 766:   onRun?: (task: PlanTask) => void;
+ 767:   onStop?: (task: PlanTask) => void;
+ 768: }) {
+ 769:   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+ 770:   const visibleTasks = useMemo(
+--- Workspace top/latest
+   1: import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+   2: import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+   3: import { PENDING_ATTACHMENT_SOURCES, WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
+   4: import type {
+   5:   AgentCliOption,
+   6:   AgentCliProvider,
+   7:   AppSnapshot,
+   8:   CodexReasoningEffort,
+   9:   IntakeType,
+  10:   PendingAttachment,
+  11:   Plan,
+  12:   PlanTask,
+  13:   Project,
+  14:   ProjectState,
+  15:   WorkspacePlanReadState,
+  16:   WorkspaceSearchGroup,
+  17:   WorkspaceSearchSourceType,
+  18:   WorkspaceSearchState,
+  19:   WorkspaceTab,
+  20: } from '../types';
+  21: import { useSnapshot } from '../hooks/useSnapshot';
+  22: import { ComposerCliSelectionProvider } from '../components/Composer';
+  23: import { IntakePanel } from '../components/IntakePanel';
+  24: import { EventList, PlanList, TaskList } from '../components/PlanLists';
+  25: import { SearchResults } from '../components/SearchResults';
+  26: import { CodexLog } from '../components/CodexLog';
+  27: import { Icon, type IconName } from '../components/icons';
+  28: import { getFilePath, agentCliProviderLabel, codexReasoningEffortLabel } from '../components/shared';
+  29: import { searchWorkspaceSnapshot } from '../utils/search';
+  30: import { formatChinaTime } from '../utils/time';
+  31: 
+  32: const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
+  33:   requirement: [],
+  34:   feedback: [],
+  35: };
+  36: 
+  37: const agentCliOptions: AgentCliOption[] = [
+  38:   { value: 'codex', label: 'Codex CLI' },
+  39:   { value: 'claude', label: 'Claude CLI' },
+  40: ];
+  41: 
+  42: const codexReasoningOptions: AgentCliOption[] = [
+  43:   { value: 'low', label: '低 · 快速' },
+  44:   { value: 'medium', label: '中 · 默认' },
+  45:   { value: 'high', label: '高 · 深入' },
+  46: ];
+  47: 
+  48: const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+  49: 
+  50: const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+  51:   requirement: 'codex',
+  52:   feedback: 'codex',
+  53: };
+  54: 
+  55: const defaultComposerCodexReasoning: Record<IntakeType, CodexReasoningEffort> = {
+  56:   requirement: defaultCodexReasoningEffort,
+  57:   feedback: defaultCodexReasoningEffort,
+  58: };
+  59: 
+  60: const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [
+  61:   { id: 'overview', label: '概览', icon: 'overview' },
+  62:   { id: 'requirement', label: '需求', icon: 'requirement' },
+  63:   { id: 'feedback', label: '反馈', icon: 'feedback' },
+  64:   { id: 'tasks', label: '任务与计划', icon: 'tasks' },
+  65:   { id: 'events', label: '事件流', icon: 'events' },
+  66:   { id: 'settings', label: '设置', icon: 'settings' },
+  67: ];
+  68: 
+  69: const searchNoMatchText = '没有匹配结果。';
+  70: 
+  71: type LoopFormState = {
+  72:   workspacePath: string;
+  73:   intervalSeconds: string;
+  74:   validationCommand: string;
+  75:   agentCliProvider: string;
+  76:   agentCliCommand: string;
+  77:   codexReasoningEffort: CodexReasoningEffort;
+  78: };
+  79: 
+  80: type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+  81: 
+  82: type ScopeFileOpenSettings = {
+  83:   mode: ScopeFileOpenMode;
+  84:   command: string;
+  85: };
+  86: 
+  87: const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+  88: 
+  89: type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
+  90: 
+  91: function createEmptyPlanReadState(): WorkspacePlanReadState {
+  92:   return { plan: null, result: null, loading: false, error: null };
+  93: }
+  94: 
+  95: function getErrorMessage(error: unknown, fallback: string) {
+  96:   if (error instanceof Error && error.message) return error.message;
+  97:   if (typeof error === 'string' && error.trim()) return error.trim();
+  98:   return fallback;
+  99: }
+ 100: 
+ 101: function createPendingPathAttachment(file: File): PendingAttachment | null {
+ 102:   const path = getFilePath(file);
+ 103:   if (!path) return null;
+ 104:   const name = file.name || path.split(/[\\/]/).pop() || '附件';
+ 105:   const type = file.type || 'application/octet-stream';
+ 220:         ? parsed.mode
+ 221:         : 'system';
+ 222:       return { mode, command: String(parsed?.command || '') };
+ 223:     } catch {
+ 224:       return defaultScopeFileOpenSettings;
+ 225:     }
+ 226:   });
+ 227:   const [searchQuery, setSearchQuery] = useState('');
+ 228:   const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
+ 229:   const planReadRequestRef = useRef(0);
+ 230: 
+ 231:   const project = snapshot?.activeProject || null;
+ 232:   const state = snapshot?.state || null;
+ 233:   const projects = snapshot?.projects || [];
+ 234:   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+ 235:   const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+ 236:   const searchHitCount = workspaceSearch.total;
+ 237:   const isSearching = !workspaceSearch.query.isEmpty;
+ 238:   const filteredItems = useMemo(
+ 239:     () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
+ 240:     [snapshot, workspaceSearch],
+ 241:   );
+ 242:   const displayTasks = useMemo(
+ 243:     () => filteredItems.tasks.map((task) => withTaskCliProviderTitle(task, state?.agent_cli_provider)),
+ 244:     [filteredItems.tasks, state?.agent_cli_provider],
+ 245:   );
+ 246:   const filteredEmptyText = isSearching ? searchNoMatchText : undefined;
+ 247:   const latestReadingPlan = useMemo(() => {
+ 248:     if (!planReadState.plan) return null;
+ 249:     return (
+ 250:       snapshot?.plans.find(
+ 251:         (plan) => plan.id === planReadState.plan?.id && plan.project_id === planReadState.plan?.project_id,
+ 252:       ) || planReadState.plan
+ 253:     );
+ 254:   }, [planReadState.plan, snapshot?.plans]);
+ 255: 
+ 256:   const showError = useCallback((e: unknown) => {
+ 257:     const msg = e instanceof Error ? e.message : String(e);
+ 258:     setError(msg);
+ 259:     window.alert(msg);
+ 260:   }, [setError]);
+
+**Considering modifications**
+
+I'm thinking about how I need to be careful with P003, since changes can make a huge difference due to prior modifications. The status shows that PlanLists have already been altered in the past, so I should only add small changes. I should definitely use the apply_patch function to ensure everything goes smoothly and the adjustments integrate properly. Being mindful of these details is important to avoid any mishaps!
+codex
+`WorkspacePage` 已经把最新计划记录传入阅读器；我将在弹窗摘要里优先使用这份最新记录。
+  ✓ 定位全文阅读器摘要
+  → 补充 CLI 摘要展示
+  • 同步最新计划记录
+  • 检查改动范围
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2a468beecd2072a0d2402026e0c9910b16b2945e..47f282b06c2b2e6ce64624dc9ca9e944e30af0c3
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -456,6 +456,8 @@
+   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
++  const readerPlanForSummary = latestReadingPlan || readingPlan;
++  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+@@ -704,6 +706,10 @@
+                   <dd>{readingPlan.status}</dd>
+                 </div>
+                 <div className="plan-reader-summary-item">
++                  <dt>CLI</dt>
++                  <dd>{readerCliSummary || '-'}</dd>
++                </div>
++                <div className="plan-reader-summary-item">
+                   <dt>更新时间</dt>
+                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                 </div>
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2a468beecd2072a0d2402026e0c9910b16b2945e..47f282b06c2b2e6ce64624dc9ca9e944e30af0c3
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -456,6 +456,8 @@
+   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
++  const readerPlanForSummary = latestReadingPlan || readingPlan;
++  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+@@ -704,6 +706,10 @@
+                   <dd>{readingPlan.status}</dd>
+                 </div>
+                 <div className="plan-reader-summary-item">
++                  <dt>CLI</dt>
++                  <dd>{readerCliSummary || '-'}</dd>
++                </div>
++                <div className="plan-reader-summary-item">
+                   <dt>更新时间</dt>
+                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                 </div>
+
+codex
+阅读器摘要已补充。接下来确认 WorkspacePage 是否需要改动来保留最新计划字段。
+codex
+`WorkspacePage` 已传入 `latestReadingPlan`，刷新时也会用最新计划记录；无需额外改动它。现在做范围检查。
+  ✓ 定位全文阅读器摘要
+  ✓ 补充 CLI 摘要展示
+  ✓ 同步最新计划记录
+  → 检查改动范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2a468beecd2072a0d2402026e0c9910b16b2945e..47f282b06c2b2e6ce64624dc9ca9e944e30af0c3
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -456,6 +456,8 @@
+   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
++  const readerPlanForSummary = latestReadingPlan || readingPlan;
++  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+@@ -704,6 +706,10 @@
+                   <dd>{readingPlan.status}</dd>
+                 </div>
+                 <div className="plan-reader-summary-item">
++                  <dt>CLI</dt>
++                  <dd>{readerCliSummary || '-'}</dd>
++                </div>
++                <div className="plan-reader-summary-item">
+                   <dt>更新时间</dt>
+                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                 </div>
+
+exec
+powershell.exe -Command "git diff --stat -- src/renderer/components/PlanLists.tsx src/renderer/pages/WorkspacePage.tsx; Write-Host '--- key lines'; Select-String -Path 'src/renderer/components/PlanLists.tsx','src/renderer/pages/WorkspacePage.tsx' -Pattern 'readerPlanForSummary|readerCliSummary|<dt>CLI</dt>|latestReadingPlan|refreshPlanReader' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path.Replace((Get-Location).Path + '"'\\\\',''),"'$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- status'; git status --short -- src/renderer/components/PlanLists.tsx src/renderer/pages/WorkspacePage.tsx docs/plan/plan_requirement_26_20260626-140018.md" in D:\project\GitHub\autoplan
+ succeeded in 715ms:
+ src/renderer/components/PlanLists.tsx | 346 ++++++++++++++++++++++++++++++----
+ src/renderer/pages/WorkspacePage.tsx  |  97 +++++++++-
+ 2 files changed, 403 insertions(+), 40 deletions(-)
+--- key lines
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:431: latestReadingPlan,
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:442: latestReadingPlan?: Plan | null;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:459: const readerPlanForSummary = latestReadingPlan || readingPlan;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:460: const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:461: const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:709: <dt>CLI</dt>
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:710: <dd>{readerCliSummary || '-'}</dd>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:247: const latestReadingPlan = useMemo(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:592: const refreshPlanReader = useCallback(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:594: const plan = latestReadingPlan || planReadState.plan;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:597: }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:761: latestReadingPlan={latestReadingPlan}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:776: onRefreshReader={refreshPlanReader}
+--- status
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+?? docs/plan/plan_requirement_26_20260626-140018.md
+warning: in the working copy of 'src/renderer/components/PlanLists.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2a468beecd2072a0d2402026e0c9910b16b2945e..47f282b06c2b2e6ce64624dc9ca9e944e30af0c3
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -456,6 +456,8 @@
+   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
++  const readerPlanForSummary = latestReadingPlan || readingPlan;
++  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+@@ -704,6 +706,10 @@
+                   <dd>{readingPlan.status}</dd>
+                 </div>
+                 <div className="plan-reader-summary-item">
++                  <dt>CLI</dt>
++                  <dd>{readerCliSummary || '-'}</dd>
++                </div>
++                <div className="plan-reader-summary-item">
+                   <dt>更新时间</dt>
+                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                 </div>
+
+codex
+范围检查完成；未运行测试或构建，plan 文件未触碰。
+  ✓ 定位全文阅读器摘要
+  ✓ 补充 CLI 摘要展示
+  ✓ 同步最新计划记录
+  ✓ 检查改动范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2a468beecd2072a0d2402026e0c9910b16b2945e..47f282b06c2b2e6ce64624dc9ca9e944e30af0c3
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -456,6 +456,8 @@
+   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
++  const readerPlanForSummary = latestReadingPlan || readingPlan;
++  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+@@ -704,6 +706,10 @@
+                   <dd>{readingPlan.status}</dd>
+                 </div>
+                 <div className="plan-reader-summary-item">
++                  <dt>CLI</dt>
++                  <dd>{readerCliSummary || '-'}</dd>
++                </div>
++                <div className="plan-reader-summary-item">
+                   <dt>更新时间</dt>
+                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                 </div>
+
+codex
+已完成 P004，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint。
+
+- 在 `src/renderer/components/PlanLists.tsx:459` 优先使用 `latestReadingPlan` 生成阅读器摘要，保证刷新/快照更新后读取最新计划级 CLI 字段。
+- 在 `src/renderer/components/PlanLists.tsx:709` 为 Plan 全文阅读器摘要区新增 `CLI` 项，复用 `planCliSummaryLabel`，与计划列表文案一致。
+- 读取失败、文件缺失、Markdown 为空或加载中时，只要有计划记录，CLI 摘要仍会显示。
+- `src/renderer/pages/WorkspacePage.tsx:247`、`src/renderer/pages/WorkspacePage.tsx:592`、`src/renderer/pages/WorkspacePage.tsx:761` 已有最新计划记录传递与刷新逻辑，本任务未额外改动该文件。
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2a468beecd2072a0d2402026e0c9910b16b2945e..47f282b06c2b2e6ce64624dc9ca9e944e30af0c3
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -456,6 +456,8 @@
+   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
++  const readerPlanForSummary = latestReadingPlan || readingPlan;
++  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+@@ -704,6 +706,10 @@
+                   <dd>{readingPlan.status}</dd>
+                 </div>
+                 <div className="plan-reader-summary-item">
++                  <dt>CLI</dt>
++                  <dd>{readerCliSummary || '-'}</dd>
++                </div>
++                <div className="plan-reader-summary-item">
+                   <dt>更新时间</dt>
+                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                 </div>
+
+tokens used
+353,716
+已完成 P004，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint。
+
+- 在 `src/renderer/components/PlanLists.tsx:459` 优先使用 `latestReadingPlan` 生成阅读器摘要，保证刷新/快照更新后读取最新计划级 CLI 字段。
+- 在 `src/renderer/components/PlanLists.tsx:709` 为 Plan 全文阅读器摘要区新增 `CLI` 项，复用 `planCliSummaryLabel`，与计划列表文案一致。
+- 读取失败、文件缺失、Markdown 为空或加载中时，只要有计划记录，CLI 摘要仍会显示。
+- `src/renderer/pages/WorkspacePage.tsx:247`、`src/renderer/pages/WorkspacePage.tsx:592`、`src/renderer/pages/WorkspacePage.tsx:761` 已有最新计划记录传递与刷新逻辑，本任务未额外改动该文件。

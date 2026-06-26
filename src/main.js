@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { app, BrowserWindow, ipcMain, Menu } = require('electron');
+const { spawn } = require('node:child_process');
+const { app, BrowserWindow, ipcMain, Menu, shell } = require('electron');
 const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
 const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
@@ -49,6 +50,8 @@ app.on('before-quit', () => {
 ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
 
 ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+
+ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
 
 ipcMain.handle('projects:create', (_event, input = {}) => {
   const now = nowIso();
@@ -136,6 +139,13 @@ ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
 ipcMain.handle('tasks:run', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   await loop.runTask(projectId, requiredRecordId(input, 'taskId'));
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('tasks:runParallel', async (_event, input = {}) => {
+  requireManualAction(input, '并发执行');
+  const projectId = requiredProjectId(input);
+  await loop.runTaskBatches(projectId, requiredRecordId(input, 'planId'), input.batches || []);
   return loop.snapshot(projectId);
 });
 
@@ -353,6 +363,108 @@ async function readPlan(input = {}) {
   }
 }
 
+async function openWorkspaceFile(input = {}) {
+  const projectId = Number(input.projectId || 0);
+  const relativePath = String(input.filePath || input.path || '').trim();
+  if (!projectId) return openFileResult(false, '项目不存在');
+  if (!relativePath) return openFileResult(false, '文件路径为空');
+
+  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
+  if (!project) return openFileResult(false, '项目不存在');
+  if (!String(project.workspace_path || '').trim()) return openFileResult(false, '项目工作区路径为空');
+
+  try {
+    const filePath = await resolveWorkspaceFilePath(project.workspace_path, relativePath);
+    const mode = normalizeOpenFileMode(input.mode || readSetting('scopeFileOpenMode') || 'system');
+    const command = String(input.command || readSetting('scopeFileOpenCommand') || '').trim();
+    await openResolvedFilePath(filePath, mode, command);
+    return openFileResult(true, '', { filePath, mode });
+  } catch (error) {
+    return openFileResult(false, openFileErrorMessage(error));
+  }
+}
+
+async function resolveWorkspaceFilePath(workspacePath, filePath) {
+  const workspaceRoot = path.resolve(workspacePath);
+  const requestedPath = path.resolve(workspaceRoot, filePath);
+  if (!isInsidePath(workspaceRoot, requestedPath)) {
+    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+  }
+
+  let workspaceRealPath;
+  try {
+    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
+  } catch {
+    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+  }
+
+  let fileRealPath;
+  try {
+    fileRealPath = await fs.promises.realpath(requestedPath);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+      throw planReadError('FILE_NOT_FOUND', '文件不存在');
+    }
+    throw error;
+  }
+  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
+    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+  }
+  const stat = await fs.promises.stat(fileRealPath);
+  if (stat.isDirectory()) throw planReadError('FILE_IS_DIRECTORY', '路径指向目录，不能作为文件打开');
+  if (!stat.isFile()) throw planReadError('FILE_NOT_REGULAR', '路径不是普通文件');
+  return fileRealPath;
+}
+
+async function openResolvedFilePath(filePath, mode, command) {
+  if (mode === 'folder') {
+    shell.showItemInFolder(filePath);
+    return;
+  }
+  if (mode === 'vscode') {
+    await runOpenCommand(command || 'code', [filePath]);
+    return;
+  }
+  if (mode === 'command') {
+    if (!command) throw planReadError('OPEN_COMMAND_MISSING', '第三方编辑器命令未配置');
+    await runOpenCommand(command, [filePath], { template: command.includes('{file}') });
+    return;
+  }
+  const error = await shell.openPath(filePath);
+  if (error) throw planReadError('OPEN_FILE_FAILED', error);
+}
+
+function runOpenCommand(command, args, options = {}) {
+  return new Promise((resolve, reject) => {
+    const spawnCommand = options.template ? command.replaceAll('{file}', shellQuote(args[0])) : command;
+    const spawnArgs = options.template ? [] : args;
+    const child = spawn(spawnCommand, spawnArgs, { detached: true, stdio: 'ignore', shell: process.platform === 'win32' || options.template });
+    child.once('error', (error) => reject(planReadError('OPEN_COMMAND_FAILED', error?.message || '编辑器命令启动失败')));
+    child.once('spawn', () => {
+      child.unref();
+      resolve();
+    });
+  });
+}
+
+function shellQuote(value) {
+  return `"${String(value || '').replace(/"/g, '\\"')}"`;
+}
+
+function normalizeOpenFileMode(value) {
+  const mode = String(value || '').trim().toLowerCase();
+  if (mode === 'folder' || mode === 'vscode' || mode === 'command') return mode;
+  return 'system';
+}
+
+function readSetting(key) {
+  return db.get('SELECT value FROM settings WHERE key = ?', [key])?.value || '';
+}
+
+function openFileResult(ok, error, extra = {}) {
+  return { ok, error: error || null, ...extra };
+}
+
 async function resolvePlanPath(workspacePath, filePath) {
   const workspaceRoot = path.resolve(workspacePath);
   const requestedPath = path.resolve(workspaceRoot, filePath);
@@ -408,6 +520,11 @@ function planReadErrorMessage(error) {
   if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
   if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
   return error?.message || '计划文件读取失败';
+}
+
+function openFileErrorMessage(error) {
+  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '文件无法打开，请检查权限';
+  return error?.message || '文件打开失败';
 }
 
 function requireManualAction(input = {}, label = '操作') {

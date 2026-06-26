@@ -3,7 +3,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
 import { RecordCard } from './IntakePanel';
 import { MarkdownReader } from './MarkdownReader';
-import { agentCliProviderLabel, codexReasoningEffortLabel } from './shared';
+import { agentCliProviderLabel, codexReasoningEffortLabel, planCliSummaryLabel } from './shared';
 import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
 
 type TimedPlanTask = PlanTask & {
@@ -25,7 +25,20 @@ type TaskEventDisplay = {
   tone?: TaskEventTone;
 };
 
+type TaskPlanGroup = {
+  key: string;
+  title: string;
+  tasks: PlanTask[];
+  firstIndex: number;
+  sortTime: number | null;
+};
+
 type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+
+type ParallelRunRequest = {
+  plan: Plan;
+  batches: Array<{ taskIds: number[] }>;
+};
 
 const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
   { id: 'all', label: '全部', emptyText: '暂无任务。' },
@@ -78,6 +91,115 @@ function matchesTaskStatusFilter(task: PlanTask, filter: TaskStatusFilter) {
   if (filter === 'queued') return ['pending', 'queued', 'waiting'].includes(status);
   if (filter === 'completed') return ['completed', 'done', 'passed', 'accepted'].includes(status);
   return true;
+}
+
+function readTaskTime(value: string | null | undefined) {
+  const time = Date.parse(String(value || ''));
+  return Number.isFinite(time) ? time : null;
+}
+
+function taskSortTime(task: TimedPlanTask) {
+  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
+}
+
+function latestTaskTime(tasks: TimedPlanTask[]) {
+  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
+  for (const fields of fieldGroups) {
+    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
+    const validTimes = times.filter((time): time is number => time !== null);
+    if (validTimes.length) return Math.max(...validTimes);
+  }
+  return null;
+}
+
+function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
+  let latestValue = '';
+  let latestTime: number | null = null;
+  tasks.forEach((task) => {
+    const value = task[field];
+    const time = readTaskTime(value);
+    if (time === null) return;
+    if (latestTime === null || time > latestTime) {
+      latestTime = time;
+      latestValue = value || '';
+    }
+  });
+  return latestValue;
+}
+
+function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
+  const timedTasks = group.tasks as TimedPlanTask[];
+  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
+  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
+  const timeSummary = latestFinishedAt
+    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
+    : latestUpdatedAt
+      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
+      : '暂无时间记录';
+  return `${group.tasks.length} 个任务 · ${timeSummary}`;
+}
+
+function taskPlanGroupTitle(task: PlanTask) {
+  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+}
+
+function taskPlanGroupKey(task: TimedPlanTask) {
+  const planId = readPlanId(task);
+  if (planId !== null) return `plan:${planId}`;
+  if (task.file_path) return `file:${task.file_path}`;
+  const title = taskPlanGroupTitle(task);
+  if (title !== '未命名计划') return `title:${title}`;
+  return 'unknown-plan';
+}
+
+function groupTasksByPlan(tasks: PlanTask[]) {
+  const groups = new Map<string, TaskPlanGroup>();
+  tasks.forEach((task, index) => {
+    const timedTask = task as TimedPlanTask;
+    const key = taskPlanGroupKey(timedTask);
+    const existingGroup = groups.get(key);
+    if (existingGroup) {
+      existingGroup.tasks.push(task);
+      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
+      return;
+    }
+
+    groups.set(key, {
+      key,
+      title: taskPlanGroupTitle(task),
+      tasks: [task],
+      firstIndex: index,
+      sortTime: null,
+    });
+  });
+
+  return Array.from(groups.values())
+    .map((group) => {
+      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
+      const sortedTasks = indexedTasks
+        .sort((left, right) => {
+          const leftTime = taskSortTime(left.task as TimedPlanTask);
+          const rightTime = taskSortTime(right.task as TimedPlanTask);
+          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+          if (leftTime !== null && rightTime === null) return -1;
+          if (leftTime === null && rightTime !== null) return 1;
+          return left.index - right.index;
+        })
+        .map(({ task }) => task);
+      return {
+        ...group,
+        tasks: sortedTasks,
+        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
+      };
+    })
+    .sort((left, right) => {
+      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
+        return right.sortTime - left.sortTime;
+      }
+      if (left.sortTime !== null && right.sortTime === null) return -1;
+      if (left.sortTime === null && right.sortTime !== null) return 1;
+      return left.firstIndex - right.firstIndex;
+    });
 }
 
 function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
@@ -284,11 +406,32 @@ function getPlanReaderFocusableElements(container: HTMLElement) {
   );
 }
 
+function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+  if (hasRunningTask) return '该计划已有任务执行中';
+  if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+  if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+  return '';
+}
+
+function scopeFileLabel(file: PlanTask['scope_files'][number]) {
+  if (file.isUnknown) return 'unknown';
+  if (file.isValidation) return 'validation';
+  return file.path;
+}
+
+function scopeFileStatus(file: PlanTask['scope_files'][number]) {
+  if (file.isUnknown) return '无法判断影响范围';
+  if (file.isValidation) return '完整验收任务';
+  if (file.canOpen) return '可打开';
+  return file.reason || (file.exists ? '不可打开' : '文件不存在');
+}
+
 export function PlanList({
   emptyText = '暂无 plan。',
   latestReadingPlan,
   onCloseReader,
   onOpenReader,
+  onRunParallel,
   onRefreshReader,
   plans,
   readerState,
@@ -299,6 +442,7 @@ export function PlanList({
   latestReadingPlan?: Plan | null;
   onCloseReader: () => void;
   onOpenReader: (plan: Plan) => void;
+  onRunParallel?: (request: ParallelRunRequest) => void;
   onRefreshReader: () => void;
   plans: Plan[];
   readerState: WorkspacePlanReadState;
@@ -312,6 +456,8 @@ export function PlanList({
   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+  const readerPlanForSummary = latestReadingPlan || readingPlan;
+  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
   const readerDialogId = useId();
   const readerTitleId = useId();
@@ -319,6 +465,7 @@ export function PlanList({
   const readerContentId = useId();
   const readerDialogRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+  const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
   const readerStatusText = planReadError
     ? `读取失败：${planReadError}`
     : planReading
@@ -386,19 +533,34 @@ export function PlanList({
       {plans.length ? (
         <div className="list compact">
           {plans.map((plan) => {
-            const durationSummary = formatPlanDurationSummary(tasksForPlan(tasks, plan, totalPlanCount));
+            const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+            const durationSummary = formatPlanDurationSummary(planTasks);
             const title = planTitle(plan);
             const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
               plan.validation_passed ? 'passed' : 'pending'
             }`;
+            const cliSummary = planCliSummaryLabel(plan);
             const readingThisPlan = Boolean(
               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
             );
             const disableRead = planReading && readingThisPlan;
+            const suggestion = plan.concurrency_suggestion;
+            const runningInPlan = planTasks.some((task) => task.status === 'running');
+            const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
+            const canRunParallel = Boolean(onRunParallel && suggestion?.hasSafeParallelBatches && !parallelDisabledReason);
             return (
               <RecordCard
                 actions={
                   <div className="item-actions">
+                    <button
+                      type="button"
+                      className="btn-link plan-parallel-link"
+                      disabled={!canRunParallel}
+                      title={parallelDisabledReason || undefined}
+                      onClick={() => setConfirmingPlan(plan)}
+                    >
+                      并发执行
+                    </button>
                     <button
                       type="button"
                       className="btn-link plan-read-link"
@@ -420,9 +582,15 @@ export function PlanList({
                   <div className="plan-list-body">
                     {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
                     <div className="plan-list-summary">{progressSummary}</div>
+                    <div className="plan-parallel-summary">
+                      <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+                      <span>建议 {suggestion?.batchCount || 0} 批</span>
+                      <span>串行 {suggestion?.serialTaskCount || 0} 个</span>
+                      {parallelDisabledReason ? <span title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
+                    </div>
                   </div>
                 }
-                meta={`${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
               />
             );
           })}
@@ -430,6 +598,67 @@ export function PlanList({
       ) : (
         <div className="empty">{emptyText}</div>
       )}
+
+      {confirmingPlan ? (
+        <div className="modal-mask" onClick={() => setConfirmingPlan(null)}>
+          <div className="modal parallel-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h3>确认并发执行</h3>
+              <button type="button" className="modal-close" onClick={() => setConfirmingPlan(null)} aria-label="关闭并发执行确认">
+                ×
+              </button>
+            </div>
+            <div className="parallel-confirm-body">
+              <p>确认后将按以下安全批次启动；取消不会改变任务状态。</p>
+              {confirmingPlan.concurrency_suggestion.batches.map((batch) => (
+                <section className="parallel-batch-card" key={batch.batch}>
+                  <div className="parallel-batch-head">
+                    <strong>批次 {batch.batch}</strong>
+                    <span>{batch.reason}</span>
+                  </div>
+                  <ul>
+                    {batch.tasks.map((task) => (
+                      <li key={task.id}>
+                        <span>{task.task_key} · {task.title}</span>
+                        <small className="mono">{task.scopes.join(', ')}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+              {confirmingPlan.concurrency_suggestion.serialTasks.length ? (
+                <details className="parallel-serial-reasons">
+                  <summary>查看不建议并发原因</summary>
+                  <ul>
+                    {confirmingPlan.concurrency_suggestion.serialTasks.map((task) => (
+                      <li key={task.id}>{task.task_key}：{task.reason}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn" onClick={() => setConfirmingPlan(null)}>取消</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const plan = confirmingPlan;
+                  setConfirmingPlan(null);
+                  onRunParallel?.({
+                    plan,
+                    batches: plan.concurrency_suggestion.batches.map((batch) => ({
+                      taskIds: batch.tasks.map((task) => task.id),
+                    })),
+                  });
+                }}
+              >
+                确认并发执行
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {readingPlan ? (
         <div className="modal-mask" onClick={onCloseReader}>
@@ -475,6 +704,10 @@ export function PlanList({
                 <div className="plan-reader-summary-item">
                   <dt>状态</dt>
                   <dd>{readingPlan.status}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>CLI</dt>
+                  <dd>{readerCliSummary || '-'}</dd>
                 </div>
                 <div className="plan-reader-summary-item">
                   <dt>更新时间</dt>
@@ -544,6 +777,7 @@ export function TaskList({
     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
     [activeFilter, tasks],
   );
+  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
   const filterCounts = useMemo(
     () =>
       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
@@ -579,43 +813,79 @@ export function TaskList({
           );
         })}
       </div>
-      {visibleTasks.length ? (
+      {taskGroups.length ? (
         <div className="list compact">
-          {visibleTasks.map((task) => {
-            const running = task.status === 'running';
-            const completed = task.status === 'completed';
-            const durationLabel = formatTaskDuration(task as TimedPlanTask);
+          {taskGroups.map((group) => {
             return (
-              <RecordCard
-                actions={
-                  <div className="item-actions">
-                    <button type="button" className="btn-link" disabled={completed || running} onClick={() => onRun?.(task)}>
-                      执行
-                    </button>
-                    <button type="button" className="btn-link danger-link" disabled={!running} onClick={() => onStop?.(task)}>
-                      停止
-                    </button>
-                  </div>
-                }
-                key={task.id}
-                title={task.title}
-                status={task.status}
-                body={
-                  task.file_path ? (
-                    <button
-                      type="button"
-                      className="btn-link task-file-link mono"
-                      disabled={!onOpenPlan}
-                      title={task.file_path}
-                      aria-label={`预览 ${task.file_path}`}
-                      onClick={() => onOpenPlan?.(task)}
-                    >
-                      {task.file_path}
-                    </button>
-                  ) : null
-                }
-                meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
-              />
+              <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+                <div className="task-plan-group-head">
+                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
+                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
+                </div>
+                {group.tasks.map((task) => {
+                  const running = task.status === 'running';
+                  const completed = task.status === 'completed';
+                  const durationLabel = formatTaskDuration(task as TimedPlanTask);
+                  return (
+                    <RecordCard
+                      actions={
+                        <div className="item-actions">
+                          <button
+                            type="button"
+                            className="btn-link"
+                            disabled={completed || running}
+                            onClick={() => onRun?.(task)}
+                          >
+                            执行
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-link danger-link"
+                            disabled={!running}
+                            onClick={() => onStop?.(task)}
+                          >
+                            停止
+                          </button>
+                        </div>
+                      }
+                      key={task.id}
+                      title={task.title}
+                      status={task.status}
+                      body={
+                        <div className="task-body-stack">
+                          {task.file_path ? (
+                            <button
+                              type="button"
+                              className="btn-link task-file-link mono"
+                              disabled={!onOpenPlan}
+                              title={task.file_path}
+                              aria-label={`预览 ${task.file_path}`}
+                              onClick={() => onOpenPlan?.(task)}
+                            >
+                              {task.file_path}
+                            </button>
+                          ) : null}
+                          {task.scope_files?.length ? (
+                            <div className="task-scope-files" aria-label="任务相关文件">
+                              {task.scope_files.map((file) => (
+                                <span
+                                  key={`${task.id}-${file.path}`}
+                                  className={`task-scope-chip${file.canOpen ? ' openable' : ''}${file.isUnknown || file.isValidation ? ' special' : ''}`}
+                                  title={scopeFileStatus(file)}
+                                >
+                                  <span className="mono">{scopeFileLabel(file)}</span>
+                                  <small>{scopeFileStatus(file)}</small>
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      }
+                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+                    />
+                  );
+                })}
+              </section>
             );
           })}
         </div>

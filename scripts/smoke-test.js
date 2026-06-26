@@ -86,6 +86,11 @@ async function main() {
     snapshot = loop.snapshot(projectId);
     assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
     assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+    assertPlanCliSnapshot(snapshot.plans[0], {
+      provider: 'codex',
+      command: '',
+      effort: 'medium',
+    }, '历史 plan 快照');
     assert.equal(snapshot.tasks.length, 6, '任务模块应同步 plan 中的 checkbox 为任务列表');
     assert.ok(
       snapshot.tasks.every((task) => hasTaskDurationShape(task)),
@@ -287,6 +292,10 @@ async function main() {
     assertWorkspaceSearchRegression(snapshot);
     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
 
+    await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+
+    await assertWorkspaceOpenFileIpcSmoke(db, loop, workspace, projectId);
+
     await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
 
     await assertAgentCliBackendSmoke(db, loop, projectId, workspace);
@@ -321,7 +330,7 @@ async function main() {
     loop.stop(multiProjectB);
     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, search, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, scope concurrency, scope file open, search, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -497,11 +506,14 @@ function loadMainPlanReadHandler(db, loop) {
   return handler;
 }
 
-function loadMainIpcHandlers(db, loop) {
+function loadMainIpcHandlers(db, loop, options = {}) {
   const mainPath = path.join(__dirname, '..', 'src', 'main.js');
   const handlers = new Map();
   const module = { exports: {} };
   const source = `${fs.readFileSync(mainPath, 'utf8')}\nmodule.exports.__setSmokeState = (state) => { db = state.db; loop = state.loop; };\nmodule.exports.__smokeIpcHandlers = __smokeIpcHandlers;\n`;
+  const fakeChildProcess = {
+    spawn: options.spawn || (() => createSpawnOnlyChild()),
+  };
   const fakeElectron = {
     app: {
       getPath: () => path.join(os.tmpdir(), 'autoplan-smoke-user-data'),
@@ -518,9 +530,14 @@ function loadMainIpcHandlers(db, loop) {
     Menu: {
       setApplicationMenu: () => {},
     },
+    shell: options.shell || {
+      openPath: async () => '',
+      showItemInFolder: () => {},
+    },
   };
   const localRequire = (request) => {
     if (request === 'electron') return fakeElectron;
+    if (request === 'node:child_process') return fakeChildProcess;
     if (request.startsWith('./')) return require(path.join(path.dirname(mainPath), request));
     return require(request);
   };
@@ -856,6 +873,134 @@ async function assertGeneratedPlanPromptReadsAttachment(loop, options) {
   }
 }
 
+async function assertScopeConcurrencySmoke(db, loop, workspace, projectId) {
+  const planRel = path.join('docs', 'plan', 'scope-concurrency-smoke.md');
+  const planFile = path.join(workspace, planRel);
+  fs.mkdirSync(path.dirname(planFile), { recursive: true });
+  const existingFile = path.join(workspace, 'src', 'existing.js');
+  fs.mkdirSync(path.dirname(existingFile), { recursive: true });
+  fs.writeFileSync(existingFile, 'module.exports = 1;\n', 'utf8');
+  fs.writeFileSync(
+    planFile,
+    [
+      '# Scope concurrency smoke',
+      '',
+      '- [ ] S001: 多文件归一化 <!-- scope: src/existing.js, src\\missing.js, src/existing.js -->',
+      '- [ ] S002: 独立文件 <!-- scope: src/other.js -->',
+      '- [ ] S003: 重叠文件 <!-- scope: src/existing.js -->',
+      '- [ ] S004: 未知范围 <!-- scope: unknown -->',
+      '- [ ] S005: 完整验收 <!-- scope: validation -->',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const planId = insertPlan(db, projectId, planRel, 'scope-concurrency-smoke');
+  loop.syncPlanTasks(planId, planFile);
+  const snapshot = loop.snapshot(projectId);
+  const plan = snapshot.plans.find((item) => item.id === planId);
+  assert.ok(plan, 'scope smoke plan 应进入快照');
+
+  const taskS001 = taskByKey(snapshot, 'S001');
+  assert.deepEqual(
+    taskS001.scope_files.map((file) => file.path),
+    ['src/existing.js', 'src/missing.js'],
+    'scope 文件列表应归一化分隔符并去重',
+  );
+  assert.equal(taskS001.scope_files[0].canOpen, true, '存在的 scope 文件应标记可打开');
+  assert.equal(taskS001.scope_files[1].exists, false, '缺失的 scope 文件应保留缺失状态');
+  assert.equal(taskByKey(snapshot, 'S004').scope_files[0].isUnknown, true, 'unknown scope 应标记 unknown');
+  assert.equal(taskByKey(snapshot, 'S005').scope_files[0].isValidation, true, 'validation scope 应标记 validation');
+
+  assert.equal(plan.concurrency_suggestion.hasSafeParallelBatches, true, '应存在安全并发批次');
+  assert.deepEqual(
+    plan.concurrency_suggestion.batches[0].tasks.map((task) => task.task_key),
+    ['S001', 'S002'],
+    'scope 不重叠任务应进入同一建议批次',
+  );
+  assert.ok(
+    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S004' && /unknown/.test(task.reason)),
+    'unknown 任务应出现在串行原因中',
+  );
+  assert.ok(
+    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S003'),
+    'scope 重叠后无法组成安全批次的任务应保持串行',
+  );
+  assert.ok(
+    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S005' && /validation|验收/.test(task.reason)),
+    'validation 任务应出现在串行原因中',
+  );
+  assert.throws(
+    () => loop.validatedParallelTaskBatches(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]), [
+      { taskIds: [taskByKey(snapshot, 'S001').id, taskByKey(snapshot, 'S003').id] },
+    ]),
+    /scope 冲突/,
+    '手动并发入口应拒绝同批 scope 冲突',
+  );
+
+  const smokePlan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+  const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'scope-parallel.log');
+  fs.mkdirSync(path.dirname(fakeLogFile), { recursive: true });
+  fs.writeFileSync(fakeLogFile, 'scope parallel ok', 'utf8');
+  const startedTaskKeys = [];
+  const originalRunCodex = loop.runCodex.bind(loop);
+  try {
+    loop.runCodex = async (_workspace, _prompt, _label, operation = {}) => {
+      const task = db.get('SELECT task_key FROM plan_tasks WHERE id = ?', [operation.taskId]);
+      startedTaskKeys.push(task.task_key);
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, `${task.task_key}.txt`) };
+    };
+    await loop.runTaskBatches(projectId, planId, [{ taskIds: plan.concurrency_suggestion.batches[0].tasks.map((task) => task.id) }]);
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+  assert.deepEqual(startedTaskKeys.sort(), ['S001', 'S002'], '手动确认后应启动安全并发批次');
+  const completedSnapshot = loop.snapshot(projectId);
+  assert.equal(taskByKey(completedSnapshot, 'S001').status, 'completed', '并发任务 S001 应完成');
+  assert.equal(taskByKey(completedSnapshot, 'S002').status, 'completed', '并发任务 S002 应完成');
+  assert.ok(
+    completedSnapshot.events.some((event) => event.type === 'tasks.parallel.finished' && event.meta?.planId === planId),
+    '并发批次完成应记录事件',
+  );
+  assert.equal(fs.readFileSync(planFile, 'utf8').includes('- [x] S001'), true, '并发完成应写回对应 checkbox');
+}
+
+async function assertWorkspaceOpenFileIpcSmoke(db, loop, workspace, projectId) {
+  const opened = [];
+  const handlers = loadMainIpcHandlers(db, loop, {
+    shell: {
+      openPath: async (targetPath) => {
+        opened.push({ mode: 'system', targetPath });
+        return '';
+      },
+      showItemInFolder: (targetPath) => opened.push({ mode: 'folder', targetPath }),
+    },
+    spawn: (command, args, options) => {
+      opened.push({ mode: 'command', command, args, options });
+      return createSpawnOnlyChild();
+    },
+  });
+  const openFile = handlers.get('workspace:openFile');
+  assert.equal(typeof openFile, 'function', '主进程应注册 workspace:openFile IPC handler');
+  const targetFile = path.join(workspace, 'src', 'open-smoke.js');
+  fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+  fs.writeFileSync(targetFile, 'console.log("open");\n', 'utf8');
+  const targetDir = path.join(workspace, 'src', 'open-dir');
+  fs.mkdirSync(targetDir, { recursive: true });
+
+  assert.equal((await openFile(null, { projectId, filePath: 'src/open-smoke.js' })).ok, true, '系统默认打开应成功');
+  assert.equal(opened.at(-1).mode, 'system', '默认配置应走系统打开');
+  assert.equal((await openFile(null, { projectId, filePath: 'src/open-smoke.js', mode: 'folder' })).ok, true, '文件夹定位应成功');
+  assert.equal(opened.at(-1).mode, 'folder', 'folder 配置应定位文件');
+  assert.equal((await openFile(null, { projectId, filePath: 'src/open-smoke.js', mode: 'vscode' })).ok, true, 'VSCode 打开应成功');
+  assert.equal(opened.at(-1).command, 'code', 'VSCode 默认命令应为 code');
+  assert.equal((await openFile(null, { projectId, filePath: 'src/open-smoke.js', mode: 'command', command: 'cursor {file}' })).ok, true, '第三方命令应成功');
+  assert.match(opened.at(-1).command, /cursor .*open-smoke\.js/, '第三方命令应替换 {file} 占位');
+  assert.equal((await openFile(null, { projectId, filePath: '../outside.js' })).ok, false, '越界路径应被拒绝');
+  assert.match((await openFile(null, { projectId, filePath: 'src/missing-open.js' })).error, /不存在/, '缺失文件应给出提示');
+  assert.match((await openFile(null, { projectId, filePath: 'src/open-dir' })).error, /目录/, '目录路径应给出提示');
+  assert.match((await openFile(null, { projectId, filePath: 'src/open-smoke.js', mode: 'command' })).error, /命令未配置/, '第三方命令缺失应给出提示');
+}
+
 function extractPromptAttachmentPath(prompt) {
   const match = prompt.match(/^  - 持久化本地路径: (.+)$/m);
   assert.ok(match, '附件 prompt 应包含持久化本地路径行');
@@ -1159,6 +1304,18 @@ async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   assertNoSpawnArg(spawned, 'resume', 'Claude 计划生成不应使用 Codex resume 参数');
   const generatedPlan = db.get('SELECT * FROM plans WHERE issue_hash = ?', [backendIssueScan.aggregateHash]);
   assert.ok(generatedPlan, 'Claude 后端应能通过 stub 生成计划并入库');
+  assertPlanCliSnapshot(generatedPlan, {
+    provider: 'claude',
+    command: 'claude',
+    effort: null,
+  }, 'Claude 生成计划数据库快照');
+  const generatedPlanSnapshot = patchedLoop.snapshot(projectId).plans.find((plan) => plan.id === generatedPlan.id);
+  assertPlanCliSnapshot(generatedPlanSnapshot, {
+    provider: 'claude',
+    command: 'claude',
+    effort: null,
+  }, 'Claude 生成计划前端快照');
+  assert.equal(formatPlanCliSummary(generatedPlanSnapshot), 'Claude CLI', 'Claude 计划展示不应包含 Codex 思考深度');
   const generatedTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [
     generatedPlan.id,
     'B002',
@@ -1436,6 +1593,18 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
   const requirementEventMeta = latestPlanGeneratedMeta(db, regressionProjectId, requirementPlanId);
   assert.equal(requirementEventMeta.agentCliProvider, 'codex', 'Codex high 需求事件应记录 codex 后端');
   assert.equal(requirementEventMeta.codexReasoningEffort, 'high', 'Codex high 需求事件应记录思考深度');
+  assertPlanCliSnapshot(db.get('SELECT * FROM plans WHERE id = ?', [requirementPlanId]), {
+    provider: 'codex',
+    command: 'codex',
+    effort: 'high',
+  }, 'Codex high 需求计划数据库快照');
+  const requirementPlanSnapshot = patchedLoop.snapshot(regressionProjectId).plans.find((plan) => plan.id === requirementPlanId);
+  assertPlanCliSnapshot(requirementPlanSnapshot, {
+    provider: 'codex',
+    command: 'codex',
+    effort: 'high',
+  }, 'Codex high 需求计划前端快照');
+  assert.equal(formatPlanCliSummary(requirementPlanSnapshot), 'Codex CLI · 思考深度 high', 'Codex high 计划展示应包含思考深度');
 
   spawned.length = 0;
   const feedbackPlanId = await patchedLoop.generatePlanForIntake(regressionProjectId, regressionWorkspace, {
@@ -1452,6 +1621,18 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
   const feedbackEventMeta = latestPlanGeneratedMeta(db, regressionProjectId, feedbackPlanId);
   assert.equal(feedbackEventMeta.agentCliProvider, 'claude', 'Claude 反馈事件应记录 claude 后端');
   assert.equal(feedbackEventMeta.codexReasoningEffort, undefined, 'Claude 反馈事件不应记录 Codex 思考深度');
+  assertPlanCliSnapshot(db.get('SELECT * FROM plans WHERE id = ?', [feedbackPlanId]), {
+    provider: 'claude',
+    command: 'claude',
+    effort: null,
+  }, 'Claude 反馈计划数据库快照');
+  const feedbackPlanSnapshot = patchedLoop.snapshot(regressionProjectId).plans.find((plan) => plan.id === feedbackPlanId);
+  assertPlanCliSnapshot(feedbackPlanSnapshot, {
+    provider: 'claude',
+    command: 'claude',
+    effort: null,
+  }, 'Claude 反馈计划前端快照');
+  assert.equal(formatPlanCliSummary(feedbackPlanSnapshot), 'Claude CLI', 'Claude 反馈计划展示不应包含 Codex 思考深度');
 }
 
 function assertRendererAgentCliTypeSmoke() {
@@ -1459,11 +1640,31 @@ function assertRendererAgentCliTypeSmoke() {
   assert.match(typeSource, /interface Project[\s\S]*agent_cli_provider\?: AgentCliProvider;/, 'Project 类型应包含后端字段');
   assert.match(typeSource, /interface Project[\s\S]*codex_reasoning_effort\?: CodexReasoningEffort \| null;/, 'Project 类型应包含 Codex 思考深度字段');
   assert.match(typeSource, /interface ProjectState[\s\S]*agent_cli_provider\?: AgentCliProvider;/, 'ProjectState 类型应包含后端字段');
+  assert.match(typeSource, /interface Plan[\s\S]*agent_cli_provider\?: AgentCliProvider \| null;/, 'Plan 类型应包含计划级后端字段');
+  assert.match(typeSource, /interface Plan[\s\S]*codex_reasoning_effort\?: CodexReasoningEffort \| null;/, 'Plan 类型应包含计划级 Codex 思考深度字段');
+  assert.match(typeSource, /interface AgentCliDisplaySource[\s\S]*agentCliProvider\?: AgentCliProvider \| null;/, '展示格式化输入类型应兼容驼峰字段');
   assert.match(typeSource, /interface CreateIntakeInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '创建需求/反馈输入类型应允许选择后端');
   assert.match(typeSource, /interface CreateIntakeInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '创建需求/反馈输入类型应允许设置 Codex 思考深度');
   assert.match(typeSource, /interface CreateProjectInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '创建项目输入类型应允许选择后端');
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '循环配置输入类型应允许选择后端');
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '循环配置输入类型应允许设置 Codex 思考深度');
+  assert.equal(formatPlanCliSummary({ agentCliProvider: 'codex', codexReasoningEffort: 'high' }), 'Codex CLI · 思考深度 high', '计划 CLI 文案应兼容驼峰字段');
+  assert.equal(formatPlanCliSummary({ agent_cli_provider: 'claude', codex_reasoning_effort: 'high' }), 'Claude CLI', 'Claude 计划 CLI 文案不应展示 Codex 思考深度');
+  assert.equal(formatPlanCliSummary({}), 'Codex CLI · 思考深度 medium', '空计划 CLI 字段应按历史默认降级');
+}
+
+function assertPlanCliSnapshot(plan, expected, label) {
+  assert.ok(plan, `${label} 应存在`);
+  assert.equal(plan.agent_cli_provider, expected.provider, `${label} 应记录 CLI 后端`);
+  assert.equal(plan.agent_cli_command || '', expected.command || '', `${label} 应记录 CLI 命令快照`);
+  assert.equal(plan.codex_reasoning_effort ?? null, expected.effort, `${label} 应记录 Codex 思考深度快照`);
+}
+
+function formatPlanCliSummary(source) {
+  const { planCliSummaryLabel } = loadRendererTsModule(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'shared.tsx'),
+  );
+  return planCliSummaryLabel(source);
 }
 
 function assertNoSpawnArg(spawned, value, message) {
@@ -1584,6 +1785,17 @@ function createFakeChild(options = {}) {
   child.killed = false;
   child.kill = () => {};
   child.pid = Math.floor(Math.random() * 1e6);
+  return child;
+}
+
+function createSpawnOnlyChild() {
+  const { EventEmitter } = require('node:events');
+  const child = new EventEmitter();
+  child.unref = () => {};
+  child.kill = () => {};
+  child.killed = false;
+  child.pid = Math.floor(Math.random() * 1e6);
+  setImmediate(() => child.emit('spawn'));
   return child;
 }
 

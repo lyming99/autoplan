@@ -1,0 +1,926 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f027b-bb5e-7330-b45a-94e740690925
+--------
+user
+你是开发执行者。
+请只执行指定任务 P005，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_25_20260626-134812.md
+指定任务：
+- [ ] P005: 补充配置与使用说明 <!-- scope: README.md,ui/README.md -->
+任务 scope：readme.md, ui/readme.md
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Modifying documentation**
+
+I need to update the README.md and ui/README.md files. It’s crucial that I carefully inspect them to ensure everything aligns with the current requirements. However, it seems testing isn’t necessary for this step, which simplifies things a bit! I'll remember to include a commentary preamble to provide context for the updates. It’s all about making sure the documentation is user-friendly and informative! Let’s focus on getting that done properly.
+codex
+我会只查看两个 README，补充并发建议和 scope 打开说明。
+仅处理 P005 scope：README.md 与 ui/README.md；计划文件只读，不运行验证命令。
+  → Inspect README structure
+  • Update root usage docs
+  • Update UI notes
+  • Review scoped doc edits
+exec
+powershell.exe -Command "Get-Content -Raw -Encoding UTF8 README.md; '--- ui ---'; if (Test-Path ui\\README.md) { Get-Content -Raw -Encoding UTF8 ui\\README.md } else { 'MISSING' }" in D:\project\GitHub\autoplan
+ succeeded in 539ms:
+# AutoPlan
+
+Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+
+## 需求与反馈附件
+
+需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
+
+- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
+- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
+- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
+- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
+- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
+
+## CLI 后端
+
+AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**与**单条需求/反馈级**选择后端，不同项目和不同记录可使用不同 CLI：
+
+| 后端 | 默认命令 | 说明 |
+| --- | --- | --- |
+| **Codex CLI**（默认） | `codex` | 通过 `codex exec` 非交互执行，支持会话（session）复用，失败任务重试时延续上下文 |
+| **Claude CLI** | `claude` | 通过 `claude -p` 非交互 print 模式执行，prompt 经 stdin 传入，不使用 Codex 会话机制 |
+
+- **默认仍是 Codex**：未配置过的历史项目升级后继续使用 Codex，无需重新配置。
+- **项目级切换**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+- **单条配置优先**：需求输入框和反馈输入框下方都可单独选择 CLI 后端、命令路径和 Codex 思考深度。单条记录已配置时，计划生成、任务执行、失败修复和验收重试优先使用该记录生成计划时的配置；未配置时继承项目级默认配置。
+- **Codex 思考深度**：Codex 支持 `low`、`medium`、`high` 三档思考深度，默认 `medium`，执行时转换为 Codex CLI 的 `model_reasoning_effort` 配置；Claude 不使用该参数，选择 Claude 时思考深度不会参与提交或执行。
+- **验收命令默认空**：新建项目不会预填验收命令；留空时任务完成后跳过外部验收命令，已保存的历史命令保持不变。
+- **Claude 前置条件**：需在本机已安装 `claude` CLI 并完成认证（`claude` 已可正常登录调用）。若命令不在 PATH，可在「CLI 命令路径」填写完整路径。
+- **会话隔离**：Codex 的会话复用仅在 Codex 后端启用；切换到 Claude 不会把历史 `codex_session_id` 传给 Claude，两类上下文物理隔离。
+- **可观测性**：运行中日志、事件流、任务卡片和概览会显示当前使用的 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+
+### 回归验证场景
+
+`npm run smoke` 使用 stub 覆盖反馈 #10 的关键路径，不依赖真实 `claude` 二进制：
+
+- 空验收命令保持为空字符串，并在计划完成后跳过外部验收命令。
+- 项目默认 Codex 时，单条需求可覆盖为 Codex + `high` 思考深度，生成计划时携带 `model_reasoning_effort="high"`。
+- 同一项目内单条反馈可覆盖为 Claude，生成计划时使用 `claude --print`，且不携带 Codex session 或思考深度参数。
+
+手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+
+## 发布
+
+项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+
+```bash
+python scripts/release.py --tag v0.2.0 --notes "发布说明"
+python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+```
+
+发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+## 开发
+
+```bash
+npm install
+npm run dev        # 启动开发模式（Vite + Electron）
+npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度 stub 覆盖）
+npm run package:win  # 打包 Windows 安装包
+```
+
+> 真实的 Claude CLI 调用需要本机安装并认证 `claude`，`npm run smoke` 通过 stub 覆盖后端路由、会话隔离和 Codex 思考深度参数转换核心分支，不依赖真实二进制。
+
+
+--- ui ---
+# AutoPlan UI 设计稿
+
+纯 HTML/CSS 设计稿，浏览器直接打开即可预览，无需依赖。
+
+项目和工作区是**两个独立的界面、各自不同的布局**，分属两个文件：
+
+## 文件
+
+| 文件 | 界面 | 布局 |
+|------|------|------|
+| `projects.html` | **项目管理** | 顶部 header + 全宽内容区（项目卡片网格 + CRUD） |
+| `workspace.html` | **工作区** | 左侧边栏导航 + 主区（概览/需求/反馈/任务/事件） |
+
+## projects.html · 项目管理
+- 顶部 sticky header：品牌 + 「打开工作区」入口 + 「创建项目」
+- 页面标题区 + 概览统计（项目总数 / 运行中 / 异常）
+- 工具栏：搜索框 + 状态分段筛选（全部/运行中/已停止/异常）
+- 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+- 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+- 完整 CRUD：
+  - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+  - **复制**：生成 `-copy`，状态置为已停止
+  - **删除**：二次确认，提示不删磁盘文件
+- 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+
+## workspace.html · 工作区
+恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+- **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+- **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
+- **事件流** — 循环运行日志表格
+- 侧边栏底部显示当前循环状态与 CLI 后端
+
+## 需求 / 反馈附件交互
+- 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+- 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
+- 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
+- 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
+- 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
+
+## CLI 后端选择说明
+- 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+- 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+- Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+- Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+
+## 设计说明
+- 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+- 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+- 状态语义化：指示灯 LED（脉冲动画）、彩色状态芯片、进度条。
+- 配色：在原蓝色基调上引入紫蓝渐变 + 中性灰阶层级，浅色主题。
+- 界面图标统一使用本地 inline SVG / icon 片段，不使用 emoji 或字符图形充当图标，确保静态 HTML 离线打开时视觉与 React 界面一致。
+
+
+codex
+我会在现有说明中追加 P005 要求的使用说明，不改计划文件。
+  ✓ Inspect README structure
+  → Update root usage docs
+  • Update UI notes
+  • Review scoped doc edits
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\README.md
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+codex
+根 README 已补充；接下来同步 UI 设计说明。
+  ✓ Inspect README structure
+  ✓ Update root usage docs
+  → Update UI notes
+  • Review scoped doc edits
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\ui\README.md
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+diff --git a/ui/README.md b/ui/README.md
+index b756bfd25f77310052a6916d05066f51f3f79c4b..93c8f931515fb18d5f48a4091f1814de3af67def
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -27,7 +27,7 @@
+ 恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+ - **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+ - **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+-- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
++- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
+@@ -44,6 +44,20 @@
+ - Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+ - Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+ 
++## 并发建议与 scope 文件交互
++- Plan 卡片展示并发建议摘要：可并发任务数、建议批次数、需串行任务数，以及不可并发原因入口。
++- 「并发执行」按钮只在存在安全批次且计划未完成、没有运行中任务时可用；点击后先展示确认弹窗，用户确认前不会启动任务，取消不会改变状态。
++- 建议批次基于任务 `scope` 冲突检测：scope 互不重叠的 pending 任务可进入同一批；`unknown`、`validation`、空 scope、无法解析 scope 或 scope 重叠任务需串行展示。
++- Task 卡片展示从 `scope` 解析出的相关文件列表；长路径折行/省略，缺失文件、`unknown` 和 `validation` 使用不同状态提示，不挤压任务标题与操作按钮。
++- Plan 全文阅读器中任务行的 `scope` 文件路径可点击打开；普通 Markdown 链接仍按普通链接渲染，代码块、滚动和表格阅读体验保持不变。
++
++## scope 文件打开配置
++- 工作区「设置」提供 scope 文件打开方式：系统默认方式、系统文件夹定位、VSCode、第三方编辑器命令。
++- 默认使用系统默认方式；选择 VSCode 时命令留空等价于 `code`，也可填写完整路径。
++- 第三方编辑器命令支持 `{file}` 占位，例如 `cursor {file}`、`notepad++ {file}`、`zed {file}`。
++- 打开前必须校验目标路径位于当前项目工作区内；不存在、目录、越界路径、权限不足或命令失败都需要给出可读提示，不能静默失败。
++- 设计上应提醒用户准确填写相对工作区的 scope；无法判断写 `unknown`，完整验收写 `validation`，避免错误并发。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+diff --git a/ui/README.md b/ui/README.md
+index b756bfd25f77310052a6916d05066f51f3f79c4b..93c8f931515fb18d5f48a4091f1814de3af67def
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -27,7 +27,7 @@
+ 恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+ - **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+ - **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+-- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
++- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
+@@ -44,6 +44,20 @@
+ - Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+ - Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+ 
++## 并发建议与 scope 文件交互
++- Plan 卡片展示并发建议摘要：可并发任务数、建议批次数、需串行任务数，以及不可并发原因入口。
++- 「并发执行」按钮只在存在安全批次且计划未完成、没有运行中任务时可用；点击后先展示确认弹窗，用户确认前不会启动任务，取消不会改变状态。
++- 建议批次基于任务 `scope` 冲突检测：scope 互不重叠的 pending 任务可进入同一批；`unknown`、`validation`、空 scope、无法解析 scope 或 scope 重叠任务需串行展示。
++- Task 卡片展示从 `scope` 解析出的相关文件列表；长路径折行/省略，缺失文件、`unknown` 和 `validation` 使用不同状态提示，不挤压任务标题与操作按钮。
++- Plan 全文阅读器中任务行的 `scope` 文件路径可点击打开；普通 Markdown 链接仍按普通链接渲染，代码块、滚动和表格阅读体验保持不变。
++
++## scope 文件打开配置
++- 工作区「设置」提供 scope 文件打开方式：系统默认方式、系统文件夹定位、VSCode、第三方编辑器命令。
++- 默认使用系统默认方式；选择 VSCode 时命令留空等价于 `code`，也可填写完整路径。
++- 第三方编辑器命令支持 `{file}` 占位，例如 `cursor {file}`、`notepad++ {file}`、`zed {file}`。
++- 打开前必须校验目标路径位于当前项目工作区内；不存在、目录、越界路径、权限不足或命令失败都需要给出可读提示，不能静默失败。
++- 设计上应提醒用户准确填写相对工作区的 scope；无法判断写 `unknown`，完整验收写 `validation`，避免错误并发。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+codex
+文档已更新；我只做范围和关键内容检查，不运行验证命令。
+  ✓ Inspect README structure
+  ✓ Update root usage docs
+  ✓ Update UI notes
+  → Review scoped doc edits
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+diff --git a/ui/README.md b/ui/README.md
+index b756bfd25f77310052a6916d05066f51f3f79c4b..93c8f931515fb18d5f48a4091f1814de3af67def
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -27,7 +27,7 @@
+ 恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+ - **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+ - **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+-- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
++- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
+@@ -44,6 +44,20 @@
+ - Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+ - Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+ 
++## 并发建议与 scope 文件交互
++- Plan 卡片展示并发建议摘要：可并发任务数、建议批次数、需串行任务数，以及不可并发原因入口。
++- 「并发执行」按钮只在存在安全批次且计划未完成、没有运行中任务时可用；点击后先展示确认弹窗，用户确认前不会启动任务，取消不会改变状态。
++- 建议批次基于任务 `scope` 冲突检测：scope 互不重叠的 pending 任务可进入同一批；`unknown`、`validation`、空 scope、无法解析 scope 或 scope 重叠任务需串行展示。
++- Task 卡片展示从 `scope` 解析出的相关文件列表；长路径折行/省略，缺失文件、`unknown` 和 `validation` 使用不同状态提示，不挤压任务标题与操作按钮。
++- Plan 全文阅读器中任务行的 `scope` 文件路径可点击打开；普通 Markdown 链接仍按普通链接渲染，代码块、滚动和表格阅读体验保持不变。
++
++## scope 文件打开配置
++- 工作区「设置」提供 scope 文件打开方式：系统默认方式、系统文件夹定位、VSCode、第三方编辑器命令。
++- 默认使用系统默认方式；选择 VSCode 时命令留空等价于 `code`，也可填写完整路径。
++- 第三方编辑器命令支持 `{file}` 占位，例如 `cursor {file}`、`notepad++ {file}`、`zed {file}`。
++- 打开前必须校验目标路径位于当前项目工作区内；不存在、目录、越界路径、权限不足或命令失败都需要给出可读提示，不能静默失败。
++- 设计上应提醒用户准确填写相对工作区的 scope；无法判断写 `unknown`，完整验收写 `validation`，避免错误并发。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+exec
+powershell.exe -Command "Select-String -Path README.md,ui\\README.md -Pattern '并发建议|并发执行|scope 文件|unknown|validation|VSCode|第三方|工作区内|scope 路径' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; git diff --stat -- README.md ui/README.md; git status --short -- README.md ui/README.md docs'"\\plan\\plan_requirement_25_20260626-134812.md" in D:\project\GitHub\autoplan
+ succeeded in 581ms:
+D:\project\GitHub\autoplan\README.md:43: ## 计划并发执行与 scope 文件
+D:\project\GitHub\autoplan\README.md:49: - [ ] P007: 完整验收 <!-- scope: validation -->
+D:\project\GitHub\autoplan\README.md:52: ### 并发建议规则
+D:\project\GitHub\autoplan\README.md:54: - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+D:\project\GitHub\autoplan\README.md:55: - **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
+D:\project\GitHub\autoplan\README.md:59: ### 手动并发执行流程
+D:\project\GitHub\autoplan\README.md:61: 1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
+D:\project\GitHub\autoplan\README.md:62: 2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
+D:\project\GitHub\autoplan\README.md:63: 3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
+D:\project\GitHub\autoplan\README.md:64: 4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
+D:\project\GitHub\autoplan\README.md:67: ### scope 文件打开配置
+D:\project\GitHub\autoplan\README.md:69: Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
+D:\project\GitHub\autoplan\README.md:77: | VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
+D:\project\GitHub\autoplan\README.md:78: | 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
+D:\project\GitHub\autoplan\README.md:80: 请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
+D:\project\GitHub\autoplan\ui\README.md:30: - **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+D:\project\GitHub\autoplan\ui\README.md:47: ## 并发建议与 scope 文件交互
+D:\project\GitHub\autoplan\ui\README.md:48: - Plan 卡片展示并发建议摘要：可并发任务数、建议批次数、需串行任务数，以及不可并发原因入口。
+D:\project\GitHub\autoplan\ui\README.md:49: - 「并发执行」按钮只在存在安全批次且计划未完成、没有运行中任务时可用；点击后先展示确认弹窗，用户确认前不会启动任务，取消不会改变状态。
+D:\project\GitHub\autoplan\ui\README.md:50: - 建议批次基于任务 `scope` 冲突检测：scope 互不重叠的 pending 任务可进入同一批；`unknown`、`validation`、空 scope、无法解析 scope 或 scope 重叠任务需串行展示。
+D:\project\GitHub\autoplan\ui\README.md:51: - Task 卡片展示从 `scope` 解析出的相关文件列表；长路径折行/省略，缺失文件、`unknown` 和 `validation` 使用不同状态提示，不挤压任务标题与操作按钮。
+D:\project\GitHub\autoplan\ui\README.md:54: ## scope 文件打开配置
+D:\project\GitHub\autoplan\ui\README.md:55: - 工作区「设置」提供 scope 文件打开方式：系统默认方式、系统文件夹定位、VSCode、第三方编辑器命令。
+D:\project\GitHub\autoplan\ui\README.md:56: - 默认使用系统默认方式；选择 VSCode 时命令留空等价于 `code`，也可填写完整路径。
+D:\project\GitHub\autoplan\ui\README.md:57: - 第三方编辑器命令支持 `{file}` 占位，例如 `cursor {file}`、`notepad++ {file}`、`zed {file}`。
+D:\project\GitHub\autoplan\ui\README.md:58: - 打开前必须校验目标路径位于当前项目工作区内；不存在、目录、越界路径、权限不足或命令失败都需要给出可读提示，不能静默失败。
+D:\project\GitHub\autoplan\ui\README.md:59: - 设计上应提醒用户准确填写相对工作区的 scope；无法判断写 `unknown`，完整验收写 `validation`，避免错误并发。
+ README.md    | 54 +++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ ui/README.md | 16 +++++++++++++++-
+ 2 files changed, 68 insertions(+), 2 deletions(-)
+ M README.md
+ M ui/README.md
+?? docs/plan/plan_requirement_25_20260626-134812.md
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'ui/README.md', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+diff --git a/ui/README.md b/ui/README.md
+index b756bfd25f77310052a6916d05066f51f3f79c4b..93c8f931515fb18d5f48a4091f1814de3af67def
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -27,7 +27,7 @@
+ 恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+ - **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+ - **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+-- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
++- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
+@@ -44,6 +44,20 @@
+ - Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+ - Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+ 
++## 并发建议与 scope 文件交互
++- Plan 卡片展示并发建议摘要：可并发任务数、建议批次数、需串行任务数，以及不可并发原因入口。
++- 「并发执行」按钮只在存在安全批次且计划未完成、没有运行中任务时可用；点击后先展示确认弹窗，用户确认前不会启动任务，取消不会改变状态。
++- 建议批次基于任务 `scope` 冲突检测：scope 互不重叠的 pending 任务可进入同一批；`unknown`、`validation`、空 scope、无法解析 scope 或 scope 重叠任务需串行展示。
++- Task 卡片展示从 `scope` 解析出的相关文件列表；长路径折行/省略，缺失文件、`unknown` 和 `validation` 使用不同状态提示，不挤压任务标题与操作按钮。
++- Plan 全文阅读器中任务行的 `scope` 文件路径可点击打开；普通 Markdown 链接仍按普通链接渲染，代码块、滚动和表格阅读体验保持不变。
++
++## scope 文件打开配置
++- 工作区「设置」提供 scope 文件打开方式：系统默认方式、系统文件夹定位、VSCode、第三方编辑器命令。
++- 默认使用系统默认方式；选择 VSCode 时命令留空等价于 `code`，也可填写完整路径。
++- 第三方编辑器命令支持 `{file}` 占位，例如 `cursor {file}`、`notepad++ {file}`、`zed {file}`。
++- 打开前必须校验目标路径位于当前项目工作区内；不存在、目录、越界路径、权限不足或命令失败都需要给出可读提示，不能静默失败。
++- 设计上应提醒用户准确填写相对工作区的 scope；无法判断写 `unknown`，完整验收写 `validation`，避免错误并发。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+codex
+P005 文档修改已完成，未触碰计划文件或运行命令。
+P005 已完成；仅修改 README.md 与 ui/README.md，未运行测试/构建/验收。
+  ✓ Inspect README structure
+  ✓ Update root usage docs
+  ✓ Update UI notes
+  ✓ Review scoped doc edits
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+diff --git a/ui/README.md b/ui/README.md
+index b756bfd25f77310052a6916d05066f51f3f79c4b..93c8f931515fb18d5f48a4091f1814de3af67def
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -27,7 +27,7 @@
+ 恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+ - **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+ - **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+-- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
++- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
+@@ -44,6 +44,20 @@
+ - Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+ - Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+ 
++## 并发建议与 scope 文件交互
++- Plan 卡片展示并发建议摘要：可并发任务数、建议批次数、需串行任务数，以及不可并发原因入口。
++- 「并发执行」按钮只在存在安全批次且计划未完成、没有运行中任务时可用；点击后先展示确认弹窗，用户确认前不会启动任务，取消不会改变状态。
++- 建议批次基于任务 `scope` 冲突检测：scope 互不重叠的 pending 任务可进入同一批；`unknown`、`validation`、空 scope、无法解析 scope 或 scope 重叠任务需串行展示。
++- Task 卡片展示从 `scope` 解析出的相关文件列表；长路径折行/省略，缺失文件、`unknown` 和 `validation` 使用不同状态提示，不挤压任务标题与操作按钮。
++- Plan 全文阅读器中任务行的 `scope` 文件路径可点击打开；普通 Markdown 链接仍按普通链接渲染，代码块、滚动和表格阅读体验保持不变。
++
++## scope 文件打开配置
++- 工作区「设置」提供 scope 文件打开方式：系统默认方式、系统文件夹定位、VSCode、第三方编辑器命令。
++- 默认使用系统默认方式；选择 VSCode 时命令留空等价于 `code`，也可填写完整路径。
++- 第三方编辑器命令支持 `{file}` 占位，例如 `cursor {file}`、`notepad++ {file}`、`zed {file}`。
++- 打开前必须校验目标路径位于当前项目工作区内；不存在、目录、越界路径、权限不足或命令失败都需要给出可读提示，不能静默失败。
++- 设计上应提醒用户准确填写相对工作区的 scope；无法判断写 `unknown`，完整验收写 `validation`，避免错误并发。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+codex
+已完成 P005，仅修改指定 scope 内文档，未修改 plan 文件、未运行测试/构建/验收命令。
+
+**完成内容**
+- 在 `README.md:43` 新增“计划并发执行与 scope 文件”说明。
+- 在 `README.md:52` 说明并发建议基于 scope 冲突检测，并解释 `unknown`、`validation`、空 scope、重叠 scope 不会自动并发。
+- 在 `README.md:59` 补充并发执行按钮流程：查看建议、确认批次、手动启动、观察状态/日志/事件。
+- 在 `README.md:67` 补充 scope 文件点击打开配置：系统默认、系统文件夹、VSCode、第三方编辑器命令与 `{file}` 示例。
+- 在 `ui/README.md:47` 补充计划列表并发入口、任务相关文件列表和 Plan 全文 scope 链接设计说明。
+- 在 `ui/README.md:54` 补充 scope 文件打开配置与路径安全校验说明。
+
+**未执行**
+- 按任务要求，未运行 `test`、`build`、`lint/analyze`、`smoke` 或验收命令。
+diff --git a/README.md b/README.md
+index db3e02497ce45d2f34d3ec820aff6622723a7c01..ecc30f265ee099b42a4eba942971e9490f7b23ab
+--- a/README.md
++++ b/README.md
+@@ -40,6 +40,45 @@
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## 计划并发执行与 scope 文件
++
++AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++
++```md
++- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P007: 完整验收 <!-- scope: validation -->
++```
++
++### 并发建议规则
++
++- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
++- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
++- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
++- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
++
++### 手动并发执行流程
++
++1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
++2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
++3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
++4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
++5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
++
++### scope 文件打开配置
++
++Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
++
++打开方式在项目「设置」中配置，默认使用系统默认方式：
++
++| 打开方式 | 说明 | 示例配置 |
++| --- | --- | --- |
++| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
++| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
++| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
++| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
++
++请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
++
+ ## 发布
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+diff --git a/ui/README.md b/ui/README.md
+index b756bfd25f77310052a6916d05066f51f3f79c4b..93c8f931515fb18d5f48a4091f1814de3af67def
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -27,7 +27,7 @@
+ 恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+ - **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+ - **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+-- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格
++- **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+ - **事件流** — 循环运行日志表格
+ - 侧边栏底部显示当前循环状态与 CLI 后端
+ 
+@@ -44,6 +44,20 @@
+ - Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+ - Codex 会话复用仅在 Codex 后端展示和生效；Claude 后端不展示或传递 `codex_session_id`。
+ 
++## 并发建议与 scope 文件交互
++- Plan 卡片展示并发建议摘要：可并发任务数、建议批次数、需串行任务数，以及不可并发原因入口。
++- 「并发执行」按钮只在存在安全批次且计划未完成、没有运行中任务时可用；点击后先展示确认弹窗，用户确认前不会启动任务，取消不会改变状态。
++- 建议批次基于任务 `scope` 冲突检测：scope 互不重叠的 pending 任务可进入同一批；`unknown`、`validation`、空 scope、无法解析 scope 或 scope 重叠任务需串行展示。
++- Task 卡片展示从 `scope` 解析出的相关文件列表；长路径折行/省略，缺失文件、`unknown` 和 `validation` 使用不同状态提示，不挤压任务标题与操作按钮。
++- Plan 全文阅读器中任务行的 `scope` 文件路径可点击打开；普通 Markdown 链接仍按普通链接渲染，代码块、滚动和表格阅读体验保持不变。
++
++## scope 文件打开配置
++- 工作区「设置」提供 scope 文件打开方式：系统默认方式、系统文件夹定位、VSCode、第三方编辑器命令。
++- 默认使用系统默认方式；选择 VSCode 时命令留空等价于 `code`，也可填写完整路径。
++- 第三方编辑器命令支持 `{file}` 占位，例如 `cursor {file}`、`notepad++ {file}`、`zed {file}`。
++- 打开前必须校验目标路径位于当前项目工作区内；不存在、目录、越界路径、权限不足或命令失败都需要给出可读提示，不能静默失败。
++- 设计上应提醒用户准确填写相对工作区的 scope；无法判断写 `unknown`，完整验收写 `validation`，避免错误并发。
++
+ ## 设计说明
+ - 两个界面共享同一套设计 token（品牌色、语义色、圆角、阴影），保持视觉统一。
+ - 项目页用**顶栏 + 全宽网格**，工作区用**侧边栏 + 分视图**，布局明显区分。
+
+tokens used
+522,539
+已完成 P005，仅修改指定 scope 内文档，未修改 plan 文件、未运行测试/构建/验收命令。
+
+**完成内容**
+- 在 `README.md:43` 新增“计划并发执行与 scope 文件”说明。
+- 在 `README.md:52` 说明并发建议基于 scope 冲突检测，并解释 `unknown`、`validation`、空 scope、重叠 scope 不会自动并发。
+- 在 `README.md:59` 补充并发执行按钮流程：查看建议、确认批次、手动启动、观察状态/日志/事件。
+- 在 `README.md:67` 补充 scope 文件点击打开配置：系统默认、系统文件夹、VSCode、第三方编辑器命令与 `{file}` 示例。
+- 在 `ui/README.md:47` 补充计划列表并发入口、任务相关文件列表和 Plan 全文 scope 链接设计说明。
+- 在 `ui/README.md:54` 补充 scope 文件打开配置与路径安全校验说明。
+
+**未执行**
+- 按任务要求，未运行 `test`、`build`、`lint/analyze`、`smoke` 或验收命令。

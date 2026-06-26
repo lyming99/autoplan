@@ -17,6 +17,7 @@ const {
 const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);
 const ACTIVE_RUNTIME_PHASE_SQL = "('running','scan','generate-plan','execute-task','validate')";
 const MAX_PARALLEL_TASKS = 2;
+const SPECIAL_TASK_SCOPES = new Set(['unknown', 'validation']);
 const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
 const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
 const ACCEPTANCE_TASK_RE = /(完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation)/i;
@@ -478,6 +479,90 @@ class LoopService extends EventEmitter {
     }
   }
 
+  async runTaskBatches(projectId, planId, confirmedBatches) {
+    const runtime = this.runtime(projectId);
+    if (!runtime) return;
+    if (runtime.busy) throw new Error('该项目已有任务正在执行，请稍后再试');
+    const project = this.project(projectId);
+    const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+    const workspace = project?.workspace_path;
+    if (!project || !plan) throw new Error('计划不存在');
+    if (plan.validation_passed || plan.status === 'completed') throw new Error('计划已完成，不能启动并发执行');
+    if (!workspace) throw new Error('请先设置项目工作区路径');
+    const workspaceOwner = this.activeProjectForWorkspace(workspace, projectId);
+    if (workspaceOwner) {
+      throw new Error(`工作区正在被项目「${workspaceOwner.name}」使用，请先停止对应循环`);
+    }
+
+    const batches = this.validatedParallelTaskBatches(workspace, plan, confirmedBatches);
+    runtime.busy = true;
+    try {
+      for (let index = 0; index < batches.length; index += 1) {
+        const tasks = batches[index];
+        const results = await this.executeTaskBatch(workspace, plan, tasks, {
+          batchIndex: index + 1,
+          batchCount: batches.length,
+        });
+        const failedTaskIds = results
+          .filter((entry) => Number(entry?.result?.exitCode) !== 0)
+          .map((entry) => entry.task.id);
+        const continueNext = failedTaskIds.length === 0;
+        this.addEvent(projectId, 'tasks.parallel.finished', `并发批次 ${index + 1}/${batches.length} 执行完成`, {
+          planId: plan.id,
+          batchIndex: index + 1,
+          batchCount: batches.length,
+          taskIds: tasks.map((task) => task.id),
+          failedTaskIds,
+          continueNext,
+        });
+        if (!continueNext) break;
+      }
+      if (runtime.running) {
+        this.setPhase(projectId, 'waiting');
+      } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
+        this.setPhase(projectId, 'idle');
+      }
+    } finally {
+      runtime.busy = false;
+      this.emitUpdate(projectId);
+    }
+  }
+
+  validatedParallelTaskBatches(workspace, plan, confirmedBatches) {
+    const batches = normalizeConfirmedTaskBatches(confirmedBatches);
+    if (!batches.length) throw new Error('未选择并发任务批次');
+    const seenTaskIds = new Set();
+    return batches.map((batchTaskIds, batchIndex) => {
+      if (batchTaskIds.length < 2) throw new Error(`第 ${batchIndex + 1} 批至少需要 2 个任务`);
+      if (batchTaskIds.length > MAX_PARALLEL_TASKS) {
+        throw new Error(`第 ${batchIndex + 1} 批超过最大并发数 ${MAX_PARALLEL_TASKS}`);
+      }
+      const usedScopes = new Set();
+      return batchTaskIds.map((taskId) => {
+        if (seenTaskIds.has(taskId)) throw new Error('同一任务不能重复出现在并发批次中');
+        seenTaskIds.add(taskId);
+        const task = this.db.get(
+          'SELECT * FROM plan_tasks WHERE id = ? AND plan_id = ?',
+          [taskId, plan.id],
+        );
+        if (!task) throw new Error('任务不存在或不属于当前计划');
+        if (task.status !== TASK_EVENT_STATUS.PENDING) {
+          throw new Error(`${task.task_key} 当前状态不是 pending，不能并发执行`);
+        }
+        const analysis = taskConcurrencyAnalysis(workspace, task);
+        if (!analysis.canRunInParallel) {
+          throw new Error(`${task.task_key} 不可并发：${analysis.reason}`);
+        }
+        const conflictScope = analysis.scopes.find((scope) => usedScopes.has(scope));
+        if (conflictScope) {
+          throw new Error(`第 ${batchIndex + 1} 批存在 scope 冲突：${conflictScope}`);
+        }
+        for (const scope of analysis.scopes) usedScopes.add(scope);
+        return task;
+      });
+    });
+  }
+
   stopTask(projectId, taskId) {
     const task = this.taskForProject(projectId, taskId);
     if (!task) throw new Error('任务不存在');
@@ -811,6 +896,15 @@ class LoopService extends EventEmitter {
     return effectiveAgentCliConfig(projectDefaults);
   }
 
+  planSnapshotAgentCliConfig(plan) {
+    const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+    const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+    if (hasAgentCliOverride(plan)) return effectiveAgentCliConfig({}, plan);
+    if (eventSnapshot) return effectiveAgentCliConfig({}, eventSnapshot);
+    if (sourceSnapshot) return effectiveAgentCliConfig({}, sourceSnapshot);
+    return effectiveAgentCliConfig({});
+  }
+
   planAgentCliEventSnapshot(projectId, planId) {
     const rows = this.db.all(
       `SELECT meta FROM events
@@ -879,6 +973,7 @@ class LoopService extends EventEmitter {
       ...agentCliOperationFields(planAgentCliConfig),
     });
     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+    const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
       this.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, agentContext);
@@ -891,7 +986,7 @@ class LoopService extends EventEmitter {
       filePath: normalizeRelative(workspace, planFile),
       hash: hashFile(planFile),
       status: 'pending',
-      agentCliConfig: planAgentCliConfig,
+      agentCliConfig: planAgentCliSnapshot,
     });
     this.syncPlanTasks(id, planFile);
     this.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
@@ -948,6 +1043,7 @@ class LoopService extends EventEmitter {
       ...agentCliOperationFields(planAgentCliConfig),
     });
     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+    const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
       this.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`, agentContext);
@@ -961,7 +1057,7 @@ class LoopService extends EventEmitter {
       filePath: normalizeRelative(workspace, planFile),
       hash: hashFile(planFile),
       status: 'pending',
-      agentCliConfig: planAgentCliConfig,
+      agentCliConfig: planAgentCliSnapshot,
     });
     this.syncPlanTasks(id, planFile);
     // 回写关联
@@ -1092,14 +1188,20 @@ class LoopService extends EventEmitter {
     return selected.length > 1 ? selected : [tasks[0]];
   }
 
-  async executeTaskBatch(workspace, plan, tasks) {
+  async executeTaskBatch(workspace, plan, tasks, options = {}) {
     this.setPhase(plan.project_id, 'execute-task');
     const agentContext = agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true });
     this.addEvent(
       plan.project_id,
       'tasks.parallel.started',
       `${agentCliProviderDisplayName(agentContext.agentCliProvider)} 并发执行 ${tasks.map((task) => task.task_key).join(', ')}`,
-      { ...agentContext, taskIds: tasks.map((task) => task.id) },
+      {
+        ...agentContext,
+        planId: plan.id,
+        taskIds: tasks.map((task) => task.id),
+        batchIndex: options.batchIndex,
+        batchCount: options.batchCount,
+      },
     );
     const results = await Promise.all(
       tasks.map(async (task) => {
@@ -1837,6 +1939,28 @@ class LoopService extends EventEmitter {
     };
     const runtime = this.existingRuntime(projectId);
     const taskOperationContexts = runtimeOperationContextByTask(runtime, projectId);
+    const planRows = this.db.all('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId]);
+    const taskRows = this.db.all(
+      `SELECT plan_tasks.*, plans.file_path
+       FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+       WHERE plans.project_id = ?
+       ORDER BY plans.created_at DESC, plan_tasks.sort_order ASC`,
+      [projectId],
+    );
+    const tasksByPlanId = groupPlanTasksByPlanId(taskRows);
+    const concurrencySuggestionByPlanId = new Map(
+      planRows.map((plan) => [
+        Number(plan.id),
+        planConcurrencySuggestion(activeProject.workspace_path, tasksByPlanId.get(Number(plan.id)) || []),
+      ]),
+    );
+    const planSnapshots = planRows.map((plan) => planSnapshotRow(
+      activeProject.workspace_path,
+      plan,
+      concurrencySuggestionByPlanId.get(Number(plan.id)),
+      this.planSnapshotAgentCliConfig(plan),
+    ));
+    const planTitleById = new Map(planSnapshots.map((plan) => [Number(plan.id), plan.title || '']));
 
     return {
       activeProjectId: projectId,
@@ -1865,18 +1989,16 @@ class LoopService extends EventEmitter {
         'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
         [projectId],
       ),
-      plans: this.db
-        .all('SELECT * FROM plans WHERE project_id = ? ORDER BY created_at DESC', [projectId])
-        .map((plan) => planSnapshotRow(activeProject.workspace_path, plan)),
-      tasks: this.db
-        .all(
-          `SELECT plan_tasks.*, plans.file_path
-           FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
-           WHERE plans.project_id = ?
-           ORDER BY plans.created_at DESC, plan_tasks.sort_order ASC`,
-          [projectId],
-        )
-        .map((task) => taskSnapshotRow(task, taskOperationContexts.get(Number(task.id)))),
+      plans: planSnapshots,
+      tasks: taskRows
+        .map((task) => taskSnapshotRow(
+          activeProject.workspace_path,
+          {
+            ...task,
+            plan_title: planTitleById.get(Number(task.plan_id)) || '',
+          },
+          taskOperationContexts.get(Number(task.id)),
+        )),
       events: this.db
         .all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId])
         .map((event) => eventSnapshotRow(event)),
@@ -2305,7 +2427,7 @@ function codexSessionReadableLabel(source = {}) {
   return sessionShortId ? `会话 ${sessionShortId}` : '';
 }
 
-function taskSnapshotRow(task, operationContext = null) {
+function taskSnapshotRow(workspace, task, operationContext = null) {
   if (!task) return task;
   const startedAt = normalizeOptionalString(task.started_at) || null;
   const finishedAt = normalizeOptionalString(task.finished_at) || null;
@@ -2324,6 +2446,7 @@ function taskSnapshotRow(task, operationContext = null) {
       });
   return {
     ...task,
+    scope_files: taskScopeFileInfos(workspace, task),
     started_at: startedAt,
     finished_at: finishedAt,
     duration_ms: normalizeDurationMs(task.duration_ms),
@@ -2399,12 +2522,29 @@ function parseEventMeta(meta) {
   return meta;
 }
 
-function planSnapshotRow(workspace, plan) {
+function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
   if (!plan) return plan;
+  const planAgentCliConfig = agentCliConfig || effectiveAgentCliConfig({}, plan);
   return {
     ...plan,
+    agent_cli_provider: planAgentCliConfig.provider,
+    agent_cli_command: planAgentCliConfig.command,
+    codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
     title: readPlanMarkdownTitle(workspace, plan.file_path),
+    concurrency_suggestion: concurrencySuggestion || emptyConcurrencySuggestion(),
   };
+}
+
+function groupPlanTasksByPlanId(tasks) {
+  const grouped = new Map();
+  for (const task of tasks) {
+    const planId = Number(task?.plan_id);
+    if (!Number.isFinite(planId)) continue;
+    const planTasks = grouped.get(planId) || [];
+    planTasks.push(task);
+    grouped.set(planId, planTasks);
+  }
+  return grouped;
 }
 
 function readPlanMarkdownTitle(workspace, filePath) {
@@ -2748,6 +2888,169 @@ function isAcceptanceTask(task) {
   if (!task) return false;
   const text = `${task.task_key || task.key || ''} ${task.title || ''} ${task.raw_line || task.rawLine || ''}`;
   return ACCEPTANCE_TASK_RE.test(text);
+}
+
+function taskScopeFileInfos(workspace, task) {
+  const scopes = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+  if (!scopes.length) return [taskScopeFileInfo(workspace, 'unknown')];
+  return scopes.map((scope) => taskScopeFileInfo(workspace, scope));
+}
+
+function taskScopeFileInfo(workspace, scope) {
+  const normalizedPath = normalizeTaskScope(scope, { keepUnknown: true });
+  const special = SPECIAL_TASK_SCOPES.has(normalizedPath) ? normalizedPath : '';
+  const result = {
+    path: normalizedPath || 'unknown',
+    exists: false,
+    isDirectory: false,
+    canOpen: false,
+    isUnknown: special === 'unknown' || !normalizedPath,
+    isValidation: special === 'validation',
+    reason: '',
+  };
+  if (result.isUnknown) {
+    result.reason = 'scope unknown，无法安全判断影响范围';
+    return result;
+  }
+  if (result.isValidation) {
+    result.reason = 'validation 任务需串行验收，不建议并发';
+    return result;
+  }
+  const fullPath = resolveWorkspaceChildPath(workspace, normalizedPath);
+  if (!fullPath) {
+    result.reason = '路径不在工作区内，不能打开';
+    return result;
+  }
+  try {
+    const stat = fs.existsSync(fullPath) ? fs.statSync(fullPath) : null;
+    result.exists = Boolean(stat);
+    result.isDirectory = Boolean(stat?.isDirectory());
+    result.canOpen = Boolean(stat?.isFile());
+    result.reason = result.canOpen
+      ? ''
+      : result.isDirectory
+        ? 'scope 指向目录，不能作为文件打开'
+        : '文件不存在，后续任务可能会创建';
+  } catch (error) {
+    result.reason = error?.message || '无法读取文件状态';
+  }
+  return result;
+}
+
+function planConcurrencySuggestion(workspace, tasks) {
+  const candidates = [];
+  const serialTasks = [];
+  for (const task of tasks) {
+    if (task.status !== TASK_EVENT_STATUS.PENDING) continue;
+    const analysis = taskConcurrencyAnalysis(workspace, task);
+    if (analysis.canRunInParallel) {
+      candidates.push({ task, analysis });
+    } else {
+      serialTasks.push(concurrencyTaskSummary(task, analysis.reason, analysis.scopes));
+    }
+  }
+
+  const batches = [];
+  for (const entry of candidates) {
+    let placed = false;
+    for (const batch of batches) {
+      if (batch.tasks.length >= MAX_PARALLEL_TASKS) continue;
+      if (entry.analysis.scopes.some((scope) => batch.scopeSet.has(scope))) continue;
+      batch.tasks.push(concurrencyTaskSummary(entry.task, 'scope 无交集，可与本批任务并发', entry.analysis.scopes));
+      for (const scope of entry.analysis.scopes) batch.scopeSet.add(scope);
+      placed = true;
+      break;
+    }
+    if (!placed) {
+      batches.push({
+        reason: '批次内任务 scope 互不重叠，可安全并发',
+        scopeSet: new Set(entry.analysis.scopes),
+        tasks: [concurrencyTaskSummary(entry.task, 'scope 无交集，可与本批任务并发', entry.analysis.scopes)],
+      });
+    }
+  }
+
+  const safeBatches = batches
+    .filter((batch) => batch.tasks.length > 1)
+    .map((batch, index) => ({
+      batch: index + 1,
+      reason: batch.reason,
+      tasks: batch.tasks,
+    }));
+  const singleCandidateTasks = batches
+    .filter((batch) => batch.tasks.length <= 1)
+    .flatMap((batch) => batch.tasks)
+    .map((task) => ({ ...task, reason: '没有可配对的无冲突任务，建议串行执行' }));
+
+  return {
+    hasSafeParallelBatches: safeBatches.length > 0,
+    parallelTaskCount: safeBatches.reduce((sum, batch) => sum + batch.tasks.length, 0),
+    batchCount: safeBatches.length,
+    serialTaskCount: serialTasks.length + singleCandidateTasks.length,
+    maxParallelTasks: MAX_PARALLEL_TASKS,
+    batches: safeBatches,
+    serialTasks: [...serialTasks, ...singleCandidateTasks],
+  };
+}
+
+function taskConcurrencyAnalysis(workspace, task) {
+  const scopeFiles = taskScopeFileInfos(workspace, task);
+  const scopes = scopeFiles
+    .filter((file) => !file.isUnknown && !file.isValidation)
+    .map((file) => file.path);
+  if (isAcceptanceTask(task) || scopeFiles.some((file) => file.isValidation)) {
+    return { canRunInParallel: false, scopes, reason: 'validation/验收任务必须串行执行' };
+  }
+  if (scopeFiles.some((file) => file.isUnknown)) {
+    return { canRunInParallel: false, scopes, reason: 'scope unknown，无法判断冲突' };
+  }
+  if (!scopes.length) {
+    return { canRunInParallel: false, scopes, reason: 'scope 为空或无法解析，无法判断冲突' };
+  }
+  if (PARALLEL_BLOCKING_TASK_RE.test(`${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`)) {
+    return { canRunInParallel: false, scopes, reason: '任务标题包含测试/验收/发布等串行关键词' };
+  }
+  return { canRunInParallel: true, scopes, reason: 'scope 明确且可用于冲突检测' };
+}
+
+function concurrencyTaskSummary(task, reason, scopes = []) {
+  return {
+    id: task.id,
+    task_key: task.task_key,
+    title: task.title,
+    status: task.status,
+    scopes: Array.from(new Set(scopes)),
+    reason,
+  };
+}
+
+function emptyConcurrencySuggestion() {
+  return {
+    hasSafeParallelBatches: false,
+    parallelTaskCount: 0,
+    batchCount: 0,
+    serialTaskCount: 0,
+    maxParallelTasks: MAX_PARALLEL_TASKS,
+    batches: [],
+    serialTasks: [],
+  };
+}
+
+function normalizeConfirmedTaskBatches(value) {
+  if (!Array.isArray(value)) return [];
+  const batches = [];
+  for (const batch of value) {
+    const rawTaskIds = Array.isArray(batch)
+      ? batch
+      : Array.isArray(batch?.taskIds)
+        ? batch.taskIds
+        : Array.isArray(batch?.tasks)
+          ? batch.tasks.map((task) => task?.id ?? task)
+          : [];
+    const taskIds = Array.from(new Set(rawTaskIds.map((taskId) => Number(taskId)).filter(Boolean)));
+    if (taskIds.length) batches.push(taskIds);
+  }
+  return batches;
 }
 
 function taskParallelScopes(task) {

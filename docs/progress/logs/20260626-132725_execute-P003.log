@@ -1,0 +1,1278 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0262-3483-7b61-b1c9-be1a555864b1
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_23_20260626-132134.md
+指定任务：
+- [ ] P003: 实现本地发布脚本 <!-- scope: scripts/release.py -->
+任务 scope：scripts/release.py
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用前两步发布背景，只查看 `scripts` 现状并新增本地发布脚本。
+  → 查看 scripts 目录约定
+  • 实现 release.py 参数流程
+  • 做静态内容核对
+exec
+powershell.exe -Command "if (Test-Path -LiteralPath 'scripts') { Get-ChildItem -LiteralPath 'scripts' | Select-Object Name }" in D:\project\GitHub\autoplan
+ succeeded in 616ms:
+
+Name         
+----         
+dev.js       
+smoke-test.js
+
+
+
+codex
+`scripts` 目前只有 JS 辅助脚本；现在新增独立 Python 发布编排脚本。
+  ✓ 查看 scripts 目录约定
+  → 实现 release.py 参数流程
+  • 做静态内容核对
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\scripts\release.py
+diff --git a/scripts/release.py b/scripts/release.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb62024d11977d64255c4f94955da8b5178049c6
+--- /dev/null
++++ b/scripts/release.py
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""Create and push a release tag for the GitHub Actions release workflow."""
++
++from __future__ import annotations
++
++import argparse
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++
++TAG_PREFIX = "v"
++
++
++class ReleaseError(RuntimeError):
++    """A user-facing release preflight error."""
++
++
++def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
++    try:
++        return subprocess.run(
++            ["git", *args],
++            check=False,
++            capture_output=capture,
++            text=True,
++            encoding="utf-8",
++        )
++    except FileNotFoundError as exc:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
++
++
++def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
++    if result.returncode != 0:
++        detail = (result.stderr or result.stdout or "").strip()
++        if detail:
++            raise ReleaseError(f"{message}\n{detail}")
++        raise ReleaseError(message)
++
++
++def ensure_git_available() -> None:
++    if shutil.which("git") is None:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
++
++
++def ensure_gh_hint() -> None:
++    if shutil.which("gh") is None:
++        print(
++            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
++            file=sys.stderr,
++        )
++
++
++def validate_tag(tag: str) -> None:
++    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
++        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
++    if any(char.isspace() for char in tag):
++        raise ReleaseError("tag 不能包含空白字符。")
++    invalid_chars = set("~^:?*[\\")
++    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
++        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
++    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
++    require_success(result, "tag 格式不符合 Git ref 规范。")
++
++
++def ensure_repository() -> None:
++    result = run_git(["rev-parse", "--is-inside-work-tree"])
++    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
++    if result.stdout.strip() != "true":
++        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
++
++
++def ensure_clean_worktree() -> None:
++    result = run_git(["status", "--porcelain"])
++    require_success(result, "无法读取 Git 工作区状态。")
++    if result.stdout.strip():
++        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
++
++
++def ensure_remote(remote: str) -> None:
++    result = run_git(["remote", "get-url", remote])
++    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
++
++
++def ensure_tag_absent(tag: str, remote: str) -> None:
++    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
++    if local.returncode == 0:
++        raise ReleaseError(f"本地 tag 已存在：{tag}。")
++
++    remote_result = run_git(["ls-remote", "--tags", remote, tag])
++    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
++    if remote_result.stdout.strip():
++        raise ReleaseError(f"远端 tag 已存在：{tag}。")
++
++
++def read_notes(args: argparse.Namespace) -> str:
++    if args.notes and args.notes_file:
++        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
++    if args.notes:
++        return args.notes
++    if args.notes_file:
++        path = Path(args.notes_file)
++        try:
++            return path.read_text(encoding="utf-8").strip()
++        except FileNotFoundError as exc:
++            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
++        except OSError as exc:
++            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
++    return ""
++
++
++def confirm_release(tag: str, remote: str) -> None:
++    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
++    if answer.strip().lower() not in {"y", "yes"}:
++        raise ReleaseError("已取消发布。")
++
++
++def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
++    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
++    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++
++    push_result = run_git(["push", remote, tag])
++    if push_result.returncode != 0:
++        run_git(["tag", "-d", tag])
++        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
++    )
++    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
++    parser.add_argument("--notes", help="直接传入版本说明文本。")
++    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
++    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
++    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
++    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
++    return parser
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++
++    try:
++        notes = read_notes(args)
++        ensure_git_available()
++        validate_tag(args.tag)
++        ensure_repository()
++        ensure_clean_worktree()
++        ensure_remote(args.remote)
++        ensure_tag_absent(args.tag, args.remote)
++        ensure_gh_hint()
++
++        print(f"发布 tag：{args.tag}")
++        print(f"目标远端：{args.remote}")
++        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
++
++        if args.dry_run:
++            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
++            return 0
++
++        if not args.yes:
++            confirm_release(args.tag, args.remote)
++
++        create_and_push_tag(args.tag, notes, args.remote)
++        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
++        return 0
++    except ReleaseError as exc:
++        print(f"错误：{exc}", file=sys.stderr)
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+diff --git a/scripts/release.py b/scripts/release.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb62024d11977d64255c4f94955da8b5178049c6
+--- /dev/null
++++ b/scripts/release.py
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""Create and push a release tag for the GitHub Actions release workflow."""
++
++from __future__ import annotations
++
++import argparse
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++
++TAG_PREFIX = "v"
++
++
++class ReleaseError(RuntimeError):
++    """A user-facing release preflight error."""
++
++
++def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
++    try:
++        return subprocess.run(
++            ["git", *args],
++            check=False,
++            capture_output=capture,
++            text=True,
++            encoding="utf-8",
++        )
++    except FileNotFoundError as exc:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
++
++
++def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
++    if result.returncode != 0:
++        detail = (result.stderr or result.stdout or "").strip()
++        if detail:
++            raise ReleaseError(f"{message}\n{detail}")
++        raise ReleaseError(message)
++
++
++def ensure_git_available() -> None:
++    if shutil.which("git") is None:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
++
++
++def ensure_gh_hint() -> None:
++    if shutil.which("gh") is None:
++        print(
++            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
++            file=sys.stderr,
++        )
++
++
++def validate_tag(tag: str) -> None:
++    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
++        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
++    if any(char.isspace() for char in tag):
++        raise ReleaseError("tag 不能包含空白字符。")
++    invalid_chars = set("~^:?*[\\")
++    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
++        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
++    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
++    require_success(result, "tag 格式不符合 Git ref 规范。")
++
++
++def ensure_repository() -> None:
++    result = run_git(["rev-parse", "--is-inside-work-tree"])
++    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
++    if result.stdout.strip() != "true":
++        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
++
++
++def ensure_clean_worktree() -> None:
++    result = run_git(["status", "--porcelain"])
++    require_success(result, "无法读取 Git 工作区状态。")
++    if result.stdout.strip():
++        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
++
++
++def ensure_remote(remote: str) -> None:
++    result = run_git(["remote", "get-url", remote])
++    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
++
++
++def ensure_tag_absent(tag: str, remote: str) -> None:
++    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
++    if local.returncode == 0:
++        raise ReleaseError(f"本地 tag 已存在：{tag}。")
++
++    remote_result = run_git(["ls-remote", "--tags", remote, tag])
++    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
++    if remote_result.stdout.strip():
++        raise ReleaseError(f"远端 tag 已存在：{tag}。")
++
++
++def read_notes(args: argparse.Namespace) -> str:
++    if args.notes and args.notes_file:
++        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
++    if args.notes:
++        return args.notes
++    if args.notes_file:
++        path = Path(args.notes_file)
++        try:
++            return path.read_text(encoding="utf-8").strip()
++        except FileNotFoundError as exc:
++            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
++        except OSError as exc:
++            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
++    return ""
++
++
++def confirm_release(tag: str, remote: str) -> None:
++    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
++    if answer.strip().lower() not in {"y", "yes"}:
++        raise ReleaseError("已取消发布。")
++
++
++def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
++    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
++    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++
++    push_result = run_git(["push", remote, tag])
++    if push_result.returncode != 0:
++        run_git(["tag", "-d", tag])
++        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
++    )
++    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
++    parser.add_argument("--notes", help="直接传入版本说明文本。")
++    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
++    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
++    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
++    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
++    return parser
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++
++    try:
++        notes = read_notes(args)
++        ensure_git_available()
++        validate_tag(args.tag)
++        ensure_repository()
++        ensure_clean_worktree()
++        ensure_remote(args.remote)
++        ensure_tag_absent(args.tag, args.remote)
++        ensure_gh_hint()
++
++        print(f"发布 tag：{args.tag}")
++        print(f"目标远端：{args.remote}")
++        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
++
++        if args.dry_run:
++            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
++            return 0
++
++        if not args.yes:
++            confirm_release(args.tag, args.remote)
++
++        create_and_push_tag(args.tag, notes, args.remote)
++        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
++        return 0
++    except ReleaseError as exc:
++        print(f"错误：{exc}", file=sys.stderr)
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+**Evaluating GitHub actions**
+
+I'm considering that the script on systems doesn't indicate a failure. It seems I need to print a hint about missing the GitHub CLI or token. P003 suggests that GitHub Action triggered by a tag doesn’t need 'gh,' but I’m noticing that notes transmission appears to be a future consideration. I’ve decided we shouldn’t implement P004, but I suspect notes aren’t being transmitted to the workflow at the moment. It’s a good point; I need to update the plan and inspect further.
+codex
+脚本已新增；我只做静态文本核对，不启动 Python 或 Git 流程。
+  ✓ 查看 scripts 目录约定
+  ✓ 实现 release.py 参数流程
+  → 做静态内容核对
+diff --git a/scripts/release.py b/scripts/release.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb62024d11977d64255c4f94955da8b5178049c6
+--- /dev/null
++++ b/scripts/release.py
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""Create and push a release tag for the GitHub Actions release workflow."""
++
++from __future__ import annotations
++
++import argparse
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++
++TAG_PREFIX = "v"
++
++
++class ReleaseError(RuntimeError):
++    """A user-facing release preflight error."""
++
++
++def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
++    try:
++        return subprocess.run(
++            ["git", *args],
++            check=False,
++            capture_output=capture,
++            text=True,
++            encoding="utf-8",
++        )
++    except FileNotFoundError as exc:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
++
++
++def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
++    if result.returncode != 0:
++        detail = (result.stderr or result.stdout or "").strip()
++        if detail:
++            raise ReleaseError(f"{message}\n{detail}")
++        raise ReleaseError(message)
++
++
++def ensure_git_available() -> None:
++    if shutil.which("git") is None:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
++
++
++def ensure_gh_hint() -> None:
++    if shutil.which("gh") is None:
++        print(
++            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
++            file=sys.stderr,
++        )
++
++
++def validate_tag(tag: str) -> None:
++    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
++        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
++    if any(char.isspace() for char in tag):
++        raise ReleaseError("tag 不能包含空白字符。")
++    invalid_chars = set("~^:?*[\\")
++    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
++        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
++    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
++    require_success(result, "tag 格式不符合 Git ref 规范。")
++
++
++def ensure_repository() -> None:
++    result = run_git(["rev-parse", "--is-inside-work-tree"])
++    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
++    if result.stdout.strip() != "true":
++        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
++
++
++def ensure_clean_worktree() -> None:
++    result = run_git(["status", "--porcelain"])
++    require_success(result, "无法读取 Git 工作区状态。")
++    if result.stdout.strip():
++        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
++
++
++def ensure_remote(remote: str) -> None:
++    result = run_git(["remote", "get-url", remote])
++    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
++
++
++def ensure_tag_absent(tag: str, remote: str) -> None:
++    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
++    if local.returncode == 0:
++        raise ReleaseError(f"本地 tag 已存在：{tag}。")
++
++    remote_result = run_git(["ls-remote", "--tags", remote, tag])
++    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
++    if remote_result.stdout.strip():
++        raise ReleaseError(f"远端 tag 已存在：{tag}。")
++
++
++def read_notes(args: argparse.Namespace) -> str:
++    if args.notes and args.notes_file:
++        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
++    if args.notes:
++        return args.notes
++    if args.notes_file:
++        path = Path(args.notes_file)
++        try:
++            return path.read_text(encoding="utf-8").strip()
++        except FileNotFoundError as exc:
++            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
++        except OSError as exc:
++            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
++    return ""
++
++
++def confirm_release(tag: str, remote: str) -> None:
++    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
++    if answer.strip().lower() not in {"y", "yes"}:
++        raise ReleaseError("已取消发布。")
++
++
++def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
++    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
++    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++
++    push_result = run_git(["push", remote, tag])
++    if push_result.returncode != 0:
++        run_git(["tag", "-d", tag])
++        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
++    )
++    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
++    parser.add_argument("--notes", help="直接传入版本说明文本。")
++    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
++    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
++    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
++    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
++    return parser
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++
++    try:
++        notes = read_notes(args)
++        ensure_git_available()
++        validate_tag(args.tag)
++        ensure_repository()
++        ensure_clean_worktree()
++        ensure_remote(args.remote)
++        ensure_tag_absent(args.tag, args.remote)
++        ensure_gh_hint()
++
++        print(f"发布 tag：{args.tag}")
++        print(f"目标远端：{args.remote}")
++        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
++
++        if args.dry_run:
++            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
++            return 0
++
++        if not args.yes:
++            confirm_release(args.tag, args.remote)
++
++        create_and_push_tag(args.tag, notes, args.remote)
++        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
++        return 0
++    except ReleaseError as exc:
++        print(f"错误：{exc}", file=sys.stderr)
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'scripts\\release.py' -Encoding UTF8 | Select-Object -First 60; Write-Output '---MATCHES---'; Select-String -LiteralPath 'scripts\\release.py' -Pattern '--tag|--notes|--notes-file|--dry-run|--yes|check-ref-format|ls-remote|status|push|gh|工作区|远端 tag'" in D:\project\GitHub\autoplan
+ succeeded in 569ms:
+#!/usr/bin/env python3
+"""Create and push a release tag for the GitHub Actions release workflow."""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+TAG_PREFIX = "v"
+
+
+class ReleaseError(RuntimeError):
+    """A user-facing release preflight error."""
+
+
+def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            check=False,
+            capture_output=capture,
+            text=True,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
+
+
+def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        if detail:
+            raise ReleaseError(f"{message}\n{detail}")
+        raise ReleaseError(message)
+
+
+def ensure_git_available() -> None:
+    if shutil.which("git") is None:
+        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
+
+
+def ensure_gh_hint() -> None:
+    if shutil.which("gh") is None:
+        print(
+            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
+            file=sys.stderr,
+        )
+
+
+def validate_tag(tag: str) -> None:
+    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
+        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
+    if any(char.isspace() for char in tag):
+        raise ReleaseError("tag 不能包含空白字符。")
+    invalid_chars = set("~^:?*[\\")
+    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
+---MATCHES---
+
+scripts\release.py:2:"""Create and push a release tag for the GitHub Actions release workflow."""
+scripts\release.py:17:    """A user-facing release preflight error."""
+scripts\release.py:46:def ensure_gh_hint() -> None:
+scripts\release.py:47:    if shutil.which("gh") is None:
+scripts\release.py:49:            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
+scripts\release.py:62:    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
+scripts\release.py:70:        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
+scripts\release.py:74:    result = run_git(["status", "--porcelain"])
+scripts\release.py:75:    require_success(result, "无法读取 Git 工作区状态。")
+scripts\release.py:77:        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
+scripts\release.py:90:    remote_result = run_git(["ls-remote", "--tags", remote, tag])
+scripts\release.py:91:    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
+scripts\release.py:93:        raise ReleaseError(f"远端 tag 已存在：{tag}。")
+scripts\release.py:98:        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
+scripts\release.py:118:def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+scripts\release.py:122:    push_result = run_git(["push", remote, tag])
+scripts\release.py:123:    if push_result.returncode != 0:
+scripts\release.py:125:        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
+scripts\release.py:132:    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
+scripts\release.py:133:    parser.add_argument("--notes", help="直接传入版本说明文本。")
+scripts\release.py:134:    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
+scripts\release.py:136:    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
+scripts\release.py:137:    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
+scripts\release.py:153:        ensure_gh_hint()
+scripts\release.py:166:        create_and_push_tag(args.tag, notes, args.remote)
+
+
+
+diff --git a/scripts/release.py b/scripts/release.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb62024d11977d64255c4f94955da8b5178049c6
+--- /dev/null
++++ b/scripts/release.py
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""Create and push a release tag for the GitHub Actions release workflow."""
++
++from __future__ import annotations
++
++import argparse
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++
++TAG_PREFIX = "v"
++
++
++class ReleaseError(RuntimeError):
++    """A user-facing release preflight error."""
++
++
++def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
++    try:
++        return subprocess.run(
++            ["git", *args],
++            check=False,
++            capture_output=capture,
++            text=True,
++            encoding="utf-8",
++        )
++    except FileNotFoundError as exc:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
++
++
++def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
++    if result.returncode != 0:
++        detail = (result.stderr or result.stdout or "").strip()
++        if detail:
++            raise ReleaseError(f"{message}\n{detail}")
++        raise ReleaseError(message)
++
++
++def ensure_git_available() -> None:
++    if shutil.which("git") is None:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
++
++
++def ensure_gh_hint() -> None:
++    if shutil.which("gh") is None:
++        print(
++            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
++            file=sys.stderr,
++        )
++
++
++def validate_tag(tag: str) -> None:
++    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
++        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
++    if any(char.isspace() for char in tag):
++        raise ReleaseError("tag 不能包含空白字符。")
++    invalid_chars = set("~^:?*[\\")
++    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
++        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
++    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
++    require_success(result, "tag 格式不符合 Git ref 规范。")
++
++
++def ensure_repository() -> None:
++    result = run_git(["rev-parse", "--is-inside-work-tree"])
++    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
++    if result.stdout.strip() != "true":
++        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
++
++
++def ensure_clean_worktree() -> None:
++    result = run_git(["status", "--porcelain"])
++    require_success(result, "无法读取 Git 工作区状态。")
++    if result.stdout.strip():
++        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
++
++
++def ensure_remote(remote: str) -> None:
++    result = run_git(["remote", "get-url", remote])
++    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
++
++
++def ensure_tag_absent(tag: str, remote: str) -> None:
++    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
++    if local.returncode == 0:
++        raise ReleaseError(f"本地 tag 已存在：{tag}。")
++
++    remote_result = run_git(["ls-remote", "--tags", remote, tag])
++    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
++    if remote_result.stdout.strip():
++        raise ReleaseError(f"远端 tag 已存在：{tag}。")
++
++
++def read_notes(args: argparse.Namespace) -> str:
++    if args.notes and args.notes_file:
++        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
++    if args.notes:
++        return args.notes
++    if args.notes_file:
++        path = Path(args.notes_file)
++        try:
++            return path.read_text(encoding="utf-8").strip()
++        except FileNotFoundError as exc:
++            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
++        except OSError as exc:
++            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
++    return ""
++
++
++def confirm_release(tag: str, remote: str) -> None:
++    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
++    if answer.strip().lower() not in {"y", "yes"}:
++        raise ReleaseError("已取消发布。")
++
++
++def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
++    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
++    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++
++    push_result = run_git(["push", remote, tag])
++    if push_result.returncode != 0:
++        run_git(["tag", "-d", tag])
++        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
++    )
++    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
++    parser.add_argument("--notes", help="直接传入版本说明文本。")
++    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
++    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
++    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
++    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
++    return parser
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++
++    try:
++        notes = read_notes(args)
++        ensure_git_available()
++        validate_tag(args.tag)
++        ensure_repository()
++        ensure_clean_worktree()
++        ensure_remote(args.remote)
++        ensure_tag_absent(args.tag, args.remote)
++        ensure_gh_hint()
++
++        print(f"发布 tag：{args.tag}")
++        print(f"目标远端：{args.remote}")
++        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
++
++        if args.dry_run:
++            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
++            return 0
++
++        if not args.yes:
++            confirm_release(args.tag, args.remote)
++
++        create_and_push_tag(args.tag, notes, args.remote)
++        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
++        return 0
++    except ReleaseError as exc:
++        print(f"错误：{exc}", file=sys.stderr)
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+**Evaluating potential syntax issues**
+
+I'm considering a potential syntax issue with type hints in Python 3.9. It looks like list[str] is fine in 3.9, but another version might require 3.10. I want to check the entire file since we've only looked at the first part. I'll focus on the script release.py. Perhaps we need to check if the GitHub token is included as it's currently missing. I think I can enhance the ensure_gh_hint function to check for the GitHub CLI installation status and handle missing tokens more effectively.
+**Finalizing notes for P004**
+
+I need to ensure that future P004 can access any necessary notes. Using an annotated tag message is a potential solution if the workflow can extract it later. It seems we might not need tests, and it may be acceptable to stick with static reads instead of using ast parse. I should update the plan to include line references but clarify that there won't be a validation command. If we can retrieve line numbers via Select-String output, that would help, especially for functions. Finally, I'll make sure everything is concise in Chinese.
+codex
+静态核对完成；没有启动测试、Git 发布或帮助命令。
+  ✓ 查看 scripts 目录约定
+  ✓ 实现 release.py 参数流程
+  ✓ 做静态内容核对
+diff --git a/scripts/release.py b/scripts/release.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb62024d11977d64255c4f94955da8b5178049c6
+--- /dev/null
++++ b/scripts/release.py
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""Create and push a release tag for the GitHub Actions release workflow."""
++
++from __future__ import annotations
++
++import argparse
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++
++TAG_PREFIX = "v"
++
++
++class ReleaseError(RuntimeError):
++    """A user-facing release preflight error."""
++
++
++def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
++    try:
++        return subprocess.run(
++            ["git", *args],
++            check=False,
++            capture_output=capture,
++            text=True,
++            encoding="utf-8",
++        )
++    except FileNotFoundError as exc:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
++
++
++def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
++    if result.returncode != 0:
++        detail = (result.stderr or result.stdout or "").strip()
++        if detail:
++            raise ReleaseError(f"{message}\n{detail}")
++        raise ReleaseError(message)
++
++
++def ensure_git_available() -> None:
++    if shutil.which("git") is None:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
++
++
++def ensure_gh_hint() -> None:
++    if shutil.which("gh") is None:
++        print(
++            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
++            file=sys.stderr,
++        )
++
++
++def validate_tag(tag: str) -> None:
++    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
++        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
++    if any(char.isspace() for char in tag):
++        raise ReleaseError("tag 不能包含空白字符。")
++    invalid_chars = set("~^:?*[\\")
++    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
++        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
++    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
++    require_success(result, "tag 格式不符合 Git ref 规范。")
++
++
++def ensure_repository() -> None:
++    result = run_git(["rev-parse", "--is-inside-work-tree"])
++    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
++    if result.stdout.strip() != "true":
++        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
++
++
++def ensure_clean_worktree() -> None:
++    result = run_git(["status", "--porcelain"])
++    require_success(result, "无法读取 Git 工作区状态。")
++    if result.stdout.strip():
++        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
++
++
++def ensure_remote(remote: str) -> None:
++    result = run_git(["remote", "get-url", remote])
++    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
++
++
++def ensure_tag_absent(tag: str, remote: str) -> None:
++    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
++    if local.returncode == 0:
++        raise ReleaseError(f"本地 tag 已存在：{tag}。")
++
++    remote_result = run_git(["ls-remote", "--tags", remote, tag])
++    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
++    if remote_result.stdout.strip():
++        raise ReleaseError(f"远端 tag 已存在：{tag}。")
++
++
++def read_notes(args: argparse.Namespace) -> str:
++    if args.notes and args.notes_file:
++        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
++    if args.notes:
++        return args.notes
++    if args.notes_file:
++        path = Path(args.notes_file)
++        try:
++            return path.read_text(encoding="utf-8").strip()
++        except FileNotFoundError as exc:
++            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
++        except OSError as exc:
++            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
++    return ""
++
++
++def confirm_release(tag: str, remote: str) -> None:
++    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
++    if answer.strip().lower() not in {"y", "yes"}:
++        raise ReleaseError("已取消发布。")
++
++
++def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
++    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
++    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++
++    push_result = run_git(["push", remote, tag])
++    if push_result.returncode != 0:
++        run_git(["tag", "-d", tag])
++        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
++    )
++    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
++    parser.add_argument("--notes", help="直接传入版本说明文本。")
++    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
++    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
++    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
++    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
++    return parser
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++
++    try:
++        notes = read_notes(args)
++        ensure_git_available()
++        validate_tag(args.tag)
++        ensure_repository()
++        ensure_clean_worktree()
++        ensure_remote(args.remote)
++        ensure_tag_absent(args.tag, args.remote)
++        ensure_gh_hint()
++
++        print(f"发布 tag：{args.tag}")
++        print(f"目标远端：{args.remote}")
++        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
++
++        if args.dry_run:
++            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
++            return 0
++
++        if not args.yes:
++            confirm_release(args.tag, args.remote)
++
++        create_and_push_tag(args.tag, notes, args.remote)
++        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
++        return 0
++    except ReleaseError as exc:
++        print(f"错误：{exc}", file=sys.stderr)
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+codex
+已完成 P003，仅新增 `scripts/release.py`，未修改 plan、未勾选 checkbox，也未运行测试/构建/lint/验收或发布命令。
+
+- 新增本地发布脚本入口与参数：`--tag`、`--notes`、`--notes-file`、`--remote`、`--dry-run`、`--yes`，位置在 `scripts/release.py:128`
+- 增加 tag 格式校验与 Git ref 规范校验，位置在 `scripts/release.py:54`
+- 增加 Git 仓库、工作区干净、远端存在、本地/远端 tag 不存在等发布前检查，位置在 `scripts/release.py:66`
+- 支持 UTF-8 版本说明文件读取，并限制 `--notes` 与 `--notes-file` 二选一，位置在 `scripts/release.py:96`
+- 实现确认机制、dry-run 非破坏流程、创建 annotated tag 并推送远端，位置在 `scripts/release.py:113`
+- 对 Git 缺失、远端失败、工作区未清理、tag 已存在、GitHub CLI 缺失提示等场景提供中文错误或提示。
+diff --git a/scripts/release.py b/scripts/release.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..fb62024d11977d64255c4f94955da8b5178049c6
+--- /dev/null
++++ b/scripts/release.py
+@@ -0,0 +1,175 @@
++#!/usr/bin/env python3
++"""Create and push a release tag for the GitHub Actions release workflow."""
++
++from __future__ import annotations
++
++import argparse
++import shutil
++import subprocess
++import sys
++from pathlib import Path
++
++
++TAG_PREFIX = "v"
++
++
++class ReleaseError(RuntimeError):
++    """A user-facing release preflight error."""
++
++
++def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
++    try:
++        return subprocess.run(
++            ["git", *args],
++            check=False,
++            capture_output=capture,
++            text=True,
++            encoding="utf-8",
++        )
++    except FileNotFoundError as exc:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
++
++
++def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
++    if result.returncode != 0:
++        detail = (result.stderr or result.stdout or "").strip()
++        if detail:
++            raise ReleaseError(f"{message}\n{detail}")
++        raise ReleaseError(message)
++
++
++def ensure_git_available() -> None:
++    if shutil.which("git") is None:
++        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
++
++
++def ensure_gh_hint() -> None:
++    if shutil.which("gh") is None:
++        print(
++            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
++            file=sys.stderr,
++        )
++
++
++def validate_tag(tag: str) -> None:
++    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
++        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
++    if any(char.isspace() for char in tag):
++        raise ReleaseError("tag 不能包含空白字符。")
++    invalid_chars = set("~^:?*[\\")
++    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
++        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
++    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
++    require_success(result, "tag 格式不符合 Git ref 规范。")
++
++
++def ensure_repository() -> None:
++    result = run_git(["rev-parse", "--is-inside-work-tree"])
++    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
++    if result.stdout.strip() != "true":
++        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
++
++
++def ensure_clean_worktree() -> None:
++    result = run_git(["status", "--porcelain"])
++    require_success(result, "无法读取 Git 工作区状态。")
++    if result.stdout.strip():
++        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
++
++
++def ensure_remote(remote: str) -> None:
++    result = run_git(["remote", "get-url", remote])
++    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
++
++
++def ensure_tag_absent(tag: str, remote: str) -> None:
++    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
++    if local.returncode == 0:
++        raise ReleaseError(f"本地 tag 已存在：{tag}。")
++
++    remote_result = run_git(["ls-remote", "--tags", remote, tag])
++    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
++    if remote_result.stdout.strip():
++        raise ReleaseError(f"远端 tag 已存在：{tag}。")
++
++
++def read_notes(args: argparse.Namespace) -> str:
++    if args.notes and args.notes_file:
++        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
++    if args.notes:
++        return args.notes
++    if args.notes_file:
++        path = Path(args.notes_file)
++        try:
++            return path.read_text(encoding="utf-8").strip()
++        except FileNotFoundError as exc:
++            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
++        except OSError as exc:
++            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
++    return ""
++
++
++def confirm_release(tag: str, remote: str) -> None:
++    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
++    if answer.strip().lower() not in {"y", "yes"}:
++        raise ReleaseError("已取消发布。")
++
++
++def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
++    tag_args = ["tag", "-a", tag, "-m", notes or f"Release {tag}"]
++    require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
++
++    push_result = run_git(["push", remote, tag])
++    if push_result.returncode != 0:
++        run_git(["tag", "-d", tag])
++        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
++
++
++def build_parser() -> argparse.ArgumentParser:
++    parser = argparse.ArgumentParser(
++        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
++    )
++    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
++    parser.add_argument("--notes", help="直接传入版本说明文本。")
++    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
++    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
++    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
++    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
++    return parser
++
++
++def main(argv: list[str] | None = None) -> int:
++    parser = build_parser()
++    args = parser.parse_args(argv)
++
++    try:
++        notes = read_notes(args)
++        ensure_git_available()
++        validate_tag(args.tag)
++        ensure_repository()
++        ensure_clean_worktree()
++        ensure_remote(args.remote)
++        ensure_tag_absent(args.tag, args.remote)
++        ensure_gh_hint()
++
++        print(f"发布 tag：{args.tag}")
++        print(f"目标远端：{args.remote}")
++        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
++
++        if args.dry_run:
++            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
++            return 0
++
++        if not args.yes:
++            confirm_release(args.tag, args.remote)
++
++        create_and_push_tag(args.tag, notes, args.remote)
++        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
++        return 0
++    except ReleaseError as exc:
++        print(f"错误：{exc}", file=sys.stderr)
++        return 1
++
++
++if __name__ == "__main__":
++    raise SystemExit(main())
+
+tokens used
+52,621
+已完成 P003，仅新增 `scripts/release.py`，未修改 plan、未勾选 checkbox，也未运行测试/构建/lint/验收或发布命令。
+
+- 新增本地发布脚本入口与参数：`--tag`、`--notes`、`--notes-file`、`--remote`、`--dry-run`、`--yes`，位置在 `scripts/release.py:128`
+- 增加 tag 格式校验与 Git ref 规范校验，位置在 `scripts/release.py:54`
+- 增加 Git 仓库、工作区干净、远端存在、本地/远端 tag 不存在等发布前检查，位置在 `scripts/release.py:66`
+- 支持 UTF-8 版本说明文件读取，并限制 `--notes` 与 `--notes-file` 二选一，位置在 `scripts/release.py:96`
+- 实现确认机制、dry-run 非破坏流程、创建 annotated tag 并推送远端，位置在 `scripts/release.py:113`
+- 对 Git 缺失、远端失败、工作区未清理、tag 已存在、GitHub CLI 缺失提示等场景提供中文错误或提示。

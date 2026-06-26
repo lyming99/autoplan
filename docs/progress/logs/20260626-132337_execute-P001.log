@@ -1,0 +1,803 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0262-3483-7b61-b1c9-be1a555864b1
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_23_20260626-132134.md
+指定任务：
+- [ ] P001: 补齐三端打包配置 <!-- scope: package.json -->
+任务 scope：package.json
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Modifying package.json**
+
+I need to modify the package.json file, so I should take a closer look at it. I might need to inspect it thoroughly to understand the necessary changes. It seems like reading the plan in read-only mode would help, especially for getting details about the package scope. I’ll make sure to use the plan effectively to guide my modifications. Let's figure this out!
+codex
+我会先读取计划上下文和 `package.json`，只定位 P001 需要的打包配置。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_23_20260626-132134.md' -Encoding UTF8; Write-Output '---PACKAGE---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\package.json' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 264ms:
+# 需求 #23 开发计划：GitHub Action 自动三端发布与一键推送 Release
+
+## 背景
+
+当前项目是 Electron 桌面应用，`package.json` 已有 `package:win` Windows 打包命令，`electron-builder` 配置也已有 Windows NSIS 目标，但还缺少 macOS、Linux 打包配置、跨平台 CI 发布流水线，以及本地一键创建/推送 Release 的脚本。
+
+本需求目标是：实现一个 GitHub Action，在发布 Release 版本时自动编译并打包 Windows、macOS、Linux 三端程序；同时新增一个 Python 脚本，支持开发者在本地一键指定 tag 和版本说明，推送 tag 并触发 GitHub Release 发布流程。
+
+## 设计约束
+
+- 发布流程应优先复用 `electron-builder`，避免引入与现有 Electron 构建体系冲突的新打包工具。
+- 三端产物应在对应系统 runner 上构建，Windows、macOS、Linux 分别使用 `windows-latest`、`macos-latest`、`ubuntu-latest`。
+- GitHub Action 应支持手动触发和 tag 触发，便于本地脚本推送 tag 后自动发布。
+- Release 产物命名应稳定、可区分平台、版本和架构，便于用户下载和脚本校验。
+- Python 脚本应只负责本地发布编排：参数校验、tag 创建/推送、版本说明传递或生成；不应在脚本中重复执行三端构建。
+- 脚本应对常见失败场景给出明确提示，包括未安装 Git、非 Git 仓库、工作区未清理、tag 已存在、远端推送失败、缺少 GitHub CLI 或 token 等。
+- Release 说明应支持命令行直接传入文本，也支持从文件读取，避免长说明在 shell 中转义困难。
+- 不在本计划中实现代码签名、公证、自动更新服务器；如需后续支持，应预留配置位置但不阻塞基础发布能力。
+
+## 任务列表
+
+- [ ] P001: 补齐三端打包配置 <!-- scope: package.json -->
+  - 验收要点：`package.json` 中新增或调整 Windows、macOS、Linux 打包脚本，能够分别调用 `electron-builder` 的对应平台目标。
+  - 验收要点：`build` 配置包含 macOS 与 Linux 的基础 target、artifactName、输出目录等信息，且不破坏现有 Windows NSIS 配置。
+  - 验收要点：产物命名包含产品名、版本、平台或架构信息，三端产物不会互相覆盖。
+  - 验收要点：新增脚本命名清晰，例如 `package:mac`、`package:linux`、`package:all` 或等价命令，便于 GitHub Action 调用。
+
+- [ ] P002: 新增 Release 工作流 <!-- scope: .github/workflows/release.yml -->
+  - 验收要点：新增 GitHub Action workflow，支持 `push` tag 触发，tag 规则覆盖发布版本格式，例如 `v*`。
+  - 验收要点：workflow 支持 `workflow_dispatch` 手动触发，并允许输入 tag、版本说明或说明文件来源的必要信息。
+  - 验收要点：workflow 使用 matrix 或等价 jobs 在 Windows、macOS、Linux runner 上分别安装依赖、执行构建和打包。
+  - 验收要点：workflow 上传每个平台生成的安装包或压缩包为 artifact，并在发布 job 中统一附加到 GitHub Release。
+  - 验收要点：workflow 使用仓库内置 `GITHUB_TOKEN` 完成 Release 创建或更新，不要求用户手动配置额外 token 才能完成基础发布。
+
+- [ ] P003: 实现本地发布脚本 <!-- scope: scripts/release.py -->
+  - 验收要点：新增 Python 脚本支持指定 `--tag`，并校验 tag 格式、是否已在本地或远端存在。
+  - 验收要点：脚本支持指定版本说明，至少包含 `--notes` 直接传入和 `--notes-file` 从文件读取两种方式。
+  - 验收要点：脚本在推送前检查当前目录是 Git 仓库、远端存在、工作区状态符合发布要求，并输出可操作的错误信息。
+  - 验收要点：脚本能够创建本地 tag 并推送到远端，成功后明确提示 GitHub Action 将由 tag 推送触发。
+  - 验收要点：脚本提供 dry-run 或确认机制，避免误发布不可撤销的 tag。
+
+- [ ] P004: 串联版本说明传递 <!-- scope: scripts/release.py,.github/workflows/release.yml -->
+  - 验收要点：本地脚本生成或提交的版本说明能够被 Release workflow 获取，作为 GitHub Release 正文使用。
+  - 验收要点：当没有显式版本说明时，流程应提供合理兜底，例如使用最近提交摘要或默认模板。
+  - 验收要点：版本说明中的换行、中文、Markdown 列表、链接等内容在脚本、Git、workflow 和 Release 页面中保持可读。
+  - 验收要点：重复运行同一 tag 的发布流程时，Release 正文与附件处理策略明确，例如更新已有 Release 或失败提示。
+
+- [ ] P005: 补充发布使用文档 <!-- scope: README.md,docs/release.md -->
+  - 验收要点：文档说明 GitHub Action 的触发方式、tag 命名规范、三端产物位置和发布权限要求。
+  - 验收要点：文档给出 Python 脚本的典型用法，包括指定 tag、直接传入版本说明、从文件读取版本说明、dry-run 示例。
+  - 验收要点：文档列出发布前检查项，包括依赖安装、版本号更新、工作区干净、远端权限、GitHub Actions 权限设置。
+  - 验收要点：文档说明当前不包含代码签名、公证和自动更新能力，避免使用者误解发布产物能力边界。
+
+- [ ] P006: 完整验收 <!-- scope: validation -->
+  - 验收要点：最终验收命令包含 `npm run check`，确认现有静态检查、主进程脚本检查和 smoke 脚本语法检查通过。
+  - 验收要点：最终验收命令包含三端打包命令的可执行性检查；在当前本地平台至少实际运行本平台打包命令，其他平台通过 GitHub Action 配置和脚本命令审查确认。
+  - 验收要点：最终验收命令包含 `python scripts/release.py --help` 和一次 dry-run 示例，确认参数解析、帮助信息、错误提示和非破坏性流程可用。
+  - 验收要点：在 GitHub Actions 页面手动触发或推送测试 tag 后，Windows、macOS、Linux 三个平台 job 均成功，Release 页面生成并附带三端产物。
+  - 验收要点：总体验收通过标准为检查命令无失败、dry-run 不产生远端 tag、实际发布流程可生成目标 tag 的 GitHub Release，且 Release 正文与附件符合预期。
+
+## 总体验收标准
+
+- GitHub Action 能在推送符合规则的 tag 后自动执行发布流程，并构建 Windows、macOS、Linux 三端安装包或压缩包。
+- Release 页面能自动创建或更新，正文使用用户指定的版本说明，附件包含三端产物且命名清晰不冲突。
+- `scripts/release.py` 能在本地一键发起发布，支持 `--tag`、`--notes`、`--notes-file` 和 dry-run 或确认机制，并对异常状态给出明确错误提示。
+- 文档覆盖发布前准备、脚本用法、Action 触发方式、产物说明、权限要求和能力边界。
+- 最终验收命令：`npm run check`、本平台打包命令、`python scripts/release.py --help`、`python scripts/release.py --tag v0.0.0-test --notes "test release" --dry-run`，以及 GitHub Actions 中一次测试 tag 发布验证。
+- 通过标准：所有本地命令退出码为 0；dry-run 不创建本地或远端 tag；GitHub Actions 三端 job 全部成功；GitHub Release 正文、tag、附件与输入参数一致。
+
+## 进度区
+
+| 任务 | 状态 | 说明 |
+| --- | --- | --- |
+| P001 | 未开始 | 待补齐 `electron-builder` 三端打包脚本与配置 |
+| P002 | 未开始 | 待新增 GitHub Release workflow |
+| P003 | 未开始 | 待实现本地 Python 一键发布脚本 |
+| P004 | 未开始 | 待打通版本说明在脚本与 workflow 间的传递 |
+| P005 | 未开始 | 待补充发布流程和使用文档 |
+| P006 | 未开始 | 待执行完整验收并记录结果 |
+
+当前总体进度：0/6。
+---PACKAGE---
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+**Considering build process**
+
+I think I need to run some commands for building my application, something like "npm run build && electron-builder --win nsis --mac dmg --linux AppImage --x64." But it seems that this isn't very robust. I might need to edit the JSON file, and I'm considering using Node for some modifications. Additionally, I'll need to check the AGENTS, but I realize there aren't any tests set up yet. This might be quite the juggling act!
+codex
+已确认范围只涉及 `package.json`。接下来只补齐三端脚本和 builder 配置。
+exec
+powershell.exe -Command "if (Test-Path -LiteralPath 'AGENTS.md') { Get-Content -LiteralPath 'AGENTS.md' -Encoding UTF8 }" in D:\project\GitHub\autoplan
+ succeeded in 192ms:
+codex
+未发现额外仓库指令；现在应用最小 `package.json` 修改。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\package.json
+diff --git a/package.json b/package.json
+index c67a3036c882c76b421ddffae967ed6665db6101..aa8d113f897894d60437c1c5142b60fdc03b795b
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,9 @@
+     "dev": "node scripts/dev.js",
+     "build": "tsc --noEmit && vite build",
+     "package:win": "npm run build && electron-builder --win nsis --x64",
++    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
++    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
++    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+     "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+     "smoke": "node scripts/smoke-test.js"
+   },
+@@ -37,7 +40,46 @@
+           ]
+         }
+       ],
+-      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
++      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
++    },
++    "mac": {
++      "icon": "assets/icon.icns",
++      "target": [
++        {
++          "target": "dmg",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        },
++        {
++          "target": "zip",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        }
++      ],
++      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
++    },
++    "linux": {
++      "icon": "assets/icon.png",
++      "target": [
++        {
++          "target": "AppImage",
++          "arch": [
++            "x64"
++          ]
++        },
++        {
++          "target": "deb",
++          "arch": [
++            "x64"
++          ]
++        }
++      ],
++      "category": "Utility",
++      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+     },
+     "nsis": {
+       "oneClick": false,
+
+diff --git a/package.json b/package.json
+index c67a3036c882c76b421ddffae967ed6665db6101..aa8d113f897894d60437c1c5142b60fdc03b795b
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,9 @@
+     "dev": "node scripts/dev.js",
+     "build": "tsc --noEmit && vite build",
+     "package:win": "npm run build && electron-builder --win nsis --x64",
++    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
++    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
++    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+     "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+     "smoke": "node scripts/smoke-test.js"
+   },
+@@ -37,7 +40,46 @@
+           ]
+         }
+       ],
+-      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
++      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
++    },
++    "mac": {
++      "icon": "assets/icon.icns",
++      "target": [
++        {
++          "target": "dmg",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        },
++        {
++          "target": "zip",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        }
++      ],
++      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
++    },
++    "linux": {
++      "icon": "assets/icon.png",
++      "target": [
++        {
++          "target": "AppImage",
++          "arch": [
++            "x64"
++          ]
++        },
++        {
++          "target": "deb",
++          "arch": [
++            "x64"
++          ]
++        }
++      ],
++      "category": "Utility",
++      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+     },
+     "nsis": {
+       "oneClick": false,
+
+**Inspecting package configuration**
+
+I got a warning, but the patch succeeded, so I might need to check the package.json file. The developer mentioned using the apply_patch tool, but only the shell is available. It says I can run apply_patch with functions shell. I’m considering validating JSON parsing, but not through npm. Maybe I can use Node? It's unclear if the current stage allows tests or builds. I need to ensure the required icon assets exist; checking the assets listing seems vital. If the icons are missing, it could cause issues for mac and Linux!
+codex
+配置已写入；我再只做静态文件查看，确认 JSON 结构和图标资产情况。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'package.json' -Encoding UTF8; Write-Output '---ASSETS---'; if (Test-Path -LiteralPath 'assets') { Get-ChildItem -LiteralPath 'assets' | Select-Object -ExpandProperty Name }" in D:\project\GitHub\autoplan
+ succeeded in 263ms:
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "icon": "assets/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+---ASSETS---
+icon-128.png
+icon-16.png
+icon-24.png
+icon-256.png
+icon-32.png
+icon-48.png
+icon-64.png
+icon.ico
+icon.png
+
+diff --git a/package.json b/package.json
+index c67a3036c882c76b421ddffae967ed6665db6101..aa8d113f897894d60437c1c5142b60fdc03b795b
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,9 @@
+     "dev": "node scripts/dev.js",
+     "build": "tsc --noEmit && vite build",
+     "package:win": "npm run build && electron-builder --win nsis --x64",
++    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
++    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
++    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+     "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+     "smoke": "node scripts/smoke-test.js"
+   },
+@@ -37,7 +40,46 @@
+           ]
+         }
+       ],
+-      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
++      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
++    },
++    "mac": {
++      "icon": "assets/icon.icns",
++      "target": [
++        {
++          "target": "dmg",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        },
++        {
++          "target": "zip",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        }
++      ],
++      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
++    },
++    "linux": {
++      "icon": "assets/icon.png",
++      "target": [
++        {
++          "target": "AppImage",
++          "arch": [
++            "x64"
++          ]
++        },
++        {
++          "target": "deb",
++          "arch": [
++            "x64"
++          ]
++        }
++      ],
++      "category": "Utility",
++      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+     },
+     "nsis": {
+       "oneClick": false,
+
+codex
+发现仓库没有 `icon.icns`，我会移除该引用避免 mac 打包被缺失资产阻塞。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\package.json
+diff --git a/package.json b/package.json
+index c67a3036c882c76b421ddffae967ed6665db6101..d700a44489f24dd7c2dee715760cd7c95409237f
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,9 @@
+     "dev": "node scripts/dev.js",
+     "build": "tsc --noEmit && vite build",
+     "package:win": "npm run build && electron-builder --win nsis --x64",
++    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
++    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
++    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+     "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+     "smoke": "node scripts/smoke-test.js"
+   },
+@@ -37,7 +40,45 @@
+           ]
+         }
+       ],
+-      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
++      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
++    },
++    "mac": {
++      "target": [
++        {
++          "target": "dmg",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        },
++        {
++          "target": "zip",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        }
++      ],
++      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
++    },
++    "linux": {
++      "icon": "assets/icon.png",
++      "target": [
++        {
++          "target": "AppImage",
++          "arch": [
++            "x64"
++          ]
++        },
++        {
++          "target": "deb",
++          "arch": [
++            "x64"
++          ]
++        }
++      ],
++      "category": "Utility",
++      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+     },
+     "nsis": {
+       "oneClick": false,
+
+diff --git a/package.json b/package.json
+index c67a3036c882c76b421ddffae967ed6665db6101..d700a44489f24dd7c2dee715760cd7c95409237f
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,9 @@
+     "dev": "node scripts/dev.js",
+     "build": "tsc --noEmit && vite build",
+     "package:win": "npm run build && electron-builder --win nsis --x64",
++    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
++    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
++    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+     "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+     "smoke": "node scripts/smoke-test.js"
+   },
+@@ -37,7 +40,45 @@
+           ]
+         }
+       ],
+-      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
++      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
++    },
++    "mac": {
++      "target": [
++        {
++          "target": "dmg",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        },
++        {
++          "target": "zip",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        }
++      ],
++      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
++    },
++    "linux": {
++      "icon": "assets/icon.png",
++      "target": [
++        {
++          "target": "AppImage",
++          "arch": [
++            "x64"
++          ]
++        },
++        {
++          "target": "deb",
++          "arch": [
++            "x64"
++          ]
++        }
++      ],
++      "category": "Utility",
++      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+     },
+     "nsis": {
+       "oneClick": false,
+
+codex
+已避免新增缺失图标依赖；最后只解析 JSON 并定位变更行。
+exec
+powershell.exe -Command '$json = Get-Content -LiteralPath '"'package.json' -Encoding UTF8 -Raw | ConvertFrom-Json; 'json-ok'; Select-String -LiteralPath 'package.json' -Pattern 'package:mac|package:linux|package:all|artifactName|\"mac\"|\"linux\"'" in D:\project\GitHub\autoplan
+ succeeded in 316ms:
+json-ok
+
+package.json:12:    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+package.json:13:    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+package.json:14:    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x
+64",
+package.json:43:      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+package.json:45:    "mac": {
+package.json:62:      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+package.json:64:    "linux": {
+package.json:81:      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+
+
+
+diff --git a/package.json b/package.json
+index c67a3036c882c76b421ddffae967ed6665db6101..d700a44489f24dd7c2dee715760cd7c95409237f
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,9 @@
+     "dev": "node scripts/dev.js",
+     "build": "tsc --noEmit && vite build",
+     "package:win": "npm run build && electron-builder --win nsis --x64",
++    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
++    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
++    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+     "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+     "smoke": "node scripts/smoke-test.js"
+   },
+@@ -37,7 +40,45 @@
+           ]
+         }
+       ],
+-      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
++      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
++    },
++    "mac": {
++      "target": [
++        {
++          "target": "dmg",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        },
++        {
++          "target": "zip",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        }
++      ],
++      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
++    },
++    "linux": {
++      "icon": "assets/icon.png",
++      "target": [
++        {
++          "target": "AppImage",
++          "arch": [
++            "x64"
++          ]
++        },
++        {
++          "target": "deb",
++          "arch": [
++            "x64"
++          ]
++        }
++      ],
++      "category": "Utility",
++      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+     },
+     "nsis": {
+       "oneClick": false,
+
+codex
+已完成 P001，仅修改 `package.json`，未改 plan、未勾选 checkbox，也未运行测试/构建/lint。
+
+- 新增三端打包脚本：`package:mac`、`package:linux`、`package:all`，位置在 `package.json:12`
+- 保留并调整 Windows NSIS 配置，产物名加入 `win` 平台标识，位置在 `package.json:43`
+- 新增 macOS `dmg`/`zip` 基础 target，产物名包含版本、平台、架构，位置在 `package.json:45`
+- 新增 Linux `AppImage`/`deb` 基础 target，产物名包含版本、平台、架构，位置在 `package.json:64`
+- 已用 `ConvertFrom-Json` 做非构建类 JSON 解析确认；未执行任何打包或验收命令。
+diff --git a/package.json b/package.json
+index c67a3036c882c76b421ddffae967ed6665db6101..d700a44489f24dd7c2dee715760cd7c95409237f
+--- a/package.json
++++ b/package.json
+@@ -9,6 +9,9 @@
+     "dev": "node scripts/dev.js",
+     "build": "tsc --noEmit && vite build",
+     "package:win": "npm run build && electron-builder --win nsis --x64",
++    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
++    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
++    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+     "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+     "smoke": "node scripts/smoke-test.js"
+   },
+@@ -37,7 +40,45 @@
+           ]
+         }
+       ],
+-      "artifactName": "${productName}-${version}-${arch}-Setup.${ext}"
++      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
++    },
++    "mac": {
++      "target": [
++        {
++          "target": "dmg",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        },
++        {
++          "target": "zip",
++          "arch": [
++            "x64",
++            "arm64"
++          ]
++        }
++      ],
++      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
++    },
++    "linux": {
++      "icon": "assets/icon.png",
++      "target": [
++        {
++          "target": "AppImage",
++          "arch": [
++            "x64"
++          ]
++        },
++        {
++          "target": "deb",
++          "arch": [
++            "x64"
++          ]
++        }
++      ],
++      "category": "Utility",
++      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+     },
+     "nsis": {
+       "oneClick": false,
+
+tokens used
+30,323
+已完成 P001，仅修改 `package.json`，未改 plan、未勾选 checkbox，也未运行测试/构建/lint。
+
+- 新增三端打包脚本：`package:mac`、`package:linux`、`package:all`，位置在 `package.json:12`
+- 保留并调整 Windows NSIS 配置，产物名加入 `win` 平台标识，位置在 `package.json:43`
+- 新增 macOS `dmg`/`zip` 基础 target，产物名包含版本、平台、架构，位置在 `package.json:45`
+- 新增 Linux `AppImage`/`deb` 基础 target，产物名包含版本、平台、架构，位置在 `package.json:64`
+- 已用 `ConvertFrom-Json` 做非构建类 JSON 解析确认；未执行任何打包或验收命令。
