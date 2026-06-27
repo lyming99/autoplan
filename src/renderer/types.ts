@@ -1,7 +1,20 @@
 export type IntakeType = 'requirement' | 'feedback';
 export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
 export type AgentCliProvider = 'codex' | 'claude' | string;
-export type CodexReasoningEffort = 'low' | 'medium' | 'high' | string;
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | string;
+
+export const PLAN_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  READY_FOR_VALIDATION: 'ready_for_validation',
+  VALIDATION_FAILED: 'validation_failed',
+  COMPLETED: 'completed',
+  INTERRUPTED: 'interrupted',
+  DRAFT: 'draft',
+} as const;
+
+export type PlanStatus = (typeof PLAN_STATUS)[keyof typeof PLAN_STATUS];
 
 export interface AgentCliOption {
   value: AgentCliProvider;
@@ -63,6 +76,10 @@ export const WORKSPACE_SEARCH_HIT_FIELDS = {
 export type WorkspaceSearchHitField =
   (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
 
+export type WorkspaceSearchTargetType = WorkspaceSearchSourceType;
+
+export type WorkspaceSearchScrollBehavior = 'auto' | 'smooth';
+
 export interface WorkspaceSearchQuery {
   raw: string;
   normalized: string;
@@ -83,11 +100,32 @@ export interface WorkspaceSearchMatch {
   snippet?: string;
 }
 
+export interface WorkspaceSearchLocation {
+  targetTab: WorkspaceTab;
+  targetType: WorkspaceSearchTargetType;
+  targetId: number;
+  anchorId: string;
+  scrollBehavior: WorkspaceSearchScrollBehavior;
+  highlightMs: number;
+  planId?: number | null;
+  taskId?: number | null;
+  taskKey?: string | null;
+  filePath?: string | null;
+}
+
 export interface WorkspaceSearchResult {
   id: string;
   source: WorkspaceSearchSourceType;
   targetTab: WorkspaceTab;
+  location: WorkspaceSearchLocation;
+  targetType: WorkspaceSearchTargetType;
+  targetId: number;
+  anchorId: string;
   recordId: number;
+  planId?: number | null;
+  taskId?: number | null;
+  taskKey?: string | null;
+  filePath?: string | null;
   title: string;
   summary: string;
   status: string | null;
@@ -199,7 +237,9 @@ export interface Plan {
   file_path: string;
   title?: string | null;
   hash: string;
-  status: string;
+  status: PlanStatus;
+  sort_order: number;
+  is_draft: boolean;
   total_tasks: number;
   completed_tasks: number;
   validation_passed: number;
@@ -246,12 +286,33 @@ export interface PlanConcurrencySuggestion {
   serialTasks: PlanConcurrencyTask[];
 }
 
+export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
+
+export interface ReadPlanTask {
+  id: number;
+  plan_id: number;
+  task_key: string;
+  title: string;
+  raw_line: string;
+  scope: string;
+  scopes: string[];
+  status: string;
+  sort_order: number;
+  updated_at: string;
+}
+
 export interface ReadPlanResult {
   ok: boolean;
   id: number | null;
   project_id: number | null;
   file_path: string;
   markdown: string;
+  tasks: ReadPlanTask[];
+  task_total: number;
+  task_completed: number;
+  task_parse_status: ReadPlanTaskParseStatus;
+  task_parse_message: string;
+  task_parse_has_task_section: boolean;
   hash: string;
   updated_at: string;
   error: string | null;
@@ -302,6 +363,51 @@ export interface PlanTask extends CodexSessionInfo {
   file_path: string;
   /** JOIN plans 并读取计划 Markdown 标题得到 */
   plan_title: string;
+}
+
+export type PlanTaskAssociationSource = 'plan_id' | 'file_path';
+
+export interface PlanTaskAssociationTaskRef {
+  plan_id?: number | null;
+  file_path?: string | null;
+}
+
+export interface PlanTaskAssociationPlanRef {
+  id: number;
+  file_path?: string | null;
+}
+
+export function readPlanTaskAssociationPlanId(task: PlanTaskAssociationTaskRef) {
+  if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+  const planId = Number(task.plan_id);
+  return Number.isFinite(planId) ? planId : null;
+}
+
+export function readPlanTaskAssociationFilePath(record: { file_path?: string | null }) {
+  return String(record.file_path || '').trim();
+}
+
+export function getPlanTaskAssociationSource(
+  task: PlanTaskAssociationTaskRef,
+  plan: PlanTaskAssociationPlanRef,
+): PlanTaskAssociationSource | null {
+  const taskPlanId = readPlanTaskAssociationPlanId(task);
+  if (taskPlanId !== null) return taskPlanId === plan.id ? 'plan_id' : null;
+
+  const taskFilePath = readPlanTaskAssociationFilePath(task);
+  const planFilePath = readPlanTaskAssociationFilePath(plan);
+  return taskFilePath && planFilePath && taskFilePath === planFilePath ? 'file_path' : null;
+}
+
+export function isTaskAssociatedWithPlan(task: PlanTaskAssociationTaskRef, plan: PlanTaskAssociationPlanRef) {
+  return getPlanTaskAssociationSource(task, plan) !== null;
+}
+
+export interface WorkspacePlanSelectionState {
+  selectedPlanId: number | null;
+  selectedPlan: Plan | null;
+  selectPlan: (plan: Plan) => void;
+  clearSelection: () => void;
 }
 
 export const TASK_EVENT_TYPES = {
@@ -396,6 +502,7 @@ export interface AppSnapshot {
   activeProjectId: number | null;
   activeProject: Project | null;
   projects: Project[];
+  mcp: McpStatus;
   state: ProjectState | null;
   requirements: Requirement[];
   feedback: Feedback[];
@@ -485,6 +592,110 @@ export interface CreateProjectInput {
   codexReasoningEffort?: CodexReasoningEffort;
 }
 
+export const MCP_TOOL_NAMES = {
+  CREATE_PROJECT: 'create_project',
+  CREATE_REQUIREMENT: 'create_requirement',
+  CREATE_FEEDBACK: 'create_feedback',
+} as const;
+
+export type McpToolName = (typeof MCP_TOOL_NAMES)[keyof typeof MCP_TOOL_NAMES];
+export type McpTransport = 'http' | 'stdio';
+export type McpStatusKind = 'disabled' | 'configured' | 'running' | 'error';
+export type McpAgentCliProvider = 'codex' | 'claude';
+export type McpCodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
+export type McpIntakeStatus = 'open' | 'completed' | 'closed';
+
+export interface McpStatus {
+  enabled: boolean;
+  running: boolean;
+  status: McpStatusKind;
+  transport: McpTransport;
+  host: string | null;
+  port: number | null;
+  path: string | null;
+  url: string | null;
+  localOnly: boolean;
+  tools: McpToolName[];
+  connectionExample: string;
+  note: string;
+  lastEvent?: {
+    type: string;
+    message: string;
+    createdAt: string;
+  } | null;
+  lastError?: string | null;
+}
+
+export interface McpAgentCliInput {
+  agentCliProvider?: McpAgentCliProvider;
+  agentCliCommand?: string;
+  codexReasoningEffort?: McpCodexReasoningEffort;
+}
+
+export interface McpAttachmentInput {
+  name?: string;
+  size?: number;
+  source?: PendingAttachmentSource;
+  path?: string;
+  /** MIME type */
+  type?: string;
+  dataUrl?: string;
+  base64?: string;
+  dataBase64?: string;
+  bytes?: number[];
+}
+
+export interface McpCreateProjectInput extends McpAgentCliInput {
+  name: string;
+  workspacePath: string;
+  description?: string;
+}
+
+export interface McpCreateRequirementInput extends McpAgentCliInput {
+  projectId: number;
+  title: string;
+  body: string;
+  attachments?: McpAttachmentInput[];
+  autoRun?: boolean;
+  status?: McpIntakeStatus;
+}
+
+export interface McpCreateFeedbackInput extends McpCreateRequirementInput {
+  requirementId?: number | null;
+}
+
+export type McpToolInput =
+  | McpCreateProjectInput
+  | McpCreateRequirementInput
+  | McpCreateFeedbackInput;
+
+export interface McpSnapshotSummary {
+  activeProjectId: number | null;
+  activeProject: Pick<Project, 'id' | 'name' | 'description'> & { workspacePath: string } | null;
+  state: {
+    running: boolean;
+    phase: string;
+    validationCommand: string;
+    agentCliProvider: AgentCliProvider | null;
+    codexReasoningEffort: CodexReasoningEffort | null;
+  } | null;
+  counts: {
+    projects: number;
+    requirements: number;
+    feedback: number;
+    plans: number;
+    tasks: number;
+    events: number;
+  };
+}
+
+export interface McpToolResult {
+  projectId: number | null;
+  requirementId?: number | null;
+  feedbackId?: number | null;
+  snapshot: McpSnapshotSummary;
+}
+
 export interface UpdateProjectInput extends CreateProjectInput {
   id: number;
 }
@@ -538,6 +749,7 @@ export interface UpdateFeedbackInput extends UpdateRequirementInput {
 }
 
 export interface AutoplanApi {
+  mcpToolNames: McpToolName[];
   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
   createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
   updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;

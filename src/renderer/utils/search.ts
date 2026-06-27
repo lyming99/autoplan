@@ -3,6 +3,7 @@ import type {
   AppSnapshot,
   WorkspaceSearchGroup,
   WorkspaceSearchHitField,
+  WorkspaceSearchLocation,
   WorkspaceSearchMatch,
   WorkspaceSearchQuery,
   WorkspaceSearchResult,
@@ -11,11 +12,14 @@ import type {
   WorkspaceSearchState,
   WorkspaceTab,
 } from '../types';
+import { formatEvent, getEventSearchText } from '../components/PlanLists';
 import { getTimestampMs } from './time';
 
 const SEARCH_SUMMARY_MAX_LENGTH = 140;
 const SEARCH_SNIPPET_MAX_LENGTH = 120;
 const FALLBACK_SEARCH_PRIORITY = 99;
+const WORKSPACE_SEARCH_LOCATION_HIGHLIGHT_MS = 2400;
+const WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR = 'smooth';
 
 const WORKSPACE_SEARCH_FIELD_PRIORITIES: Record<WorkspaceSearchHitField, number> = {
   [WORKSPACE_SEARCH_HIT_FIELDS.TITLE]: 0,
@@ -48,6 +52,7 @@ interface WorkspaceSearchCandidate {
   summary: string;
   status: string | null;
   updatedAt: string;
+  location: WorkspaceSearchLocation;
   fields: WorkspaceSearchField[];
 }
 
@@ -254,6 +259,7 @@ function createRequirementCandidate(
     summary: summarizeSearchText(requirement.body || requirement.source_path || requirement.status, '暂无正文'),
     status: nullableSearchText(requirement.status),
     updatedAt: requirement.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT, requirement.id),
     fields,
   };
 }
@@ -275,6 +281,7 @@ function createFeedbackCandidate(
     summary: summarizeSearchText(feedback.body || feedback.status, '暂无正文'),
     status: nullableSearchText(feedback.status),
     updatedAt: feedback.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK, feedback.id),
     fields,
   };
 }
@@ -294,6 +301,10 @@ function createPlanCandidate(plan: AppSnapshot['plans'][number]): WorkspaceSearc
     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
     status: nullableSearchText(plan.status),
     updatedAt: plan.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
+      planId: plan.id,
+      filePath: plan.file_path,
+    }),
     fields,
   };
 }
@@ -302,6 +313,7 @@ function createTaskCandidate(task: AppSnapshot['tasks'][number]): WorkspaceSearc
   const fields: WorkspaceSearchField[] = [];
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', task.task_key);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', task.title);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, 'Plan 标题', task.plan_title);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', task.status);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.SCOPE, 'Scope', task.scope);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.RAW_LINE, '原始任务行', task.raw_line);
@@ -317,6 +329,12 @@ function createTaskCandidate(task: AppSnapshot['tasks'][number]): WorkspaceSearc
     summary: summarizeSearchText(task.raw_line || task.scope || task.file_path, '暂无内容'),
     status: nullableSearchText(task.status),
     updatedAt: task.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.TASK, task.id, {
+      planId: task.plan_id,
+      taskId: task.id,
+      taskKey,
+      filePath: task.file_path,
+    }),
     fields,
   };
 }
@@ -325,21 +343,32 @@ function createEventCandidate(event: AppSnapshot['events'][number]): WorkspaceSe
   const fields: WorkspaceSearchField[] = [];
   const meta = getObjectMeta(event.meta);
   const eventMeta = stringifySearchMeta(event.meta);
+  const display = formatEvent(event);
+  const eventSearchText = getEventSearchText(event);
 
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', display.title);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', display.body);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '任务标题', meta?.taskTitle);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
 
   return {
     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
     recordId: event.id,
-    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
     status: nullableSearchText(meta?.status),
     updatedAt: event.created_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.EVENT, event.id, {
+      planId: meta?.planId ?? meta?.plan_id,
+      taskId: meta?.taskId ?? meta?.task_id,
+      taskKey: meta?.taskKey ?? meta?.task_key,
+      filePath: meta?.filePath ?? meta?.file_path,
+    }),
     fields,
   };
 }
@@ -377,8 +406,16 @@ function createRankedWorkspaceSearchResult(
     result: {
       id: `${candidate.source}:${candidate.recordId}`,
       source: candidate.source,
-      targetTab: getWorkspaceSearchTargetTab(candidate.source),
+      targetTab: candidate.location.targetTab,
+      location: candidate.location,
+      targetType: candidate.location.targetType,
+      targetId: candidate.location.targetId,
+      anchorId: candidate.location.anchorId,
       recordId: candidate.recordId,
+      planId: candidate.location.planId,
+      taskId: candidate.location.taskId,
+      taskKey: candidate.location.taskKey,
+      filePath: candidate.location.filePath,
       title: candidate.title,
       summary: candidate.summary,
       status: candidate.status,
@@ -386,6 +423,40 @@ function createRankedWorkspaceSearchResult(
       matches,
     },
   };
+}
+
+function createWorkspaceSearchLocation(
+  targetType: WorkspaceSearchSourceType,
+  targetId: number,
+  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+): WorkspaceSearchLocation {
+  const planId = readSearchId(options.planId);
+  const taskId = readSearchId(options.taskId);
+  const taskKey = nullableSearchText(options.taskKey);
+  const filePath = nullableSearchText(options.filePath);
+
+  return {
+    targetTab: getWorkspaceSearchTargetTab(targetType),
+    targetType,
+    targetId,
+    anchorId: createWorkspaceSearchAnchorId(targetType, targetId),
+    scrollBehavior: WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR,
+    highlightMs: WORKSPACE_SEARCH_LOCATION_HIGHLIGHT_MS,
+    planId,
+    taskId,
+    taskKey,
+    filePath,
+  };
+}
+
+function createWorkspaceSearchAnchorId(targetType: WorkspaceSearchSourceType, targetId: number) {
+  return `workspace-${targetType}-${targetId}`;
+}
+
+function readSearchId(value: unknown) {
+  if (value === null || typeof value === 'undefined' || value === '') return null;
+  const id = Number(value);
+  return Number.isFinite(id) ? id : null;
 }
 
 function pushSearchField(

@@ -34,12 +34,31 @@ jobs:
           - platform: windows
             runner: windows-latest
             package_script: package:win
+            artifact_paths: |
+              release/*-win-*-Setup.exe
+              release/*-win-*-Setup.exe.blockmap
+              release/latest.yml
           - platform: macos
             runner: macos-latest
             package_script: package:mac
+            artifact_paths: |
+              release/*-mac-x64.dmg
+              release/*-mac-x64.dmg.blockmap
+              release/*-mac-x64.zip
+              release/*-mac-x64.zip.blockmap
+              release/*-mac-arm64.dmg
+              release/*-mac-arm64.dmg.blockmap
+              release/*-mac-arm64.zip
+              release/*-mac-arm64.zip.blockmap
+              release/latest-mac.yml
           - platform: linux
             runner: ubuntu-24.04
             package_script: package:linux
+            artifact_paths: |
+              release/*-linux-x64.AppImage
+              release/*-linux-x64.AppImage.blockmap
+              release/*-linux-x64.deb
+              release/latest-linux.yml
 
     steps:
       - name: Checkout
@@ -63,7 +82,140 @@ jobs:
           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
           sudo gem install --no-document fpm
 
+      - name: Resolve macOS signing and notarization mode
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          set -euo pipefail
+
+          signing_source=none
+          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
+            signing_source=csc-link
+          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
+            signing_source=keychain-import
+          fi
+
+          notarization_source=none
+          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
+            notarization_source=keychain-profile
+          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
+            notarization_source=app-store-connect-api-key
+          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
+            notarization_source=apple-id-password
+          fi
+
+          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
+            release_mode=signed-notarized
+            csc_auto_discovery=true
+            notarize_required=true
+            skip_notarize=false
+          else
+            release_mode=unsigned-test
+            csc_auto_discovery=false
+            notarize_required=false
+            skip_notarize=true
+          fi
+
+          {
+            echo "MACOS_RELEASE_MODE=${release_mode}"
+            echo "MACOS_SIGNING_SOURCE=${signing_source}"
+            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
+            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
+            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
+            echo "SKIP_NOTARIZE=${skip_notarize}"
+          } >> "${GITHUB_ENV}"
+
+          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
+          if [[ "${release_mode}" != "signed-notarized" ]]; then
+            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
+          fi
+
+      - name: Import macOS signing certificate
+        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
+        shell: bash
+        env:
+          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
+          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
+          keychain_password="$(uuidgen)"
+
+          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
+            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
+          fi
+
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
+          existing_keychains="$(security list-keychains -d user | sed 's/"//g')"
+          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
+          security find-identity -v -p codesigning "${keychain_path}"
+
+          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
+
+      - name: Package macOS
+        if: matrix.platform == 'macos'
+        shell: bash
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
+          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
+          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
+          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          DEBUG: electron-notarize*
+        run: |
+          set -euo pipefail
+          if [[ "${MACOS_RELEASE_MODE}" != "signed-notarized" ]]; then
+            unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
+            unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
+            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+            unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
+          fi
+
+          echo "::group::macOS package, signing, notarization, and staple"
+          echo "Release mode: ${MACOS_RELEASE_MODE}"
+          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
+          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
+          npm run ${{ matrix.package_script }} -- --publish never
+          echo "::endgroup::"
+
+      - name: Verify macOS release artifacts
+        if: matrix.platform == 'macos'
+        shell: bash
+        run: npm run verify:release-artifacts -- --platform macos --release-dir release --mode "${MACOS_RELEASE_MODE}"
+
       - name: Package ${{ matrix.platform }}
+        if: matrix.platform != 'macos'
         run: npm run ${{ matrix.package_script }} -- --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
@@ -72,14 +224,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
-          path: |
-            release/*.exe
-            release/*.blockmap
-            release/*.dmg
-            release/*.zip
-            release/*.AppImage
-            release/*.deb
-            release/latest*.yml
+          path: ${{ matrix.artifact_paths }}
           if-no-files-found: error
           retention-days: 14
 
@@ -129,14 +274,23 @@ jobs:
 
           mapfile -d '' files < <(
             find dist-artifacts -type f \( \
-              -name '*.exe' -o \
-              -name '*.blockmap' -o \
-              -name '*.dmg' -o \
-              -name '*.zip' -o \
-              -name '*.AppImage' -o \
-              -name '*.deb' -o \
-              -name 'latest*.yml' \
-            \) -print0
+              -name '*-win-*-Setup.exe' -o \
+              -name '*-win-*-Setup.exe.blockmap' -o \
+              -name '*-mac-x64.dmg' -o \
+              -name '*-mac-x64.dmg.blockmap' -o \
+              -name '*-mac-x64.zip' -o \
+              -name '*-mac-x64.zip.blockmap' -o \
+              -name '*-mac-arm64.dmg' -o \
+              -name '*-mac-arm64.dmg.blockmap' -o \
+              -name '*-mac-arm64.zip' -o \
+              -name '*-mac-arm64.zip.blockmap' -o \
+              -name '*-linux-x64.AppImage' -o \
+              -name '*-linux-x64.AppImage.blockmap' -o \
+              -name '*-linux-x64.deb' -o \
+              -name 'latest.yml' -o \
+              -name 'latest-mac.yml' -o \
+              -name 'latest-linux.yml' \
+            \) -print0 | sort -z
           )
           if [[ ${#files[@]} -eq 0 ]]; then
             echo "No release artifacts found." >&2

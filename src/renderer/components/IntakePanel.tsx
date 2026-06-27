@@ -1,7 +1,7 @@
 import { FormEvent, ReactNode, useState } from 'react';
 import type { Attachment, Feedback, IntakeType, PendingAttachment, Requirement } from '../types';
 import { AttachmentGrid, sourceTypeName } from './shared';
-import { Composer } from './Composer';
+import { Composer, type ComposerSubmitPayload } from './Composer';
 import { formatChinaDateTime } from '../utils/time';
 
 type IntakeItem = Requirement | Feedback;
@@ -20,7 +20,7 @@ interface IntakePanelProps {
   onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
   onDelete: (id: number) => Promise<boolean>;
   onRemoveAttachment: (type: IntakeType, index: number) => void;
-  onSubmit: (body: string) => Promise<boolean>;
+  onSubmit: (body: string | ComposerSubmitPayload) => Promise<boolean>;
   onUpdate: (id: number, input: IntakeUpdate) => Promise<boolean>;
   onInterrupt: (type: IntakeType, id: number) => Promise<void>;
   onResume: (type: IntakeType, id: number) => Promise<void>;
@@ -108,7 +108,7 @@ export function IntakePanel({
 
               if (editingId === item.id) {
                 return (
-                  <article className="item" key={item.id}>
+                  <article className="item" id={workspaceSearchAnchorId(type, item.id)} data-search-anchor="true" key={item.id}>
                     <div className="item-title">
                       <span>{title}</span>
                       <span className={`chip ${statusChip(item.status)}`}>{item.status}</span>
@@ -161,7 +161,7 @@ export function IntakePanel({
               const showAppend = appendId === item.id;
 
               return (
-                <article className="item intake-item" key={item.id}>
+                <article className="item intake-item" id={workspaceSearchAnchorId(type, item.id)} data-search-anchor="true" key={item.id}>
                   <div className="item-title">
                     <span>{title}</span>
                     <span className="item-title-right">
@@ -273,6 +273,7 @@ export function IntakePanel({
 }
 
 export function RecordCard({
+  anchorId,
   actions,
   attachments = [],
   body,
@@ -280,6 +281,7 @@ export function RecordCard({
   status,
   title,
 }: {
+  anchorId?: string;
   actions?: ReactNode;
   attachments?: Attachment[];
   body?: ReactNode;
@@ -290,7 +292,7 @@ export function RecordCard({
   const hasBody = typeof body === 'string' ? Boolean(body) : Boolean(body);
 
   return (
-    <article className="item">
+    <article className="item" id={anchorId} data-search-anchor={anchorId ? 'true' : undefined}>
       <div className="item-title">
         <span>{title}</span>
         <span className="item-title-right">
@@ -305,6 +307,10 @@ export function RecordCard({
       {meta ? <div className="meta">{meta}</div> : null}
     </article>
   );
+}
+
+function workspaceSearchAnchorId(type: IntakeType, id: number) {
+  return `workspace-${type}-${id}`;
 }
 
 function statusChip(status: string) {

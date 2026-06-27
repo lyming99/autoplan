@@ -1,3 +1,4 @@
+import type { KeyboardEvent } from 'react';
 import type {
   WorkspaceSearchGroup,
   WorkspaceSearchResult,
@@ -18,20 +19,57 @@ const sourceIconNames: Record<WorkspaceSearchSourceType, IconName> = {
   event: 'events',
 };
 
+const searchTargetLabels: Record<WorkspaceSearchSourceType, string> = {
+  requirement: '需求记录',
+  feedback: '反馈记录',
+  plan: 'Plan',
+  task: '任务',
+  event: '事件',
+};
+
 interface SearchResultsProps {
   onClear: () => void;
+  onClose: () => void;
   onSelectGroup: (targetTab: WorkspaceTab) => void;
   onSelectResult: (result: WorkspaceSearchResult) => void;
+  open: boolean;
   searchState: WorkspaceSearchState;
 }
 
-export function SearchResults({ onClear, onSelectGroup, onSelectResult, searchState }: SearchResultsProps) {
-  if (searchState.query.isEmpty) return null;
+export function SearchResults({ onClear, onClose, onSelectGroup, onSelectResult, open, searchState }: SearchResultsProps) {
+  if (searchState.query.isEmpty || !open) return null;
 
   const queryLabel = searchState.query.raw.trim().replace(/\s+/g, ' ') || searchState.query.normalized;
 
+  function handleClear() {
+    onClear();
+    onClose();
+  }
+
+  function handleSelectGroup(targetTab: WorkspaceTab) {
+    onSelectGroup(targetTab);
+    onClose();
+  }
+
+  function handleSelectResult(result: WorkspaceSearchResult) {
+    onSelectResult(result);
+    onClose();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+    if (event.key !== 'Escape') return;
+    event.stopPropagation();
+    onClose();
+  }
+
   return (
-    <section className="search-results card" aria-label="统一搜索结果概览" aria-live="polite">
+    <section
+      className="search-results search-results-popup card"
+      aria-label="统一搜索结果"
+      aria-live="polite"
+      onKeyDown={handleKeyDown}
+      role="dialog"
+    >
       <div className="search-results-head">
         <div>
           <h2>搜索结果概览</h2>
@@ -39,7 +77,7 @@ export function SearchResults({ onClear, onSelectGroup, onSelectResult, searchSt
             “{queryLabel}” 命中 <b>{searchState.total}</b> 条结果
           </p>
         </div>
-        <button type="button" className="search-results-clear" onClick={onClear}>
+        <button type="button" className="search-results-clear" onClick={handleClear}>
           清空搜索
         </button>
       </div>
@@ -51,7 +89,7 @@ export function SearchResults({ onClear, onSelectGroup, onSelectResult, searchSt
             className={`search-source-chip${group.count ? '' : ' is-empty'}`}
             disabled={group.count === 0}
             key={group.source}
-            onClick={() => onSelectGroup(group.targetTab)}
+            onClick={() => handleSelectGroup(group.targetTab)}
           >
             <Icon name={sourceIconNames[group.source]} size={14} aria-hidden="true" />
             <span>{group.label}</span>
@@ -63,19 +101,19 @@ export function SearchResults({ onClear, onSelectGroup, onSelectResult, searchSt
       {searchState.total === 0 ? (
         <div className="search-results-empty">
           <div>没有找到与“{queryLabel}”匹配的记录。</div>
-          <button type="button" className="btn btn-sm" onClick={onClear}>
+          <button type="button" className="btn btn-sm" onClick={handleClear}>
             清空搜索，恢复全部列表
           </button>
         </div>
       ) : (
         <div className="search-results-body">
-          <div className="search-result-groups">
+          <div className="search-result-groups" role="listbox" aria-label="搜索结果列表">
             {searchState.groups.map((group) => (
               <SearchResultGroup
                 group={group}
                 key={group.source}
-                onSelectGroup={onSelectGroup}
-                onSelectResult={onSelectResult}
+                onSelectGroup={handleSelectGroup}
+                onSelectResult={handleSelectResult}
               />
             ))}
           </div>
@@ -98,7 +136,7 @@ function SearchResultGroup({
   const hiddenCount = Math.max(0, group.count - visibleResults.length);
 
   return (
-    <section className={`search-result-group${group.count ? '' : ' is-empty'}`}>
+    <section className={`search-result-group${group.count ? '' : ' is-empty'}`} role="group" aria-label={group.label}>
       <div className="search-result-group-head">
         <div className="search-result-group-title">
           <Icon name={sourceIconNames[group.source]} size={16} aria-hidden="true" />
@@ -137,7 +175,7 @@ function SearchResultItem({
   const updatedAt = formatChinaDateTime(result.updatedAt);
 
   return (
-    <button type="button" className="search-result-item" onClick={() => onSelect(result)}>
+    <button type="button" className="search-result-item" role="option" aria-selected={false} onClick={() => onSelect(result)}>
       <span className="search-result-item-top">
         <span className="search-result-title">{result.title}</span>
         {result.status ? <span className="search-result-status">{result.status}</span> : null}
@@ -147,9 +185,25 @@ function SearchResultItem({
         {snippet}
       </span>
       <span className="search-result-meta">
-        <span>{primaryMatch ? '点击后切换到对应列表' : '点击查看匹配记录'}</span>
+        <span>{formatSearchResultLocation(result)}</span>
         {updatedAt ? <span>{updatedAt}</span> : null}
       </span>
     </button>
   );
+}
+
+function formatSearchResultLocation(result: WorkspaceSearchResult) {
+  const label = searchTargetLabels[result.location.targetType] ?? '记录';
+  const targetText = result.location.taskKey
+    ? `点击后定位到 ${result.location.taskKey} ${label}`
+    : `点击后定位到${label} #${result.location.targetId}`;
+  const planFilterText = getSearchResultPlanFilterText(result);
+  return planFilterText ? `${targetText}，${planFilterText}` : targetText;
+}
+
+function getSearchResultPlanFilterText(result: WorkspaceSearchResult) {
+  if (result.targetTab !== 'tasks') return '';
+  if (result.source === 'plan') return '并筛选该 Plan 的任务';
+  if (result.source === 'task' && (result.planId || result.filePath)) return '并切换到所属 Plan 任务';
+  return '';
 }

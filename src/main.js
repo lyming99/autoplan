@@ -5,7 +5,9 @@ const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, ipcMain, Menu, net, protocol, shell } = require('electron');
 const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
+const { createIntakeService, titleFromBody } = require('./intakeService');
 const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
+const { createMcpServer } = require('./mcpServer');
 
 if (protocol?.registerSchemesAsPrivileged) {
   protocol.registerSchemesAsPrivileged([
@@ -16,6 +18,7 @@ if (protocol?.registerSchemesAsPrivileged) {
 let mainWindow;
 let db;
 let loop;
+let mcpServer;
 let fileProtocolRegistered = false;
 
 async function createApp() {
@@ -29,6 +32,7 @@ async function createApp() {
       mainWindow.webContents.send('loop:update', snapshot);
     }
   });
+  startMcpServer().catch((error) => recordMcpStartupError(error));
 
   mainWindow = new BrowserWindow({
     width: 1220,
@@ -53,6 +57,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
   if (loop) loop.stop();
 });
 
@@ -60,21 +65,16 @@ ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId
 
 ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
 
+ipcMain.handle('plans:reorder', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
+  return loop.reorderPlans(projectId, planIds);
+});
+
 ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
 
 ipcMain.handle('projects:create', (_event, input = {}) => {
-  const now = nowIso();
-  const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
-  const id = db.insert(
-    `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [name, input.workspacePath || '', input.description || '', now, now],
-  );
-  loop.ensureProjectState(id);
-  if (loop.hasRuntimeConfigInput(input)) {
-    loop.configure(id, input);
-  }
-  return loop.snapshot(id);
+  return intakeService().createProject(input);
 });
 
 ipcMain.handle('projects:update', (_event, input = {}) => {
@@ -165,28 +165,7 @@ ipcMain.handle('tasks:stop', (_event, input = {}) => {
 });
 
 ipcMain.handle('requirements:create', (_event, input = {}) => {
-  const projectId = requiredProjectId(input);
-  const now = nowIso();
-  const agentCliConfig = nextIntakeAgentCliConfig({}, input);
-  const id = db.insert(
-    `INSERT INTO requirements (
-       project_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      projectId,
-      titleFromBody(input.body, '未命名需求'),
-      input.body || '',
-      input.status || 'open',
-      agentCliConfig.provider,
-      agentCliConfig.command,
-      agentCliConfig.codexReasoningEffort,
-      now,
-      now,
-    ],
-  );
-  saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
-  loop.addEvent(projectId, 'requirement.created', `需求 #${id} 已创建，等待循环扫描生成计划`);
-  return loop.snapshot(projectId);
+  return intakeService().createRequirement(normalizeDraftIntakeInput(input));
 });
 
 ipcMain.handle('requirements:update', (_event, input = {}) => {
@@ -226,29 +205,7 @@ ipcMain.handle('requirements:delete', (_event, input = {}) => {
 });
 
 ipcMain.handle('feedback:create', (_event, input = {}) => {
-  const projectId = requiredProjectId(input);
-  const now = nowIso();
-  const agentCliConfig = nextIntakeAgentCliConfig({}, input);
-  const id = db.insert(
-    `INSERT INTO feedback (
-       project_id, requirement_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [
-      projectId,
-      input.requirementId || null,
-      titleFromBody(input.body, '未命名反馈'),
-      input.body || '',
-      input.status || 'open',
-      agentCliConfig.provider,
-      agentCliConfig.command,
-      agentCliConfig.codexReasoningEffort,
-      now,
-      now,
-    ],
-  );
-  saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
-  loop.addEvent(projectId, 'feedback.created', `反馈 #${id} 已创建，等待循环扫描生成计划`);
-  return loop.snapshot(projectId);
+  return intakeService().createFeedback(normalizeDraftIntakeInput(input));
 });
 
 ipcMain.handle('feedback:update', (_event, input = {}) => {
@@ -327,6 +284,42 @@ ipcMain.handle('intake:appendTask', (_event, input = {}) => {
 
 function attachmentsRoot() {
   return path.join(app.getPath('userData'), 'data', 'attachments');
+}
+
+function intakeService() {
+  return createIntakeService({ db, loop, attachmentsRoot });
+}
+
+async function startMcpServer() {
+  mcpServer = createMcpServer({
+    db,
+    loop,
+    intakeService: intakeService(),
+    logger: console,
+  });
+  const state = await mcpServer.start();
+  const projectId = loop?.defaultProjectId?.();
+  if (projectId && state.enabled && state.running) {
+    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
+  }
+  return state;
+}
+
+function recordMcpStartupError(error) {
+  const message = error?.message || String(error || '未知错误');
+  console.error('[mcp] start failed', error);
+  const projectId = loop?.defaultProjectId?.();
+  if (projectId) {
+    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
+      mcp: mcpServer?.status?.() || null,
+      error: message,
+    });
+  }
+}
+
+function mcpStatusMessage(state = {}) {
+  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
+  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
 }
 
 function registerFileProtocol() {
@@ -530,16 +523,72 @@ function normalizePathForCompare(value) {
 }
 
 function planReadResult(plan, markdown, error) {
+  const tasks = readPlanTasksForReader(plan);
+  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
+  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
   return {
     ok: !error,
     id: plan?.id ?? null,
     project_id: plan?.project_id ?? null,
     file_path: plan?.file_path || '',
     markdown,
+    tasks,
+    task_total: tasks.length,
+    task_completed: completedTasks,
+    task_parse_status: parseStatus.status,
+    task_parse_message: parseStatus.message,
+    task_parse_has_task_section: parseStatus.hasTaskSection,
     hash: plan?.hash || '',
     updated_at: plan?.updated_at || '',
     error,
   };
+}
+
+function readPlanTasksForReader(plan) {
+  const planId = Number(plan?.id || 0);
+  if (!planId) return [];
+  return db
+    .all(
+      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
+       FROM plan_tasks
+       WHERE plan_id = ?
+       ORDER BY sort_order ASC, id ASC`,
+      [planId],
+    )
+    .map((task) => ({
+      ...task,
+      scopes: readPlanTaskScopes(task.scope),
+    }));
+}
+
+function readPlanTaskScopes(scope) {
+  return Array.from(
+    new Set(
+      String(scope || '')
+        .split(/[,，、;；]+/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
+function planReadTaskParseStatus(markdown, error, tasks) {
+  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
+  const content = String(markdown || '');
+  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i.test(content);
+  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
+  if (tasks.length) {
+    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
+  }
+  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
+  if (hasTaskSection || hasCheckboxLine) {
+    return {
+      status: 'parse_empty',
+      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
+      hasTaskSection: true,
+    };
+  }
+  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
 }
 
 function planReadError(code, message) {
@@ -569,6 +618,18 @@ function requiredRecordId(input = {}, key = 'id') {
   return id;
 }
 
+function normalizeDraftIntakeInput(input = {}) {
+  const bodyPayload = input.body;
+  const payload = bodyPayload && typeof bodyPayload === 'object' && !Array.isArray(bodyPayload) ? bodyPayload : null;
+  const createAsDraft = Boolean(input.createAsDraft || input.draft || payload?.createAsDraft || payload?.draft);
+  return {
+    ...input,
+    body: payload ? payload.body || '' : input.body,
+    createAsDraft,
+    status: createAsDraft ? 'draft' : input.status,
+  };
+}
+
 function deleteIntakeRecord(table, ownerType, projectId, id) {
   const current = db.get(`SELECT id FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
   if (!current) throw new Error('记录不存在');
@@ -583,12 +644,4 @@ function deleteIntakeRecord(table, ownerType, projectId, id) {
 
   db.run('DELETE FROM attachments WHERE project_id = ? AND owner_type = ? AND owner_id = ?', [projectId, ownerType, id]);
   db.run(`DELETE FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
-}
-
-function titleFromBody(body, fallback) {
-  const firstLine = String(body || '')
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .find(Boolean);
-  return firstLine ? firstLine.slice(0, 80) : fallback;
 }

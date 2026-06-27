@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process');
 const DEFAULT_AGENT_CLI_PROVIDER = 'codex';
 const AGENT_CLI_PROVIDERS = new Set([DEFAULT_AGENT_CLI_PROVIDER, 'claude']);
 const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
-const CODEX_REASONING_EFFORTS = new Set(['low', DEFAULT_CODEX_REASONING_EFFORT, 'high']);
+const CODEX_REASONING_EFFORTS = new Set(['low', DEFAULT_CODEX_REASONING_EFFORT, 'high', 'xhigh']);
 const AGENT_CLI_DISPLAY_NAMES = Object.freeze({
   codex: 'Codex',
   claude: 'Claude',

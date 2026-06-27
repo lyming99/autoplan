@@ -31,6 +31,7 @@ function fallbackPathToFileUrl(filePath) {
 }
 
 contextBridge.exposeInMainWorld('autoplan', {
+  mcpToolNames: ['create_project', 'create_requirement', 'create_feedback'],
   snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
   createProject: (input) => ipcRenderer.invoke('projects:create', input),
   updateProject: (input) => ipcRenderer.invoke('projects:update', input),
@@ -40,6 +41,7 @@ contextBridge.exposeInMainWorld('autoplan', {
   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),

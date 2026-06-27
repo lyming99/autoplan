@@ -43,7 +43,12 @@ interface ComposerProps {
   type: IntakeType;
   onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
   onRemoveAttachment: (type: IntakeType, index: number) => void;
-  onSubmit: (body: string) => Promise<boolean>;
+  onSubmit: (body: string | ComposerSubmitPayload) => Promise<boolean>;
+}
+
+export interface ComposerSubmitPayload {
+  body: string;
+  createAsDraft: boolean;
 }
 
 function getClipboardImageFiles(event: ClipboardEvent<HTMLTextAreaElement>) {
@@ -66,6 +71,7 @@ export function Composer({
   onSubmit,
 }: ComposerProps) {
   const [body, setBody] = useState('');
+  const [createAsDraft, setCreateAsDraft] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const cliSelection = useContext(ComposerCliSelectionContext);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -78,8 +84,12 @@ export function Composer({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!body.trim() && !pendingAttachments.length) return;
-    const succeeded = await onSubmit(body);
-    if (succeeded) setBody('');
+    const payload = createAsDraft ? { body, createAsDraft } : body;
+    const succeeded = await onSubmit(payload);
+    if (succeeded) {
+      setBody('');
+      setCreateAsDraft(false);
+    }
   };
 
   const addFiles = (files: FileList | File[] | null) => onAddFiles(type, files);
@@ -199,6 +209,14 @@ export function Composer({
           />
         </div>
         <div className="composer-actions">
+          <label className="composer-draft-toggle">
+            <input
+              checked={createAsDraft}
+              onChange={(event) => setCreateAsDraft(event.target.checked)}
+              type="checkbox"
+            />
+            <span>创建为草稿</span>
+          </label>
           <span>Enter 发送</span>
           <button className="send-button" type="submit" aria-label={submitLabel}>
             <Icon name="send" size={20} aria-hidden="true" />

@@ -369,6 +369,11 @@
       .plan-top { display:flex; align-items:center; gap:8px; }
       .plan-path { font-family:var(--font-mono); font-size:12px; color:var(--text-1); font-weight:600; }
       .plan-meta { font-size:11px; color:var(--text-3); margin-top:8px; display:flex; gap:10px; }
+      .plan-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+      .plan-tab { border:1px solid var(--line); border-radius:999px; background:var(--bg-soft); padding:5px 10px; font-size:12px; font-weight:700; color:var(--text-2); }
+      .plan-tab.active { background:var(--brand-50); border-color:#cdd8ea; color:var(--brand-700); }
+      .plan-order-actions { margin-left:auto; display:inline-flex; gap:4px; }
+      .plan-order-actions button { border:0; background:transparent; color:var(--brand-600); font-size:12px; font-weight:700; }
       .task-item .task-title { font-size:13px; font-weight:600; color:var(--text-1); }
       .task-item .task-key { font-family:var(--font-mono); font-size:11px; color:var(--brand-600); background:var(--brand-50); padding:1px 6px; border-radius:4px; }
 
@@ -479,10 +484,10 @@
         </div>
 
         <div class="nav-group-label">工作区</div>
-        <button class="nav-item active" data-view="overview">
+        <button class="nav-item" data-view="overview">
           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-overview"></use></svg></span> 概览
         </button>
-        <button class="nav-item" data-view="requirement">
+        <button class="nav-item active" data-view="requirement">
           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
           <span class="nav-badge">4</span>
         </button>
@@ -515,8 +520,8 @@
       <div class="main">
         <header class="topbar">
           <div class="topbar-title">
-            <h1 id="viewTitle">概览</h1>
-            <p id="viewSubtitle">循环状态、阶段流水线与各模块一览</p>
+            <h1 id="viewTitle">需求模块</h1>
+            <p id="viewSubtitle">收集需求，发送后自动生成计划草稿</p>
           </div>
           <div class="topbar-actions">
             <span class="pill"><span class="led running"></span> running · execute-task</span>
@@ -526,7 +531,7 @@
         </header>
 
         <!-- ============ 概览 ============ -->
-        <section class="view active" id="view-overview">
+        <section class="view" id="view-overview">
           <div class="stat-grid">
             <div class="stat" style="--stat-accent:var(--brand-50);--stat-color:var(--brand-600)">
               <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></div><div class="stat-value">4</div>
@@ -587,7 +592,7 @@
         </section>
 
         <!-- ============ 需求 ============ -->
-        <section class="view" id="view-requirement">
+        <section class="view active" id="view-requirement">
           <div class="intake-layout">
             <div class="stream-list">
               <div class="stream-card">
@@ -699,13 +704,24 @@
                 <div class="card" style="display:flex;flex-direction:column;min-height:0;">
                   <div class="card-head"><h2>Plan</h2></div>
                   <div class="card-body scroll-list">
+                    <div class="plan-tabs" aria-label="计划状态筛选">
+                      <button class="plan-tab active" type="button">全部 3</button>
+                      <button class="plan-tab" type="button">执行中 1</button>
+                      <button class="plan-tab" type="button">已完成 1</button>
+                      <button class="plan-tab" type="button">草稿 1</button>
+                    </div>
                     <div class="plan-item">
-                      <div class="plan-top"><span class="plan-path">plan_20260624-1032.md</span><span class="chip chip-running" style="margin-left:auto">running</span></div>
+                      <div class="plan-top"><span class="plan-path">plan_20260624-1032.md</span><span class="chip chip-running" style="margin-left:auto">running</span><span class="plan-order-actions"><button disabled>上移</button><button disabled>下移</button></span></div>
                       <div class="progress" style="margin-top:10px"><span style="width:43%"></span></div>
                       <div class="plan-meta"><span>3 / 7 tasks</span><span>验收 pending</span></div>
                     </div>
                     <div class="plan-item">
-                      <div class="plan-top"><span class="plan-path">plan_20260624-0810.md</span><span class="chip chip-completed" style="margin-left:auto">completed</span></div>
+                      <div class="plan-top"><span class="plan-path">plan_requirement_31_draft.md</span><span class="chip chip-waiting" style="margin-left:auto">draft</span><span class="plan-order-actions"><button>上移</button><button>下移</button></span></div>
+                      <div class="progress" style="margin-top:10px"><span style="width:0%"></span></div>
+                      <div class="plan-meta"><span>0 / 6 tasks</span><span>等待显式执行</span></div>
+                    </div>
+                    <div class="plan-item">
+                      <div class="plan-top"><span class="plan-path">plan_20260624-0810.md</span><span class="chip chip-completed" style="margin-left:auto">completed</span><span class="plan-order-actions"><button disabled>上移</button><button disabled>下移</button></span></div>
                       <div class="progress success" style="margin-top:10px"><span style="width:100%"></span></div>
                       <div class="plan-meta"><span>5 / 5 tasks</span><span>验收 passed</span></div>
                     </div>
@@ -755,16 +771,20 @@
         tasks:      ['任务与计划', '循环控制、计划草稿、Plan 与任务进度'],
         events:     ['事件流',     '循环运行日志与任务执行记录'],
       };
+      const defaultView = 'requirement';
+      const activateView = (view) => {
+        document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+        document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + view));
+        const [t, s] = titles[view] || ['', ''];
+        document.getElementById('viewTitle').textContent = t;
+        document.getElementById('viewSubtitle').textContent = s;
+      };
       document.querySelectorAll('.nav-item').forEach((btn) => {
         btn.addEventListener('click', () => {
-          const v = btn.dataset.view;
-          document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b === btn));
-          document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
-          const [t, s] = titles[v] || ['', ''];
-          document.getElementById('viewTitle').textContent = t;
-          document.getElementById('viewSubtitle').textContent = s;
+          activateView(btn.dataset.view);
         });
       });
+      activateView(defaultView);
       document.querySelectorAll('.composer textarea').forEach((ta) => {
         const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
         ta.addEventListener('input', grow); grow();

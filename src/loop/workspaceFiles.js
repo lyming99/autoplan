@@ -1,0 +1,139 @@
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+
+function ensureWorkspaceDirs(service, helpers, workspace) {
+    for (const dir of ['docs/issues', 'docs/plan', 'docs/progress', 'docs/progress/logs']) {
+      fs.mkdirSync(path.join(workspace, dir), { recursive: true });
+    }
+  }
+
+function scanDirectory(service, helpers, root, workspace, extensions) {
+    if (!fs.existsSync(root)) return { root, aggregateHash: hashText(''), files: [] };
+    const files = [];
+    const visit = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          visit(full);
+        } else if (entry.isFile() && extensions.includes(path.extname(entry.name).toLowerCase())) {
+          const stat = fs.statSync(full);
+          files.push({
+            path: normalizeRelative(workspace, full),
+            hash: hashFile(full),
+            size: stat.size,
+            modifiedAt: stat.mtime.toISOString(),
+          });
+        }
+      }
+    };
+    visit(root);
+    files.sort((a, b) => a.path.localeCompare(b.path));
+    return {
+      root,
+      aggregateHash: hashText(files.map((file) => `${file.path}|${file.hash}|${file.size}`).join('\n')),
+      files,
+    };
+  }
+
+function saveScan(service, helpers, projectId, type, scan) {
+    const scannedAt = nowIso();
+    service.db.run('DELETE FROM scan_files WHERE project_id = ? AND scan_type = ?', [projectId, type]);
+    for (const file of scan.files) {
+      service.db.run(
+        `INSERT OR REPLACE INTO scan_files
+         (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [projectId, type, file.path, file.hash, file.size, file.modifiedAt, scannedAt],
+      );
+    }
+  }
+
+function workspaceToolEnv(workspace, baseEnv = process.env) {
+  const root = path.join(path.resolve(workspace), WORKSPACE_RUNTIME_DIR);
+  const dirs = {
+    pubCache: path.join(root, 'pub-cache'),
+    gradleHome: path.join(root, 'gradle'),
+    xdgCache: path.join(root, 'xdg-cache'),
+    xdgConfig: path.join(root, 'xdg-config'),
+    appData: path.join(root, 'appdata'),
+    localAppData: path.join(root, 'localappdata'),
+  };
+  for (const dir of Object.values(dirs)) fs.mkdirSync(dir, { recursive: true });
+
+  const env = {
+    ...baseEnv,
+    AUTOPLAN_RUNTIME_ROOT: root,
+    PUB_CACHE: dirs.pubCache,
+    FLUTTER_SUPPRESS_ANALYTICS: 'true',
+    CI: baseEnv.CI || 'true',
+    GRADLE_USER_HOME: baseEnv.GRADLE_USER_HOME || dirs.gradleHome,
+    XDG_CACHE_HOME: baseEnv.XDG_CACHE_HOME || dirs.xdgCache,
+    XDG_CONFIG_HOME: baseEnv.XDG_CONFIG_HOME || dirs.xdgConfig,
+  };
+  if (!env.APPDATA) env.APPDATA = dirs.appData;
+  if (!env.LOCALAPPDATA) env.LOCALAPPDATA = dirs.localAppData;
+  return env;
+}
+
+function hashFile(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function hashText(text) {
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
+
+function resolveWorkspaceChildPath(workspace, filePath) {
+  const workspaceValue = String(workspace || '').trim();
+  const filePathValue = String(filePath || '').trim();
+  if (!workspaceValue || !filePathValue) return '';
+
+  const workspaceRoot = path.resolve(workspaceValue);
+  const requestedPath = path.resolve(workspaceRoot, filePathValue);
+  const relativePath = path.relative(workspaceRoot, requestedPath);
+  if (relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))) {
+    return requestedPath;
+  }
+  return '';
+}
+
+function normalizeRelative(root, fullPath) {
+  return path.relative(root, fullPath).replaceAll(path.sep, '/');
+}
+
+function workspaceKey(workspace) {
+  const value = String(workspace || '').trim();
+  if (!value) return '';
+  const resolved = path.resolve(value);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function readSnippet(filePath, maxChars) {
+  const text = fs.readFileSync(filePath, 'utf8');
+  return text.length > maxChars ? `${text.slice(0, maxChars)}\n...[truncated]` : text;
+}
+
+function tailText(text, maxChars) {
+  return text.length > maxChars ? text.slice(text.length - maxChars) : text;
+}
+
+function safePart(value) {
+  return String(value).replace(/[^A-Za-z0-9_.-]+/g, '_');
+}
+
+module.exports = {
+  ensureWorkspaceDirs,
+  hashFile,
+  hashText,
+  normalizeRelative,
+  readSnippet,
+  resolveWorkspaceChildPath,
+  safePart,
+  saveScan,
+  scanDirectory,
+  tailText,
+  workspaceKey,
+  workspaceToolEnv,
+};

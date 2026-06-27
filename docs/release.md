@@ -50,6 +50,7 @@ GitHub Release 页面会展示最终附件；Actions 页面中也可以查看各
 ```bash
 python scripts/release.py --tag v0.2.0 --notes "发布说明"
 python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
+python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
 python scripts/release.py --tag v0.2.0 --notes "test release" --dry-run
 python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
 ```
@@ -65,6 +66,20 @@ python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
 - 未检测到 GitHub CLI 时会给出提示；基础 tag 推送不强制依赖 `gh`。
 
 默认情况下，脚本会在真正创建并推送 tag 前要求交互确认。使用 `--dry-run` 只执行检查，不创建本地 tag，也不推送远端；使用 `--yes` 可跳过确认。
+
+## Beta 发布流程
+
+Beta 版本用于快速分发近期修复和功能更新，tag 必须使用可识别的预发布格式，例如 `v0.2.1-beta.1`，并确保 `package.json` 中的 `version` 与去掉 `v` 前缀后的版本号一致，例如 `0.2.1-beta.1`。
+
+发布 beta 前，先在 `docs/release-notes/` 下准备与 tag 对齐的 Release notes，例如 `docs/release-notes/v0.2.1-beta.1.md`。Release notes 开头应明确标注 beta 是未完整人工测试的预发布版本，并包含近期更新摘要、风险提示、Issue 反馈入口，以及“AI 修复问题后编译通过即可发布”的策略说明。
+
+推荐使用 `--notes-file` 发布 beta，避免长 Markdown 文案在命令行中转义出错：
+
+```bash
+python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
+```
+
+脚本会把 Release notes 写入 annotated tag message。tag 推送后，GitHub Actions Release workflow 会优先使用该 tag message 生成 GitHub Release 正文。
 
 ## 版本说明传递
 

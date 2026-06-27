@@ -1,661 +1,180 @@
-import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { PENDING_ATTACHMENT_SOURCES, WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
+import { useEffect, useRef, useState } from 'react';
+import { isTaskAssociatedWithPlan, readPlanTaskAssociationFilePath } from '../types';
 import type {
-  AgentCliOption,
-  AgentCliProvider,
   AppSnapshot,
-  CodexReasoningEffort,
-  IntakeType,
-  LoopConfigInput,
-  PendingAttachment,
   Plan,
-  PlanTask,
   Project,
-  ProjectState,
-  WorkspacePlanReadState,
-  WorkspaceSearchGroup,
-  WorkspaceSearchSourceType,
-  WorkspaceSearchState,
+  WorkspacePlanSelectionState,
+  WorkspaceSearchResult,
   WorkspaceTab,
 } from '../types';
-import { useSnapshot } from '../hooks/useSnapshot';
-import { ComposerCliSelectionProvider } from '../components/Composer';
+import { useWorkspaceController } from '../hooks/useWorkspaceController';
+import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
 import { IntakePanel } from '../components/IntakePanel';
 import { EventList, PlanList, TaskList } from '../components/PlanLists';
 import { SearchResults } from '../components/SearchResults';
-import { CodexLog } from '../components/CodexLog';
-import { Icon, type IconName } from '../components/icons';
-import {
-  getFilePath,
-  toSafeFileUrl,
-  agentCliProviderLabel,
-  codexReasoningEffortLabel,
-  readAgentCliProvider,
-  readCodexReasoningEffort,
-} from '../components/shared';
-import { searchWorkspaceSnapshot } from '../utils/search';
-import { formatChinaTime } from '../utils/time';
-
-const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
-  requirement: [],
-  feedback: [],
-};
-
-const agentCliOptions: AgentCliOption[] = [
-  { value: 'codex', label: 'Codex CLI' },
-  { value: 'claude', label: 'Claude CLI' },
-];
-
-const codexReasoningOptions: AgentCliOption[] = [
-  { value: 'low', label: '低 · 快速' },
-  { value: 'medium', label: '中 · 默认' },
-  { value: 'high', label: '高 · 深入' },
-];
-
-const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
-
-const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
-  requirement: 'codex',
-  feedback: 'codex',
-};
-
-const defaultComposerCodexReasoning: Record<IntakeType, CodexReasoningEffort> = {
-  requirement: defaultCodexReasoningEffort,
-  feedback: defaultCodexReasoningEffort,
-};
-
-const tabs: Array<{ id: WorkspaceTab; label: string; icon: IconName }> = [
-  { id: 'overview', label: '概览', icon: 'overview' },
-  { id: 'requirement', label: '需求', icon: 'requirement' },
-  { id: 'feedback', label: '反馈', icon: 'feedback' },
-  { id: 'tasks', label: '任务与计划', icon: 'tasks' },
-  { id: 'events', label: '事件流', icon: 'events' },
-  { id: 'settings', label: '设置', icon: 'settings' },
-];
-
-const searchNoMatchText = '没有匹配结果。';
-
-type LoopFormState = {
-  workspacePath: string;
-  intervalSeconds: string;
-  validationCommand: string;
-  agentCliProvider: string;
-  agentCliCommand: string;
-  codexReasoningEffort: CodexReasoningEffort;
-};
-
-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
-
-type ScopeFileOpenSettings = {
-  mode: ScopeFileOpenMode;
-  command: string;
-};
-
-const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
-
-type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
-
-function createEmptyPlanReadState(): WorkspacePlanReadState {
-  return { plan: null, result: null, loading: false, error: null };
-}
-
-function getErrorMessage(error: unknown, fallback: string) {
-  if (error instanceof Error && error.message) return error.message;
-  if (typeof error === 'string' && error.trim()) return error.trim();
-  return fallback;
-}
-
-function createPendingPathAttachment(file: File): PendingAttachment | null {
-  const path = getFilePath(file);
-  if (!path) return null;
-  const name = file.name || path.split(/[\\/]/).pop() || '附件';
-  const type = file.type || 'application/octet-stream';
-  return {
-    id: `${PENDING_ATTACHMENT_SOURCES.PATH}:${path}:${file.size}`,
-    source: PENDING_ATTACHMENT_SOURCES.PATH,
-    path,
-    name,
-    size: file.size,
-    type,
-    previewUrl: toSafeFileUrl(path),
-  };
-}
-
-function getImageExtension(type: string) {
-  if (type === 'image/jpeg') return 'jpg';
-  const subtype = type.startsWith('image/') ? type.slice('image/'.length) : 'png';
-  return subtype.replace(/[^a-z0-9]+/gi, '').toLowerCase() || 'png';
-}
-
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error('读取剪贴板图片失败'));
-    reader.readAsDataURL(file);
-  });
-}
-
-async function createPendingClipboardImageAttachment(file: File, index: number): Promise<PendingAttachment | null> {
-  if (!file.type.startsWith('image/')) return null;
-  const type = file.type || 'image/png';
-  const extension = getImageExtension(type);
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const fallbackName = `pasted-image-${timestamp}-${index + 1}.${extension}`;
-  const name = file.name || fallbackName;
-  const dataUrl = await readFileAsDataUrl(file);
-  if (!dataUrl) return null;
-  const idSuffix = typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`;
-  return {
-    id: `${PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE}:${idSuffix}`,
-    source: PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE,
-    dataUrl,
-    name,
-    size: file.size,
-    type,
-    previewUrl: dataUrl,
-  };
-}
-
-function appendPendingAttachments(
-  setPendingAttachments: Dispatch<SetStateAction<Record<IntakeType, PendingAttachment[]>>>,
-  type: IntakeType,
-  attachments: PendingAttachment[],
-) {
-  if (!attachments.length) return;
-  setPendingAttachments((current) => {
-    const nextItems = [...current[type]];
-    for (const attachment of attachments) {
-      if (!nextItems.some((item) => isSamePendingAttachment(item, attachment))) nextItems.push(attachment);
-    }
-    return nextItems.length === current[type].length ? current : { ...current, [type]: nextItems };
-  });
-}
-
-function isSamePendingAttachment(current: PendingAttachment, next: PendingAttachment) {
-  if (current.source !== next.source) return false;
-  if (current.source === PENDING_ATTACHMENT_SOURCES.PATH && next.source === PENDING_ATTACHMENT_SOURCES.PATH) {
-    return current.path === next.path && current.size === next.size;
-  }
-  if (
-    current.source === PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE &&
-    next.source === PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE
-  ) {
-    return current.dataUrl === next.dataUrl && current.size === next.size;
-  }
-  return current.id === next.id;
-}
-
-function resolveWorkspaceTab(tab: string | null): WorkspaceTab {
-  return tabs.some((item) => item.id === tab) ? (tab as WorkspaceTab) : 'overview';
-}
-
-function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEffort {
-  const effort = String(value || '').trim().toLowerCase();
-  if (effort === 'low' || effort === 'high') return effort;
-  return defaultCodexReasoningEffort;
-}
-
-function loopFormFromProjectState(state: ProjectState): LoopFormState {
-  return {
-    workspacePath: state.workspace_path || '',
-    intervalSeconds: String(state.interval_seconds || 5),
-    validationCommand: state.validation_command ?? '',
-    agentCliProvider: state.agent_cli_provider || 'codex',
-    agentCliCommand: state.agent_cli_command || '',
-    codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_effort),
-  };
-}
-
-function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
-  const payload: LoopConfigInput = {
-    projectId,
-    workspacePath: form.workspacePath,
-    intervalSeconds: Number(form.intervalSeconds || 5),
-    validationCommand: form.validationCommand,
-    agentCliProvider: form.agentCliProvider || 'codex',
-    agentCliCommand: form.agentCliCommand.trim(),
-  };
-  if (form.agentCliProvider !== 'claude') {
-    payload.codexReasoningEffort = form.codexReasoningEffort;
-  }
-  return payload;
-}
-
-function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
-  return left.workspacePath === right.workspacePath
-    && left.intervalSeconds === right.intervalSeconds
-    && left.validationCommand === right.validationCommand
-    && left.agentCliProvider === right.agentCliProvider
-    && left.agentCliCommand === right.agentCliCommand
-    && left.codexReasoningEffort === right.codexReasoningEffort;
-}
+import { Icon } from '../components/icons';
+import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
 
 export function WorkspacePage() {
-  const params = useParams<{ projectId: string }>();
-  const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
-  const projectId = Number(params.projectId);
-  const { snapshot, setSnapshot, error, setError } = useSnapshot(Number.isFinite(projectId) ? projectId : null);
-  const tabParam = searchParams.get('tab');
-  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => resolveWorkspaceTab(tabParam));
-  const [pendingAttachments, setPendingAttachments] =
-    useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
-  const [composerCliProviders, setComposerCliProviders] =
-    useState<Record<IntakeType, AgentCliProvider>>(defaultComposerCliProviders);
-  const [composerCodexReasoning, setComposerCodexReasoning] =
-    useState<Record<IntakeType, CodexReasoningEffort>>(defaultComposerCodexReasoning);
-  const [loopForm, setLoopForm] = useState<LoopFormState>({
-    workspacePath: '',
-    intervalSeconds: '5',
-    validationCommand: '',
-    agentCliProvider: 'codex',
-    agentCliCommand: '',
-    codexReasoningEffort: defaultCodexReasoningEffort,
-  });
-  const [loopFormDirty, setLoopFormDirty] = useState(false);
-  const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
-    try {
-      const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
-      const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
-        ? parsed.mode
-        : 'system';
-      return { mode, command: String(parsed?.command || '') };
-    } catch {
-      return defaultScopeFileOpenSettings;
+  const {
+    activeTab,
+    addPendingFiles,
+    appendIntakeTask,
+    closePlanReader,
+    composerCliSelection,
+    createFeedback,
+    createRequirement,
+    deleteFeedback,
+    deleteRequirement,
+    displayTasks,
+    error,
+    filteredEmptyText,
+    filteredItems,
+    interruptIntake,
+    latestReadingPlan,
+    loopForm,
+    navigate,
+    openPlanReader,
+    openTaskPlanReader,
+    pendingAttachments,
+    planReadState,
+    project,
+    projectId,
+    projects,
+    refreshPlanReader,
+    removePendingAttachment,
+    resumeIntake,
+    runLoopAction,
+    scopeFileOpenSettings,
+    searchHitCount,
+    searchQuery,
+    selectSearchResult,
+    selectTab,
+    setScopeFileOpenSettings,
+    setSearchQuery,
+    snapshot,
+    state,
+    submitLoopConfig,
+    switchProject,
+    updateFeedback,
+    updateLoopForm,
+    updateRequirement,
+    workspaceSearch,
+  } = useWorkspaceController();
+  const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+  const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+  const [searchLocateNotice, setSearchLocateNotice] = useState('');
+  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+  const searchPopupRef = useRef<HTMLDivElement>(null);
+  const hasSearchQuery = !workspaceSearch.query.isEmpty;
+  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
+
+  const planSelectionState: WorkspacePlanSelectionState = {
+    selectedPlanId,
+    selectedPlan,
+    selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+    clearSelection: () => setSelectedPlanId(null),
+  };
+  const selectedPlanAllTasks = selectedPlan
+    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
+    : [];
+  const taskListTasks = selectedPlan
+    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
+    : displayTasks;
+  const selectedPlanTaskFilter = selectedPlan
+    ? {
+        plan: selectedPlan,
+        totalTaskCount: selectedPlanAllTasks.length,
+        visibleTaskCount: taskListTasks.length,
+        onClear: planSelectionState.clearSelection,
+      }
+    : null;
+
+  useEffect(() => {
+    setSearchPopupOpen(hasSearchQuery);
+  }, [hasSearchQuery, workspaceSearch.query.normalized]);
+
+  useEffect(() => {
+    setSelectedPlanId((current) => {
+      if (current === null) return current;
+      if (!snapshot) return null;
+      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
+    });
+  }, [projectId, snapshot]);
+
+  useEffect(() => {
+    if (!searchPopupOpen) return undefined;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (!searchPopupRef.current || !(event.target instanceof Node)) return;
+      if (!searchPopupRef.current.contains(event.target)) {
+        setSearchPopupOpen(false);
+      }
     }
-  });
-  const [searchQuery, setSearchQuery] = useState('');
-  const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
-  const planReadRequestRef = useRef(0);
 
-  const project = snapshot?.activeProject || null;
-  const state = snapshot?.state || null;
-  const projects = snapshot?.projects || [];
-  const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
-  const searchHitCount = workspaceSearch.total;
-  const isSearching = !workspaceSearch.query.isEmpty;
-  const filteredItems = useMemo(
-    () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
-    [snapshot, workspaceSearch],
-  );
-  const displayTasks = useMemo(
-    () => filteredItems.tasks.map((task) => withTaskCliProviderTitle(task, state?.agent_cli_provider)),
-    [filteredItems.tasks, state?.agent_cli_provider],
-  );
-  const filteredEmptyText = isSearching ? searchNoMatchText : undefined;
-  const latestReadingPlan = useMemo(() => {
-    if (!planReadState.plan) return null;
-    return (
-      snapshot?.plans.find(
-        (plan) => plan.id === planReadState.plan?.id && plan.project_id === planReadState.plan?.project_id,
-      ) || planReadState.plan
-    );
-  }, [planReadState.plan, snapshot?.plans]);
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        setSearchPopupOpen(false);
+      }
+    }
 
-  const showError = useCallback((e: unknown) => {
-    const msg = e instanceof Error ? e.message : String(e);
-    setError(msg);
-    window.alert(msg);
-  }, [setError]);
-
-  const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
-    setLoopFormDirty(true);
-    setLoopForm(action);
-  }, []);
-
-  useEffect(() => {
-    if (!state || Number(state.project_id) !== Number(projectId)) return;
-    const nextForm = loopFormFromProjectState(state);
-    setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
-  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
-
-  useEffect(() => {
-    setLoopFormDirty(false);
-  }, [projectId]);
-
-  useEffect(() => {
-    const defaultProvider = state?.agent_cli_provider || 'codex';
-    const defaultReasoning = normalizeCodexReasoningEffort(state?.codex_reasoning_effort);
-    setComposerCliProviders({
-      requirement: defaultProvider,
-      feedback: defaultProvider,
-    });
-    setComposerCodexReasoning({
-      requirement: defaultReasoning,
-      feedback: defaultReasoning,
-    });
-  }, [projectId, state?.agent_cli_provider, state?.codex_reasoning_effort]);
-
-  const composerCliSelection = useMemo(
-    () => ({
-      options: agentCliOptions,
-      selectedByType: composerCliProviders,
-      reasoningOptions: codexReasoningOptions,
-      reasoningByType: composerCodexReasoning,
-      onProviderChange: (type: IntakeType, provider: AgentCliProvider) => {
-        setComposerCliProviders((current) => ({ ...current, [type]: provider }));
-      },
-      onReasoningChange: (type: IntakeType, effort: CodexReasoningEffort) => {
-        setComposerCodexReasoning((current) => ({ ...current, [type]: normalizeCodexReasoningEffort(effort) }));
-      },
-    }),
-    [composerCliProviders, composerCodexReasoning],
-  );
-
-  useEffect(() => {
-    setSearchQuery('');
-  }, [projectId]);
-
-  useEffect(() => {
-    window.localStorage.setItem('autoplan.scopeFileOpenSettings', JSON.stringify(scopeFileOpenSettings));
-  }, [scopeFileOpenSettings]);
-
-  useEffect(() => {
-    const nextTab = resolveWorkspaceTab(tabParam);
-    setActiveTab((current) => (current === nextTab ? current : nextTab));
-  }, [tabParam]);
-
-  useEffect(() => {
-    planReadRequestRef.current += 1;
-    setPlanReadState(createEmptyPlanReadState());
+    document.addEventListener('mousedown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown, true);
     return () => {
-      planReadRequestRef.current += 1;
+      document.removeEventListener('mousedown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown, true);
     };
-  }, [projectId]);
+  }, [searchPopupOpen]);
 
-  const addPendingFiles = useCallback((type: IntakeType, files: FileList | File[] | null) => {
-    const selectedFiles = Array.from(files || []);
-    const pathAttachments: PendingAttachment[] = [];
-    const clipboardImageFiles: File[] = [];
+  useEffect(() => {
+    if (!pendingSearchTarget || activeTab !== pendingSearchTarget.targetTab) return undefined;
 
-    for (const file of selectedFiles) {
-      const pathAttachment = createPendingPathAttachment(file);
-      if (pathAttachment) {
-        pathAttachments.push(pathAttachment);
-      } else if (file.type.startsWith('image/')) {
-        clipboardImageFiles.push(file);
-      }
+    const timer = window.setTimeout(() => {
+      const located = locateWorkspaceSearchResult(pendingSearchTarget);
+      setPendingSearchTarget(null);
+      setSearchLocateNotice(located ? '' : formatSearchLocateFallback(pendingSearchTarget));
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [activeTab, pendingSearchTarget]);
+
+  function handleSearchQueryChange(nextQuery: string) {
+    setSearchQuery(nextQuery);
+    if (nextQuery.trim()) return;
+
+    setPendingSearchTarget(null);
+    setSearchLocateNotice('');
+    setSearchPopupOpen(false);
+  }
+
+  function handleSelectSearchResult(result: WorkspaceSearchResult) {
+    const resultPlan = findPlanForSearchResult(result, snapshot?.plans || []);
+    if (result.targetTab === 'tasks') {
+      setSelectedPlanId((current) => (resultPlan ? resultPlan.id : result.targetType === 'task' ? null : current));
     }
+    setSearchLocateNotice('');
+    setPendingSearchTarget(result);
+    selectSearchResult(result);
+  }
 
-    appendPendingAttachments(setPendingAttachments, type, pathAttachments);
-    if (!clipboardImageFiles.length) return;
-
-    void Promise.allSettled(
-      clipboardImageFiles.map((file, index) => createPendingClipboardImageAttachment(file, index)),
-    ).then((results) => {
-      const clipboardAttachments = results
-        .filter((result): result is PromiseFulfilledResult<PendingAttachment | null> => result.status === 'fulfilled')
-        .map((result) => result.value)
-        .filter((attachment): attachment is PendingAttachment => Boolean(attachment));
-      appendPendingAttachments(setPendingAttachments, type, clipboardAttachments);
+  const createRequirementFromComposer = (payload: string | ComposerSubmitPayload) =>
+    createRequirement(payload as unknown as string);
+  const createFeedbackFromComposer = (payload: string | ComposerSubmitPayload) =>
+    createFeedback(payload as unknown as string);
+  const reorderPlansFromList = (orderedPlans: Plan[]) =>
+    runLoopAction(() => {
+      if (!snapshot) throw new Error('工作区快照尚未加载');
+      const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
+      const orderedQueue = [...orderedPlans];
+      const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
+      return (window.autoplan as typeof window.autoplan & {
+        reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
+      }).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
     });
-  }, []);
-
-  const removePendingAttachment = useCallback((type: IntakeType, index: number) => {
-    setPendingAttachments((current) => ({
-      ...current,
-      [type]: current[type].filter((_, itemIndex) => itemIndex !== index),
-    }));
-  }, []);
-
-  const createRequirement = useCallback(
-    async (body: string) => {
-      if (!projectId) return false;
-      try {
-        const next = await window.autoplan.createRequirement({
-          projectId,
-          body,
-          attachments: pendingAttachments.requirement,
-          agentCliProvider: composerCliProviders.requirement,
-          ...(composerCliProviders.requirement === 'claude'
-            ? {}
-            : { codexReasoningEffort: composerCodexReasoning.requirement }),
-        });
-        setSnapshot(next);
-        setPendingAttachments((current) => ({ ...current, requirement: [] }));
-        setError(null);
-        return true;
-      } catch (e) {
-        showError(e);
-        return false;
-      }
-    },
-    [composerCliProviders.requirement, composerCodexReasoning.requirement, pendingAttachments.requirement, projectId, setSnapshot, setError, showError],
-  );
-
-  const createFeedback = useCallback(
-    async (body: string) => {
-      if (!projectId) return false;
-      try {
-        const next = await window.autoplan.createFeedback({
-          projectId,
-          body,
-          attachments: pendingAttachments.feedback,
-          agentCliProvider: composerCliProviders.feedback,
-          ...(composerCliProviders.feedback === 'claude'
-            ? {}
-            : { codexReasoningEffort: composerCodexReasoning.feedback }),
-        });
-        setSnapshot(next);
-        setPendingAttachments((current) => ({ ...current, feedback: [] }));
-        setError(null);
-        return true;
-      } catch (e) {
-        showError(e);
-        return false;
-      }
-    },
-    [composerCliProviders.feedback, composerCodexReasoning.feedback, pendingAttachments.feedback, projectId, setSnapshot, setError, showError],
-  );
-
-  const updateRequirement = useCallback(
-    async (id: number, input: { title?: string; body?: string; status?: string }) => {
-      if (!projectId) return false;
-      try {
-        const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
-        setSnapshot(next);
-        setError(null);
-        return true;
-      } catch (e) {
-        showError(e);
-        return false;
-      }
-    },
-    [projectId, setSnapshot, setError, showError],
-  );
-
-  const deleteRequirement = useCallback(
-    async (id: number) => {
-      if (!projectId) return false;
-      try {
-        const next = await window.autoplan.deleteRequirement({ projectId, id });
-        setSnapshot(next);
-        setError(null);
-        return true;
-      } catch (e) {
-        showError(e);
-        return false;
-      }
-    },
-    [projectId, setSnapshot, setError, showError],
-  );
-
-  const updateFeedback = useCallback(
-    async (id: number, input: { title?: string; body?: string; status?: string }) => {
-      if (!projectId) return false;
-      try {
-        const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
-        setSnapshot(next);
-        setError(null);
-        return true;
-      } catch (e) {
-        showError(e);
-        return false;
-      }
-    },
-    [projectId, setSnapshot, setError, showError],
-  );
-
-  const deleteFeedback = useCallback(
-    async (id: number) => {
-      if (!projectId) return false;
-      try {
-        const next = await window.autoplan.deleteFeedback({ projectId, id });
-        setSnapshot(next);
-        setError(null);
-        return true;
-      } catch (e) {
-        showError(e);
-        return false;
-      }
-    },
-    [projectId, setSnapshot, setError, showError],
-  );
-
-  const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    try {
-      const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
-      if (next.state && Number(next.state.project_id) === Number(projectId)) {
-        setLoopForm(loopFormFromProjectState(next.state));
-      }
-      setLoopFormDirty(false);
-      setSnapshot(next);
-      setError(null);
-    } catch (e) {
-      showError(e);
-    }
-  };
-
-  const runLoopAction = async (action: () => Promise<AppSnapshot>) => {
-    try {
-      const next = await action();
-      setSnapshot(next);
-      setError(null);
-    } catch (e) {
-      showError(e);
-    }
-  };
-
-  const interruptIntake = useCallback(
-    async (type: IntakeType, id: number) => {
-      try {
-        const next = await window.autoplan.interruptIntake({ projectId, type, id });
-        setSnapshot(next);
-        setError(null);
-      } catch (e) {
-        showError(e);
-      }
-    },
-    [projectId, setSnapshot, setError, showError],
-  );
-
-  const resumeIntake = useCallback(
-    async (type: IntakeType, id: number) => {
-      try {
-        const next = await window.autoplan.resumeIntake({ projectId, type, id });
-        setSnapshot(next);
-        setError(null);
-      } catch (e) {
-        showError(e);
-      }
-    },
-    [projectId, setSnapshot, setError, showError],
-  );
-
-  const appendIntakeTask = useCallback(
-    async (type: IntakeType, id: number, title: string) => {
-      try {
-        const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
-        setSnapshot(next);
-        setError(null);
-      } catch (e) {
-        showError(e);
-      }
-    },
-    [projectId, setSnapshot, setError, showError],
-  );
-
-  const readPlanForReader = useCallback(async (plan: Plan) => {
-    const requestId = planReadRequestRef.current + 1;
-    planReadRequestRef.current = requestId;
-    setPlanReadState({ plan, result: null, loading: true, error: null });
-
-    try {
-      const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
-      if (planReadRequestRef.current !== requestId) return;
-
-      setPlanReadState({
-        plan: {
-          ...plan,
-          file_path: result.file_path || plan.file_path,
-          hash: result.hash || plan.hash,
-          updated_at: result.updated_at || plan.updated_at,
-        },
-        result,
-        loading: false,
-        error: result.ok ? null : result.error || '读取 Plan 全文失败',
-      });
-    } catch (e) {
-      if (planReadRequestRef.current !== requestId) return;
-      setPlanReadState({
-        plan,
-        result: null,
-        loading: false,
-        error: getErrorMessage(e, '读取 Plan 全文失败'),
-      });
-    }
-  }, []);
-
-  const openPlanReader = useCallback(
-    (plan: Plan) => {
-      const currentPlan = planReadState.plan;
-      if (planReadState.loading && currentPlan && currentPlan.id === plan.id && currentPlan.project_id === plan.project_id) {
-        return;
-      }
-      void readPlanForReader(plan);
-    },
-    [planReadState.loading, planReadState.plan?.id, planReadState.plan?.project_id, readPlanForReader],
-  );
-
-  const closePlanReader = useCallback(() => {
-    planReadRequestRef.current += 1;
-    setPlanReadState(createEmptyPlanReadState());
-  }, []);
-
-  const refreshPlanReader = useCallback(() => {
-    if (planReadState.loading) return;
-    const plan = latestReadingPlan || planReadState.plan;
-    if (!plan) return;
-    void readPlanForReader(plan);
-  }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
-
-  const openTaskPlanReader = useCallback(
-    (task: PlanTask) => {
-      const plan = snapshot?.plans.find(
-        (item) => item.id === task.plan_id || (!!task.file_path && item.file_path === task.file_path),
-      );
-      if (plan) openPlanReader(plan);
-    },
-    [openPlanReader, snapshot?.plans],
-  );
-
-  const switchProject = (nextId: number) => {
-    if (nextId && nextId !== projectId) navigate(`/projects/${nextId}${activeTab === 'overview' ? '' : `?tab=${activeTab}`}`);
-  };
-
-  const selectTab = useCallback(
-    (tab: WorkspaceTab) => {
-      setActiveTab(tab);
-      setSearchParams(tab === 'overview' ? {} : { tab }, { replace: true });
-    },
-    [setSearchParams],
-  );
 
   if (!snapshot) {
     return (
@@ -695,12 +214,21 @@ export function WorkspacePage() {
             <h1>{tabTitle(activeTab)}</h1>
             <p>{tabSubtitle(activeTab, project)}</p>
           </div>
-          <WorkspaceSearchBox
-            hitCount={searchHitCount}
-            onQueryChange={setSearchQuery}
-            query={searchQuery}
-            totalCount={searchableItemCount}
-          />
+          <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+            <WorkspaceSearchBox
+              hitCount={searchHitCount}
+              onQueryChange={handleSearchQueryChange}
+              query={searchQuery}
+            />
+            <SearchResults
+              onClear={() => handleSearchQueryChange('')}
+              onClose={() => setSearchPopupOpen(false)}
+              onSelectGroup={selectTab}
+              onSelectResult={handleSelectSearchResult}
+              open={searchPopupOpen}
+              searchState={workspaceSearch}
+            />
+          </div>
           <div className="topbar-actions">
             <span className="pill">
               <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
@@ -723,16 +251,20 @@ export function WorkspacePage() {
           </div>
         </header>
 
-        <SearchResults
-          onClear={() => setSearchQuery('')}
-          onSelectGroup={selectTab}
-          onSelectResult={(result) => selectTab(result.targetTab)}
-          searchState={workspaceSearch}
-        />
+        {searchLocateNotice ? (
+          <div className="search-locate-notice" role="status">
+            <span>{searchLocateNotice}</span>
+            <button type="button" className="btn-link" onClick={() => setSearchLocateNotice('')}>关闭</button>
+          </div>
+        ) : null}
 
         <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
-          {error ? <div className="error-banner">{error}</div> : null}
-          <OverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+          {activeTab === 'overview' ? (
+            <>
+              {error ? <div className="error-banner">{error}</div> : null}
+              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+            </>
+          ) : null}
         </section>
 
         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
@@ -751,7 +283,7 @@ export function WorkspacePage() {
                 onAddFiles={addPendingFiles}
                 onDelete={deleteRequirement}
                 onRemoveAttachment={removePendingAttachment}
-                onSubmit={createRequirement}
+                onSubmit={createRequirementFromComposer}
                 onUpdate={updateRequirement}
                 onInterrupt={interruptIntake}
                 onResume={resumeIntake}
@@ -777,7 +309,7 @@ export function WorkspacePage() {
                 onAddFiles={addPendingFiles}
                 onDelete={deleteFeedback}
                 onRemoveAttachment={removePendingAttachment}
-                onSubmit={createFeedback}
+                onSubmit={createFeedbackFromComposer}
                 onUpdate={updateFeedback}
                 onInterrupt={interruptIntake}
                 onResume={resumeIntake}
@@ -789,7 +321,12 @@ export function WorkspacePage() {
 
         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
           {activeTab === 'tasks' ? (
-            <div className="task-main">
+            <div
+              className="task-main"
+              data-testid="workspace-task-main"
+              data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
+              data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
+            >
               <div className="task-status-grid">
                 <section className="card">
                   <div className="card-head">
@@ -813,8 +350,13 @@ export function WorkspacePage() {
                       )
                     }
                     onRefreshReader={refreshPlanReader}
+                    onReorderPlans={reorderPlansFromList}
+                    onClearPlanSelection={planSelectionState.clearSelection}
+                    onSelectPlan={planSelectionState.selectPlan}
                     plans={filteredItems.plans}
                     readerState={planReadState}
+                    selectedPlan={planSelectionState.selectedPlan}
+                    selectedPlanId={planSelectionState.selectedPlanId}
                     tasks={snapshot.tasks}
                     totalPlanCount={snapshot.plans.length}
                   />
@@ -825,7 +367,9 @@ export function WorkspacePage() {
                   </div>
                   <TaskList
                     emptyText={filteredEmptyText}
-                    tasks={displayTasks}
+                    locateTarget={pendingSearchTarget}
+                    planFilter={selectedPlanTaskFilter}
+                    tasks={taskListTasks}
                     onOpenPlan={openTaskPlanReader}
                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
@@ -838,11 +382,12 @@ export function WorkspacePage() {
 
         <section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>
           {activeTab === 'settings' ? (
-            <SettingsView
+            <WorkspaceSettingsView
               loopForm={loopForm}
               scopeFileOpenSettings={scopeFileOpenSettings}
               setLoopForm={updateLoopForm}
               setScopeFileOpenSettings={setScopeFileOpenSettings}
+              mcp={snapshot.mcp}
               onSubmit={submitLoopConfig}
               onToggleRun={() =>
                 runLoopAction(() =>
@@ -872,542 +417,69 @@ export function WorkspacePage() {
   );
 }
 
-function WorkspaceSidebar({
-  activeTab,
-  onTab,
-  onBack,
-  projectId,
-  projects,
-  currentProject,
-  state,
-  onSwitchProject,
-}: {
-  activeTab: WorkspaceTab;
-  onTab: (tab: WorkspaceTab) => void;
-  onBack: () => void;
-  projectId: number;
-  projects: Project[];
-  currentProject: Project | null;
-  state: ProjectState | null;
-  onSwitchProject: (id: number) => void;
-}) {
-  return (
-    <aside className="sidebar">
-      <div className="brand">
-        <div className="brand-mark">A</div>
-        <div>
-          <div className="brand-name">AutoPlan</div>
-          <div className="brand-sub">需求 · 计划 · 执行 · 验收</div>
-        </div>
-      </div>
+function locateWorkspaceSearchResult(result: WorkspaceSearchResult) {
+  const target = getWorkspaceSearchAnchorCandidates(result)
+    .map((anchorId) => document.getElementById(anchorId))
+    .find((element): element is HTMLElement => element instanceof HTMLElement);
 
-      <button type="button" className="back-link" onClick={onBack}>
-        <Icon name="back" size={16} aria-hidden />
-        返回项目列表
-      </button>
+  if (!target) return false;
 
-      <div className="project-switcher">
-        <div className="project-label">当前项目</div>
-        <select
-          className="project-select"
-          value={projectId}
-          onChange={(event) => onSwitchProject(Number(event.target.value))}
-        >
-          {projects.map((project) => (
-            <option key={project.id} value={project.id}>
-              {project.name}
-            </option>
-          ))}
-        </select>
-        {currentProject ? <div className="project-path mono">{currentProject.workspace_path || '未设置工作区'}</div> : null}
-      </div>
+  const previousTabIndex = target.getAttribute('tabindex');
+  const highlightMs = Math.max(600, Number(result.location.highlightMs) || 2400);
+  target.scrollIntoView({ behavior: result.location.scrollBehavior, block: 'center', inline: 'nearest' });
+  target.classList.remove('search-locate-highlight');
+  void target.offsetWidth;
+  target.classList.add('search-locate-highlight');
+  target.setAttribute('tabindex', previousTabIndex ?? '-1');
+  target.focus({ preventScroll: true });
 
-      <div className="nav-group-label">工作区</div>
-      {tabs.map((tab) => (
-        <button
-          className={`nav-item ${activeTab === tab.id ? 'active' : ''}`}
-          key={tab.id}
-          type="button"
-          onClick={() => onTab(tab.id)}
-        >
-          <span className="nav-ico">
-            <Icon name={tab.icon} size={18} aria-hidden="true" />
-          </span>
-          <span>{tab.label}</span>
-        </button>
-      ))}
+  window.setTimeout(() => {
+    target.classList.remove('search-locate-highlight');
+    if (previousTabIndex === null) target.removeAttribute('tabindex');
+  }, highlightMs);
 
-      <div className="sidebar-footer">
-        <div className="loop-mini">
-          <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
-          <span>
-            循环 <b>{state?.running ? '运行中' : '已停止'}</b>
-          </span>
-        </div>
-        <div className="loop-config mono">
-          {agentCliConfigSummary(state)}
-          {' · '}间隔 {state?.interval_seconds || 5}s
-          {state?.validation_command ? ` · ${state.validation_command}` : ' · 无验收命令'}
-        </div>
-      </div>
-    </aside>
-  );
+  return true;
 }
 
-function WorkspaceSearchBox({
-  hitCount,
-  onQueryChange,
-  query,
-  totalCount,
-}: {
-  hitCount: number;
-  onQueryChange: (query: string) => void;
-  query: string;
-  totalCount: number;
-}) {
-  const hasQuery = Boolean(normalizeSearchQuery(query));
-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
+function getWorkspaceSearchAnchorCandidates(result: WorkspaceSearchResult) {
+  const candidates = [
+    result.anchorId,
+    result.location.anchorId,
+    `workspace-${result.targetType}-${result.targetId}`,
+    result.taskId ? `workspace-task-${result.taskId}` : '',
+    result.planId ? `workspace-plan-${result.planId}` : '',
+    result.filePath ? `workspace-plan-file-${sanitizeWorkspaceSearchAnchor(result.filePath)}` : '',
+  ];
 
-  return (
-    <div className="workspace-search" role="search" aria-label="工作区搜索">
-      <div className="workspace-search-field">
-        <Icon name="search" size={16} className="workspace-search-icon" aria-hidden="true" />
-        <input
-          aria-label="搜索当前工作区"
-          className="workspace-search-input search-input"
-          onChange={(event) => onQueryChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && query) {
-              event.preventDefault();
-              onQueryChange('');
-            }
-          }}
-          placeholder="搜索需求、反馈、任务、Plan 或事件"
-          value={query}
-        />
-        {query ? (
-          <button
-            type="button"
-            className="workspace-search-clear"
-            onClick={() => onQueryChange('')}
-            aria-label="清空工作区搜索关键字"
-          >
-            <Icon name="close" size={15} aria-hidden="true" />
-          </button>
-        ) : null}
-      </div>
-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
-        {resultLabel}
-      </span>
-    </div>
-  );
+  return Array.from(new Set(candidates.filter(Boolean)));
 }
 
-function normalizeSearchQuery(value: string) {
-  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+function sanitizeWorkspaceSearchAnchor(value: string) {
+  return value.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
 
-function countSearchableItems(snapshot: AppSnapshot) {
-  return (
-    snapshot.requirements.length +
-    snapshot.feedback.length +
-    snapshot.plans.length +
-    snapshot.tasks.length +
-    snapshot.events.length
-  );
-}
-
-function createFilteredWorkspaceItems(
-  snapshot: AppSnapshot | null | undefined,
-  searchState: WorkspaceSearchState,
-): WorkspaceFilterableItems {
-  if (!snapshot) {
-    return { requirements: [], feedback: [], plans: [], tasks: [], events: [] };
-  }
-  if (searchState.query.isEmpty) {
-    return {
-      requirements: snapshot.requirements,
-      feedback: snapshot.feedback,
-      plans: snapshot.plans,
-      tasks: snapshot.tasks,
-      events: snapshot.events,
-    };
+function findPlanForSearchResult(result: WorkspaceSearchResult, plans: Plan[]) {
+  const planId = normalizeSearchResultPlanId(result.planId ?? (result.targetType === 'plan' ? result.targetId : null));
+  if (planId !== null) {
+    const plan = plans.find((item) => item.id === planId);
+    if (plan) return plan;
   }
 
-  const plans = filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
-  const tasks = filterTasksBySearchGroups(snapshot.tasks, plans, searchState.groups);
-
-  return {
-    requirements: filterItemsBySearchGroup(
-      snapshot.requirements,
-      searchState.groups,
-      WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
-    ),
-    feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
-    plans,
-    tasks,
-    events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
-  };
+  const filePath = readPlanTaskAssociationFilePath({ file_path: result.filePath });
+  if (!filePath) return null;
+  return plans.find((plan) => readPlanTaskAssociationFilePath(plan) === filePath) || null;
 }
 
-function filterItemsBySearchGroup<T extends { id: number }>(
-  items: T[],
-  groups: WorkspaceSearchGroup[],
-  source: WorkspaceSearchSourceType,
-) {
-  const group = groups.find((item) => item.source === source);
-  if (!group?.results.length) return [];
-
-  const recordIds = new Set(group.results.map((result) => result.recordId));
-  return items.filter((item) => recordIds.has(item.id));
+function normalizeSearchResultPlanId(value: number | null | undefined) {
+  if (value === null || typeof value === 'undefined') return null;
+  const planId = Number(value);
+  return Number.isFinite(planId) ? planId : null;
 }
 
-function filterTasksBySearchGroups(
-  tasks: PlanTask[],
-  plans: Plan[],
-  groups: WorkspaceSearchGroup[],
-) {
-  const directTasks = filterItemsBySearchGroup(tasks, groups, WORKSPACE_SEARCH_SOURCE_TYPES.TASK);
-  if (!plans.length) return directTasks;
-
-  const taskIds = new Set(directTasks.map((task) => task.id));
-  const planIds = new Set(plans.map((plan) => plan.id));
-  const planFilePaths = new Set(plans.map((plan) => plan.file_path).filter(Boolean));
-  const planTasks = tasks.filter(
-    (task) => planIds.has(task.plan_id) || (!!task.file_path && planFilePaths.has(task.file_path)),
-  );
-
-  return [...directTasks, ...planTasks.filter((task) => !taskIds.has(task.id))];
+function formatSearchLocateFallback(result: WorkspaceSearchResult) {
+  return `已打开${tabTitle(result.targetTab)}，但暂未找到可定位的“${result.title}”节点。`;
 }
 
-function withTaskCliProviderTitle(task: PlanTask, fallbackProvider?: string | null): PlanTask {
-  const providerLabel = agentCliProviderLabel(readAgentCliProvider({ agentCliProvider: task.agentCliProvider || fallbackProvider }));
-  if (!providerLabel || task.title.startsWith(`[${providerLabel}] `)) return task;
-  return { ...task, title: `[${providerLabel}] ${task.title}` };
-}
-
-function agentCliConfigSummary(state?: ProjectState | null) {
-  const provider = readAgentCliProvider(state);
-  const providerLabel = agentCliProviderLabel(provider);
-  if (provider === 'claude') return providerLabel;
-  return `${providerLabel} · 思考${codexReasoningEffortLabel(readCodexReasoningEffort(state))}`;
-}
-
-function SettingsView({
-  loopForm,
-  scopeFileOpenSettings,
-  setLoopForm,
-  setScopeFileOpenSettings,
-  onSubmit,
-  onToggleRun,
-  running,
-}: {
-  loopForm: LoopFormState;
-  scopeFileOpenSettings: ScopeFileOpenSettings;
-  setLoopForm: Dispatch<SetStateAction<LoopFormState>>;
-  setScopeFileOpenSettings: Dispatch<SetStateAction<ScopeFileOpenSettings>>;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onToggleRun: () => void;
-  running: boolean;
-}) {
-  const isCodexProvider = loopForm.agentCliProvider !== 'claude';
-
-  return (
-    <div className="settings-layout">
-      <form className="editor card settings-card" onSubmit={onSubmit}>
-        <div className="card-head">
-          <h2>循环控制</h2>
-          <span className="hint">工作区路径、循环间隔、验收命令与 CLI 后端</span>
-        </div>
-        <label className="field">
-          工作区路径
-          <input
-            value={loopForm.workspacePath}
-            onChange={(event) => setLoopForm((current) => ({ ...current, workspacePath: event.target.value }))}
-            placeholder="D:\project\GitHub\my-app"
-          />
-        </label>
-        <label className="field">
-          间隔秒数
-          <input
-            min="1"
-            type="number"
-            value={loopForm.intervalSeconds}
-            onChange={(event) => setLoopForm((current) => ({ ...current, intervalSeconds: event.target.value }))}
-          />
-        </label>
-        <label className="field">
-          验收命令（留空则不校验）
-          <input
-            value={loopForm.validationCommand}
-            onChange={(event) => setLoopForm((current) => ({ ...current, validationCommand: event.target.value }))}
-            placeholder="留空则跳过外部验收命令"
-          />
-        </label>
-        <label className="field">
-          CLI 后端
-          <select
-            value={loopForm.agentCliProvider}
-            onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
-          >
-            <option value="codex">Codex CLI</option>
-            <option value="claude">Claude CLI</option>
-          </select>
-          {loopForm.agentCliProvider === 'claude' ? (
-            <small className="field-hint">需本机已安装 claude CLI 并完成认证</small>
-          ) : null}
-        </label>
-        {isCodexProvider ? (
-          <label className="field">
-            Codex 思考深度
-            <select
-              value={loopForm.codexReasoningEffort}
-              onChange={(event) =>
-                setLoopForm((current) => ({
-                  ...current,
-                  codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
-                }))
-              }
-            >
-              {codexReasoningOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <small className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度</small>
-          </label>
-        ) : (
-          <div className="field readonly-field">
-            Codex 思考深度
-            <span>Claude CLI 不使用该配置</span>
-          </div>
-        )}
-        <label className="field">
-          CLI 命令路径（留空用默认）
-          <input
-            className="mono"
-            value={loopForm.agentCliCommand}
-            onChange={(event) => setLoopForm((current) => ({ ...current, agentCliCommand: event.target.value }))}
-            placeholder={loopForm.agentCliProvider === 'claude' ? 'claude' : 'codex'}
-          />
-        </label>
-        <label className="field">
-          scope 文件打开方式
-          <select
-            value={scopeFileOpenSettings.mode}
-            onChange={(event) =>
-              setScopeFileOpenSettings((current) => ({
-                ...current,
-                mode: event.target.value as ScopeFileOpenMode,
-              }))
-            }
-          >
-            <option value="system">系统默认方式</option>
-            <option value="folder">系统文件夹定位</option>
-            <option value="vscode">VSCode</option>
-            <option value="command">第三方编辑器命令</option>
-          </select>
-          <small className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内</small>
-        </label>
-        {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
-          <label className="field">
-            编辑器命令
-            <input
-              className="mono"
-              value={scopeFileOpenSettings.command}
-              onChange={(event) => setScopeFileOpenSettings((current) => ({ ...current, command: event.target.value }))}
-              placeholder={scopeFileOpenSettings.mode === 'vscode' ? 'code' : '编辑器命令，例如 cursor'}
-            />
-            <small className="field-hint">留空选择 VSCode 时默认使用 code；第三方命令可用 {'{file}'} 占位</small>
-          </label>
-        ) : null}
-        <div className="button-row">
-          <button type="submit">保存配置</button>
-          <button type="button" onClick={onToggleRun}>
-            {running ? '停止' : '启动'}
-          </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-function OverviewView({
-  snapshot,
-  state,
-  onGoTasks,
-}: {
-  snapshot: AppSnapshot;
-  state: ProjectState | null;
-  onGoTasks: () => void;
-}) {
-  const reqCount = snapshot.requirements.length;
-  const planCount = snapshot.plans.length;
-  const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
-  const doneTasks = snapshot.tasks.filter((task) => task.status === 'completed').length;
-  const totalTasks = snapshot.tasks.length;
-
-  const phases = ['scan', 'generate-plan', 'execute-task', 'validate', 'completed'];
-  const currentPhase = state?.phase || 'idle';
-  const activeIndex = phases.indexOf(currentPhase);
-  const operation = snapshot.activeOperation || snapshot.lastOperation;
-  const operationActive = Boolean(snapshot.activeOperation);
-  const operationCliSource = operation
-    ? {
-        agentCliProvider: operation.agentCliProvider || state?.agent_cli_provider,
-        codexReasoningEffort: operation.codexReasoningEffort || state?.codex_reasoning_effort,
-      }
-    : state;
-  const operationProvider = readAgentCliProvider(operationCliSource);
-  const operationProviderLabel = agentCliProviderLabel(operationProvider);
-  const operationReasoningLabel = operationProvider !== 'claude'
-    ? `思考${codexReasoningEffortLabel(readCodexReasoningEffort(operationCliSource))}`
-    : '';
-  const operationSessionLabel = operationProviderLabel === 'Codex' ? operation?.codexSessionLabel : '';
-  const operationTime = operation?.startedAt ? `开始于 ${formatChinaTime(operation.startedAt)}` : '';
-  const operationExit =
-    operation && !operationActive && typeof operation.exitCode === 'number'
-      ? `退出码 ${operation.exitCode}${operation.exitCode === 0 ? '（成功）' : '（失败）'}`
-      : '';
-  const operationHint = operation
-    ? [operationProviderLabel, operationReasoningLabel, operationTime, operationSessionLabel, operationExit].filter(Boolean).join(' · ')
-    : '等待下一次执行';
-  const operationTitle = operation
-    ? `${operationActive ? '执行日志' : '最近执行'} · ${operationProviderLabel} · ${operation.label}`
-    : `执行日志 · ${operationProviderLabel}`;
-  const stateProvider = readAgentCliProvider(state);
-  const stateProviderLabel = agentCliProviderLabel(stateProvider);
-  const stateReasoningLabel = codexReasoningEffortLabel(readCodexReasoningEffort(state));
-
-  return (
-    <>
-      <div className="stat-grid">
-        <StatCard icon="requirement" value={String(reqCount)} label="需求" accent="brand" />
-        <StatCard
-          icon="plan"
-          value={String(planCount)}
-          label="计划"
-          sub={runningPlan ? `${runningPlan.completed_tasks}/${runningPlan.total_tasks} 任务` : '无进行中'}
-          accent="info"
-        />
-        <StatCard icon="tasks" value={`${doneTasks}/${totalTasks}`} label="任务进度" accent="success" />
-        <StatCard
-          icon="settings"
-          value={stateProviderLabel}
-          label="CLI 后端"
-          sub={stateProvider === 'claude' ? `间隔 ${state?.interval_seconds || 5}s` : `思考${stateReasoningLabel} · 间隔 ${state?.interval_seconds || 5}s`}
-          accent="warning"
-        />
-      </div>
-
-      <div className="overview-grid">
-        <div className="overview-main-column">
-          <section className="card live-log-card">
-            <div className="card-head log-card-head">
-              <div className="log-title-line">
-                <h2>
-                  <span className={`live-dot${operationActive ? '' : ' idle'}`} /> {operationTitle}
-                </h2>
-                <span className="hint">{operationHint}</span>
-                <span className={`log-phase-chip ${state?.running ? 'running' : 'stopped'}`}>
-                  {state?.running ? '循环运行中' : '循环已停止'} · {operationProviderLabel} · {currentPhase}
-                </span>
-              </div>
-              <div className="log-summary">
-                <span>
-                  需求 <b>{snapshot.requirements.length}</b>
-                </span>
-                <span>
-                  反馈 <b>{snapshot.feedback.length}</b>
-                </span>
-                <span>
-                  Plan <b>{snapshot.plans.length}</b>
-                </span>
-              </div>
-            </div>
-            <CodexLog
-              log={operation?.logTail || ''}
-              activity={operation?.activity || []}
-              context={operation || null}
-              provider={operationProvider}
-            />
-          </section>
-        </div>
-
-        <div className="overview-side-column">
-          <section className="card">
-            <div className="card-head">
-              <h2>循环阶段流水线</h2>
-            </div>
-            <div className="card-body">
-              <div className="pipeline">
-                {phases.map((phase, index) => {
-                  const done = activeIndex > index;
-                  const active = activeIndex === index;
-                  return (
-                    <div className={`pipe-step ${done ? 'done' : ''} ${active ? 'active' : ''}`} key={phase}>
-                      <div className="pipe-node">
-                        {done ? (
-                          <Icon name="complete" size={18} className="pipe-status-icon" aria-hidden="true" />
-                        ) : active ? (
-                          <Icon name="run" size={18} className="pipe-status-icon" aria-hidden="true" />
-                        ) : (
-                          index + 1
-                        )}
-                      </div>
-                      <div className="pipe-label">{phaseLabel(phase)}</div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </section>
-
-          <section className="card">
-            <div className="card-head">
-              <h2>近期事件</h2>
-              <span className="spacer">
-                <button type="button" className="btn-link" onClick={onGoTasks}>
-                  查看任务
-                  <Icon name="enter" size={14} aria-hidden />
-                </button>
-              </span>
-            </div>
-            <div className="card-body">
-              <EventList events={snapshot.events.slice(0, 8)} />
-            </div>
-          </section>
-        </div>
-      </div>
-    </>
-  );
-}
-
-function StatCard({
-  icon,
-  value,
-  label,
-  sub,
-  accent,
-}: {
-  icon: IconName;
-  value: string;
-  label: string;
-  sub?: string;
-  accent: 'brand' | 'info' | 'success' | 'warning';
-}) {
-  return (
-    <div className={`stat stat-${accent}`}>
-      <div className="stat-ico">
-        <Icon name={icon} size={20} aria-hidden="true" />
-      </div>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
-      {sub ? <div className="stat-delta">{sub}</div> : null}
-    </div>
-  );
-}
 
 function tabTitle(tab: WorkspaceTab) {
   return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', tasks: '任务与计划', events: '事件流', settings: '设置' }[tab];
@@ -1420,22 +492,7 @@ function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
     feedback: '收集反馈，关联需求并由循环生成开发计划',
     tasks: 'Plan 与任务进度',
     events: '循环运行日志与任务执行记录',
-    settings: '工作区路径、循环间隔、验收命令与 CLI 后端',
+    settings: '工作区路径、循环间隔、验收命令、CLI 后端与 MCP 接入',
   }[tab];
   return project ? `${base} · ${project.name}` : base;
-}
-
-function phaseLabel(phase: string) {
-  return (
-    {
-      idle: '空闲',
-      scan: '扫描',
-      'generate-plan': '生成计划',
-      'execute-task': '执行任务',
-      validate: '验收',
-      completed: '完成',
-      waiting: '等待',
-      error: '异常',
-    }[phase] || phase
-  );
 }

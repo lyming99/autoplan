@@ -46,6 +46,7 @@ export function codexReasoningEffortLabel(effort?: string | null): string {
   const value = String(effort || '').trim().toLowerCase();
   if (value === 'low') return 'low';
   if (value === 'high') return 'high';
+  if (value === 'xhigh') return '超高';
   return 'medium';
 }
 
@@ -102,7 +103,7 @@ function normalizeAgentCliProvider(provider?: string | null): string {
 
 function normalizeCodexReasoningEffort(effort?: string | null): string {
   const value = String(effort || '').trim().toLowerCase();
-  if (value === 'low' || value === 'high') return value;
+  if (value === 'low' || value === 'high' || value === 'xhigh') return value;
   return 'medium';
 }
 

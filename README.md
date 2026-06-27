@@ -43,14 +43,90 @@ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完
 
 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
 
+## MCP 外部接入
+
+AutoPlan 内置本机 MCP 服务，方便其它 MCP 客户端在不打开 GUI 表单的情况下创建项目、提交需求和提交反馈。桌面应用启动并完成数据库初始化后会启动 MCP 服务；启动失败不会影响 GUI，错误会进入事件流并显示在「设置 → MCP 外部接入」卡片。
+
+### 默认连接方式
+
+| 项 | 默认值 | 说明 |
+| --- | --- | --- |
+| 传输方式 | `http` | 使用 Streamable HTTP MCP 端点 |
+| 地址 | `127.0.0.1` | 默认仅绑定本机，不暴露公网 |
+| 端口 | `43847` | 连接地址为 `http://127.0.0.1:43847/mcp` |
+| stdio | `npm run mcp:stdio` | 供需要 stdio 的 MCP 客户端按进程方式启动 |
+
+可通过环境变量覆盖默认值：`AUTOPLAN_MCP_ENABLED=0` 禁用服务，`AUTOPLAN_MCP_TRANSPORT=stdio|http` 切换传输方式，`AUTOPLAN_MCP_HOST`、`AUTOPLAN_MCP_PORT`、`AUTOPLAN_MCP_PATH` 调整 HTTP 监听。HTTP 默认只允许本机地址；若显式绑定非本机地址，需同时设置 `AUTOPLAN_MCP_ALLOW_REMOTE=1`，并自行承担网络访问控制。
+
+### 工具清单与示例
+
+MCP 工具返回 `content[0].text` 中的 JSON 字符串，并在支持的客户端中提供 `structuredContent`。返回字段包含目标 `projectId`、可选 `requirementId` / `feedbackId`，以及最新 `snapshot` 摘要（当前项目、运行状态和记录数量）。
+
+#### `create_project`
+
+```json
+{
+  "name": "My App",
+  "workspacePath": "D:/project/my-app",
+  "description": "外部 MCP 创建的项目",
+  "agentCliProvider": "codex",
+  "agentCliCommand": "",
+  "codexReasoningEffort": "high"
+}
+```
+
+#### `create_requirement`
+
+```json
+{
+  "projectId": 1,
+  "title": "实现登录页",
+  "body": "请增加邮箱登录、错误提示和基础表单校验。",
+  "attachments": [
+    { "name": "login-sketch.png", "path": "D:/tmp/login-sketch.png", "type": "image/png" }
+  ],
+  "autoRun": true,
+  "agentCliProvider": "codex",
+  "codexReasoningEffort": "high"
+}
+```
+
+#### `create_feedback`
+
+```json
+{
+  "projectId": 1,
+  "requirementId": 12,
+  "title": "登录页反馈",
+  "body": "错误提示需要展示在输入框下方。",
+  "attachments": [
+    { "name": "feedback-placeholder.txt", "size": 0 }
+  ],
+  "autoRun": false,
+  "agentCliProvider": "claude"
+}
+```
+
+### 附件、安全与错误处理
+
+- **附件支持范围**：`attachments` 支持本机 `path` 文件、`dataUrl`、`base64` / `dataBase64`、`bytes`，也支持仅提供 `name` / `size` 的占位信息；仅占位附件会进入工具入参校验，但不会复制为持久化文件。
+- **安全边界**：HTTP MCP 默认监听 `127.0.0.1`，不会默认暴露公网；附件路径由本机 AutoPlan 进程读取，请只传入可信路径。
+- **关联校验**：`create_feedback.requirementId` 可为空；若需求不存在或属于其它项目，会返回明确错误，不会误写跨项目关联。
+- **常见错误**：必填字段缺失、字符串超长、`autoRun` 非布尔值、CLI 后端或 Codex 思考深度枚举非法、项目 ID 非正整数，都会以可修正的中文错误返回。
+
+`npm run smoke` 覆盖 MCP 工具创建项目、提交需求/反馈、反馈关联需求、`autoRun`、CLI 配置规范化、附件保存和无效入参错误；真实 MCP 客户端连通性留给最终手动验收。
+
 ## 计划并发执行与 scope 文件
 
-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
+AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
 
 ```md
 - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
+- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
 - [ ] P007: 完整验收 <!-- scope: validation -->
 ```
+
+任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
 
 ### 并发建议规则
 
@@ -86,6 +162,12 @@ Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可
 
 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
 
+### Beta 版本说明
+
+Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间。
+
+如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
+
 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
 
 ```bash
@@ -93,16 +175,17 @@ python scripts/release.py --tag v0.2.0 --notes "发布说明"
 python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
 ```
 
-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
+
 ## 开发
 
 ```bash
 npm install
 npm run dev        # 启动开发模式（Vite + Electron）
 npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
-npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度 stub 覆盖）
+npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度与 MCP 工具 stub 覆盖）
 npm run package:win  # 打包 Windows 安装包
 ```
 
-> 真实的 Claude CLI 调用需要本机安装并认证 `claude`，`npm run smoke` 通过 stub 覆盖后端路由、会话隔离和 Codex 思考深度参数转换核心分支，不依赖真实二进制。
+> 真实的 Claude CLI 调用需要本机安装并认证 `claude`；真实 MCP 客户端连通性需手动验证。`npm run smoke` 通过 stub 覆盖后端路由、会话隔离、Codex 思考深度参数转换和 MCP 工具写入核心分支，不依赖真实二进制或外部 MCP 客户端。
 

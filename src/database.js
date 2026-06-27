@@ -115,6 +115,7 @@ class AppDatabase {
         file_path TEXT NOT NULL,
         hash TEXT NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
+        sort_order INTEGER NOT NULL DEFAULT 0,
         total_tasks INTEGER NOT NULL DEFAULT 0,
         completed_tasks INTEGER NOT NULL DEFAULT 0,
         validation_passed INTEGER NOT NULL DEFAULT 0,
@@ -183,9 +184,14 @@ class AppDatabase {
     this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('attachments', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'project_id', 'INTEGER');
+    this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+    this.db.run(`
+      CREATE INDEX IF NOT EXISTS idx_plans_project_sort
+      ON plans (project_id, sort_order, created_at, id)
+    `);
     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
@@ -197,8 +203,10 @@ class AppDatabase {
     this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
 
     const defaultProjectId = this.ensureDefaultProject();
+    this.ensureDefaultSettings();
     this.migrateScanFilesTable(defaultProjectId);
     this.assignLegacyRows(defaultProjectId);
+    this.backfillPlanSortOrders();
     this.ensureProjectState(defaultProjectId);
   }
 
@@ -244,6 +252,63 @@ class AppDatabase {
     const columns = this.all(`PRAGMA table_info(${table})`);
     if (!columns.some((item) => item.name === column)) {
       this.db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  ensureDefaultSettings() {
+    const defaults = {
+      'mcp.enabled': 'true',
+      'mcp.transport': 'http',
+      'mcp.host': '127.0.0.1',
+      'mcp.port': '43847',
+      'mcp.path': '/mcp',
+    };
+    for (const [key, value] of Object.entries(defaults)) {
+      this.db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+    }
+  }
+
+  getSetting(key, fallback = null) {
+    const row = this.get('SELECT value FROM settings WHERE key = ?', [key]);
+    return row ? row.value : fallback;
+  }
+
+  setSetting(key, value) {
+    this.run('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', [key, String(value)]);
+  }
+
+  getSettings(prefix = '') {
+    const rows = prefix
+      ? this.all('SELECT key, value FROM settings WHERE key LIKE ? ORDER BY key ASC', [`${prefix}%`])
+      : this.all('SELECT key, value FROM settings ORDER BY key ASC');
+    return Object.fromEntries(rows.map((row) => [row.key, row.value]));
+  }
+
+  backfillPlanSortOrders() {
+    const rows = this.all(
+      `SELECT id, project_id, sort_order
+       FROM plans
+       ORDER BY COALESCE(project_id, 0) ASC, created_at ASC, id ASC`,
+    );
+    const byProject = new Map();
+    for (const row of rows) {
+      const key = String(row.project_id ?? 0);
+      const plans = byProject.get(key) || [];
+      plans.push(row);
+      byProject.set(key, plans);
+    }
+
+    for (const plans of byProject.values()) {
+      let nextOrder = plans.reduce((max, plan) => {
+        const order = Number(plan.sort_order);
+        return Number.isFinite(order) && order > max ? order : max;
+      }, 0);
+      for (const plan of plans) {
+        const order = Number(plan.sort_order);
+        if (Number.isFinite(order) && order > 0) continue;
+        nextOrder += 1;
+        this.db.run('UPDATE plans SET sort_order = ? WHERE id = ?', [nextOrder, plan.id]);
+      }
     }
   }
 

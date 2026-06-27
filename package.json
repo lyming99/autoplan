@@ -1,6 +1,6 @@
 {
   "name": "autoplan",
-  "version": "0.2.0",
+  "version": "0.2.1-beta.1",
   "description": "Electron app for issue-driven autonomous planning and development loops.",
   "author": "lyming99 <lyming99@users.noreply.github.com>",
   "main": "src/main.js",
@@ -13,7 +13,11 @@
     "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
     "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
     "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
-    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "verify:release-artifacts": "node scripts/verify-release-artifacts.js",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths",
+    "check:lengths": "node scripts/check-file-lengths.js",
+    "mcp:http": "node src/mcpServer.js --http",
+    "mcp:stdio": "node src/mcpServer.js --stdio",
     "smoke": "node scripts/smoke-test.js"
   },
   "build": {
@@ -22,6 +26,7 @@
     "directories": {
       "output": "release"
     },
+    "afterSign": "scripts/notarize-mac.js",
     "files": [
       "assets/**/*",
       "dist/**/*",
@@ -47,6 +52,11 @@
       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
     },
     "mac": {
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
       "target": [
         {
           "target": "dmg",
@@ -91,6 +101,7 @@
     }
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-markdown": "^10.1.0",
