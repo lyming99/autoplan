@@ -41,9 +41,21 @@ workflow 会在三个 runner 上分别构建：
 
 GitHub Release 页面会展示最终附件；Actions 页面中也可以查看各平台上传的临时 artifact。
 
-## 本地一键发布脚本
+## 本地发布脚本
 
-本地发布脚本位于 `scripts/release.py`。脚本只负责编排 tag 创建与推送，不在本地执行三端构建；三端构建由 GitHub Actions 完成。
+自动 beta 发布脚本位于 `scripts/release_beta.py`。它会读取当前 `package.json` 版本，生成下一个 `X.Y.Z-beta.N` 版本号，调用 Codex CLI 分析上一个 tag 之后的提交并生成 release notes，更新 `package.json` / `package-lock.json`，执行编译验证，然后提交、推送当前分支并调用底层 `scripts/release.py` 推送 tag。
+
+常用示例：
+
+```bash
+python scripts/release_beta.py --dry-run
+python scripts/release_beta.py --yes
+python scripts/release_beta.py --next-version 0.2.1-beta.3 --yes
+```
+
+`release_beta.py` 默认会使用 npm 10 同步 lockfile，以贴近 GitHub Actions 中的 `npm ci` 环境；默认编译命令是 `npm run build`。如果工作区只有 `docs/plan` 或 `docs/progress/logs` 下的生成文件，脚本会在发布期间临时 stash，发布结束后恢复；其它未提交变更会阻止自动发布，避免把业务代码或临时文件混入发布提交。
+
+底层 tag 发布脚本位于 `scripts/release.py`。脚本只负责编排 tag 创建与推送，不在本地执行三端构建；三端构建由 GitHub Actions 完成。
 
 常用示例：
 
@@ -69,11 +81,15 @@ python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
 
 ## Beta 发布流程
 
-Beta 版本用于快速分发近期修复和功能更新，tag 必须使用可识别的预发布格式，例如 `v0.2.1-beta.1`，并确保 `package.json` 中的 `version` 与去掉 `v` 前缀后的版本号一致，例如 `0.2.1-beta.1`。
+Beta 版本用于快速分发近期修复和功能更新，tag 必须使用可识别的预发布格式，例如 `v0.2.1-beta.1`，并确保 `package.json` 中的 `version` 与去掉 `v` 前缀后的版本号一致，例如 `0.2.1-beta.1`。推荐优先使用自动 beta 发布脚本：
 
-发布 beta 前，先在 `docs/release-notes/` 下准备与 tag 对齐的 Release notes，例如 `docs/release-notes/v0.2.1-beta.1.md`。Release notes 开头应明确标注 beta 是未完整人工测试的预发布版本，并包含近期更新摘要、风险提示、Issue 反馈入口，以及“AI 修复问题后编译通过即可发布”的策略说明。
+```bash
+python scripts/release_beta.py --yes
+```
 
-推荐使用 `--notes-file` 发布 beta，避免长 Markdown 文案在命令行中转义出错：
+该脚本会自动在 `docs/release-notes/` 下生成与 tag 对齐的 Release notes，例如 `docs/release-notes/v0.2.1-beta.3.md`。Release notes 开头会明确标注 beta 是未完整人工测试的预发布版本，并包含近期更新摘要、风险提示、Issue 反馈入口，以及“AI 修复问题后编译通过即可发布”的策略说明。
+
+如果需要手工发布某个已准备好的 beta notes，仍可使用底层脚本和 `--notes-file`，避免长 Markdown 文案在命令行中转义出错：
 
 ```bash
 python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes

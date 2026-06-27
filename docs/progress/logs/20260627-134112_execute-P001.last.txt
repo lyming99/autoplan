@@ -1,0 +1,13 @@
+已完成 P001，未修改 plan 文件、未勾选 checkbox、未运行测试/构建/lint。
+
+**本次变更**
+- 在 `src/renderer/components/PlanLists.tsx:20` 将通用事件展示结构命名为 `EventDisplay`，避免只表达任务事件。
+- 在 `src/renderer/components/PlanLists.tsx:358` 导出 `formatEvent`，明确事件列表复用的统一展示格式化入口。
+- 保持现有展示行为不变：普通系统事件仍以 `event.type` 作为标题兜底，任务事件仍走 `formatTaskEvent`。
+
+**P001 梳理结论**
+- 事件列表在 `src/renderer/components/PlanLists.tsx:931` 通过 `formatEvent(event)` 展示事件。
+- 普通事件在 `src/renderer/components/PlanLists.tsx:366` 仍直接使用 `event.type || '事件'`，因此 `scan.done`、`feedback.created`、`plan.generated` 当前会作为标题展示。
+- 任务事件边界在 `src/renderer/components/PlanLists.tsx:360`：`task.*` 类型或 meta 中有任务标识时走 `formatTaskEvent`。
+- 搜索入口在 `src/renderer/utils/search.ts:336`，当前搜索结果 title/summary 仍直接来自 `event.message` / `event.type`，尚未完全复用 `formatEvent`；这应留给 P003。
+- 历史数据无需迁移：`src/renderer/types.ts:408` 的 `AppEvent.type` 仍是内部字符串字段。

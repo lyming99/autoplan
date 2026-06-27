@@ -1,0 +1,654 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f08a2-78c2-74f3-a955-46a8952f786e
+--------
+user
+你是需求整理与开发计划生成者。
+请根据以下反馈，生成一个开发计划和验收标准。
+
+输出文件：D:\project\GitHub\autoplan\docs\plan\plan_feedback_20_20260627-183133.md
+
+格式要求：
+- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->
+- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行
+- 每个任务要有验收要点
+- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收
+- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准
+- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试
+- 必须包含总体验收标准和进度区
+- 只写 plan 文件，不要改业务代码
+
+反馈 #20 内容：
+根据近期更新内容，用script/release脚本推送一个beta版本，注意在readme和release说明加上beta版本描述：beta版本未测试版本，ai解决问题，编译通过就发布，减少测试时间，下载测试有问题可以直接在issue界面提，后续软件自己会到issue找问题，然后解决
+**Planning a code task**
+
+I'm acting as a coding agent and need to create a plan file. First, I'll inspect the repository and check any existing documentation for format guidelines. It's important to write a clear file, starting with a preamble before outlining the tools. The task seems simple but could be multi-faceted. I wonder if AGENTS should be included since they aren't mentioned in the prompt. I'll need to check if the directory exists and consider the plan style. I'll use shell to assist with this.
+codex
+我会先查看现有计划文档格式，然后只新增指定的 plan 文件。
+exec
+powershell.exe -Command "Get-ChildItem -Force; if (Test-Path docs\\plan) { Get-ChildItem docs\\plan | Select-Object -First 5 }" in D:\project\GitHub\autoplan
+ succeeded in 269ms:
+
+
+    目录: D:\project\GitHub\autoplan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----         2026/6/26     13:21                .autoplan-runtime                                                    
+d-----         2026/6/25     22:13                .claude                                                              
+d--h--         2026/6/27     13:46                .git                                                                 
+d-----         2026/6/26     13:26                .github                                                              
+d-----         2026/6/24     23:46                assets                                                               
+d-----         2026/6/27     17:23                build                                                                
+d-----         2026/6/26     16:36                dist                                                                 
+d-----         2026/6/27     13:19                docs                                                                 
+d-----         2026/6/26     20:37                node_modules                                                         
+d-----         2026/6/26     16:36                release                                                              
+d-----         2026/6/24     23:36                release-test                                                         
+d-----         2026/6/27     17:45                scripts                                                              
+d-----         2026/6/27     14:52                src                                                                  
+d-----         2026/6/25     21:00                ui                                                                   
+-a----         2026/6/24     23:18         109404 .codex-autoplan-overview-final.png                                   
+-a----         2026/6/24     23:17         108438 .codex-autoplan-overview-left-log.png                                
+-a----         2026/6/24     23:21          79462 .codex-autoplan-overview-merged-log.png                              
+-a----         2026/6/24     23:14         102400 .codex-autoplan-overview.png                                         
+-a----         2026/6/24     22:52            288 .codex-dev-20260624-225246.log                                       
+-a----         2026/6/24     22:57            546 .codex-dev-20260624-225652.log                                       
+-a----         2026/6/24     23:01            686 .codex-dev-20260624-225837.log                                       
+-a----         2026/6/25     21:01          35405 .codex-dev-20260624-230150.log                                       
+-a----         2026/6/24     22:48            419 .codex-dev.log                                                       
+-a----         2026/6/25      0:11             66 .gitattributes                                                       
+-a----         2026/6/25      5:37             42 .gitignore                                                           
+-a----         2026/6/24     19:10            307 index.html                                                           
+-a----         2026/6/25      5:38          11524 LICENSE                                                              
+-a----         2026/6/26     16:01         233037 package-lock.json                                                    
+-a----         2026/6/27     17:46           3582 package.json                                                         
+-a----         2026/6/27     17:59          12981 README.md                                                            
+-a----         2026/6/24     23:45           7191 System.Drawing.Drawing2D.GraphicsPath                                
+-a----         2026/6/24     19:10            555 tsconfig.json                                                        
+-a----         2026/6/24     23:41            287 vite.config.ts                                                       
+
+
+    目录: D:\project\GitHub\autoplan\docs\plan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----         2026/6/26      6:11           8118 plan_feedback_10_20260626-034659.md                                  
+-a----         2026/6/27      3:48           7622 plan_feedback_13_20260627-033001.md                                  
+-a----         2026/6/27     17:51           8727 plan_feedback_14_20260627-131553.md                                  
+-a----         2026/6/27     18:09           7681 plan_feedback_15_20260627-132045.md                                  
+-a----         2026/6/27     18:29           9046 plan_feedback_16_20260627-133130.md                                  
+
+
+
+codex
+已找到计划目录；接下来参考最近的文档结构生成新文件。
+exec
+powershell.exe -Command "Get-ChildItem docs\\plan | Sort-Object Name | Select-Object -Last 5 | Format-Table -AutoSize; Get-Content (Get-ChildItem docs\\plan | Sort-Object Name | Select-Object -Last 1).FullName -TotalCount 120" in D:\project\GitHub\autoplan
+ succeeded in 216ms:
+
+
+    目录: D:\project\GitHub\autoplan\docs\plan
+
+
+Mode          LastWriteTime Length Name                                 
+----          ------------- ------ ----                                 
+-a----  2026/6/25      4:28   5504 plan_requirement_4_20260625-030248.md
+-a----  2026/6/25      4:48   5813 plan_requirement_5_20260625-031229.md
+-a----  2026/6/25      5:08   6333 plan_requirement_6_20260625-032502.md
+-a----  2026/6/25      5:41   7721 plan_requirement_7_20260625-033918.md
+-a----  2026/6/25      6:05   7069 plan_requirement_8_20260625-034659.md
+
+
+# 闇€姹?#8 寮€鍙戣鍒掞細澧炲姞鎼滅储鍔熻兘
+
+## 鑳屾櫙
+
+褰撳墠 AutoPlan 鐨勯」鐩垪琛ㄥ凡鏀寔鎸夐」鐩悕绉般€佽矾寰勫拰澶囨敞杩涜鍓嶇鎼滅储锛屼絾杩涘叆鍗曚釜椤圭洰宸ヤ綔鍖哄悗锛岄渶姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴佸垎鍒垎甯冨湪涓嶅悓妯″潡涓€傞殢鐫€浠诲姟鎵ц鍜屼簨浠剁Н绱紝鐢ㄦ埛闅句互蹇€熷畾浣嶆煇鏉￠渶姹傘€佹煇涓换鍔°€佹煇浠借鍒掓垨鐩稿叧杩愯璁板綍銆?
+闇€姹?#8 瑕佹眰鈥滃鍔犳悳绱㈠姛鑳解€濄€傛湰璁″垝榛樿灏嗘悳绱㈣兘鍔涜惤鍦ㄥ綋鍓嶉」鐩伐浣滃尯鍐咃細鎻愪緵缁熶竴鎼滅储鍏ュ彛锛屾寜褰撳墠椤圭洰蹇収鏁版嵁杩涜瀹㈡埛绔绱紝瑕嗙洊闇€姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴侊紱淇濈暀椤圭洰鍒楄〃鐜版湁鎼滅储鑳藉姏锛屽苟鍦ㄤ氦浜掑拰鏍峰紡涓婁繚鎸佷竴鑷淬€?
+## 浠诲姟鎷嗚В
+
+- [x] P001: 瀹氫箟宸ヤ綔鍖烘悳绱㈡ā鍨?<!-- scope: src/renderer/types.ts,src/renderer/utils/search.ts -->
+  - 楠屾敹瑕佺偣锛氭柊澧炴悳绱㈢粨鏋溿€佹悳绱㈠垎缁勩€佹悳绱㈡潵婧愮被鍨嬪拰鍛戒腑瀛楁绛夊墠绔被鍨嬶紝瑕嗙洊闇€姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴併€?  - 楠屾敹瑕佺偣锛氭悳绱㈡ā鍨嬩笉鏀瑰彉鍚庣 `snapshot()` 鏁版嵁缁撴瀯锛屼笉瑕佹眰鏁版嵁搴撴柊澧炲瓧娈垫垨杩佺Щ锛岄伩鍏嶆墿澶ч渶姹傝寖鍥淬€?  - 楠屾敹瑕佺偣锛氱粨鏋滈」鑳芥惡甯︾洰鏍?tab銆佽褰?id銆佹爣棰樸€佹憳瑕併€佺姸鎬佸拰鏇存柊鏃堕棿锛屼究浜庡悗缁偣鍑诲畾浣嶄笌灞曠ず銆?  - 楠屾敹瑕佺偣锛氱┖鏌ヨ銆佺函绌虹櫧鏌ヨ鍜屾湭鐭ユ潵婧愮被鍨嬪潎鏈夊畨鍏ㄥ厹搴曪紝涓嶅奖鍝?TypeScript 缂栬瘧銆?
+- [x] P002: 瀹炵幇蹇収鎼滅储宸ュ叿鍑芥暟 <!-- scope: src/renderer/utils/search.ts,src/renderer/utils/time.ts -->
+  - 楠屾敹瑕佺偣锛氭悳绱㈠伐鍏锋敮鎸佸鏍囬銆佹鏂囥€佺姸鎬併€佹枃浠惰矾寰勩€佷换鍔?key銆乻cope銆佷簨浠剁被鍨嬪拰浜嬩欢淇℃伅杩涜澶у皬鍐欎笉鏁忔劅鍖归厤銆?  - 楠屾敹瑕佺偣锛氭悳绱㈣緭鍏ヤ細缁熶竴 trim銆佽浆灏忓啓骞跺帇缂╁浣欑┖鐧斤紱绌烘煡璇㈣繑鍥炵┖缁撴灉鎴栧師鍒楄〃鐘舵€佺敱璋冪敤鏂规槑纭帶鍒躲€?  - 楠屾敹瑕佺偣锛氱粨鏋滄寜鍛戒腑浼樺厛绾у拰鏇存柊鏃堕棿鎺掑簭锛屾爣棰樻垨 key 鍛戒腑浼樺厛浜庢鏂囥€佹棩蹇楀拰闄勫睘瀛楁鍛戒腑銆?  - 楠屾敹瑕佺偣锛氬伐鍏峰嚱鏁颁繚鎸佺函鍑芥暟瀹炵幇锛屼笉淇敼浼犲叆鐨?`snapshot`銆佸垪琛ㄩ」鎴栭檮浠舵暟鎹紝渚夸簬 memo 鍖栧拰鍥炲綊娴嬭瘯銆?
+- [x] P003: 鎺ュ叆宸ヤ綔鍖烘悳绱㈠叆鍙?<!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/icons.tsx,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氬伐浣滃尯椤堕儴鎴栦富鍐呭鍖哄煙鏂板缁熶竴鎼滅储杈撳叆妗嗭紝鏀寔杈撳叆鍏抽敭瀛椼€佹竻绌哄叧閿瓧鍜屾樉绀哄綋鍓嶅懡涓暟閲忋€?  - 楠屾敹瑕佺偣锛氭悳绱㈠叆鍙ｄ娇鐢ㄧ幇鏈夎瑙夊彉閲忓拰缁熶竴鍥炬爣浣撶郴锛岃仛鐒︽€併€佹偓娴€併€佺鐢ㄦ€佷笌椤圭洰椤垫悳绱㈤鏍间竴鑷淬€?  - 楠屾敹瑕佺偣锛氭悳绱㈠叧閿瓧鍦ㄥ伐浣滃尯 tab 鍒囨崲鏃朵繚鐣欙紝鍦ㄥ垏鎹㈤」鐩垨绂诲紑宸ヤ綔鍖哄悗涓嶆薄鏌撳叾瀹冮」鐩€?  - 楠屾敹瑕佺偣锛氳緭鍏ユ鍏峰鏄庣‘鐨?placeholder銆乣aria-label` 鍜岄敭鐩樺彲鎿嶄綔娓呯┖鎸夐挳锛屼笉渚濊禆榧犳爣鎵嶈兘瀹屾垚鎼滅储銆?
+- [x] P004: 杩囨护鍚勬ā鍧楀垪琛ㄥ睍绀?<!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/IntakePanel.tsx,src/renderer/components/PlanLists.tsx -->
+  - 楠屾敹瑕佺偣锛氶渶姹傚拰鍙嶉妯″潡鍦ㄦ湁鎼滅储鍏抽敭瀛楁椂浠呭睍绀哄綋鍓嶆ā鍧楀懡涓殑璁板綍锛岀┖鏌ヨ鏃朵繚鎸佺幇鏈夊畬鏁村垪琛ㄤ笌缂栬緫銆佸垹闄ゃ€佷腑鏂€佹仮澶嶈涓恒€?  - 楠屾敹瑕佺偣锛氫换鍔′笌璁″垝妯″潡鏀寔杩囨护璁″垝鑽夌銆丳lan 鍜屼换鍔″垪琛紝浠诲姟鍛戒腑涓嶇牬鍧忔墽琛屻€佸仠姝€佽€楁椂銆佷笂涓嬫枃鏍囪瘑鍜岀姸鎬佸睍绀恒€?  - 楠屾敹瑕佺偣锛氫簨浠舵祦妯″潡鏀寔鎸変簨浠剁被鍨嬨€佸睍绀烘枃妗堛€佷换鍔?key銆丳lan id 鍜屽厓淇℃伅妫€绱紝鏍煎紡鍖栧悗鐨勪簨浠跺睍绀轰繚鎸佺幇鏈夎涔夈€?  - 楠屾敹瑕佺偣锛氭瘡涓ā鍧楀湪鏃犲尮閰嶇粨鏋滄椂鏄剧ず鈥滄病鏈夊尮閰嶇粨鏋溾€濈被绌虹姸鎬侊紝鑰屼笉鏄鏄剧ず鈥滄殏鏃犳暟鎹€濋€犳垚璇箟娣锋穯銆?
+- [x] P005: 灞曠ず缁熶竴鎼滅储缁撴灉姒傝 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/SearchResults.tsx,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氭悳绱㈠悗灞曠ず鎸夋潵婧愬垎缁勭殑缁撴灉姒傝锛岃嚦灏戣兘鐪嬪埌闇€姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴佺殑鍛戒腑鏁伴噺銆?  - 楠屾敹瑕佺偣锛氱偣鍑荤粨鏋滈」鑳藉垏鎹㈠埌瀵瑰簲 tab锛屽苟浣跨敤鎴疯兘澶熷湪鐩爣鍒楄〃涓湅鍒板尮閰嶈褰曪紱鏃犳硶绮剧‘婊氬姩鏃朵篃瑕佷繚鎸佺洰鏍?tab 鐨勮繃婊ょ姸鎬併€?  - 楠屾敹瑕佺偣锛氱粨鏋滄憳瑕佷紭鍏堝睍绀哄懡涓殑鏍囬銆佹鏂囩墖娈垫垨鍏抽敭瀛楁锛岄暱鏂囨湰浼氭埅鏂紝涓嶉€犳垚甯冨眬婧㈠嚭銆?  - 楠屾敹瑕佺偣锛氱粨鏋滄瑙堝湪鏃犳煡璇㈡椂闅愯棌鎴栧睍绀鸿交閲忔彁绀猴紝鍦ㄦ棤鍛戒腑鏃舵彁渚涙竻绌烘悳绱㈢殑鏄庢樉鍏ュ彛銆?
+- [x] P006: 琛ュ厖鎼滅储鍥炲綊楠岃瘉 <!-- scope: scripts/smoke-test.js,src/renderer/utils/search.ts,src/renderer/pages/WorkspacePage.tsx,src/renderer/components/IntakePanel.tsx,src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 楠屾敹瑕佺偣锛氳ˉ鍏呰鐩栨悳绱㈠伐鍏风殑浠ｈ〃鎬ф暟鎹牎楠岋紝鍖呮嫭鏍囬鍛戒腑銆佹鏂囧懡涓€佷换鍔?key 鍛戒腑銆佷簨浠跺厓淇℃伅鍛戒腑鍜屾棤缁撴灉鍦烘櫙銆?  - 楠屾敹瑕佺偣锛歚npm run check` 閫氳繃锛岀‘璁?TypeScript銆佷富杩涚▼鑴氭湰銆侀鍔犺浇鑴氭湰鍜岀幇鏈?Node 妫€鏌ユ棤閿欒銆?  - 楠屾敹瑕佺偣锛歚npm run build` 閫氳繃锛岀‘璁ゆ柊澧炴悳绱㈢粍浠躲€佸伐鍏峰嚱鏁板拰鏍峰紡鍙 Vite 姝ｅ父鏋勫缓銆?  - 楠屾敹瑕佺偣锛氭墜鍔ㄦ牳瀵归」鐩〉鍘熸湁鎼滅储銆佸伐浣滃尯鏂板鎼滅储銆乼ab 鍒囨崲銆佷换鍔℃墽琛?鍋滄鎸夐挳鍜岄渶姹?鍙嶉缂栬緫娴佺▼鏃犲洖褰掋€?
+## 鎬讳綋楠屾敹鏍囧噯
+
+- 鎼滅储瑕嗙洊锛氬綋鍓嶉」鐩伐浣滃尯鍐呯殑闇€姹傘€佸弽棣堛€佽鍒掕崏绋裤€丳lan銆佷换鍔″拰浜嬩欢娴佸潎鍙€氳繃缁熶竴鍏抽敭瀛楁绱€?- 椤圭洰闅旂锛氭悳绱㈠彧浣滅敤浜庡綋鍓嶉」鐩揩鐓э紝涓嶈法椤圭洰灞曠ず鏁版嵁锛屼篃涓嶆敼鍙樻暟鎹簱鍐呭鎴栧悗鍙板惊鐜姸鎬併€?- 浜や簰娓呮櫚锛氱敤鎴疯兘鐪嬪埌鎼滅储杈撳叆銆佸懡涓暟閲忋€佸垎缁勭粨鏋溿€佹棤缁撴灉鎻愮ず鍜屾竻绌哄叆鍙ｏ紱绌烘煡璇㈡椂鎵€鏈夊垪琛ㄦ仮澶嶅師濮嬪睍绀恒€?- 鎬ц兘绋冲畾锛氭悳绱㈠湪鍓嶇鍩轰簬鐜版湁蹇収鍜?memo 鍖栬绠楀畬鎴愶紝涓嶆柊澧為珮棰?IPC銆佷笉闃诲浠诲姟鎵ц鏃ュ織鍒锋柊銆?- 鍙闂€у彲鐢細鎼滅储杈撳叆鍜屾竻绌烘搷浣滄敮鎸侀敭鐩樿闂紝鍏抽敭鎸夐挳鍏峰鍙鏍囩锛岀獎灞忓竷灞€涓嶆孩鍑恒€?- 娴佺▼鏃犲洖褰掞細椤圭洰绠＄悊銆侀渶姹?鍙嶉鎻愪氦涓庣紪杈戙€丳lan 鑽夌纭銆佷换鍔℃墽琛?鍋滄銆佷簨浠舵祦灞曠ず鍜岀幇鏈夐」鐩〉鎼滅储淇濇寔鍘熸湁琛屼负銆?- 楠岃瘉閫氳繃锛氬畬鎴愬疄鐜板悗 `npm run check` 涓?`npm run build` 鍧囬€氳繃锛屽繀瑕佺殑鎼滅储宸ュ叿鍥炲綊鏍￠獙閫氳繃銆?
+## 杩涘害鍖?
+- 2026-06-25 AutoPlan 鐢熸垚锛氶渶姹?#8 寮€鍙戣鍒掑凡鍒涘缓锛屽緟鎵ц銆?- P001 AutoPlan 瀹屾垚锛?026-06-24T19:55:45.350Z锛涙棩蹇楋細docs/progress/logs/20260625-035016_execute-P001.log
+- P003 AutoPlan 瀹屾垚锛?026-06-24T19:55:45.363Z锛涙棩蹇楋細docs/progress/logs/20260625-035016_execute-P003.log
+- P002 AutoPlan 瀹屾垚锛?026-06-24T21:50:34.040Z锛涙棩蹇楋細docs/progress/logs/20260625-054135_execute-P002.log
+- P004 AutoPlan 瀹屾垚锛?026-06-24T21:50:34.053Z锛涙棩蹇楋細docs/progress/logs/20260625-054135_execute-P004.log
+- P005 AutoPlan 瀹屾垚锛?026-06-24T21:59:11.338Z锛涙棩蹇楋細docs/progress/logs/20260625-055036_execute-P005.log
+- P006 AutoPlan 瀹屾垚锛?026-06-24T22:05:20.639Z锛涙棩蹇楋細docs/progress/logs/20260625-055911_execute-P006.log
+
+**Looking into encoding issues**
+
+I'm noticing a potential encoding issue that's possibly related to PowerShell defaults. I think I need to create a UTF-8 encoding specifically. It might also help if I inspect the filenames relevant to the release scripts and the package README. I really want to understand the scopes involved here. Maybe using rg scripts will provide more clarity in this process! I'll make sure to double-check everything.
+codex
+现有文件有编码显示问题，但结构清楚；我会确认发布脚本和 README 路径后写入 UTF-8 文档。
+exec
+powershell.exe -Command 'rg --files | rg "(''^scripts/|README|release|package'"\\.json|docs/)\"" in D:\project\GitHub\autoplan
+ succeeded in 240ms:
+ui\README.md
+README.md
+package.json
+docs\release.md
+scripts\verify-release-artifacts.js
+scripts\release.py
+
+**Generating a plan file**
+
+I'm focusing on creating a plan file. To do that, I might need to look into the package scripts, particularly the release.py file, to determine the exact documentation needed. It’s essential to get this right, as clear documentation will help clarify my objectives. I hope to ensure everything is properly scoped out—let's see how this goes! I'll dive into the scripts and see what I can find.
+codex
+范围已确认；现在生成仅包含开发计划、验收标准和进度区的新文档。
+exec
+powershell.exe -Command "Get-Content package.json -Raw | Select-String -Pattern 'release|build|check' -Context 0,2; Get-Content scripts\\release.py -TotalCount 80; Get-Content docs\\release.md -TotalCount 80" in D:\project\GitHub\autoplan
+ succeeded in 205ms:
+
+> {
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "verify:release-artifacts": "node scripts/verify-release-artifacts.js",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.
+js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check 
+src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths",
+    "check:lengths": "node scripts/check-file-lengths.js",
+    "mcp:http": "node src/mcpServer.js --http",
+    "mcp:stdio": "node src/mcpServer.js --stdio",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "afterSign": "scripts/notarize-mac.js",
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+#!/usr/bin/env python3
+"""Create and push a release tag for the GitHub Actions release workflow."""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+TAG_PREFIX = "v"
+
+
+class ReleaseError(RuntimeError):
+    """A user-facing release preflight error."""
+
+
+def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            check=False,
+            capture_output=capture,
+            text=True,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise ReleaseError("鏈壘鍒?Git锛岃鍏堝畨瑁?Git 骞剁‘璁?git 鍛戒护宸插姞鍏?PATH銆?) from exc
+
+
+def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        if detail:
+            raise ReleaseError(f"{message}\n{detail}")
+        raise ReleaseError(message)
+
+
+def ensure_git_available() -> None:
+    if shutil.which("git") is None:
+        raise ReleaseError("鏈壘鍒?Git锛岃鍏堝畨瑁?Git 骞剁‘璁?git 鍛戒护宸插姞鍏?PATH銆?)
+
+
+def ensure_gh_hint() -> None:
+    if shutil.which("gh") is None:
+        print(
+            "鎻愮ず锛氭湭妫€娴嬪埌 GitHub CLI锛坓h锛夈€倀ag 鎺ㄩ€佷粛鍙Е鍙?Actions锛涘闇€鏈湴纭鐧诲綍鐘舵€侊紝璇峰畨瑁呭苟杩愯 gh auth login銆?,
+            file=sys.stderr,
+        )
+
+
+def validate_tag(tag: str) -> None:
+    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
+        raise ReleaseError("tag 蹇呴』浠?v 寮€澶达紝渚嬪 v0.2.0銆?)
+    if any(char.isspace() for char in tag):
+        raise ReleaseError("tag 涓嶈兘鍖呭惈绌虹櫧瀛楃銆?)
+    invalid_chars = set("~^:?*[\\")
+    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
+        raise ReleaseError("tag 鍖呭惈 Git 涓嶆敮鎸佺殑瀛楃锛岃浣跨敤绫讳技 v0.2.0 鐨勬牸寮忋€?)
+    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
+    require_success(result, "tag 鏍煎紡涓嶇鍚?Git ref 瑙勮寖銆?)
+
+
+def ensure_repository() -> None:
+    result = run_git(["rev-parse", "--is-inside-work-tree"])
+    require_success(result, "褰撳墠鐩綍涓嶆槸 Git 浠撳簱锛岃鍦ㄩ」鐩牴鐩綍杩愯銆?)
+    if result.stdout.strip() != "true":
+        raise ReleaseError("褰撳墠鐩綍涓嶆槸 Git 宸ヤ綔鍖猴紝璇峰湪椤圭洰鏍圭洰褰曡繍琛屻€?)
+
+
+def ensure_clean_worktree() -> None:
+    result = run_git(["status", "--porcelain"])
+    require_success(result, "鏃犳硶璇诲彇 Git 宸ヤ綔鍖虹姸鎬併€?)
+    if result.stdout.strip():
+        raise ReleaseError("宸ヤ綔鍖哄瓨鍦ㄦ湭鎻愪氦鎴栨湭璺熻釜鏂囦欢锛岃鍏堟彁浜ゃ€佹殏瀛樻垨娓呯悊鍚庡啀鍙戝竷銆?)
+
+
+# 发布说明
+
+AutoPlan 使用 GitHub Actions + electron-builder 发布桌面端安装包。当前发布流程覆盖 Windows、macOS、Linux 三个平台，支持推送 tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+## 发布前检查
+
+发布前请确认：
+
+- 依赖已安装且项目能够在本地正常开发运行。
+- `package.json` 中的 `version` 已更新为目标版本。
+- Git 工作区干净，没有未提交或未跟踪文件。
+- 当前仓库已配置可推送的远端，默认远端名为 `origin`。
+- GitHub 仓库的 Actions 权限允许 workflow 读写 `contents`，以便内置 `GITHUB_TOKEN` 创建或更新 Release。
+- tag 使用 `v` 前缀，例如 `v0.2.0`。
+
+## GitHub Actions 触发方式
+
+Release workflow 位于 `.github/workflows/release.yml`，触发方式如下：
+
+- 推送匹配 `v*` 的 tag 时自动触发，例如 `git push origin v0.2.0`。
+- 在 GitHub Actions 页面手动运行 `Release` workflow，并填写 `tag`。
+- 手动触发时可填写 `release_notes`；为空时 workflow 会读取 tag message 或使用兜底说明。
+
+workflow 会在三个 runner 上分别构建：
+
+| 平台 | Runner | 打包命令 | 主要产物 |
+| --- | --- | --- | --- |
+| Windows | `windows-latest` | `npm run package:win` | NSIS 安装包 |
+| macOS | `macos-latest` | `npm run package:mac` | DMG、ZIP |
+| Linux | `ubuntu-latest` | `npm run package:linux` | AppImage、DEB |
+
+每个平台的构建结果会先上传为 workflow artifact，随后发布 job 使用仓库内置 `GITHUB_TOKEN` 创建或更新 GitHub Release，并把三端产物附加到 Release。
+
+## 产物命名与位置
+
+本地和 CI 打包输出目录均为 `release/`。产物命名包含产品名、版本、平台和架构，避免不同平台互相覆盖：
+
+- Windows：`AutoPlan-<version>-win-<arch>-Setup.<ext>`
+- macOS：`AutoPlan-<version>-mac-<arch>.<ext>`
+- Linux：`AutoPlan-<version>-linux-<arch>.<ext>`
+
+GitHub Release 页面会展示最终附件；Actions 页面中也可以查看各平台上传的临时 artifact。
+
+## 本地一键发布脚本
+
+本地发布脚本位于 `scripts/release.py`。脚本只负责编排 tag 创建与推送，不在本地执行三端构建；三端构建由 GitHub Actions 完成。
+
+常用示例：
+
+```bash
+python scripts/release.py --tag v0.2.0 --notes "发布说明"
+python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
+python scripts/release.py --tag v0.2.0 --notes "test release" --dry-run
+python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
+```
+
+脚本会检查以下常见失败场景并给出提示：
+
+- 未安装 Git，或当前目录不是 Git 仓库。
+- 工作区不干净。
+- 指定远端不存在，默认检查 `origin`。
+- tag 格式不符合 Git ref 规范。
+- 本地或远端已存在同名 tag。
+- 推送远端失败。
+- 未检测到 GitHub CLI 时会给出提示；基础 tag 推送不强制依赖 `gh`。
+
+默认情况下，脚本会在真正创建并推送 tag 前要求交互确认。使用 `--dry-run` 只执行检查，不创建本地 tag，也不推送远端；使用 `--yes` 可跳过确认。
+
+## 版本说明传递
+
+版本说明支持两种本地输入方式：
+
+- `--notes`：直接传入短文本。
+- `--notes-file`：从 UTF-8 文本文件读取，适合包含换行、中文、Markdown 列表或链接的长说明。
+
+脚本会把版本说明写入 annotated tag message。tag 推送触发 workflow 后，发布 job 会按以下优先级生成 Release 正文：
+
+1. 手动触发 workflow 时填写的 `release_notes`。
+2. tag 中的 annotated message。
+3. 最近一次提交摘要。
+
+
+
+codex
+我还会快速确认是否已有 release notes 目录，避免计划里引用不存在的路径不清晰。
+exec
+powershell.exe -Command "if (Test-Path docs\\release-notes) { Get-ChildItem docs\\release-notes | Select-Object -First 10 } else { 'NO_RELEASE_NOTES_DIR' }; Get-Content README.md -TotalCount 80" in D:\project\GitHub\autoplan
+ succeeded in 160ms:
+NO_RELEASE_NOTES_DIR
+# AutoPlan
+
+Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+
+## 需求与反馈附件
+
+需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
+
+- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
+- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
+- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
+- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
+- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
+
+## CLI 后端
+
+AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**与**单条需求/反馈级**选择后端，不同项目和不同记录可使用不同 CLI：
+
+| 后端 | 默认命令 | 说明 |
+| --- | --- | --- |
+| **Codex CLI**（默认） | `codex` | 通过 `codex exec` 非交互执行，支持会话（session）复用，失败任务重试时延续上下文 |
+| **Claude CLI** | `claude` | 通过 `claude -p` 非交互 print 模式执行，prompt 经 stdin 传入，不使用 Codex 会话机制 |
+
+- **默认仍是 Codex**：未配置过的历史项目升级后继续使用 Codex，无需重新配置。
+- **项目级切换**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+- **单条配置优先**：需求输入框和反馈输入框下方都可单独选择 CLI 后端、命令路径和 Codex 思考深度。单条记录已配置时，计划生成、任务执行、失败修复和验收重试优先使用该记录生成计划时的配置；未配置时继承项目级默认配置。
+- **Codex 思考深度**：Codex 支持 `low`、`medium`、`high` 三档思考深度，默认 `medium`，执行时转换为 Codex CLI 的 `model_reasoning_effort` 配置；Claude 不使用该参数，选择 Claude 时思考深度不会参与提交或执行。
+- **计划级 CLI 快照**：每个计划会保存生成该计划时实际解析出的 CLI 后端、命令路径和 Codex 思考深度，用于计划列表与 Plan 全文阅读器展示；后续切换项目默认配置不会改变历史计划显示。
+- **历史计划兼容**：早期计划缺少计划级 CLI 字段时，展示按 Codex CLI + `medium` 思考深度降级；Claude 计划只显示 Claude CLI，不展示可误解的 Codex 思考深度。
+- **验收命令默认空**：新建项目不会预填验收命令；留空时任务完成后跳过外部验收命令，已保存的历史命令保持不变。
+- **Claude 前置条件**：需在本机已安装 `claude` CLI 并完成认证（`claude` 已可正常登录调用）。若命令不在 PATH，可在「CLI 命令路径」填写完整路径。
+- **会话隔离**：Codex 的会话复用仅在 Codex 后端启用；切换到 Claude 不会把历史 `codex_session_id` 传给 Claude，两类上下文物理隔离。
+- **可观测性**：运行中日志、事件流、任务卡片和概览会显示当前使用的 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+
+### 回归验证场景
+
+`npm run smoke` 使用 stub 覆盖反馈 #10 的关键路径，不依赖真实 `claude` 二进制：
+
+- 空验收命令保持为空字符串，并在计划完成后跳过外部验收命令。
+- 项目默认 Codex 时，单条需求可覆盖为 Codex + `high` 思考深度，生成计划时携带 `model_reasoning_effort="high"`。
+- 同一项目内单条反馈可覆盖为 Claude，生成计划时使用 `claude --print`，且不携带 Codex session 或思考深度参数。
+- 计划生成后快照会记录本次实际使用的后端与命令；Codex 计划记录规范化后的思考深度，Claude 计划不写入 Codex 思考深度；历史空字段按 Codex + `medium` 展示。
+
+手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+
+## MCP 外部接入
+
+AutoPlan 内置本机 MCP 服务，方便其它 MCP 客户端在不打开 GUI 表单的情况下创建项目、提交需求和提交反馈。桌面应用启动并完成数据库初始化后会启动 MCP 服务；启动失败不会影响 GUI，错误会进入事件流并显示在「设置 → MCP 外部接入」卡片。
+
+### 默认连接方式
+
+| 项 | 默认值 | 说明 |
+| --- | --- | --- |
+| 传输方式 | `http` | 使用 Streamable HTTP MCP 端点 |
+| 地址 | `127.0.0.1` | 默认仅绑定本机，不暴露公网 |
+| 端口 | `43847` | 连接地址为 `http://127.0.0.1:43847/mcp` |
+| stdio | `npm run mcp:stdio` | 供需要 stdio 的 MCP 客户端按进程方式启动 |
+
+可通过环境变量覆盖默认值：`AUTOPLAN_MCP_ENABLED=0` 禁用服务，`AUTOPLAN_MCP_TRANSPORT=stdio|http` 切换传输方式，`AUTOPLAN_MCP_HOST`、`AUTOPLAN_MCP_PORT`、`AUTOPLAN_MCP_PATH` 调整 HTTP 监听。HTTP 默认只允许本机地址；若显式绑定非本机地址，需同时设置 `AUTOPLAN_MCP_ALLOW_REMOTE=1`，并自行承担网络访问控制。
+
+### 工具清单与示例
+
+MCP 工具返回 `content[0].text` 中的 JSON 字符串，并在支持的客户端中提供 `structuredContent`。返回字段包含目标 `projectId`、可选 `requirementId` / `feedbackId`，以及最新 `snapshot` 摘要（当前项目、运行状态和记录数量）。
+
+#### `create_project`
+
+```json
+{
+  "name": "My App",
+  "workspacePath": "D:/project/my-app",
+  "description": "外部 MCP 创建的项目",
+  "agentCliProvider": "codex",
+  "agentCliCommand": "",
+  "codexReasoningEffort": "high"
+}
+```
+
+#### `create_requirement`
+
+```json
+
+codex
+计划内容已成型；现在写入目标 Markdown 文件，不触碰业务代码。
+exec
+powershell.exe -Command "@'
+# 反馈 #20 开发计划：发布 beta 版本并补充说明
+
+## 背景
+
+近期 AutoPlan 已完成多轮功能更新，需要通过 "'`scripts/release.py` 发布一个 beta 版本，利用现有 GitHub Actions 发布流程生成安装包。该 beta 版本定位为快速分发版本：不做完整人工测试，AI 完成问题修复后，只要编译通过即可发布，以缩短测试与发布周期。
+
+本次计划重点不是新增业务能力，而是规范 beta 版本发布文案、Release notes 与发布操作，确保下载用户明确知道：beta 是未充分测试版本，如下载测试或使用中发现问题，可直接在 GitHub Issue 界面反馈；后续软件/AI 流程会从 Issue 中发现问题并继续修复。
+
+## 任务列表
+
+- [ ] P001: 确认 beta 版本号与发布参数 <!-- scope: package.json,scripts/release.py -->
+  - 验收要点：确认目标 beta 版本号采用可识别的预发布格式，例如 `0.2.1-beta.1`，Git tag 对应为 `v0.2.1-beta.1`。
+  - 验收要点：`package.json` 中 `version` 与计划发布的 tag 保持一致，避免 Release 产物版本号和 Git tag 不一致。
+  - 验收要点：确认 `scripts/release.py` 已支持通过 `--tag` 和 `--notes-file` 或 `--notes` 传入 beta 发布说明并推送 tag。
+  - 验收要点：如发布脚本已有能力，不为 beta 发布新增重复脚本；仅在参数、提示或文档存在缺口时补充最小变更。
+
+- [ ] P002: 补充 README beta 版本说明 <!-- scope: README.md -->
+  - 验收要点：README 新增或更新 beta 版本说明，明确 beta 是未完整测试版本，不等同于稳定正式版。
+  - 验收要点：README 说明 beta 发布策略为 AI 解决问题后编译通过即可发布，用于减少人工测试和等待时间。
+  - 验收要点：README 明确下载测试或使用中发现问题时，用户可直接到 GitHub Issue 界面提交反馈。
+  - 验收要点：README 说明后续软件/AI 流程会持续从 Issue 中发现问题、生成修复计划并处理，不承诺 beta 版本零缺陷。
+
+- [ ] P003: 准备 beta Release notes <!-- scope: docs/release-notes,docs/release.md -->
+  - 验收要点：新增本次 beta 版本 Release notes 文件，文件名与 tag 对齐，例如 `docs/release-notes/v0.2.1-beta.1.md`。
+  - 验收要点：Release notes 开头明确标注“Beta 未测试版本”或等价说明，避免用户误认为是稳定版本。
+  - 验收要点：Release notes 包含近期更新摘要、beta 风险提示、Issue 反馈入口说明和“编译通过即发布”的发布策略说明。
+  - 验收要点：`docs/release.md` 的发布说明补充 beta 发布流程，推荐使用 `--notes-file` 传入 beta Release notes。
+
+- [ ] P004: 使用 release 脚本推送 beta tag <!-- scope: scripts/release.py,git tags,GitHub Release -->
+  - 验收要点：在工作区干净、版本号与 Release notes 准备完成后，通过 `python scripts/release.py --tag <beta-tag> --notes-file docs/release-notes/<beta-tag>.md --yes` 推送 beta tag。
+  - 验收要点：脚本执行前不绕过既有发布前置检查，包括 Git 仓库检查、工作区状态检查、tag 格式检查、本地和远端同名 tag 检查。
+  - 验收要点：推送后 GitHub Actions Release workflow 被 tag 触发，且 Release 正文使用 beta Release notes 内容。
+  - 验收要点：若脚本或远端推送失败，保留错误信息并停止发布，不手工创建不一致的 tag 或 Release。
+
+- [ ] P005: 完整验收 <!-- scope: validation -->
+  - 验收要点：最终验收命令为 `npm run build`，通过标准为 TypeScript 与 Vite 构建均成功，无阻断发布的编译错误。
+  - 验收要点：确认 README 与 Release notes 均包含 beta 未测试、AI 修复、编译通过即发布、Issue 反馈和后续自动发现修复问题的描述。
+  - 验收要点：确认 `package.json` 版本号、Git tag、Release notes 文件名和 GitHub Release 标题/正文中的 beta 版本一致。
+  - 验收要点：确认 GitHub Actions 三端构建任务已启动；若任一平台构建失败，则该 beta 发布不得标记为可下载完成状态。
+  - 验收要点：确认 GitHub Release 附件可见后，在 Release 正文保留 beta 风险提示与 Issue 反馈入口。
+
+## 总体验收标准
+
+- 文档范围：`README.md` 必须面向普通下载用户说明 beta 版本风险、发布节奏和 Issue 反馈方式；`docs/release.md` 必须面向维护者说明 beta 发布流程；本次 `docs/release-notes/<beta-tag>.md` 必须可直接作为 GitHub Release 正文。
+- 发布范围：本次仅发布 beta 版本，不扩大为稳定正式版；版本号、tag、Release notes 和构建产物版本必须一致。
+- 发布策略：beta 版本允许不做完整人工测试，但必须完成编译验收；AI 修复问题后，只要 `npm run build` 通过即可使用 release 脚本发布。
+- 最终验收命令：`npm run build`。
+- 发布命令：`python scripts/release.py --tag <beta-tag> --notes-file docs/release-notes/<beta-tag>.md --yes`，其中 `<beta-tag>` 必须替换为实际 beta tag，例如 `v0.2.1-beta.1`。
+- 通过标准：构建命令返回 0；release 脚本成功推送 tag；GitHub Actions Release workflow 被触发；GitHub Release 正文包含 beta 风险提示；下载测试问题可通过 Issue 入口提交。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：反馈 #20 开发计划已创建，待执行。
+'"'@ | Set-Content -Path 'docs\\plan\\plan_feedback_20_20260627-183133.md' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 164ms:
+**Verifying file existence**
+
+I need to check if a specific file exists; maybe I should not run any tests until I confirm that. I think I can use the command Get-Content with the UTF8 encoding to verify the content effectively. It’s important to make sure everything is ready before proceeding, so I'll take this step first to avoid any potential issues down the road! Let's ensure that the file is there and has the expected content.
+codex
+文件已写入；我会快速校验任务格式和关键段落是否齐全。
+exec
+powershell.exe -Command '$path='"'docs\\plan\\plan_feedback_20_20260627-183133.md'; Get-Item "'$path | Select-Object FullName,Length; Select-String -Path $path -Pattern '"'"'^- '"\\[ \\] P\\d{3}: .*<"'!-- scope: .+ -->$'"','## 总体验收标准','## 进度区' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 196ms:
+
+FullName                                                                 Length
+--------                                                                 ------
+D:\project\GitHub\autoplan\docs\plan\plan_feedback_20_20260627-183133.md   5466
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+                                                                               
+
+
+
+codex
+基础写入成功；刚才匹配输出不直观，我再用 `rg` 做一次格式核对。
+exec
+powershell.exe -Command 'rg -n "''^- '"\\[ \\] P[0-9]{3}:|"'^## 总体验收标准|''^## 进度区|最终验收命令" docs'"\\plan\\plan_feedback_20_20260627-183133.md" in D:\project\GitHub\autoplan
+ succeeded in 143ms:
+11:- [ ] P001: 确认 beta 版本号与发布参数 <!-- scope: package.json,scripts/release.py -->
+17:- [ ] P002: 补充 README beta 版本说明 <!-- scope: README.md -->
+23:- [ ] P003: 准备 beta Release notes <!-- scope: docs/release-notes,docs/release.md -->
+29:- [ ] P004: 使用 release 脚本推送 beta tag <!-- scope: scripts/release.py,git tags,GitHub Release -->
+35:- [ ] P005: 完整验收 <!-- scope: validation -->
+36:  - 验收要点：最终验收命令为 `npm run build`，通过标准为 TypeScript 与 Vite 构建均成功，无阻断发布的编译错误。
+42:## 总体验收标准
+47:- 最终验收命令：`npm run build`。
+51:## 进度区
+
+**Finalizing file references**
+
+I need to keep my final output concise. I should mention the file only and probably avoid detailing the tests that were run. It's essential to ensure each file reference is clear and includes the line number. I want to make sure I stay within ten lines for the final version, so I’m focusing on keeping it straightforward and efficient. Clarity is key, but I also have to be mindful of the length!
+codex
+已生成指定计划文件，未修改业务代码。
+
+- 文件：`docs/plan/plan_feedback_20_20260627-183133.md:1`
+- 已包含：任务列表、每项验收要点、最后的 `完整验收` 节点、总体验收标准、进度区
+- 已核对：任务格式包含必填 `scope`，最终验收任务位于任务列表最后，scope 为 `validation`
+- 未运行构建或测试，因为本次只要求写 plan 文件
+tokens used
+38,244
+已生成指定计划文件，未修改业务代码。
+
+- 文件：`docs/plan/plan_feedback_20_20260627-183133.md:1`
+- 已包含：任务列表、每项验收要点、最后的 `完整验收` 节点、总体验收标准、进度区
+- 已核对：任务格式包含必填 `scope`，最终验收任务位于任务列表最后，scope 为 `validation`
+- 未运行构建或测试，因为本次只要求写 plan 文件

@@ -1,0 +1,4459 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0787-c56a-7321-b5bf-b9effedf1460
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_15_20260627-132045.md
+指定任务：
+- [ ] P004: 在全文阅读器展示解析结果 <!-- scope: src/main.js,src/preload.js,src/renderer/components/PlanLists.tsx,src/renderer/types.ts -->
+任务 scope：src/main.js, src/preload.js, src/renderer/components/planlists.tsx, src/renderer/types.ts
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Examining project requirements**
+
+I’m looking at what we need for the project. We need to focus on P004, specifically the `main.js` and `preload.js`, and we need to consider `PlanLists` types. I don't think we need `loopService`. I need to implement the `plans:read` function, which should return the Plan Markdown along with a list of tasks, showing total completed and parse status. I should check the `preload` file for the existing `readPlan` function, and ensure types are updated. Also, I’ll need to inspect the current files and see if anything has changed.
+codex
+我会沿用前序定位结果，只查看 P004 scope 文件的读取与展示链路。
+  → 确认 read 返回结构
+  • 扩展 plans:read 数据
+  • 补充前端类型
+  • 展示解析摘要
+  • 静态复查范围
+codex
+先读取 `plans:read`、preload 暴露、类型和阅读器 JSX 的最小上下文。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\main.js 323 505; Write-Output '--- preload'; Show src\\preload.js 1 80; Write-Output '--- types'; Show src\\renderer\\types.ts 208 315; Write-Output '--- planlists helpers'; Show src\\renderer\\components\\PlanLists.tsx 360 460; Write-Output '--- planlists reader'; Show src\\renderer\\components\\PlanLists.tsx 690 745" in D:\project\GitHub\autoplan
+ succeeded in 542ms:
+  323: }
+  324: 
+  325: function registerFileProtocol() {
+  326:   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+  327:   fileProtocolRegistered = true;
+  328:   protocol.handle('autoplan-file', async (request) => {
+  329:     try {
+  330:       const filePath = decodeAttachmentFileUrl(request.url);
+  331:       const root = attachmentsRoot();
+  332:       if (!isInsidePath(root, filePath)) return new Response('Forbidden', { status: 403 });
+  333:       const stat = await fs.promises.stat(filePath);
+  334:       if (!stat.isFile()) return new Response('Not found', { status: 404 });
+  335:       return net.fetch(pathToFileURL(filePath).toString());
+  336:     } catch {
+  337:       return new Response('Not found', { status: 404 });
+  338:     }
+  339:   });
+  340: }
+  341: 
+  342: function decodeAttachmentFileUrl(url) {
+  343:   const parsed = new URL(url);
+  344:   if (parsed.hostname !== 'attachment') throw new Error('Invalid attachment URL');
+  345:   return decodeURIComponent(parsed.pathname.slice(1));
+  346: }
+  347: 
+  348: function loadRenderer(window) {
+  349:   const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  350:   if (devServerUrl) return window.loadURL(devServerUrl);
+  351: 
+  352:   const builtIndex = path.join(__dirname, '..', 'dist', 'index.html');
+  353:   if (!fs.existsSync(builtIndex)) {
+  354:     throw new Error('Renderer build not found. Run npm run dev or npm run build first.');
+  355:   }
+  356:   return window.loadFile(builtIndex);
+  357: }
+  358: 
+  359: function requiredProjectId(input = {}) {
+  360:   const projectId = Number(input.projectId || input.id || 0);
+  361:   if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
+  362:   return projectId;
+  363: }
+  364: 
+  365: async function readPlan(input = {}) {
+  366:   const projectId = Number(input.projectId || 0);
+  367:   const planId = Number(input.planId || input.id || 0);
+  368:   if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
+  369:   if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
+  370: 
+  371:   const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
+  372:   if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
+  373: 
+  374:   const plan = db.get(
+  375:     'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
+  376:     [planId, projectId],
+  377:   );
+  378:   if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
+  379:   if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
+  380:   if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
+  381: 
+  382:   try {
+  383:     const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
+  384:     const markdown = await fs.promises.readFile(planPath, 'utf8');
+  385:     return planReadResult(plan, markdown, null);
+  386:   } catch (error) {
+  387:     return planReadResult(plan, '', planReadErrorMessage(error));
+  388:   }
+  389: }
+  390: 
+  391: async function openWorkspaceFile(input = {}) {
+  392:   const projectId = Number(input.projectId || 0);
+  393:   const relativePath = String(input.filePath || input.path || '').trim();
+  394:   if (!projectId) return openFileResult(false, '项目不存在');
+  395:   if (!relativePath) return openFileResult(false, '文件路径为空');
+  396: 
+  397:   const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
+  398:   if (!project) return openFileResult(false, '项目不存在');
+  399:   if (!String(project.workspace_path || '').trim()) return openFileResult(false, '项目工作区路径为空');
+  400: 
+  401:   try {
+  402:     const filePath = await resolveWorkspaceFilePath(project.workspace_path, relativePath);
+  403:     const mode = normalizeOpenFileMode(input.mode || readSetting('scopeFileOpenMode') || 'system');
+  404:     const command = String(input.command || readSetting('scopeFileOpenCommand') || '').trim();
+  405:     await openResolvedFilePath(filePath, mode, command);
+  406:     return openFileResult(true, '', { filePath, mode });
+  407:   } catch (error) {
+  408:     return openFileResult(false, openFileErrorMessage(error));
+  409:   }
+  410: }
+  411: 
+  412: async function resolveWorkspaceFilePath(workspacePath, filePath) {
+  413:   const workspaceRoot = path.resolve(workspacePath);
+  414:   const requestedPath = path.resolve(workspaceRoot, filePath);
+  415:   if (!isInsidePath(workspaceRoot, requestedPath)) {
+  416:     throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+  417:   }
+  418: 
+  419:   let workspaceRealPath;
+  420:   try {
+  421:     workspaceRealPath = await fs.promises.realpath(workspaceRoot);
+  422:   } catch {
+  423:     throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+  424:   }
+  425: 
+  426:   let fileRealPath;
+  427:   try {
+  428:     fileRealPath = await fs.promises.realpath(requestedPath);
+  429:   } catch (error) {
+  430:     if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+  431:       throw planReadError('FILE_NOT_FOUND', '文件不存在');
+  432:     }
+  433:     throw error;
+  434:   }
+  435:   if (!isInsidePath(workspaceRealPath, fileRealPath)) {
+  436:     throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+  437:   }
+  438:   const stat = await fs.promises.stat(fileRealPath);
+  439:   if (stat.isDirectory()) throw planReadError('FILE_IS_DIRECTORY', '路径指向目录，不能作为文件打开');
+  440:   if (!stat.isFile()) throw planReadError('FILE_NOT_REGULAR', '路径不是普通文件');
+  441:   return fileRealPath;
+  442: }
+  443: 
+  444: async function openResolvedFilePath(filePath, mode, command) {
+  445:   if (mode === 'folder') {
+  446:     shell.showItemInFolder(filePath);
+  447:     return;
+  448:   }
+  449:   if (mode === 'vscode') {
+  450:     await runOpenCommand(command || 'code', [filePath]);
+  451:     return;
+  452:   }
+  453:   if (mode === 'command') {
+  454:     if (!command) throw planReadError('OPEN_COMMAND_MISSING', '第三方编辑器命令未配置');
+  455:     await runOpenCommand(command, [filePath], { template: command.includes('{file}') });
+  456:     return;
+  457:   }
+  458:   const error = await shell.openPath(filePath);
+  459:   if (error) throw planReadError('OPEN_FILE_FAILED', error);
+  460: }
+  461: 
+  462: function runOpenCommand(command, args, options = {}) {
+  463:   return new Promise((resolve, reject) => {
+  464:     const spawnCommand = options.template ? command.replaceAll('{file}', shellQuote(args[0])) : command;
+  465:     const spawnArgs = options.template ? [] : args;
+  466:     const child = spawn(spawnCommand, spawnArgs, { detached: true, stdio: 'ignore', shell: process.platform === 'win32' || options.template });
+  467:     child.once('error', (error) => reject(planReadError('OPEN_COMMAND_FAILED', error?.message || '编辑器命令启动失败')));
+  468:     child.once('spawn', () => {
+  469:       child.unref();
+  470:       resolve();
+  471:     });
+  472:   });
+  473: }
+  474: 
+  475: function shellQuote(value) {
+  476:   return `"${String(value || '').replace(/"/g, '\\"')}"`;
+  477: }
+  478: 
+  479: function normalizeOpenFileMode(value) {
+  480:   const mode = String(value || '').trim().toLowerCase();
+  481:   if (mode === 'folder' || mode === 'vscode' || mode === 'command') return mode;
+  482:   return 'system';
+  483: }
+  484: 
+  485: function readSetting(key) {
+  486:   return db.get('SELECT value FROM settings WHERE key = ?', [key])?.value || '';
+  487: }
+  488: 
+  489: function openFileResult(ok, error, extra = {}) {
+  490:   return { ok, error: error || null, ...extra };
+  491: }
+  492: 
+  493: async function resolvePlanPath(workspacePath, filePath) {
+  494:   const workspaceRoot = path.resolve(workspacePath);
+  495:   const requestedPath = path.resolve(workspaceRoot, filePath);
+  496:   if (!isInsidePath(workspaceRoot, requestedPath)) {
+  497:     throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
+  498:   }
+  499: 
+  500:   let workspaceRealPath;
+  501:   try {
+  502:     workspaceRealPath = await fs.promises.realpath(workspaceRoot);
+  503:   } catch {
+  504:     throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+  505:   }
+--- preload
+    1: const nodeUrl = require('node:url');
+    2: const { contextBridge, ipcRenderer, webUtils } = require('electron');
+    3: 
+    4: function toFileUrl(filePath) {
+    5:   const value = String(filePath || '').trim();
+    6:   if (!value || /^file:\/\//i.test(value)) return value;
+    7:   if (isPersistedAttachmentPath(value)) return `autoplan-file://attachment/${encodeURIComponent(value)}`;
+    8:   if (typeof nodeUrl.pathToFileURL === 'function') {
+    9:     return nodeUrl.pathToFileURL(value).toString();
+   10:   }
+   11:   return fallbackPathToFileUrl(value);
+   12: }
+   13: 
+   14: function isPersistedAttachmentPath(filePath) {
+   15:   return /[\\/]data[\\/]attachments[\\/]/i.test(filePath);
+   16: }
+   17: 
+   18: function fallbackPathToFileUrl(filePath) {
+   19:   const normalized = filePath.replace(/\\/g, '/');
+   20:   if (normalized.startsWith('//')) {
+   21:     const [host, ...segments] = normalized.replace(/^\/+/, '').split('/');
+   22:     return `file://${encodeURIComponent(host)}/${segments.map(encodeURIComponent).join('/')}`;
+   23:   }
+   24: 
+   25:   const pathname = normalized.startsWith('/') ? normalized : `/${normalized}`;
+   26:   const encodedPath = pathname
+   27:     .split('/')
+   28:     .map((segment, index) => (index === 1 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+   29:     .join('/');
+   30:   return `file://${encodedPath}`;
+   31: }
+   32: 
+   33: contextBridge.exposeInMainWorld('autoplan', {
+   34:   mcpToolNames: ['create_project', 'create_requirement', 'create_feedback'],
+   35:   snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+   36:   createProject: (input) => ipcRenderer.invoke('projects:create', input),
+   37:   updateProject: (input) => ipcRenderer.invoke('projects:update', input),
+   38:   deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+   39:   configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+   40:   startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+   41:   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   42:   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+   43:   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+   44:   reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+   45:   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+   46:   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   47:   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+   48:   stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+   49:   createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+   50:   updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
+   51:   deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),
+   52:   createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
+   53:   updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
+   54:   deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
+   55:   interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
+   56:   resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
+   57:   appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+   58:   getDroppedFilePath: (file) => webUtils.getPathForFile(file),
+   59:   toFileUrl,
+   60:   onLoopUpdate: (handler) => {
+   61:     const listener = (_event, snapshot) => handler(snapshot);
+   62:     ipcRenderer.on('loop:update', listener);
+   63:     return () => ipcRenderer.removeListener('loop:update', listener);
+   64:   },
+   65: });
+--- types
+  208:   created_at: string;
+  209:   updated_at: string;
+  210: }
+  211: 
+  212: export interface Attachment {
+  213:   id: number;
+  214:   project_id: number;
+  215:   owner_type: IntakeType;
+  216:   owner_id: number;
+  217:   original_name: string;
+  218:   stored_path: string;
+  219:   mime_type?: string | null;
+  220:   size: number;
+  221:   hash: string;
+  222:   created_at: string;
+  223: }
+  224: 
+  225: export interface Plan {
+  226:   id: number;
+  227:   project_id: number;
+  228:   issue_hash: string;
+  229:   file_path: string;
+  230:   title?: string | null;
+  231:   hash: string;
+  232:   status: PlanStatus;
+  233:   sort_order: number;
+  234:   is_draft: boolean;
+  235:   total_tasks: number;
+  236:   completed_tasks: number;
+  237:   validation_passed: number;
+  238:   agent_cli_provider?: AgentCliProvider | null;
+  239:   agent_cli_command?: string;
+  240:   codex_reasoning_effort?: CodexReasoningEffort | null;
+  241:   concurrency_suggestion: PlanConcurrencySuggestion;
+  242:   created_at: string;
+  243:   updated_at: string;
+  244: }
+  245: 
+  246: export interface PlanScopeFileInfo {
+  247:   path: string;
+  248:   exists: boolean;
+  249:   isDirectory: boolean;
+  250:   canOpen: boolean;
+  251:   isUnknown: boolean;
+  252:   isValidation: boolean;
+  253:   reason: string;
+  254: }
+  255: 
+  256: export interface PlanConcurrencyTask {
+  257:   id: number;
+  258:   task_key: string;
+  259:   title: string;
+  260:   status: string;
+  261:   scopes: string[];
+  262:   reason: string;
+  263: }
+  264: 
+  265: export interface PlanConcurrencyBatch {
+  266:   batch: number;
+  267:   reason: string;
+  268:   tasks: PlanConcurrencyTask[];
+  269: }
+  270: 
+  271: export interface PlanConcurrencySuggestion {
+  272:   hasSafeParallelBatches: boolean;
+  273:   parallelTaskCount: number;
+  274:   batchCount: number;
+  275:   serialTaskCount: number;
+  276:   maxParallelTasks: number;
+  277:   batches: PlanConcurrencyBatch[];
+  278:   serialTasks: PlanConcurrencyTask[];
+  279: }
+  280: 
+  281: export interface ReadPlanResult {
+  282:   ok: boolean;
+  283:   id: number | null;
+  284:   project_id: number | null;
+  285:   file_path: string;
+  286:   markdown: string;
+  287:   hash: string;
+  288:   updated_at: string;
+  289:   error: string | null;
+  290: }
+  291: 
+  292: export interface WorkspacePlanReadState {
+  293:   plan: Plan | null;
+  294:   result: ReadPlanResult | null;
+  295:   loading: boolean;
+  296:   error: string | null;
+  297: }
+  298: 
+  299: export type CodexSessionMode = 'new' | 'resume';
+  300: 
+  301: export type CodexSessionState = CodexSessionMode | 'fallback-new' | string;
+  302: 
+  303: export interface CodexSessionInfo {
+  304:   codexSessionId?: string | null;
+  305:   codexSessionShortId?: string | null;
+  306:   codexSessionMode?: CodexSessionMode | null;
+  307:   codexSessionState?: CodexSessionState | null;
+  308:   codexSessionLabel?: string | null;
+  309:   codexSessionRequestedId?: string | null;
+  310:   codexSessionRequestedShortId?: string | null;
+  311:   codexSessionFallback?: boolean | null;
+  312: }
+  313: 
+  314: export interface PlanTask extends CodexSessionInfo {
+  315:   id: number;
+--- planlists helpers
+--- planlists reader
+
+codex
+输出有截断，我再分别读取主进程返回结构和前端阅读器段落。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Select-String -Path src'"\\main.js -Pattern \"function planReadResult|readPlan\\(\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; Show src'"\\main.js 525 560; Write-Output '--- PlanLists 420-465'; Show src\\renderer\\components\\PlanLists.tsx 420 465; Write-Output '--- PlanLists 690-745'; Show src\\renderer\\components\\PlanLists.tsx 690 745; Write-Output '--- PlanTask'; Show src\\renderer\\types.ts 314 350" in D:\project\GitHub\autoplan
+ succeeded in 502ms:
+66: ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+365: async function readPlan(input = {}) {
+525: function planReadResult(plan, markdown, error) {
+  525: function planReadResult(plan, markdown, error) {
+  526:   return {
+  527:     ok: !error,
+  528:     id: plan?.id ?? null,
+  529:     project_id: plan?.project_id ?? null,
+  530:     file_path: plan?.file_path || '',
+  531:     markdown,
+  532:     hash: plan?.hash || '',
+  533:     updated_at: plan?.updated_at || '',
+  534:     error,
+  535:   };
+  536: }
+  537: 
+  538: function planReadError(code, message) {
+  539:   const error = new Error(message);
+  540:   error.code = code;
+  541:   return error;
+  542: }
+  543: 
+  544: function planReadErrorMessage(error) {
+  545:   if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
+  546:   if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
+  547:   return error?.message || '计划文件读取失败';
+  548: }
+  549: 
+  550: function openFileErrorMessage(error) {
+  551:   if (error?.code === 'EACCES' || error?.code === 'EPERM') return '文件无法打开，请检查权限';
+  552:   return error?.message || '文件打开失败';
+  553: }
+  554: 
+  555: function requireManualAction(input = {}, label = '操作') {
+  556:   if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+  557: }
+  558: 
+  559: function requiredRecordId(input = {}, key = 'id') {
+  560:   const id = Number(input[key] || input.id || 0);
+--- PlanLists 420-465
+--- PlanLists 690-745
+--- PlanTask
+  314: export interface PlanTask extends CodexSessionInfo {
+  315:   id: number;
+  316:   plan_id: number;
+  317:   task_key: string;
+  318:   title: string;
+  319:   raw_line: string;
+  320:   scope: string;
+  321:   scope_files: PlanScopeFileInfo[];
+  322:   status: string;
+  323:   sort_order: number;
+  324:   started_at: string | null;
+  325:   finished_at: string | null;
+  326:   duration_ms: number;
+  327:   run_duration_ms?: number;
+  328:   codex_session_id: string | null;
+  329:   agentCliProvider?: string | null;
+  330:   agentCliCommand?: string | null;
+  331:   codexReasoningEffort?: CodexReasoningEffort | null;
+  332:   updated_at: string;
+  333:   /** JOIN plans 得到 */
+  334:   file_path: string;
+  335:   /** JOIN plans 并读取计划 Markdown 标题得到 */
+  336:   plan_title: string;
+  337: }
+  338: 
+  339: export type PlanTaskAssociationSource = 'plan_id' | 'file_path';
+  340: 
+  341: export interface PlanTaskAssociationTaskRef {
+  342:   plan_id?: number | null;
+  343:   file_path?: string | null;
+  344: }
+  345: 
+  346: export interface PlanTaskAssociationPlanRef {
+  347:   id: number;
+  348:   file_path?: string | null;
+  349: }
+  350: 
+
+**Investigating PlanLists issue**
+
+I'm puzzled about why the PlanLists ranges are blank. I wonder if the file's line count might have changed, which could affect how it selects or counts items. I might need to check the file's current structure and see if any adjustments are necessary. By understanding the line count, I could better address the issue and ensure the ranges display correctly. Let's dig a little deeper into this!
+codex
+PlanLists 行号已变化，我用关键词定位阅读器段落。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx; Write-Output \"lines="'$($lines.Count)"; Select-String -Path src'"\\renderer\\components\\PlanLists.tsx -Pattern \"Plan 全文|planReadResult|readerState|MarkdownReader|plan-reader-summary|plan-reader-content\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}' in D:\project\GitHub\autoplan
+ succeeded in 467ms:
+lines=211
+
+codex
+`PlanLists.tsx` 已被大幅压缩/重构，我读取当前文件以定位展示点。
+exec
+powershell.exe -Command "Get-Content -Raw -Encoding UTF8 src\\renderer\\components\\PlanLists.tsx" in D:\project\GitHub\autoplan
+ succeeded in 432ms:
+import { useMemo, useState, type ComponentProps } from 'react';
+import type { Plan, PlanTask } from '../types';
+import { PlanList as BasePlanList } from './plans/PlanList';
+
+export { TaskList } from './plans/TaskList';
+export { EventList } from './plans/EventList';
+export { formatEvent, getEventSearchText } from '../utils/planEvents';
+export type { EventDisplay } from '../utils/planEvents';
+
+type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+type PlanListProps = ComponentProps<typeof BasePlanList> & {
+  onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+};
+
+const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'running', label: '执行中' },
+  { key: 'completed', label: '已完成' },
+  { key: 'draft', label: '草稿' },
+];
+
+export function PlanList({ plans, emptyText, onReorderPlans, onRunParallel, ...props }: PlanListProps) {
+  const [activeStatus, setActiveStatus] = useState<PlanStatusTab>('all');
+  const [reordering, setReordering] = useState(false);
+  const [draftRunningPlanId, setDraftRunningPlanId] = useState<number | null>(null);
+  const [draftRunError, setDraftRunError] = useState('');
+  const orderedPlans = useMemo(() => [...plans].sort(comparePlanOrder), [plans]);
+  const counts = useMemo(() => planStatusCounts(orderedPlans), [orderedPlans]);
+  const visiblePlans = orderedPlans.filter((plan) => planMatchesStatusTab(plan, activeStatus));
+
+  async function movePlan(plan: Plan, direction: -1 | 1) {
+    if (!onReorderPlans || reordering) return;
+    const fromIndex = orderedPlans.findIndex((item) => item.id === plan.id);
+    const toIndex = fromIndex + direction;
+    const target = orderedPlans[toIndex];
+    if (fromIndex < 0 || !target || !canReorderPlan(plan) || !canReorderPlan(target)) return;
+
+    const nextPlans = [...orderedPlans];
+    nextPlans[fromIndex] = target;
+    nextPlans[toIndex] = plan;
+    setReordering(true);
+    try {
+      await onReorderPlans(nextPlans);
+    } finally {
+      setReordering(false);
+    }
+  }
+
+  async function runDraftPlan(plan: Plan) {
+    setDraftRunError('');
+    if (onRunParallel && plan.concurrency_suggestion?.hasSafeParallelBatches) {
+      onRunParallel({
+        plan,
+        batches: plan.concurrency_suggestion.batches.map((batch) => ({
+          taskIds: batch.tasks.map((task) => task.id),
+        })),
+      });
+      return;
+    }
+
+    const task = firstPendingTaskForPlan(plan, props.tasks || []);
+    if (!task) {
+      setDraftRunError('草稿计划暂无可执行任务');
+      return;
+    }
+
+    setDraftRunningPlanId(plan.id);
+    try {
+      await (window.autoplan as typeof window.autoplan & {
+        runTask: (input: { projectId: number; taskId: number }) => Promise<unknown>;
+      }).runTask({ projectId: plan.project_id, taskId: task.id });
+    } catch (error) {
+      setDraftRunError(error instanceof Error ? error.message : '草稿计划启动失败');
+    } finally {
+      setDraftRunningPlanId(null);
+    }
+  }
+
+  return (
+    <>
+      <div className="task-filter-tabs" role="tablist" aria-label="计划状态筛选">
+        {PLAN_STATUS_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            type="button"
+            className={`task-filter-tab${activeStatus === tab.key ? ' active' : ''}`}
+            onClick={() => setActiveStatus(tab.key)}
+            role="tab"
+            aria-selected={activeStatus === tab.key}
+          >
+            <span>{tab.label}</span>
+            <span className="task-filter-count">{counts[tab.key]}</span>
+          </button>
+        ))}
+      </div>
+
+      {visiblePlans.length ? (
+        <div className="list compact" aria-label="计划执行顺序调整">
+          {draftRunError ? <div className="error-banner">{draftRunError}</div> : null}
+          {visiblePlans.map((plan) => {
+            const currentIndex = orderedPlans.findIndex((item) => item.id === plan.id);
+            const previousPlan = orderedPlans[currentIndex - 1];
+            const nextPlan = orderedPlans[currentIndex + 1];
+            const disabledReason = reorderDisabledReason(plan);
+            const draftRunDisabledReason = isDraftPlan(plan) ? draftPlanRunDisabledReason(plan, props.tasks || []) : '';
+            return (
+              <div key={`order-${plan.id}`} className="task-scope-chip">
+                <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+                <span>{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
+                <small>{disabledReason || '可调整'}</small>
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={reordering || Boolean(disabledReason) || !previousPlan || !canReorderPlan(previousPlan)}
+                  onClick={() => movePlan(plan, -1)}
+                >
+                  上移
+                </button>
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={reordering || Boolean(disabledReason) || !nextPlan || !canReorderPlan(nextPlan)}
+                  onClick={() => movePlan(plan, 1)}
+                >
+                  下移
+                </button>
+                {isDraftPlan(plan) ? (
+                  <button
+                    type="button"
+                    className="btn-link"
+                    disabled={draftRunningPlanId === plan.id || Boolean(draftRunDisabledReason)}
+                    title={draftRunDisabledReason || undefined}
+                    onClick={() => runDraftPlan(plan)}
+                  >
+                    {draftRunningPlanId === plan.id ? '启动中…' : '执行草稿'}
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+
+      <BasePlanList
+        {...props}
+        onRunParallel={onRunParallel}
+        emptyText={activeStatus === 'all' ? emptyText : '当前分类暂无 Plan。'}
+        plans={visiblePlans}
+        totalPlanCount={props.totalPlanCount ?? plans.length}
+      />
+    </>
+  );
+}
+
+function comparePlanOrder(left: Plan, right: Plan) {
+  return (
+    Number(left.sort_order || 0) - Number(right.sort_order || 0) ||
+    String(left.created_at || '').localeCompare(String(right.created_at || '')) ||
+    Number(left.id || 0) - Number(right.id || 0)
+  );
+}
+
+function planStatusCounts(plans: Plan[]): Record<PlanStatusTab, number> {
+  return plans.reduce(
+    (counts, plan) => {
+      counts.all += 1;
+      if (isDraftPlan(plan)) counts.draft += 1;
+      else if (isCompletedPlan(plan)) counts.completed += 1;
+      else counts.running += 1;
+      return counts;
+    },
+    { all: 0, running: 0, completed: 0, draft: 0 },
+  );
+}
+
+function planMatchesStatusTab(plan: Plan, status: PlanStatusTab) {
+  if (status === 'all') return true;
+  if (status === 'draft') return isDraftPlan(plan);
+  if (status === 'completed') return isCompletedPlan(plan);
+  return !isDraftPlan(plan) && !isCompletedPlan(plan);
+}
+
+function isDraftPlan(plan: Plan) {
+  return plan.is_draft || plan.status === 'draft';
+}
+
+function isCompletedPlan(plan: Plan) {
+  return Boolean(plan.validation_passed) || plan.status === 'completed';
+}
+
+function canReorderPlan(plan: Plan) {
+  return !['running', 'completed'].includes(String(plan.status || '')) && !plan.validation_passed;
+}
+
+function reorderDisabledReason(plan: Plan) {
+  if (plan.status === 'running') return '执行中不可移动';
+  if (isCompletedPlan(plan)) return '已完成不可移动';
+  return '';
+}
+
+function draftPlanRunDisabledReason(plan: Plan, tasks: PlanTask[]) {
+  if (!isDraftPlan(plan)) return '';
+  if (plan.concurrency_suggestion?.hasSafeParallelBatches) return '';
+  return firstPendingTaskForPlan(plan, tasks) ? '' : '草稿计划暂无可执行任务';
+}
+
+function firstPendingTaskForPlan(plan: Plan, tasks: PlanTask[]) {
+  return tasks
+    .filter((task) => Number(task.plan_id) === Number(plan.id) && task.status === 'pending')
+    .sort((left, right) => Number(left.sort_order || 0) - Number(right.sort_order || 0) || Number(left.id || 0) - Number(right.id || 0))[0] || null;
+}
+
+
+**Evaluating BasePlanList and PlanLists.tsx**
+
+I’m considering whether BasePlanList is simply imported and re-exported. It's possible that PlanLists.tsx creates a wrapper around BasePlanList to manage props, but it shouldn’t be able to alter internal workings. That said, I wonder if BasePlanList might include render props that could change how it works. I should look into that to gain a clearer understanding of how these components interact!
+codex
+当前 `PlanLists.tsx` 只是包装层，实际阅读器在子组件里；我先读取该组件确认最小必要改动。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\components\\plans\\PlanList.tsx -Pattern \"Plan 全文|planReadResult|readerState|MarkdownReader|plan-reader-summary|plan-reader-content|ReadPlan\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\renderer\\components\\plans\\PlanList.tsx 1 90; Write-Output '---'; Show src\\renderer\\components\\plans\\PlanList.tsx 250 420" in D:\project\GitHub\autoplan
+ succeeded in 533ms:
+5: import { MarkdownReader } from '../MarkdownReader';
+65:   readerState,
+76:   readerState: WorkspacePlanReadState;
+80:   const readingPlan = readerState.plan;
+81:   const planReadResult = readerState.result;
+82:   const planReadError = readerState.error;
+83:   const planReading = readerState.loading;
+84:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+85:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+86:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+89:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+100:       ? '正在读取 Plan 全文。'
+103:         : 'Plan 全文已加载，当前为只读阅读模式。';
+307:                 <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+321:                   aria-label="重新读取 Plan 全文"
+325:                 <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+330:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+331:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+332:                 <div className="plan-reader-summary-item">
+336:                 <div className="plan-reader-summary-item">
+340:                 <div className="plan-reader-summary-item">
+344:                 <div className="plan-reader-summary-item">
+370:                   正在读取 Plan 全文…
+374:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+375:                   <MarkdownReader
+376:                     markdown={planReadResult?.markdown ?? ''}
+    1: import type { KeyboardEvent } from 'react';
+    2: import { useEffect, useId, useRef, useState } from 'react';
+    3: import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+    4: import { RecordCard } from '../IntakePanel';
+    5: import { MarkdownReader } from '../MarkdownReader';
+    6: import { planCliSummaryLabel } from '../shared';
+    7: import { formatChinaDateTime } from '../../utils/time';
+    8: import {
+    9:   formatPlanDurationSummary,
+   10:   planTitle,
+   11:   tasksForPlan,
+   12:   type ParallelRunRequest,
+   13: } from '../../utils/planTasks';
+   14: 
+   15: function hasPlanReaderUpdate(
+   16:   readingPlan: Plan | null,
+   17:   latestPlan: Plan | null | undefined,
+   18:   result: WorkspacePlanReadState['result'],
+   19: ) {
+   20:   if (!readingPlan || !latestPlan) return false;
+   21:   if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+   22: 
+   23:   const readFilePath = result?.file_path || readingPlan.file_path || '';
+   24:   const readHash = result?.hash || readingPlan.hash || '';
+   25:   const readUpdatedAt = result?.updated_at || readingPlan.updated_at || '';
+   26:   return (
+   27:     (latestPlan.file_path || '') !== readFilePath ||
+   28:     (latestPlan.hash || '') !== readHash ||
+   29:     (latestPlan.updated_at || '') !== readUpdatedAt ||
+   30:     (latestPlan.status || '') !== (readingPlan.status || '')
+   31:   );
+   32: }
+   33: 
+   34: const PLAN_READER_FOCUSABLE_SELECTOR = [
+   35:   'a[href]',
+   36:   'button:not([disabled])',
+   37:   'input:not([disabled]):not([type="hidden"])',
+   38:   'select:not([disabled])',
+   39:   'textarea:not([disabled])',
+   40:   '[tabindex]:not([tabindex="-1"])',
+   41: ].join(',');
+   42: 
+   43: function getPlanReaderFocusableElements(container: HTMLElement) {
+   44:   return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+   45:     (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+   46:   );
+   47: }
+   48: 
+   49: function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+   50:   if (hasRunningTask) return '该计划已有任务执行中';
+   51:   if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+   52:   if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+   53:   return '';
+   54: }
+   55: 
+   56: 
+   57: export function PlanList({
+   58:   emptyText = '暂无 plan。',
+   59:   latestReadingPlan,
+   60:   onCloseReader,
+   61:   onOpenReader,
+   62:   onRunParallel,
+   63:   onRefreshReader,
+   64:   plans,
+   65:   readerState,
+   66:   tasks = [],
+   67:   totalPlanCount = plans.length,
+   68: }: {
+   69:   emptyText?: string;
+   70:   latestReadingPlan?: Plan | null;
+   71:   onCloseReader: () => void;
+   72:   onOpenReader: (plan: Plan) => void;
+   73:   onRunParallel?: (request: ParallelRunRequest) => void;
+   74:   onRefreshReader: () => void;
+   75:   plans: Plan[];
+   76:   readerState: WorkspacePlanReadState;
+   77:   tasks?: PlanTask[];
+   78:   totalPlanCount?: number;
+   79: }) {
+   80:   const readingPlan = readerState.plan;
+   81:   const planReadResult = readerState.result;
+   82:   const planReadError = readerState.error;
+   83:   const planReading = readerState.loading;
+   84:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+   85:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+   86:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+   87:   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   88:   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   89:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+   90:   const readerDialogId = useId();
+---
+  250:                         <span>{task.task_key} · {task.title}</span>
+  251:                         <small className="mono">{task.scopes.join(', ')}</small>
+  252:                       </li>
+  253:                     ))}
+  254:                   </ul>
+  255:                 </section>
+  256:               ))}
+  257:               {confirmingPlan.concurrency_suggestion.serialTasks.length ? (
+  258:                 <details className="parallel-serial-reasons">
+  259:                   <summary>查看不建议并发原因</summary>
+  260:                   <ul>
+  261:                     {confirmingPlan.concurrency_suggestion.serialTasks.map((task) => (
+  262:                       <li key={task.id}>{task.task_key}：{task.reason}</li>
+  263:                     ))}
+  264:                   </ul>
+  265:                 </details>
+  266:               ) : null}
+  267:             </div>
+  268:             <div className="modal-foot">
+  269:               <button type="button" className="btn" onClick={() => setConfirmingPlan(null)}>取消</button>
+  270:               <button
+  271:                 type="button"
+  272:                 className="btn btn-primary"
+  273:                 onClick={() => {
+  274:                   const plan = confirmingPlan;
+  275:                   setConfirmingPlan(null);
+  276:                   onRunParallel?.({
+  277:                     plan,
+  278:                     batches: plan.concurrency_suggestion.batches.map((batch) => ({
+  279:                       taskIds: batch.tasks.map((task) => task.id),
+  280:                     })),
+  281:                   });
+  282:                 }}
+  283:               >
+  284:                 确认并发执行
+  285:               </button>
+  286:             </div>
+  287:           </div>
+  288:         </div>
+  289:       ) : null}
+  290: 
+  291:       {readingPlan ? (
+  292:         <div className="modal-mask" onClick={onCloseReader}>
+  293:           <div
+  294:             id={readerDialogId}
+  295:             ref={readerDialogRef}
+  296:             className="modal plan-reader-modal"
+  297:             role="dialog"
+  298:             aria-modal="true"
+  299:             aria-labelledby={readerTitleId}
+  300:             aria-describedby={readerDescriptionId}
+  301:             tabIndex={-1}
+  302:             onClick={(event) => event.stopPropagation()}
+  303:             onKeyDown={handleReaderKeyDown}
+  304:           >
+  305:             <div className="modal-head plan-reader-head">
+  306:               <div className="plan-reader-title">
+  307:                 <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+  308:                 <span className="plan-reader-path mono" title={readerFilePath}>
+  309:                   {readerFilePath || '未记录文件路径'}
+  310:                 </span>
+  311:                 <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+  312:                   {readerStatusText}
+  313:                 </p>
+  314:               </div>
+  315:               <div className="item-actions plan-reader-actions">
+  316:                 <button
+  317:                   type="button"
+  318:                   className="btn-link"
+  319:                   disabled={planReading}
+  320:                   onClick={onRefreshReader}
+  321:                   aria-label="重新读取 Plan 全文"
+  322:                 >
+  323:                   {planReading ? '读取中…' : '刷新'}
+  324:                 </button>
+  325:                 <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+  326:                   ×
+  327:                 </button>
+  328:               </div>
+  329:             </div>
+  330:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+  331:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+  332:                 <div className="plan-reader-summary-item">
+  333:                   <dt>状态</dt>
+  334:                   <dd>{readingPlan.status}</dd>
+  335:                 </div>
+  336:                 <div className="plan-reader-summary-item">
+  337:                   <dt>CLI</dt>
+  338:                   <dd>{readerCliSummary || '-'}</dd>
+  339:                 </div>
+  340:                 <div className="plan-reader-summary-item">
+  341:                   <dt>更新时间</dt>
+  342:                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+  343:                 </div>
+  344:                 <div className="plan-reader-summary-item">
+  345:                   <dt>哈希</dt>
+  346:                   <dd className="mono" title={readerHash}>
+  347:                     {readerHash?.slice(0, 12) || '-'}
+  348:                   </dd>
+  349:                 </div>
+  350:               </dl>
+  351: 
+  352:               {latestPlanUpdated ? (
+  353:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+  354:                   Plan 列表信息已更新，可刷新读取最新正文。
+  355:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+  356:                     刷新读取
+  357:                   </button>
+  358:                 </div>
+  359:               ) : null}
+  360:               {planReadError ? (
+  361:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+  362:                   <span>{planReadError}</span>
+  363:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+  364:                     重试
+  365:                   </button>
+  366:                 </div>
+  367:               ) : null}
+  368:               {planReading ? (
+  369:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+  370:                   正在读取 Plan 全文…
+  371:                 </div>
+  372:               ) : null}
+  373:               {!planReading && !planReadError ? (
+  374:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+  375:                   <MarkdownReader
+  376:                     markdown={planReadResult?.markdown ?? ''}
+  377:                     emptyMessage="暂无计划正文"
+  378:                     ariaLabel="Plan Markdown 正文内容"
+  379:                   />
+  380:                 </section>
+  381:               ) : null}
+  382:             </div>
+  383:           </div>
+  384:         </div>
+  385:       ) : null}
+  386:     </>
+  387:   );
+  388: }
+
+codex
+接下来扩展 `plans:read` 返回任务摘要；preload 已透明转发，可能无需逻辑变更。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\**\\*.ts* -Pattern \"interface Autoplan|readPlan:|autoplan\" | Select-Object -First 80 | ForEach-Object {\""'$($_.Path):$($_.LineNumber): $($_.Line)"}; Get-Content -Raw -Encoding UTF8 src'"\\preload.js" in D:\project\GitHub\autoplan
+ succeeded in 533ms:
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:21: const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:185:     const result = await (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:69:       await (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:5:     return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:15:     return window.autoplan.toFileUrl(path);
+D:\project\GitHub\autoplan\src\renderer\hooks\useSnapshot.ts:19:     const unsubscribe = window.autoplan.onLoopUpdate((next) => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useSnapshot.ts:28:     window.autoplan
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:71:       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:164:     window.localStorage.setItem('autoplan.scopeFileOpenSettings', JSON.stringify(scopeFileOpenSettings));
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:219:         const next = await window.autoplan.createRequirement({
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:244:         const next = await window.autoplan.createFeedback({
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:269:         const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:285:         const next = await window.autoplan.deleteRequirement({ projectId, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:301:         const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:317:         const next = await window.autoplan.deleteFeedback({ projectId, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:332:       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:357:         const next = await window.autoplan.interruptIntake({ projectId, type, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:370:         const next = await window.autoplan.resumeIntake({ projectId, type, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:383:         const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:399:       const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:63:         ? await window.autoplan.updateProject({
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:71:         : await window.autoplan.createProject({
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:89:       const next = await window.autoplan.deleteProject({ projectId: deleting.id });
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:109:             <h1>AutoPlan</h1>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:76:       return (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:136:                     ? window.autoplan.stopLoop({ projectId, manual: true })
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:137:                     : window.autoplan.startLoop({ projectId, manual: true }),
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:230:                         (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:256:                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:257:                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:277:                     ? window.autoplan.stopLoop({ projectId, manual: true })
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:278:                     : window.autoplan.startLoop({ projectId, manual: true }),
+const nodeUrl = require('node:url');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+function toFileUrl(filePath) {
+  const value = String(filePath || '').trim();
+  if (!value || /^file:\/\//i.test(value)) return value;
+  if (isPersistedAttachmentPath(value)) return `autoplan-file://attachment/${encodeURIComponent(value)}`;
+  if (typeof nodeUrl.pathToFileURL === 'function') {
+    return nodeUrl.pathToFileURL(value).toString();
+  }
+  return fallbackPathToFileUrl(value);
+}
+
+function isPersistedAttachmentPath(filePath) {
+  return /[\\/]data[\\/]attachments[\\/]/i.test(filePath);
+}
+
+function fallbackPathToFileUrl(filePath) {
+  const normalized = filePath.replace(/\\/g, '/');
+  if (normalized.startsWith('//')) {
+    const [host, ...segments] = normalized.replace(/^\/+/, '').split('/');
+    return `file://${encodeURIComponent(host)}/${segments.map(encodeURIComponent).join('/')}`;
+  }
+
+  const pathname = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  const encodedPath = pathname
+    .split('/')
+    .map((segment, index) => (index === 1 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+    .join('/');
+  return `file://${encodedPath}`;
+}
+
+contextBridge.exposeInMainWorld('autoplan', {
+  mcpToolNames: ['create_project', 'create_requirement', 'create_feedback'],
+  snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+  createProject: (input) => ipcRenderer.invoke('projects:create', input),
+  updateProject: (input) => ipcRenderer.invoke('projects:update', input),
+  deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+  configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+  startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+  stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+  runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+  openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+  runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+  runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+  stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+  createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+  updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
+  deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),
+  createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
+  updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
+  deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
+  interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
+  resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
+  appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+  getDroppedFilePath: (file) => webUtils.getPathForFile(file),
+  toFileUrl,
+  onLoopUpdate: (handler) => {
+    const listener = (_event, snapshot) => handler(snapshot);
+    ipcRenderer.on('loop:update', listener);
+    return () => ipcRenderer.removeListener('loop:update', listener);
+  },
+});
+
+
+**Considering global types**
+
+I need to explore whether I should include global types in `src/renderer/vite-env`. It's not completely clear to me, so I'll take a closer look at the project structure and see if those types are necessary in that context. Understanding how they're used in the project is important for ensuring everything functions correctly. Let’s figure this out! I want to make sure I’m getting it right.
+codex
+我会扩展返回类型与主进程数据；展示层需改实际 reader 组件文件。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\**\\*.d.ts,src\\renderer\\**\\*.ts,src\\renderer\\**\\*.tsx -Pattern \"readPlan\\?:|readPlan:|Window\" | ForEach-Object {\""'$($_.Path):$($_.LineNumber): $($_.Line)"}; Get-ChildItem -Path src'"\\renderer -Filter *.d.ts -Recurse | ForEach-Object {"'$_.FullName}' in D:\project\GitHub\autoplan
+ succeeded in 487ms:
+D:\project\GitHub\autoplan\src\renderer\hooks\useSnapshot.ts:19:     const unsubscribe = window.autoplan.onLoopUpdate((next) => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useSnapshot.ts:28:     window.autoplan
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:71:       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:112:     window.alert(msg);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:164:     window.localStorage.setItem('autoplan.scopeFileOpenSettings', JSON.stringify(scopeFileOpenSettings));
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:219:         const next = await window.autoplan.createRequirement({
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:244:         const next = await window.autoplan.createFeedback({
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:269:         const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:285:         const next = await window.autoplan.deleteRequirement({ projectId, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:301:         const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:317:         const next = await window.autoplan.deleteFeedback({ projectId, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:332:       const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:357:         const next = await window.autoplan.interruptIntake({ projectId, type, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:370:         const next = await window.autoplan.resumeIntake({ projectId, type, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:383:         const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:399:       const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+D:\project\GitHub\autoplan\src\renderer\components\IntakePanel.tsx:71:     if (!window.confirm(`确定删除${sourceTypeName(type)} #${item.id} 吗？关联任务会被中断。`)) return;
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:165:   const match = window.location.pathname.match(/\/projects\/(\d+)/);
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:171:     const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:185:     const result = await (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:195:     window.alert(error instanceof Error ? error.message : String(error));
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:69:       await (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:5:     return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx:15:     return window.autoplan.toFileUrl(path);
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:35:     window.alert(msg);
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:63:         ? await window.autoplan.updateProject({
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:71:         : await window.autoplan.createProject({
+D:\project\GitHub\autoplan\src\renderer\pages\ProjectsPage.tsx:89:       const next = await window.autoplan.deleteProject({ projectId: deleting.id });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:76:       return (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:136:                     ? window.autoplan.stopLoop({ projectId, manual: true })
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:137:                     : window.autoplan.startLoop({ projectId, manual: true }),
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:230:                         (window.autoplan as typeof window.autoplan & {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:256:                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:257:                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:277:                     ? window.autoplan.stopLoop({ projectId, manual: true })
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:278:                     : window.autoplan.startLoop({ projectId, manual: true }),
+
+**Exploring global declarations**
+
+I'm thinking I might need a global declaration, perhaps in `src/renderer/global.d.ts`. That could help with managing types. I'm wondering if I should list specifics or maybe just define `window.autoplan` type in `src/renderer/types`. It feels like I should check through the entire `src` directory to ensure I’m covering all the bases. Seems like there’s a lot to consider here! I'll need to gather more details before deciding.
+codex
+未找到独立 preload 类型声明，`ReadPlanResult` 是前端主要约束。现在开始补主进程返回字段。
+  ✓ 确认 read 返回结构
+  → 扩展 plans:read 数据
+  • 补充前端类型
+  • 展示解析摘要
+  • 静态复查范围
+**Refining plan reading**
+
+I’m working on patching the main function. I need to add helpers around `planReadResult` and modify `readPlan` to fetch tasks. If there’s an error, `planReadResult` can fetch tasks based on whether the plan ID or project exists. I should also ensure tasks from the database are retrieved even in cases of reading failure to avoid swallowing errors. It’s critical to maintain clarity in task summary data and properly handle status counts and sorting.
+**Developing task section heuristic**
+
+I'm building a heuristic for detecting task sections in markdown. The regex checks for headers indicating task breakdown or planning. If there's an error indicating a read failure, I'll handle that too. If the markdown isn't empty and tasks have been parsed, I either mark it as parsed or handle cases where no tasks are found. The messages will clearly reflect the parsing status, whether tasks are identified, empty, or reading has failed. I need to ensure I return the output in a consistent format.
+codex
+我会让 `planReadResult` 自动附带当前 `plan_tasks` 摘要和解析状态。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\main.js
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+
+codex
+主进程返回字段已补。现在更新前端类型，供阅读器安全使用。
+  ✓ 确认 read 返回结构
+  ✓ 扩展 plans:read 数据
+  → 补充前端类型
+  • 展示解析摘要
+  • 静态复查范围
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\types.ts
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+**Modifying PlanList UI**
+
+I need to adjust the UI in the PlanList to incorporate user-specified scope. I'll import the ReadPlanTask type and add helper functions, like reading tasks from results. In the component, I'll define variables to capture tasks and warnings. 
+
+I want to generate a summary that shows task totals before Markdown content. The goal is to let users verify breakdown results without leaving the reader. I'll use existing classes for styling without touching CSS. Each task will be listed with key details in an organized manner.
+**Adjusting Parse Warnings**
+
+I need to incorporate a parse warning in the plan-reader-error role alert when there are no tasks. If the markdown task section is empty, I’ll show a message indicating that there are no tasks, possibly with a hint. I shouldn't alter the MarkdownReader component directly, but I'll need a patch import and ensure I'm using the actual file. 
+
+Maybe I could modify the wrapper too, but that doesn’t seem necessary right now. I must also ensure that PlanLists import isn't affected by these changes.
+codex
+类型已更新。实际全文阅读器在 `components/plans/PlanList.tsx`，我在该展示点补解析摘要。
+  ✓ 确认 read 返回结构
+  ✓ 扩展 plans:read 数据
+  ✓ 补充前端类型
+  → 展示解析摘要
+  • 静态复查范围
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\plans\PlanList.tsx
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+codex
+展示层已接入。接下来只读复查相关片段和变更范围，不运行验收。
+  ✓ 确认 read 返回结构
+  ✓ 扩展 plans:read 数据
+  ✓ 补充前端类型
+  ✓ 展示解析摘要
+  → 静态复查范围
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+codex
+复查 P004 关键字段、UI 插入点和 git 状态。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\main.js 525 600; Write-Output '--- types'; Show src\\renderer\\types.ts 271 310; Write-Output '--- reader helpers'; Show src\\renderer\\components\\plans\\PlanList.tsx 1 80; Write-Output '--- reader state'; Show src\\renderer\\components\\plans\\PlanList.tsx 80 105; Write-Output '--- reader jsx'; Show src\\renderer\\components\\plans\\PlanList.tsx 330 395; Write-Output '--- status'; git status --short src\\main.js src\\preload.js src\\renderer\\components\\PlanLists.tsx src\\renderer\\components\\plans\\PlanList.tsx src\\renderer\\types.ts docs\\plan\\plan_feedback_15_20260627-132045.md" in D:\project\GitHub\autoplan
+ succeeded in 578ms:
+  525: function planReadResult(plan, markdown, error) {
+  526:   const tasks = readPlanTasksForReader(plan);
+  527:   const completedTasks = tasks.filter((task) => task.status === 'completed').length;
+  528:   const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+  529:   return {
+  530:     ok: !error,
+  531:     id: plan?.id ?? null,
+  532:     project_id: plan?.project_id ?? null,
+  533:     file_path: plan?.file_path || '',
+  534:     markdown,
+  535:     tasks,
+  536:     task_total: tasks.length,
+  537:     task_completed: completedTasks,
+  538:     task_parse_status: parseStatus.status,
+  539:     task_parse_message: parseStatus.message,
+  540:     task_parse_has_task_section: parseStatus.hasTaskSection,
+  541:     hash: plan?.hash || '',
+  542:     updated_at: plan?.updated_at || '',
+  543:     error,
+  544:   };
+  545: }
+  546: 
+  547: function readPlanTasksForReader(plan) {
+  548:   const planId = Number(plan?.id || 0);
+  549:   if (!planId) return [];
+  550:   return db
+  551:     .all(
+  552:       `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
+  553:        FROM plan_tasks
+  554:        WHERE plan_id = ?
+  555:        ORDER BY sort_order ASC, id ASC`,
+  556:       [planId],
+  557:     )
+  558:     .map((task) => ({
+  559:       ...task,
+  560:       scopes: readPlanTaskScopes(task.scope),
+  561:     }));
+  562: }
+  563: 
+  564: function readPlanTaskScopes(scope) {
+  565:   return Array.from(
+  566:     new Set(
+  567:       String(scope || '')
+  568:         .split(/[,，、;；]+/)
+  569:         .map((item) => item.trim())
+  570:         .filter(Boolean),
+  571:     ),
+  572:   );
+  573: }
+  574: 
+  575: function planReadTaskParseStatus(markdown, error, tasks) {
+  576:   if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
+  577:   const content = String(markdown || '');
+  578:   const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
+  579:   const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
+  580:   if (tasks.length) {
+  581:     return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
+  582:   }
+  583:   if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
+  584:   if (hasTaskSection || hasCheckboxLine) {
+  585:     return {
+  586:       status: 'parse_empty',
+  587:       message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
+  588:       hasTaskSection: true,
+  589:     };
+  590:   }
+  591:   return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
+  592: }
+  593: 
+  594: function planReadError(code, message) {
+  595:   const error = new Error(message);
+  596:   error.code = code;
+  597:   return error;
+  598: }
+  599: 
+  600: function planReadErrorMessage(error) {
+--- types
+  271: export interface PlanConcurrencySuggestion {
+  272:   hasSafeParallelBatches: boolean;
+  273:   parallelTaskCount: number;
+  274:   batchCount: number;
+  275:   serialTaskCount: number;
+  276:   maxParallelTasks: number;
+  277:   batches: PlanConcurrencyBatch[];
+  278:   serialTasks: PlanConcurrencyTask[];
+  279: }
+  280: 
+  281: export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
+  282: 
+  283: export interface ReadPlanTask {
+  284:   id: number;
+  285:   plan_id: number;
+  286:   task_key: string;
+  287:   title: string;
+  288:   raw_line: string;
+  289:   scope: string;
+  290:   scopes: string[];
+  291:   status: string;
+  292:   sort_order: number;
+  293:   updated_at: string;
+  294: }
+  295: 
+  296: export interface ReadPlanResult {
+  297:   ok: boolean;
+  298:   id: number | null;
+  299:   project_id: number | null;
+  300:   file_path: string;
+  301:   markdown: string;
+  302:   tasks: ReadPlanTask[];
+  303:   task_total: number;
+  304:   task_completed: number;
+  305:   task_parse_status: ReadPlanTaskParseStatus;
+  306:   task_parse_message: string;
+  307:   task_parse_has_task_section: boolean;
+  308:   hash: string;
+  309:   updated_at: string;
+  310:   error: string | null;
+--- reader helpers
+    1: import type { KeyboardEvent } from 'react';
+    2: import { useEffect, useId, useRef, useState } from 'react';
+    3: import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+    4: import { RecordCard } from '../IntakePanel';
+    5: import { MarkdownReader } from '../MarkdownReader';
+    6: import { planCliSummaryLabel } from '../shared';
+    7: import { formatChinaDateTime } from '../../utils/time';
+    8: import {
+    9:   formatPlanDurationSummary,
+   10:   planTitle,
+   11:   tasksForPlan,
+   12:   type ParallelRunRequest,
+   13: } from '../../utils/planTasks';
+   14: 
+   15: function hasPlanReaderUpdate(
+   16:   readingPlan: Plan | null,
+   17:   latestPlan: Plan | null | undefined,
+   18:   result: WorkspacePlanReadState['result'],
+   19: ) {
+   20:   if (!readingPlan || !latestPlan) return false;
+   21:   if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+   22: 
+   23:   const readFilePath = result?.file_path || readingPlan.file_path || '';
+   24:   const readHash = result?.hash || readingPlan.hash || '';
+   25:   const readUpdatedAt = result?.updated_at || readingPlan.updated_at || '';
+   26:   return (
+   27:     (latestPlan.file_path || '') !== readFilePath ||
+   28:     (latestPlan.hash || '') !== readHash ||
+   29:     (latestPlan.updated_at || '') !== readUpdatedAt ||
+   30:     (latestPlan.status || '') !== (readingPlan.status || '')
+   31:   );
+   32: }
+   33: 
+   34: const PLAN_READER_FOCUSABLE_SELECTOR = [
+   35:   'a[href]',
+   36:   'button:not([disabled])',
+   37:   'input:not([disabled]):not([type="hidden"])',
+   38:   'select:not([disabled])',
+   39:   'textarea:not([disabled])',
+   40:   '[tabindex]:not([tabindex="-1"])',
+   41: ].join(',');
+   42: 
+   43: function getPlanReaderFocusableElements(container: HTMLElement) {
+   44:   return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+   45:     (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+   46:   );
+   47: }
+   48: 
+   49: function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+   50:   if (hasRunningTask) return '该计划已有任务执行中';
+   51:   if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+   52:   if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+   53:   return '';
+   54: }
+   55: 
+   56: function readPlanTaskStatusLabel(status: string) {
+   57:   if (status === 'completed') return '已完成';
+   58:   if (status === 'running') return '执行中';
+   59:   if (status === 'blocked') return '已阻塞';
+   60:   if (status === 'failed') return '失败';
+   61:   return '待执行';
+   62: }
+   63: 
+   64: function readPlanTaskScopeLabel(task: ReadPlanTask) {
+   65:   return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+   66: }
+   67: 
+   68: function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+   69:   if (!result) return false;
+   70:   return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+   71: }
+   72: 
+   73: 
+   74: export function PlanList({
+   75:   emptyText = '暂无 plan。',
+   76:   latestReadingPlan,
+   77:   onCloseReader,
+   78:   onOpenReader,
+   79:   onRunParallel,
+   80:   onRefreshReader,
+--- reader state
+   80:   onRefreshReader,
+   81:   plans,
+   82:   readerState,
+   83:   tasks = [],
+   84:   totalPlanCount = plans.length,
+   85: }: {
+   86:   emptyText?: string;
+   87:   latestReadingPlan?: Plan | null;
+   88:   onCloseReader: () => void;
+   89:   onOpenReader: (plan: Plan) => void;
+   90:   onRunParallel?: (request: ParallelRunRequest) => void;
+   91:   onRefreshReader: () => void;
+   92:   plans: Plan[];
+   93:   readerState: WorkspacePlanReadState;
+   94:   tasks?: PlanTask[];
+   95:   totalPlanCount?: number;
+   96: }) {
+   97:   const readingPlan = readerState.plan;
+   98:   const planReadResult = readerState.result;
+   99:   const planReadError = readerState.error;
+  100:   const planReading = readerState.loading;
+  101:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+  102:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+  103:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+  104:   const readerPlanForSummary = latestReadingPlan || readingPlan;
+  105:   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+--- reader jsx
+  330:                 <span className="plan-reader-path mono" title={readerFilePath}>
+  331:                   {readerFilePath || '未记录文件路径'}
+  332:                 </span>
+  333:                 <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+  334:                   {readerStatusText}
+  335:                 </p>
+  336:               </div>
+  337:               <div className="item-actions plan-reader-actions">
+  338:                 <button
+  339:                   type="button"
+  340:                   className="btn-link"
+  341:                   disabled={planReading}
+  342:                   onClick={onRefreshReader}
+  343:                   aria-label="重新读取 Plan 全文"
+  344:                 >
+  345:                   {planReading ? '读取中…' : '刷新'}
+  346:                 </button>
+  347:                 <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+  348:                   ×
+  349:                 </button>
+  350:               </div>
+  351:             </div>
+  352:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+  353:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+  354:                 <div className="plan-reader-summary-item">
+  355:                   <dt>状态</dt>
+  356:                   <dd>{readingPlan.status}</dd>
+  357:                 </div>
+  358:                 <div className="plan-reader-summary-item">
+  359:                   <dt>CLI</dt>
+  360:                   <dd>{readerCliSummary || '-'}</dd>
+  361:                 </div>
+  362:                 <div className="plan-reader-summary-item">
+  363:                   <dt>更新时间</dt>
+  364:                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+  365:                 </div>
+  366:                 <div className="plan-reader-summary-item">
+  367:                   <dt>哈希</dt>
+  368:                   <dd className="mono" title={readerHash}>
+  369:                     {readerHash?.slice(0, 12) || '-'}
+  370:                   </dd>
+  371:                 </div>
+  372:                 <div className="plan-reader-summary-item">
+  373:                   <dt>任务拆解</dt>
+  374:                   <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+  375:                 </div>
+  376:               </dl>
+  377: 
+  378:               {latestPlanUpdated ? (
+  379:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+  380:                   Plan 列表信息已更新，可刷新读取最新正文。
+  381:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+  382:                     刷新读取
+  383:                   </button>
+  384:                 </div>
+  385:               ) : null}
+  386:               {planReadError ? (
+  387:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+  388:                   <span>{planReadError}</span>
+  389:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+  390:                     重试
+  391:                   </button>
+  392:                 </div>
+  393:               ) : null}
+  394:               {planReading ? (
+  395:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+--- status
+ M src/main.js
+ M src/preload.js
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/types.ts
+?? docs/plan/plan_feedback_15_20260627-132045.md
+?? src/renderer/components/plans/PlanList.tsx
+
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+codex
+状态显示部分 scope 文件已有既存改动；我继续只读确认任务摘要块完整。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\renderer\\components\\plans\\PlanList.tsx 396 430; Write-Output '--- vars'; Show src\\renderer\\components\\plans\\PlanList.tsx 104 118" in D:\project\GitHub\autoplan
+ succeeded in 539ms:
+  396:                   正在读取 Plan 全文…
+  397:                 </div>
+  398:               ) : null}
+  399:               {!planReading && !planReadError && planReadResult ? (
+  400:                 <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+  401:                   <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+  402:                     {readerTaskParseMessage}
+  403:                   </div>
+  404:                   {readerTasks.length ? (
+  405:                     <ul className="list compact" aria-label="已解析任务列表">
+  406:                       {readerTasks.map((task) => (
+  407:                         <li key={task.id} className="task-scope-chip">
+  408:                           <span className="mono">{task.task_key}</span>
+  409:                           <span>{task.title}</span>
+  410:                           <small>{readPlanTaskStatusLabel(task.status)}</small>
+  411:                           <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+  412:                         </li>
+  413:                       ))}
+  414:                     </ul>
+  415:                   ) : null}
+  416:                 </section>
+  417:               ) : null}
+  418:               {!planReading && !planReadError ? (
+  419:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+  420:                   <MarkdownReader
+  421:                     markdown={planReadResult?.markdown ?? ''}
+  422:                     emptyMessage="暂无计划正文"
+  423:                     ariaLabel="Plan Markdown 正文内容"
+  424:                   />
+  425:                 </section>
+  426:               ) : null}
+  427:             </div>
+  428:           </div>
+  429:         </div>
+  430:       ) : null}
+--- vars
+  104:   const readerPlanForSummary = latestReadingPlan || readingPlan;
+  105:   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+  106:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+  107:   const readerTasks = planReadResult?.tasks || [];
+  108:   const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+  109:   const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+  110:   const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+  111:   const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+  112:   const readerDialogId = useId();
+  113:   const readerTitleId = useId();
+  114:   const readerDescriptionId = useId();
+  115:   const readerContentId = useId();
+  116:   const readerDialogRef = useRef<HTMLDivElement>(null);
+  117:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+  118:   const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..4eedef47eb185f7d8b558c7567704e9eab02187b
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)\b/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+**Fixing regex detection**
+
+I'm realizing that the regex `/任务拆解\b/` isn’t correctly detecting Chinese headings due to the boundaries defined by `\b`, as Chinese characters are considered nonword. So, my function hasTaskSection won't catch these headings. I need a fix for this! A good solution could involve using `(?:\\s|$)` to avoid needing a strict boundary. The new patch will look like this: `/(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i`. Let's implement that!
+codex
+发现中文标题后的 `\\b` 不可靠，我会修正任务章节识别正则。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\main.js
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..ca13376fddb06ad0a1727db71215a2c4fa5c67f3
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..ca13376fddb06ad0a1727db71215a2c4fa5c67f3
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+codex
+章节识别已修正。最后确认相关状态，不执行任何验证命令。
+exec
+powershell.exe -Command "Select-String -Path src\\main.js -Pattern \"task_parse_status|hasTaskSection|readPlanTasksForReader\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; Select-String -Path src'"\\renderer\\components\\plans\\PlanList.tsx -Pattern \"任务拆解解析结果|readerTaskTotal|ReadPlanTask|hasReaderTaskParseWarning\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; git status --short src'"\\main.js src\\preload.js src\\renderer\\components\\PlanLists.tsx src\\renderer\\components\\plans\\PlanList.tsx src\\renderer\\types.ts docs\\plan\\plan_feedback_15_20260627-132045.md" in D:\project\GitHub\autoplan
+ succeeded in 581ms:
+526:   const tasks = readPlanTasksForReader(plan);
+538:     task_parse_status: parseStatus.status,
+540:     task_parse_has_task_section: parseStatus.hasTaskSection,
+547: function readPlanTasksForReader(plan) {
+576:   if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
+578:   const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i.test(content);
+581:     return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
+583:   if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
+584:   if (hasTaskSection || hasCheckboxLine) {
+588:       hasTaskSection: true,
+591:   return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
+3: import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+56: function readPlanTaskStatusLabel(status: string) {
+64: function readPlanTaskScopeLabel(task: ReadPlanTask) {
+68: function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+108:   const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+110:   const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+111:   const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+374:                   <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+400:                 <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+410:                           <small>{readPlanTaskStatusLabel(task.status)}</small>
+411:                           <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+ M src/main.js
+ M src/preload.js
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/types.ts
+?? docs/plan/plan_feedback_15_20260627-132045.md
+?? src/renderer/components/plans/PlanList.tsx
+
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..ca13376fddb06ad0a1727db71215a2c4fa5c67f3
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+codex
+P004 代码修改和静态复查完成；未运行测试、构建或 lint。
+已完成 P004；按要求未修改 plan 文件，未运行测试、构建、lint/analyze 或验收命令。
+  ✓ 确认 read 返回结构
+  ✓ 扩展 plans:read 数据
+  ✓ 补充前端类型
+  ✓ 展示解析摘要
+  ✓ 静态复查范围
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..ca13376fddb06ad0a1727db71215a2c4fa5c67f3
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+codex
+**完成情况**
+- `plans:read` 现在返回任务摘要、任务总数、完成数和解析状态，见 `src/main.js:525`。
+- 新增 `ReadPlanTask` 与解析状态类型，见 `src/renderer/types.ts:281`。
+- 全文阅读器顶部展示“任务拆解”进度、解析提示、任务编号/标题/状态/scope，见 `src/renderer/components/plans/PlanList.tsx:400`。
+- 当 Markdown 疑似包含任务章节但解析任务为 0 时，会在阅读器内显示告警提示，见 `src/main.js:584` 和 `src/renderer/components/plans/PlanList.tsx:401`。
+- `src/preload.js` 的 `readPlan` 已是透明 IPC 转发，不需要额外变更即可传递新增字段。
+
+**未执行**
+- 未修改只读 plan 文件，未勾选 checkbox，未更新进度区。
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark。
+diff --git a/src/main.js b/src/main.js
+index 5d2c1b3b0a9b77c6ab96622968e6953b2fbd5fdd..ca13376fddb06ad0a1727db71215a2c4fa5c67f3
+--- a/src/main.js
++++ b/src/main.js
+@@ -523,18 +523,74 @@
+ }
+ 
+ function planReadResult(plan, markdown, error) {
++  const tasks = readPlanTasksForReader(plan);
++  const completedTasks = tasks.filter((task) => task.status === 'completed').length;
++  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+   return {
+     ok: !error,
+     id: plan?.id ?? null,
+     project_id: plan?.project_id ?? null,
+     file_path: plan?.file_path || '',
+     markdown,
++    tasks,
++    task_total: tasks.length,
++    task_completed: completedTasks,
++    task_parse_status: parseStatus.status,
++    task_parse_message: parseStatus.message,
++    task_parse_has_task_section: parseStatus.hasTaskSection,
+     hash: plan?.hash || '',
+     updated_at: plan?.updated_at || '',
+     error,
+   };
+ }
+ 
++function readPlanTasksForReader(plan) {
++  const planId = Number(plan?.id || 0);
++  if (!planId) return [];
++  return db
++    .all(
++      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
++       FROM plan_tasks
++       WHERE plan_id = ?
++       ORDER BY sort_order ASC, id ASC`,
++      [planId],
++    )
++    .map((task) => ({
++      ...task,
++      scopes: readPlanTaskScopes(task.scope),
++    }));
++}
++
++function readPlanTaskScopes(scope) {
++  return Array.from(
++    new Set(
++      String(scope || '')
++        .split(/[,，、;；]+/)
++        .map((item) => item.trim())
++        .filter(Boolean),
++    ),
++  );
++}
++
++function planReadTaskParseStatus(markdown, error, tasks) {
++  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
++  const content = String(markdown || '');
++  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i.test(content);
++  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(content);
++  if (tasks.length) {
++    return { status: 'parsed', message: `已解析 ${tasks.length} 个任务。`, hasTaskSection };
++  }
++  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
++  if (hasTaskSection || hasCheckboxLine) {
++    return {
++      status: 'parse_empty',
++      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
++      hasTaskSection: true,
++    };
++  }
++  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
++}
++
+ function planReadError(code, message) {
+   const error = new Error(message);
+   error.code = code;
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 5143b8d637d2175fed91ec0763fd6eff548c82fb..79e69d9b5fbe48dc9ee9b926818f50ed52a4afd9
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+ import { RecordCard } from '../IntakePanel';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+@@ -53,6 +53,23 @@
+   return '';
+ }
+ 
++function readPlanTaskStatusLabel(status: string) {
++  if (status === 'completed') return '已完成';
++  if (status === 'running') return '执行中';
++  if (status === 'blocked') return '已阻塞';
++  if (status === 'failed') return '失败';
++  return '待执行';
++}
++
++function readPlanTaskScopeLabel(task: ReadPlanTask) {
++  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++}
++
++function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
++  if (!result) return false;
++  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++}
++
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -87,6 +104,11 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
++  const readerTasks = planReadResult?.tasks || [];
++  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
++  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
++  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
++  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -347,6 +369,10 @@
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
++                <div className="plan-reader-summary-item">
++                  <dt>任务拆解</dt>
++                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
++                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -370,6 +396,25 @@
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
++              {!planReading && !planReadError && planReadResult ? (
++                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
++                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
++                    {readerTaskParseMessage}
++                  </div>
++                  {readerTasks.length ? (
++                    <ul className="list compact" aria-label="已解析任务列表">
++                      {readerTasks.map((task) => (
++                        <li key={task.id} className="task-scope-chip">
++                          <span className="mono">{task.task_key}</span>
++                          <span>{task.title}</span>
++                          <small>{readPlanTaskStatusLabel(task.status)}</small>
++                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
++                        </li>
++                      ))}
++                    </ul>
++                  ) : null}
++                </section>
++              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 8259a08aff365e374700d2985153b5a9cdcec967..1f884de04f85f99f2a4af23aaff6e78490c9bee2
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -277,17 +277,38 @@
+   batches: PlanConcurrencyBatch[];
+   serialTasks: PlanConcurrencyTask[];
+ }
+-
+-export interface ReadPlanResult {
+-  ok: boolean;
+-  id: number | null;
+-  project_id: number | null;
+-  file_path: string;
+-  markdown: string;
+-  hash: string;
+-  updated_at: string;
+-  error: string | null;
+-}
++
++export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
++
++export interface ReadPlanTask {
++  id: number;
++  plan_id: number;
++  task_key: string;
++  title: string;
++  raw_line: string;
++  scope: string;
++  scopes: string[];
++  status: string;
++  sort_order: number;
++  updated_at: string;
++}
++
++export interface ReadPlanResult {
++  ok: boolean;
++  id: number | null;
++  project_id: number | null;
++  file_path: string;
++  markdown: string;
++  tasks: ReadPlanTask[];
++  task_total: number;
++  task_completed: number;
++  task_parse_status: ReadPlanTaskParseStatus;
++  task_parse_message: string;
++  task_parse_has_task_section: boolean;
++  hash: string;
++  updated_at: string;
++  error: string | null;
++}
+ 
+ export interface WorkspacePlanReadState {
+   plan: Plan | null;
+
+tokens used
+301,600
+**完成情况**
+- `plans:read` 现在返回任务摘要、任务总数、完成数和解析状态，见 `src/main.js:525`。
+- 新增 `ReadPlanTask` 与解析状态类型，见 `src/renderer/types.ts:281`。
+- 全文阅读器顶部展示“任务拆解”进度、解析提示、任务编号/标题/状态/scope，见 `src/renderer/components/plans/PlanList.tsx:400`。
+- 当 Markdown 疑似包含任务章节但解析任务为 0 时，会在阅读器内显示告警提示，见 `src/main.js:584` 和 `src/renderer/components/plans/PlanList.tsx:401`。
+- `src/preload.js` 的 `readPlan` 已是透明 IPC 转发，不需要额外变更即可传递新增字段。
+
+**未执行**
+- 未修改只读 plan 文件，未勾选 checkbox，未更新进度区。
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark。

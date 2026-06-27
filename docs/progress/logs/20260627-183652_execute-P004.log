@@ -1,0 +1,1539 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0798-a7d6-7812-b542-39b81fbfd5f9
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_17_20260627-133901.md
+指定任务：
+- [ ] P004: 补充事件文案回归覆盖 <!-- scope: scripts/smoke-test.js,src/renderer/components/PlanLists.tsx -->
+任务 scope：scripts/smoke-test.js, src/renderer/components/planlists.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Identifying testing scope**
+
+I need to add regression coverage for the `scripts/smoke-test.js` and the `PlanLists`. I’m focusing on what needs to be included without running the tests just yet. It’s important to inspect the smoke-test relevant sections based on the plan. I wonder if there are existing helpers that could check the event display. This thoroughness should help clarify what needs attention. It’s a good step forward!
+codex
+我会沿用前序映射与搜索结论，只查看 smoke 覆盖点和 `PlanLists` 导出。
+  → 定位 smoke 覆盖结构
+  • 补充事件文案断言
+  • 静态检查变更范围
+exec
+powershell.exe -Command "Select-String -Path scripts\\smoke-test.js -Pattern 'event|scan.done|feedback.created|plan.generated|assert|expect|smoke|搜索|Event' | Select-Object -First 120 | ForEach-Object { \""'$($_.LineNumber):$($_.Line)" }; "--- head ---"; Get-Content -Encoding UTF8 scripts'"\\smoke-test.js | Select-Object -First 80" in D:\project\GitHub\autoplan
+ succeeded in 487ms:
+1:const assert = require('node:assert/strict');
+14:  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
+32:    assert.ok(projectId, '启动后应存在默认项目');
+33:    assert.equal(loop.snapshot(projectId).state.running, 0, '重启后不应继承旧的 running 状态');
+34:    assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '重启后执行中阶段应复位为 stopped');
+40:    assert.equal(loop.snapshot(projectId).state.running, 0, '快照不应盲信 SQLite 残留 running 状态');
+41:    assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '空闲时快照不应显示残留执行阶段');
+42:    assert.equal(loop.snapshot().activeProjectId, null, '未选择项目时快照应停留在项目列表');
+43:    assert.ok(loop.snapshot().projects.length >= 2, '项目列表应包含默认项目和新增项目');
+49:    const imageFile = path.join(tempRoot, 'smoke.png');
+55:      { path: imageFile, name: 'smoke.png', type: 'image/png' },
+59:    assert.equal(snapshot.requirements.length, 1, '当前项目只应显示自己的需求');
+60:    assert.equal(loop.snapshot(otherProjectId).requirements.length, 1, '另一个项目应保留独立需求');
+61:    assert.equal(snapshot.feedback.length, 1, '反馈模块应按项目读取列表');
+62:    assert.match(snapshot.requirements[0].body, /普通文本验收/, '需求正文应保留普通文本内容');
+63:    assert.equal(snapshot.attachments.length, 1, '附件应写入 SQLite 并绑定项目');
+64:    assert.equal(snapshot.attachments[0].project_id, projectId, '附件应记录 project_id');
+65:    assert.equal(snapshot.attachments[0].mime_type, 'image/png', '图片附件应保留 MIME 类型');
+66:    assert.ok(fs.existsSync(snapshot.attachments[0].stored_path), '附件文件应复制到持久化目录');
+67:    await assertAttachmentPersistenceSmoke(db, loop, tempRoot);
+68:    await assertLoopConfigPersistenceSmoke(db, loop, tempRoot);
+69:    await assertMcpToolsSmoke(db, loop, tempRoot);
+77:    assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+78:    assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+81:    const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+82:    fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+85:    assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+86:    assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+87:    assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+89:    const planId = writeSmokePlan(db, loop, workspace, projectId);
+91:    assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+92:    assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+93:    assertPlanCliSnapshot(snapshot.plans[0], {
+98:    assert.equal(snapshot.tasks.length, 6, '任务模块应同步 plan 中的 checkbox 为任务列表');
+99:    assert.ok(
+103:    assert.equal(snapshot.plans[0].total_tasks, 6, 'plan 应记录总任务数');
+104:    assert.ok(
+108:    assert.ok(
+113:    assertPlanTaskParsingRegression(db, loop, workspace, projectId);
+114:    assert.deepEqual(
+123:    assert.deepEqual(
+131:    assert.deepEqual(
+147:    await assertPlanReadRegression(db, loop, {
+157:      assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+158:      assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+159:      assert.match(prompt, /不运行测试、回归、验收、构建/, '执行 prompt 应把测试和验收推迟到最终节点');
+162:      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
+163:      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
+164:      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
+165:      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
+167:      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
+168:      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+174:    assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+177:    assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+178:    assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+179:    assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+181:    assert.equal(
+186:    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
+187:    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
+188:    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
+190:    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
+191:    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+192:    const completedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P001');
+193:    assertTaskEventOrder(completedTaskEvents, ['task.succeeded', 'task.started'], '成功任务事件');
+194:    assertTaskEventMeta(completedTaskEvents[0], executableTask, 'completed', '成功结束任务事件');
+195:    assert.equal(completedTaskEvents[0].meta.log, fakeLogFile, '成功结束事件 meta 应包含日志路径');
+196:    assert.equal(completedTaskEvents[0].meta.exitCode, 0, '成功结束事件 meta 应包含退出码');
+197:    assertTaskEventMeta(completedTaskEvents[1], executableTask, 'running', '开始任务事件');
+198:    assert.equal(
+206:      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
+209:      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
+210:      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
+211:      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
+212:      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
+223:    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
+225:    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
+226:    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
+227:    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
+228:    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
+229:    const failedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+230:    assertTaskEventOrder(failedTaskEvents, ['task.failed', 'task.started'], '失败任务事件');
+231:    assertTaskEventMeta(failedTaskEvents[0], retryTask, 'failed', '失败任务事件');
+232:    assert.equal(failedTaskEvents[0].meta.log, fakeLogFile, '失败事件 meta 应包含日志路径');
+233:    assert.equal(failedTaskEvents[0].meta.exitCode, 1, '失败事件 meta 应包含退出码');
+234:    assert.equal(failedTaskEvents[0].meta.failureKind, 'environment_permission', 'failed task event should classify permission blockers');
+235:    assert.equal(failedTaskEvents[0].meta.environmentBlocked, true, 'failed task event should mark environment blockers');
+236:    assertTaskEventMeta(failedTaskEvents[1], retryTask, 'running', '失败前开始任务事件');
+241:      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
+244:      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
+245:      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
+246:      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
+247:      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
+252:    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
+255:    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
+256:    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
+257:    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
+258:    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
+265:    assert.equal(stoppedTask.status, 'pending', '手动停止后任务应回到 pending 以便重试');
+266:    assertIsoString(stoppedTask.finished_at, '手动停止后应写入 finished_at');
+267:    assert.ok(stoppedTask.duration_ms > 0, '手动停止后应累计耗时');
+268:    const stoppedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P003');
+269:    assertTaskEventOrder(stoppedTaskEvents, ['task.stop.requested'], '手动停止任务事件');
+270:    assertTaskEventMeta(stoppedTaskEvents[0], stoppableTask, 'stopping', '手动停止任务事件');
+275:      assert.match(prompt, /只执行指定任务 P003/, '停止后重试任务 prompt 应锁定指定任务');
+278:      assert.equal(runningStoppedRetryTask.status, 'running', '停止后重试应重新进入 running 状态');
+279:      assert.equal(runningStoppedRetryTask.duration_ms, stoppedDurationMs, '停止后重试不应丢失停止前耗时');
+284:    assert.equal(stoppedRetryResult.exitCode, 0, '手动停止后的重试应成功');
+287:    assert.equal(stoppedRetriedTask.status, 'completed', '手动停止后任务应可重试完成');
+288:    assert.ok(stoppedRetriedTask.duration_ms > stoppedDurationMs, '手动停止后重试应继续累加耗时');
+289:    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P003'), '停止后重试完成任务快照');
+295:    assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+296:    assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+297:    assertWorkspaceSearchRegression(snapshot);
+298:    assertFrontendInteractionSourceSmoke();
+299:    await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
+301:    await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+303:    await assertWorkspaceOpenFileIpcSmoke(db, loop, workspace, projectId);
+305:    await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
+307:    await assertAgentCliBackendSmoke(db, loop, projectId, workspace);
+309:    await assertFeedback10RegressionSmoke(db, loop, tempRoot);
+--- head ---
+const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const vm = require('node:vm');
+const { saveAttachments } = require('../src/attachments');
+const { AppDatabase, nowIso } = require('../src/database');
+const { createIntakeService } = require('../src/intakeService');
+const { LoopService } = require('../src/loopService');
+const { MCP_TOOL_NAMES, callMcpTool } = require('../src/mcpTools');
+
+async function main() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
+  const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
+  const workspace = path.join(tempRoot, 'workspace');
+  const otherWorkspace = path.join(tempRoot, 'other-workspace');
+
+  try {
+    const db = new AppDatabase(dbPath);
+    await db.init();
+    const defaultState = db.get('SELECT project_id FROM project_states ORDER BY project_id ASC LIMIT 1');
+    db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+      'execute-task',
+      nowIso(),
+      defaultState.project_id,
+    ]);
+    const loop = new LoopService(db);
+    const projectId = loop.defaultProjectId();
+    const otherProjectId = insertProject(db, loop, 'Other Project', otherWorkspace);
+
+    assert.ok(projectId, '启动后应存在默认项目');
+    assert.equal(loop.snapshot(projectId).state.running, 0, '重启后不应继承旧的 running 状态');
+    assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '重启后执行中阶段应复位为 stopped');
+    db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+      'execute-task',
+      nowIso(),
+      projectId,
+    ]);
+    assert.equal(loop.snapshot(projectId).state.running, 0, '快照不应盲信 SQLite 残留 running 状态');
+    assert.equal(loop.snapshot(projectId).state.phase, 'stopped', '空闲时快照不应显示残留执行阶段');
+    assert.equal(loop.snapshot().activeProjectId, null, '未选择项目时快照应停留在项目列表');
+    assert.ok(loop.snapshot().projects.length >= 2, '项目列表应包含默认项目和新增项目');
+
+    const requirementId = insertRequirement(db, projectId);
+    insertFeedback(db, projectId);
+    insertRequirement(db, otherProjectId);
+
+    const imageFile = path.join(tempRoot, 'smoke.png');
+    fs.writeFileSync(
+      imageFile,
+      Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZl0WQAAAABJRU5ErkJggg==', 'base64'),
+    );
+    saveAttachments(db, path.join(tempRoot, 'attachments'), 'requirement', requirementId, [
+      { path: imageFile, name: 'smoke.png', type: 'image/png' },
+    ], projectId);
+
+    let snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.requirements.length, 1, '当前项目只应显示自己的需求');
+    assert.equal(loop.snapshot(otherProjectId).requirements.length, 1, '另一个项目应保留独立需求');
+    assert.equal(snapshot.feedback.length, 1, '反馈模块应按项目读取列表');
+    assert.match(snapshot.requirements[0].body, /普通文本验收/, '需求正文应保留普通文本内容');
+    assert.equal(snapshot.attachments.length, 1, '附件应写入 SQLite 并绑定项目');
+    assert.equal(snapshot.attachments[0].project_id, projectId, '附件应记录 project_id');
+    assert.equal(snapshot.attachments[0].mime_type, 'image/png', '图片附件应保留 MIME 类型');
+    assert.ok(fs.existsSync(snapshot.attachments[0].stored_path), '附件文件应复制到持久化目录');
+    await assertAttachmentPersistenceSmoke(db, loop, tempRoot);
+    await assertLoopConfigPersistenceSmoke(db, loop, tempRoot);
+    await assertMcpToolsSmoke(db, loop, tempRoot);
+
+    loop.configure(projectId, {
+      workspacePath: workspace,
+      intervalSeconds: 5,
+      validationCommand: 'node -e "process.exit(0)"',
+    });
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+    assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+
+    loop.ensureWorkspaceDirs(workspace);
+
+codex
+我会聚焦 smoke 的搜索回归函数和前端组件静态断言位置。
+exec
+powershell.exe -Command "Select-String -Path scripts\\smoke-test.js -Pattern 'function assertWorkspaceSearchRegression|function assertFrontend|PlanLists|SearchResults|vm|renderer|search.ts|readFileSync' | ForEach-Object { \""'$($_.LineNumber):$($_.Line)" }; "--- search regression ---"; $lines=Get-Content -Encoding UTF8 scripts'"\\smoke-test.js; ("'$lines | Select-Object -Skip 1180 -First 220) -join "`n"' in D:\project\GitHub\autoplan
+ succeeded in 1157ms:
+6:const vm = require('node:vm');
+146:    const originalPlanText = fs.readFileSync(planFile, 'utf8');
+176:    const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+291:    fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+345:function assertWorkspaceSearchRegression(snapshot) {
+346:  const { searchWorkspaceSnapshot } = loadRendererTsModule(
+347:    path.join(__dirname, '..', 'src', 'renderer', 'utils', 'search.ts'),
+468:  assert.match(fs.readFileSync(planFile, 'utf8'), /- \[x\] P002: 完整验收/, 'final acceptance checkbox should be checked');
+500:function assertFrontendInteractionSourceSmoke() {
+501:  const planListsSource = fs.readFileSync(
+502:    path.join(__dirname, '..', 'src', 'renderer', 'components', 'PlanLists.tsx'),
+505:  const searchResultsSource = fs.readFileSync(
+506:    path.join(__dirname, '..', 'src', 'renderer', 'components', 'SearchResults.tsx'),
+510:  assert.match(planListsSource, /aria-expanded=\{expanded\}/, '任务分组应暴露展开状态');
+511:  assert.match(planListsSource, /setExpandedOverrides/, '任务分组折叠状态应保存在前端会话内');
+512:  assert.match(planListsSource, /workspace-task-\$\{task\.id\}/, '任务卡片应提供搜索定位锚点');
+513:  assert.match(planListsSource, /workspace-event-\$\{event\.id\}/, '事件卡片应提供搜索定位锚点');
+514:  assert.match(searchResultsSource, /role="dialog"/, '搜索结果应以 dialog popup 呈现');
+515:  assert.match(searchResultsSource, /role="listbox"/, '搜索结果列表应提供 listbox 语义');
+516:  assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+602:  assert.equal(fs.readFileSync(planFile, 'utf8'), originalPlanText, 'Plan 阅读 smoke 不应修改正式 Plan 文件');
+919:  const source = `${fs.readFileSync(mainPath, 'utf8')}\nmodule.exports.__setSmokeState = (state) => { db = state.db; loop = state.loop; };\nmodule.exports.__smokeIpcHandlers = __smokeIpcHandlers;\n`;
+951:  vm.runInNewContext(
+972:function loadRendererTsModule(modulePath, cache = new Map()) {
+981:  const source = fs.readFileSync(absolutePath, 'utf8');
+1001:  const rendererRoot = path.join(__dirname, '..', 'src', 'renderer');
+1004:      return loadRendererTsModule(resolveRendererModule(path.dirname(absolutePath), request, rendererRoot), cache);
+1009:  const script = new vm.Script(transpiled.outputText, { filename: absolutePath });
+1021:function resolveRendererModule(fromDir, request, rendererRoot) {
+1036:  const relativePath = path.relative(rendererRoot, resolvedPath);
+1039:    `前端 smoke 模块应限制在 renderer 目录内：${request}`,
+1109:    '  - [ ] P012：中文标点与缩进 <!-- scope： src/renderer/components/PlanLists.tsx；src/renderer/components/MarkdownReader.tsx -->',
+1130:  assert.match(tasks[2].scope, /planlists\.tsx/, '中文 scope 分隔符应被解析');
+1135:  assert.equal(fs.readFileSync(planFile, 'utf8'), original, '解析回归不应改写原始 Plan Markdown');
+1255:  assert.deepEqual(fs.readFileSync(row.stored_path), options.expectedBuffer, `${options.label} 落盘内容应一致`);
+1298:        fs.readFileSync(promptAttachmentPath),
+1414:  assert.equal(fs.readFileSync(planFile, 'utf8').includes('- [x] S001'), true, '并发完成应写回对应 checkbox');
+1654:  assertRendererAgentCliTypeSmoke();
+2088:function assertRendererAgentCliTypeSmoke() {
+2089:  const typeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'types.ts'), 'utf8');
+2115:  const { planCliSummaryLabel } = loadRendererTsModule(
+2116:    path.join(__dirname, '..', 'src', 'renderer', 'components', 'shared.tsx'),
+2157:  const source = fs.readFileSync(loopServicePath, 'utf8');
+2170:  vm.runInNewContext(
+2194:  const source = fs.readFileSync(agentCliPath, 'utf8');
+2203:  vm.runInNewContext(
+--- search regression ---
+    projectId,
+  );
+  const [feedbackAttachment] = saveAttachments(
+    db,
+    attachmentsRoot,
+    'feedback',
+    feedbackId,
+    [
+      {
+        source: 'clipboard-image',
+        name: 'feedback-clipboard-image',
+        dataUrl: `data:image/png;base64,${clipboardImageBuffer.toString('base64')}`,
+      },
+    ],
+    projectId,
+  );
+
+  const requirementAttachmentRow = assertAttachmentRecord(db, requirementAttachment, {
+    projectId,
+    ownerType: 'requirement',
+    ownerId: requirementId,
+    expectedMime: 'image/png',
+    expectedName: 'requirement-path-image.png',
+    expectedBuffer: pathImageBuffer,
+    label: '路径需求图片附件',
+  });
+  const feedbackAttachmentRow = assertAttachmentRecord(db, feedbackAttachment, {
+    projectId,
+    ownerType: 'feedback',
+    ownerId: feedbackId,
+    expectedMime: 'image/png',
+    expectedName: 'feedback-clipboard-image.png',
+    expectedBuffer: clipboardImageBuffer,
+    label: '剪贴板反馈图片附件',
+  });
+
+  const snapshot = loop.snapshot(projectId);
+  assert.equal(snapshot.attachments.length, 2, '附件 smoke 项目快照应包含需求和反馈图片附件');
+  assertAttachmentSnapshotBinding(snapshot, requirementAttachmentRow, '需求图片附件快照');
+  assertAttachmentSnapshotBinding(snapshot, feedbackAttachmentRow, '反馈图片附件快照');
+
+  const requirement = db.get('SELECT * FROM requirements WHERE id = ?', [requirementId]);
+  const feedback = db.get('SELECT * FROM feedback WHERE id = ?', [feedbackId]);
+  await assertGeneratedPlanPromptReadsAttachment(loop, {
+    projectId,
+    workspace,
+    intake: { ...requirement, __type: 'requirement' },
+    attachment: requirementAttachmentRow,
+    expectedBuffer: pathImageBuffer,
+    label: '需求图片附件',
+  });
+  await assertGeneratedPlanPromptReadsAttachment(loop, {
+    projectId,
+    workspace,
+    intake: { ...feedback, __type: 'feedback' },
+    attachment: feedbackAttachmentRow,
+    expectedBuffer: clipboardImageBuffer,
+    label: '反馈图片附件',
+  });
+}
+
+function assertAttachmentRecord(db, savedAttachment, options) {
+  assert.ok(savedAttachment, `${options.label} 应返回保存结果`);
+  const row = db.get('SELECT * FROM attachments WHERE id = ?', [savedAttachment.id]);
+  const expectedHash = hashBuffer(options.expectedBuffer);
+  assert.ok(row, `${options.label} 应写入 SQLite`);
+  assert.equal(row.project_id, options.projectId, `${options.label} SQLite 应绑定 project_id`);
+  assert.equal(row.owner_type, options.ownerType, `${options.label} SQLite 应记录 owner_type`);
+  assert.equal(row.owner_id, options.ownerId, `${options.label} SQLite 应记录 owner_id`);
+  assert.equal(row.original_name, options.expectedName, `${options.label} SQLite 应记录文件名`);
+  assert.equal(row.mime_type, options.expectedMime, `${options.label} SQLite 应记录 MIME`);
+  assert.equal(row.size, options.expectedBuffer.length, `${options.label} SQLite 应记录大小`);
+  assert.equal(row.hash, expectedHash, `${options.label} SQLite 应记录 SHA256`);
+  assert.ok(fs.existsSync(row.stored_path), `${options.label} 应落盘到持久化路径`);
+  assert.deepEqual(fs.readFileSync(row.stored_path), options.expectedBuffer, `${options.label} 落盘内容应一致`);
+  assert.equal(savedAttachment.project_id, row.project_id, `${options.label} 保存结果应返回 project_id`);
+  assert.equal(savedAttachment.owner_type, row.owner_type, `${options.label} 保存结果应返回 owner_type`);
+  assert.equal(savedAttachment.owner_id, row.owner_id, `${options.label} 保存结果应返回 owner_id`);
+  assert.equal(savedAttachment.mime_type, row.mime_type, `${options.label} 保存结果应返回 MIME`);
+  assert.equal(savedAttachment.size, row.size, `${options.label} 保存结果应返回大小`);
+  assert.equal(savedAttachment.hash, row.hash, `${options.label} 保存结果应返回 hash`);
+  return row;
+}
+
+function assertAttachmentSnapshotBinding(snapshot, attachment, label) {
+  const row = snapshot.attachments.find((item) => item.id === attachment.id);
+  assert.ok(row, `${label} 应出现在快照附件列表`);
+  assert.equal(row.project_id, attachment.project_id, `${label} 应绑定 project_id`);
+  assert.equal(row.owner_type, attachment.owner_type, `${label} 应绑定 owner_type`);
+  assert.equal(row.owner_id, attachment.owner_id, `${label} 应绑定 owner_id`);
+  assert.equal(row.mime_type, attachment.mime_type, `${label} 应保留 MIME`);
+  assert.equal(row.size, attachment.size, `${label} 应保留大小`);
+  assert.equal(row.hash, attachment.hash, `${label} 应保留 hash`);
+}
+
+async function assertGeneratedPlanPromptReadsAttachment(loop, options) {
+  const originalRunCodex = loop.runCodex.bind(loop);
+  let checkedPrompt = false;
+  try {
+    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
+      checkedPrompt = true;
+      assert.equal(_workspace, options.workspace, `${options.label} plan 生成应使用附件项目工作区`);
+      assert.equal(operation.projectId, options.projectId, `${options.label} plan 生成 operation 应绑定项目`);
+      assert.match(prompt, /附件清单：/, `${options.label} prompt 应包含附件清单`);
+      assert.match(prompt, /最后一个任务必须是“完整验收”节点/, `${options.label} plan prompt 应要求最终验收节点`);
+      assert.ok(prompt.includes(options.attachment.original_name), `${options.label} prompt 应包含附件名称`);
+      assert.ok(prompt.includes(options.attachment.mime_type), `${options.label} prompt 应包含 MIME`);
+      assert.ok(prompt.includes(options.attachment.hash), `${options.label} prompt 应包含 hash`);
+      assert.ok(prompt.includes(options.attachment.stored_path), `${options.label} prompt 应包含可读路径`);
+      assert.match(prompt, /可读性: 已确认可读/, `${options.label} prompt 应声明附件可读`);
+      const promptAttachmentPath = extractPromptAttachmentPath(prompt);
+      assert.equal(
+        path.normalize(promptAttachmentPath),
+        path.normalize(options.attachment.stored_path),
+        `${options.label} prompt 中路径应指向持久化附件`,
+      );
+      assert.deepEqual(
+        fs.readFileSync(promptAttachmentPath),
+        options.expectedBuffer,
+        `${options.label} 测试进程应能按 prompt 路径读取附件内容`,
+      );
+
+      const outputMatch = prompt.match(/^输出文件：(.+)$/m);
+      assert.ok(outputMatch, `${options.label} prompt 应包含输出文件路径`);
+      const planFile = outputMatch[1].trim();
+      fs.mkdirSync(path.dirname(planFile), { recursive: true });
+      fs.writeFileSync(
+        planFile,
+        ['# 附件计划 smoke', '', '## 任务计划', '- [ ] P001: 使用附件上下文 <!-- scope: unknown -->', ''].join('\n'),
+        'utf8',
+      );
+      const logFile = path.join(options.workspace, 'docs', 'progress', 'logs', `${label}.log`);
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fs.writeFileSync(logFile, 'attachment prompt smoke', 'utf8');
+      return { exitCode: 0, logFile, lastFile: planFile };
+    };
+
+    const planId = await loop.generatePlanForIntake(options.projectId, options.workspace, options.intake);
+    assert.ok(planId, `${options.label} 应通过 stub 生成 plan`);
+    assert.ok(checkedPrompt, `${options.label} 应执行 prompt 断言 stub`);
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+}
+
+async function assertScopeConcurrencySmoke(db, loop, workspace, projectId) {
+  const planRel = path.join('docs', 'plan', 'scope-concurrency-smoke.md');
+  const planFile = path.join(workspace, planRel);
+  fs.mkdirSync(path.dirname(planFile), { recursive: true });
+  const existingFile = path.join(workspace, 'src', 'existing.js');
+  fs.mkdirSync(path.dirname(existingFile), { recursive: true });
+  fs.writeFileSync(existingFile, 'module.exports = 1;\n', 'utf8');
+  fs.writeFileSync(
+    planFile,
+    [
+      '# Scope concurrency smoke',
+      '',
+      '- [ ] S001: 多文件归一化 <!-- scope: src/existing.js, src\\missing.js, src/existing.js -->',
+      '- [ ] S002: 独立文件 <!-- scope: src/other.js -->',
+      '- [ ] S003: 重叠文件 <!-- scope: src/existing.js -->',
+      '- [ ] S004: 未知范围 <!-- scope: unknown -->',
+      '- [ ] S005: 完整验收 <!-- scope: validation -->',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const planId = insertPlan(db, projectId, planRel, 'scope-concurrency-smoke');
+  loop.syncPlanTasks(planId, planFile);
+  const snapshot = loop.snapshot(projectId);
+  const plan = snapshot.plans.find((item) => item.id === planId);
+  assert.ok(plan, 'scope smoke plan 应进入快照');
+
+  const taskS001 = taskByKey(snapshot, 'S001');
+  assert.deepEqual(
+    taskS001.scope_files.map((file) => file.path),
+    ['src/existing.js', 'src/missing.js'],
+    'scope 文件列表应归一化分隔符并去重',
+  );
+  assert.equal(taskS001.scope_files[0].canOpen, true, '存在的 scope 文件应标记可打开');
+  assert.equal(taskS001.scope_files[1].exists, false, '缺失的 scope 文件应保留缺失状态');
+  assert.equal(taskByKey(snapshot, 'S004').scope_files[0].isUnknown, true, 'unknown scope 应标记 unknown');
+  assert.equal(taskByKey(snapshot, 'S005').scope_files[0].isValidation, true, 'validation scope 应标记 validation');
+
+  assert.equal(plan.concurrency_suggestion.hasSafeParallelBatches, true, '应存在安全并发批次');
+  assert.deepEqual(
+    plan.concurrency_suggestion.batches[0].tasks.map((task) => task.task_key),
+    ['S001', 'S002'],
+    'scope 不重叠任务应进入同一建议批次',
+  );
+  assert.ok(
+    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S004' && /unknown/.test(task.reason)),
+    'unknown 任务应出现在串行原因中',
+  );
+  assert.ok(
+    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S003'),
+    'scope 重叠后无法组成安全批次的任务应保持串行',
+  );
+  assert.ok(
+    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S005' && /validation|验收/.test(task.reason)),
+    'validation 任务应出现在串行原因中',
+  );
+  assert.throws(
+    () => loop.validatedParallelTaskBatches(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]), [
+      { taskIds: [taskByKey(snapshot, 'S001').id, taskByKey(snapshot, 'S003').id] },
+    ]),
+    /scope 冲突/,
+    '手动并发入口应拒绝同批 scope 冲突',
+  );
+
+  const smokePlan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+  const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'scope-parallel.log');
+  fs.mkdirSync(path.dirname(fakeLogFile), { recursive: true });
+  fs.writeFileSync(fakeLogFile, 'scope parallel ok', 'utf8');
+  const startedTaskKeys = [];
+  const originalRunCodex = loop.runCodex.bind(loop);
+  try {
+    loop.runCodex = async (_workspace, _prompt, _label, operation = {}) => {
+      const task = db.get('SELECT task_key FROM plan_tasks WHERE id = ?', [operation.taskId]);
+      startedTaskKeys.push(task.task_key);
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, `${task.task_key}.txt`) };
+
+codex
+输出被截断了，我会精确读取搜索回归函数所在区段。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 scripts'"\\smoke-test.js; ("'$lines | Select-Object -Skip 330 -First 210) -join "`n"' in D:\project\GitHub\autoplan
+ succeeded in 795ms:
+      '同一工作区不应被两个项目循环同时占用',
+    );
+    loop.stop(multiProjectA);
+    assert.equal(loop.snapshot(multiProjectA).state.running, 0, '停止项目 A 后 A 应停止');
+    assert.equal(loop.snapshot(multiProjectB).state.running, 1, '停止项目 A 不应影响项目 B');
+    loop.stop(multiProjectB);
+    assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
+
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, config persistence, scope concurrency, scope file open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function assertWorkspaceSearchRegression(snapshot) {
+  const { searchWorkspaceSnapshot } = loadRendererTsModule(
+    path.join(__dirname, '..', 'src', 'renderer', 'utils', 'search.ts'),
+  );
+
+  const requirementResult = assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, '普通文本需求'),
+    'requirement',
+    'title',
+    /普通文本需求/,
+    '搜索应支持需求标题命中',
+  );
+  assertSearchLocation(requirementResult, {
+    anchorId: `workspace-requirement-${requirementResult.recordId}`,
+    targetTab: 'requirement',
+    targetType: 'requirement',
+  }, '需求搜索结果应携带定位锚点');
+
+  const feedbackResult = assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, '重点内容'),
+    'feedback',
+    'body',
+    /重点内容/,
+    '搜索应支持反馈正文命中',
+  );
+  assertSearchLocation(feedbackResult, {
+    anchorId: `workspace-feedback-${feedbackResult.recordId}`,
+    targetTab: 'feedback',
+    targetType: 'feedback',
+  }, '反馈搜索结果应携带定位锚点');
+
+  const taskResult = assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, 'P002'),
+    'task',
+    'taskKey',
+    /P002/,
+    '搜索应支持任务 key 命中',
+  );
+  assertSearchLocation(taskResult, {
+    anchorId: `workspace-task-${taskResult.recordId}`,
+    targetTab: 'tasks',
+    targetType: 'task',
+  }, '任务搜索结果应携带任务定位锚点');
+  assert.equal(taskResult.taskId, taskResult.recordId, '任务搜索结果应携带 taskId');
+  assert.equal(taskResult.taskKey, 'P002', '任务搜索结果应携带 taskKey');
+  assert.ok(taskResult.planId, '任务搜索结果应携带 planId');
+  assert.match(taskResult.filePath, /smoke-plan\.md$/, '任务搜索结果应携带 Plan 文件路径');
+
+  const planResult = assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, 'smoke-plan.md'),
+    'plan',
+    'filePath',
+    /smoke-plan\.md/,
+    '搜索应支持 Plan 文件路径命中',
+  );
+  assertSearchLocation(planResult, {
+    anchorId: `workspace-plan-${planResult.recordId}`,
+    targetTab: 'tasks',
+    targetType: 'plan',
+  }, 'Plan 搜索结果应携带 Plan 定位锚点');
+  assert.equal(planResult.planId, planResult.recordId, 'Plan 搜索结果应携带 planId');
+  assert.match(planResult.filePath, /smoke-plan\.md$/, 'Plan 搜索结果应携带文件路径');
+
+  const eventResult = assertSearchHit(
+    searchWorkspaceSnapshot(snapshot, 'fake-execute.log'),
+    'event',
+    'eventMeta',
+    /fake-execute\.log/,
+    '搜索应支持事件元信息命中',
+  );
+  assertSearchLocation(eventResult, {
+    anchorId: `workspace-event-${eventResult.recordId}`,
+    targetTab: 'events',
+    targetType: 'event',
+  }, '事件搜索结果应携带事件定位锚点');
+
+  const emptySearch = searchWorkspaceSnapshot(snapshot, '没有任何匹配的搜索词');
+  assert.equal(emptySearch.total, 0, '搜索无结果时 total 应为 0');
+  assert.ok(emptySearch.groups.every((group) => group.count === 0), '搜索无结果时各分组计数应为 0');
+}
+
+async function assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId) {
+  const planRel = path.join('docs', 'plan', 'final-acceptance-smoke.md');
+  const planFile = path.join(workspace, planRel);
+  fs.mkdirSync(path.dirname(planFile), { recursive: true });
+  fs.writeFileSync(
+    planFile,
+    [
+      '# Final acceptance smoke',
+      '',
+      '## 任务计划',
+      '- [x] P001: 完成开发修改 <!-- scope: smoke/dev.js -->',
+      '- [ ] P002: 完整验收 <!-- scope: validation -->',
+      '',
+      '## 总体验收标准',
+      '- 最后节点执行完整验收命令。',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const planId = insertPlan(db, projectId, planRel, 'final-acceptance-smoke');
+  loop.syncPlanTasks(planId, planFile);
+  const acceptanceTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+  assert.equal(acceptanceTask.scope, 'validation', 'final acceptance task should use validation scope');
+
+  const originalRunCodex = loop.runCodex.bind(loop);
+  let codexCalled = false;
+  try {
+    loop.runCodex = async () => {
+      codexCalled = true;
+      return { exitCode: 1, output: 'unexpected codex execution' };
+    };
+    await loop.processPlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+
+  assert.equal(codexCalled, false, 'final acceptance task should run validation directly instead of Codex');
+  const acceptedPlan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+  const acceptedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [acceptanceTask.id]);
+  assert.equal(acceptedPlan.status, 'completed', 'final acceptance task should complete the plan');
+  assert.equal(acceptedPlan.validation_passed, 1, 'final acceptance task should mark validation_passed');
+  assert.equal(acceptedTask.status, 'completed', 'final acceptance task should be completed');
+  assert.match(fs.readFileSync(planFile, 'utf8'), /- \[x\] P002: 完整验收/, 'final acceptance checkbox should be checked');
+  const acceptanceEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+  assertTaskEventOrder(acceptanceEvents, ['task.succeeded', 'task.started'], 'final acceptance task events');
+  assert.equal(acceptanceEvents[0].meta.acceptanceTask, true, 'final acceptance success event should be marked');
+}
+
+function assertSearchHit(searchState, source, field, valuePattern, label) {
+  assert.ok(searchState.total > 0, `${label}：应返回搜索结果`);
+  const result = searchState.results.find(
+    (item) => item.source === source && item.matches.some((match) => match.field === field),
+  );
+  assert.ok(result, `${label}：应包含 ${source}/${field} 命中`);
+  const match = result.matches.find((item) => item.field === field);
+  assert.match(match.value, valuePattern, `${label}：命中值应包含关键字`);
+  assert.match(match.snippet, valuePattern, `${label}：摘要片段应包含关键字`);
+  assert.ok(
+    searchState.groups.some((group) => group.source === source && group.count > 0),
+    `${label}：来源分组应统计命中数量`,
+  );
+  return result;
+}
+
+function assertSearchLocation(result, expected, label) {
+  assert.equal(result.targetTab, expected.targetTab, `${label}：targetTab 应正确`);
+  assert.equal(result.targetType, expected.targetType, `${label}：targetType 应正确`);
+  assert.equal(result.targetId, result.recordId, `${label}：targetId 应指向当前记录`);
+  assert.equal(result.anchorId, expected.anchorId, `${label}：顶层 anchorId 应正确`);
+  assert.equal(result.location.anchorId, expected.anchorId, `${label}：location.anchorId 应正确`);
+  assert.equal(result.location.highlightMs, 2400, `${label}：应携带高亮时长`);
+  assert.equal(result.location.scrollBehavior, 'smooth', `${label}：应携带滚动行为`);
+}
+
+function assertFrontendInteractionSourceSmoke() {
+  const planListsSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'PlanLists.tsx'),
+    'utf8',
+  );
+  const searchResultsSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'SearchResults.tsx'),
+    'utf8',
+  );
+
+  assert.match(planListsSource, /aria-expanded=\{expanded\}/, '任务分组应暴露展开状态');
+  assert.match(planListsSource, /setExpandedOverrides/, '任务分组折叠状态应保存在前端会话内');
+  assert.match(planListsSource, /workspace-task-\$\{task\.id\}/, '任务卡片应提供搜索定位锚点');
+  assert.match(planListsSource, /workspace-event-\$\{event\.id\}/, '事件卡片应提供搜索定位锚点');
+  assert.match(searchResultsSource, /role="dialog"/, '搜索结果应以 dialog popup 呈现');
+  assert.match(searchResultsSource, /role="listbox"/, '搜索结果列表应提供 listbox 语义');
+  assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+}
+
+async function assertPlanReadRegression(
+  db,
+  loop,
+  { projectId, otherProjectId, otherWorkspace, planId, plan, planFile, originalPlanText },
+) {
+  const readPlan = loadMainPlanReadHandler(db, loop);
+
+  const existingRead = await readPlan(null, { projectId, planId });
+  assert.equal(existingRead.ok, true, '读取存在的 Plan 文件应成功');
+  assert.equal(existingRead.id, planId, '读取存在的 Plan 应返回 plan id');
+  assert.equal(existingRead.project_id, projectId, '读取存在的 Plan 应返回项目 id');
+  assert.equal(existingRead.file_path, plan.file_path, '读取存在的 Plan 应返回相对路径');
+  assert.equal(existingRead.markdown, originalPlanText, '读取存在的 Plan 应返回完整 Markdown');
+  assert.equal(existingRead.error, null, '读取存在的 Plan 不应返回错误');
+  assert.equal(existingRead.task_total, 6, '读取 Plan 应返回已同步任务总数');
+  assert.equal(existingRead.task_completed, 0, '读取 Plan 应返回已完成任务数');
+  assert.equal(existingRead.task_parse_status, 'parsed', '读取 Plan 应返回解析成功状态');
+  assert.equal(existingRead.tasks.length, 6, '读取 Plan 应返回任务摘要列表');
+  assert.equal(existingRead.tasks[0].task_key, 'P001', '任务摘要应保留任务编号');
+  assert.equal(existingRead.tasks[0].title, '明确范围与影响面', '任务摘要应保留任务标题');
+  assert.deepEqual(existingRead.tasks[0].scopes, ['unknown'], '任务摘要应返回 scope 列表');
+  assert.deepEqual(existingRead.tasks[5].scopes, ['validation'], '完整验收任务摘要应保留 validation scope');
+
+**Considering coverage needs**
+
+I need to think about adding coverage. Should I incorporate synthetic snapshot events into assertWorkspaceSearchRegression? Maybe I should also include event display tests. I wonder if I could load PlanLists, and if the existing loadRendererTsModule compiles TSX properly. Since it can load search.ts, which imports PlanLists, then loadRendererTsModule must handle TSX and potentially component imports. It did after P003, but I need to check if it has been executed. I might need to inspect loader stubs.
+codex
+我会检查前端模块加载器的 mock 能力，避免新增 smoke 覆盖破坏已有加载方式。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 scripts'"\\smoke-test.js; ("'$lines | Select-Object -Skip 960 -First 105) -join "`n"' in D:\project\GitHub\autoplan
+ succeeded in 846ms:
+      clearTimeout,
+      console,
+      process,
+      setTimeout,
+    },
+    { filename: mainPath },
+  );
+  module.exports.__setSmokeState({ db, loop });
+  return handlers;
+}
+
+function loadRendererTsModule(modulePath, cache = new Map()) {
+  const absolutePath = path.resolve(modulePath);
+  const cachedModule = cache.get(absolutePath);
+  if (cachedModule) return cachedModule.exports;
+
+  const ts = require('typescript');
+  const module = { exports: {} };
+  cache.set(absolutePath, module);
+
+  const source = fs.readFileSync(absolutePath, 'utf8');
+  const transpiled = ts.transpileModule(source, {
+    fileName: absolutePath,
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2022,
+      jsx: ts.JsxEmit.ReactJSX,
+      esModuleInterop: true,
+    },
+    reportDiagnostics: true,
+  });
+  const diagnostics = (transpiled.diagnostics || []).filter(
+    (diagnostic) => diagnostic.category === ts.DiagnosticCategory.Error,
+  );
+  assert.deepEqual(
+    diagnostics.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')),
+    [],
+    `${absolutePath} 应能被 TypeScript 转译`,
+  );
+
+  const rendererRoot = path.join(__dirname, '..', 'src', 'renderer');
+  const localRequire = (request) => {
+    if (request.startsWith('.') || path.isAbsolute(request)) {
+      return loadRendererTsModule(resolveRendererModule(path.dirname(absolutePath), request, rendererRoot), cache);
+    }
+    return require(request);
+  };
+
+  const script = new vm.Script(transpiled.outputText, { filename: absolutePath });
+  script.runInNewContext({
+    require: localRequire,
+    module,
+    exports: module.exports,
+    __dirname: path.dirname(absolutePath),
+    __filename: absolutePath,
+    console,
+  });
+  return module.exports;
+}
+
+function resolveRendererModule(fromDir, request, rendererRoot) {
+  const basePath = path.resolve(fromDir, request);
+  const candidates = [
+    basePath,
+    `${basePath}.ts`,
+    `${basePath}.tsx`,
+    `${basePath}.js`,
+    `${basePath}.jsx`,
+    path.join(basePath, 'index.ts'),
+    path.join(basePath, 'index.tsx'),
+    path.join(basePath, 'index.js'),
+  ];
+  const resolvedPath = candidates.find((candidate) => fs.existsSync(candidate) && fs.statSync(candidate).isFile());
+  assert.ok(resolvedPath, `应能解析前端模块 ${request}`);
+
+  const relativePath = path.relative(rendererRoot, resolvedPath);
+  assert.ok(
+    relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath),
+    `前端 smoke 模块应限制在 renderer 目录内：${request}`,
+  );
+  return resolvedPath;
+}
+
+function insertProject(db, loop, name, workspacePath) {
+  const now = nowIso();
+  const id = db.insert(
+    `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [name, workspacePath, '', now, now],
+  );
+  loop.ensureProjectState(id);
+  return id;
+}
+
+function insertPlan(db, projectId, filePath, issueHash) {
+  const now = nowIso();
+  return db.insert(
+    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [projectId, issueHash, filePath, `${issueHash}-hash`, 'running', 0, 0, 0, now, now],
+  );
+}
+
+/** 直接写一个 plan markdown 文件并入库同步任务，替代旧的 planDraft 接受流程。 */
+function writeSmokePlan(db, loop, workspace, projectId) {
+
+codex
+接下来确认 smoke 中事件生成方式，优先复用现有快照事件。
+exec
+powershell.exe -Command "Select-String -Path scripts\\smoke-test.js -Pattern 'INSERT INTO events|db\\.insert\\(.*events|writeEvent|recordEvent|eventsBy|taskEventsByKey|snapshot\\.events|eventResult' | ForEach-Object { \""'$($_.LineNumber):$($_.Line)" }; "--- helper around taskEvents ---"; $lines=Get-Content -Encoding UTF8 scripts'"\\smoke-test.js; ("'$lines | Select-Object -Skip 1950 -First 100) -join "`n"' in D:\project\GitHub\autoplan
+ succeeded in 844ms:
+192:    const completedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P001');
+229:    const failedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+268:    const stoppedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P003');
+408:  const eventResult = assertSearchHit(
+415:  assertSearchLocation(eventResult, {
+416:    anchorId: `workspace-event-${eventResult.recordId}`,
+469:  const acceptanceEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+1411:    completedSnapshot.events.some((event) => event.type === 'tasks.parallel.finished' && event.meta?.planId === planId),
+2261:function taskEventsByKey(snapshot, taskKey) {
+2262:  return snapshot.events.filter((event) => event.meta?.taskKey === taskKey);
+--- helper around taskEvents ---
+  }
+  assert.equal(repairCalled, false, 'environment-blocked validation should not launch repair agent');
+  const blockedValidationEvent = db.get(
+    `SELECT * FROM events
+     WHERE project_id = ? AND type = 'validation.blocked'
+     ORDER BY id DESC LIMIT 1`,
+    [regressionProjectId],
+  );
+  assert.ok(blockedValidationEvent, 'environment-blocked validation should emit validation.blocked');
+  const blockedValidationMeta = JSON.parse(blockedValidationEvent.meta);
+  assert.equal(blockedValidationMeta.failureKind, 'environment_permission', 'validation.blocked should classify permission blockers');
+  assert.equal(blockedValidationMeta.environmentBlocked, true, 'validation.blocked should mark environment blockers');
+
+  const handlers = loadMainIpcHandlers(db, loop);
+  const createRequirement = handlers.get('requirements:create');
+  const createFeedback = handlers.get('feedback:create');
+  assert.equal(typeof createRequirement, 'function', '主进程应注册 requirements:create IPC handler');
+  assert.equal(typeof createFeedback, 'function', '主进程应注册 feedback:create IPC handler');
+
+  const requirementBody = 'P006 回归需求：使用 Codex high 思考深度生成计划';
+  createRequirement(null, {
+    projectId: regressionProjectId,
+    body: requirementBody,
+    agentCliProvider: 'codex',
+    agentCliCommand: '',
+    codexReasoningEffort: 'high',
+  });
+  const requirement = db.get('SELECT * FROM requirements WHERE project_id = ? AND body = ?', [
+    regressionProjectId,
+    requirementBody,
+  ]);
+  assert.equal(requirement.agent_cli_provider, 'codex', '需求单条配置应保存 codex 后端');
+  assert.equal(requirement.codex_reasoning_effort, 'high', '需求单条配置应保存 Codex high 思考深度');
+
+  const feedbackBody = 'P006 回归反馈：使用 Claude 生成计划';
+  createFeedback(null, {
+    projectId: regressionProjectId,
+    body: feedbackBody,
+    agentCliProvider: 'claude',
+    agentCliCommand: '',
+    codexReasoningEffort: 'high',
+  });
+  const feedback = db.get('SELECT * FROM feedback WHERE project_id = ? AND body = ?', [
+    regressionProjectId,
+    feedbackBody,
+  ]);
+  assert.equal(feedback.agent_cli_provider, 'claude', '反馈单条配置应保存 claude 后端');
+  assert.equal(feedback.codex_reasoning_effort, null, '反馈选择 Claude 时应忽略 Codex 思考深度');
+
+  const spawned = [];
+  const codexSessionId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const { LoopService: PatchedLoopService } = loadPatchedLoopService({
+    spawnOverride: (command, args, options) => {
+      const entry = { command, args, options, prompt: '' };
+      spawned.push(entry);
+      return createFakeChild({
+        output: commandName(command) === 'codex' ? `Session ID: ${codexSessionId}\n` : 'fake claude output\n',
+        onPrompt: (prompt) => {
+          entry.prompt = prompt;
+          const planMatch = prompt.match(/输出文件：(.+)/);
+          if (!planMatch) return;
+          const generatedPlanFile = planMatch[1].trim();
+          const isClaude = commandName(command) === 'claude';
+          const taskKey = isClaude ? 'F010' : 'R010';
+          fs.mkdirSync(path.dirname(generatedPlanFile), { recursive: true });
+          fs.writeFileSync(
+            generatedPlanFile,
+            [
+              isClaude ? '# Feedback Claude override smoke' : '# Requirement Codex high smoke',
+              '',
+              `- [ ] ${taskKey}: 单条配置生成计划 <!-- scope: smoke/${taskKey.toLowerCase()}.js -->`,
+              '',
+            ].join('\n'),
+            'utf8',
+          );
+        },
+      });
+    },
+  });
+  const patchedLoop = new PatchedLoopService(db);
+
+  spawned.length = 0;
+  const requirementPlanId = await patchedLoop.generatePlanForIntake(regressionProjectId, regressionWorkspace, {
+    ...requirement,
+    __type: 'requirement',
+  });
+  assert.ok(requirementPlanId, 'Codex high 需求应通过 stub 生成计划');
+  assert.equal(spawned.length, 1, 'Codex high 需求生成计划应只 spawn 一次');
+  assert.equal(commandName(spawned[0].command), 'codex', 'Codex high 需求应调用 codex 命令');
+  assertCodexReasoningArg(spawned[0], 'high', 'Codex high 需求');
+  const linkedRequirement = db.get('SELECT linked_plan_id FROM requirements WHERE id = ?', [requirement.id]);
+  assert.equal(linkedRequirement.linked_plan_id, requirementPlanId, 'Codex high 需求应回写 linked_plan_id');
+  const requirementEventMeta = latestPlanGeneratedMeta(db, regressionProjectId, requirementPlanId);
+  assert.equal(requirementEventMeta.agentCliProvider, 'codex', 'Codex high 需求事件应记录 codex 后端');
+  assert.equal(requirementEventMeta.codexReasoningEffort, 'high', 'Codex high 需求事件应记录思考深度');
+  assertPlanCliSnapshot(db.get('SELECT * FROM plans WHERE id = ?', [requirementPlanId]), {
+    provider: 'codex',
+    command: 'codex',
+    effort: 'high',
+  }, 'Codex high 需求计划数据库快照');
+
+codex
+我会看主流程扫描、反馈、计划生成附近，确定可断言的事件类型。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 scripts'"\\smoke-test.js; ("'$lines | Select-Object -Skip 70 -First 235) -join "`n"' in D:\project\GitHub\autoplan
+ succeeded in 863ms:
+    loop.configure(projectId, {
+      workspacePath: workspace,
+      intervalSeconds: 5,
+      validationCommand: 'node -e "process.exit(0)"',
+    });
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.state.workspace_path, workspace, '项目应能保存工作区路径');
+    assert.equal(snapshot.state.interval_seconds, 5, '项目应能保存循环间隔');
+
+    loop.ensureWorkspaceDirs(workspace);
+    const issueFile = path.join(workspace, 'docs', 'issues', 'smoke.md');
+    fs.writeFileSync(issueFile, '# Smoke 需求\n\n- [ ] 支持普通文本输入和附件\n', 'utf8');
+    const issueScan = loop.scanDirectory(path.join(workspace, 'docs', 'issues'), workspace, ['.md']);
+    loop.saveScan(projectId, 'issue', issueScan);
+    assert.equal(issueScan.files.length, 1, '扫描模块应发现 docs/issues 文件');
+    assert.equal(loop.snapshot(projectId).scans.length, 1, '扫描记录应按项目写入 SQLite');
+    assert.equal(loop.snapshot(otherProjectId).scans.length, 0, '其它项目不应看到当前项目扫描记录');
+
+    const planId = writeSmokePlan(db, loop, workspace, projectId);
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+    assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+    assertPlanCliSnapshot(snapshot.plans[0], {
+      provider: 'codex',
+      command: '',
+      effort: 'medium',
+    }, '历史 plan 快照');
+    assert.equal(snapshot.tasks.length, 6, '任务模块应同步 plan 中的 checkbox 为任务列表');
+    assert.ok(
+      snapshot.tasks.every((task) => hasTaskDurationShape(task)),
+      '任务快照应包含符合前端类型预期的耗时字段',
+    );
+    assert.equal(snapshot.plans[0].total_tasks, 6, 'plan 应记录总任务数');
+    assert.ok(
+      snapshot.tasks.every((task) => task.raw_line.includes('scope:')),
+      '入库任务应保留固定格式 scope 注释',
+    );
+    assert.ok(
+      snapshot.tasks.filter((task) => task.task_key !== 'P006').every((task) => task.scope === 'unknown') &&
+        taskByKey(snapshot, 'P006')?.scope === 'validation',
+      '普通任务 scope 应保持 unknown，最终验收任务 scope 应为 validation',
+    );
+    assertPlanTaskParsingRegression(db, loop, workspace, projectId);
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: lib/a.dart -->' },
+        { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+        { task_key: 'P003', title: 'C', raw_line: '- [ ] P003: C <!-- scope: lib/a.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P001', 'P002'],
+      '互不重叠 scope 的任务应允许进入同一并发批次',
+    );
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P001', title: 'A', raw_line: '- [ ] P001: A <!-- scope: unknown -->' },
+        { task_key: 'P002', title: 'B', raw_line: '- [ ] P002: B <!-- scope: lib/b.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P001'],
+      'unknown scope 任务应保持串行',
+    );
+    assert.deepEqual(
+      loop.parallelTaskBatch([
+        { task_key: 'P009', title: '补充自动化回归测试', raw_line: '- [ ] P009: 补充自动化回归测试 <!-- scope: test/a.dart -->' },
+        { task_key: 'P010', title: '执行回归验证', raw_line: '- [ ] P010: 执行回归验证 <!-- scope: test/b.dart -->' },
+      ]).map((task) => task.task_key),
+      ['P009'],
+      '测试/验证类任务应保持串行',
+    );
+
+    const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+    const planFile = path.join(workspace, plan.file_path);
+    const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+    const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
+    fs.writeFileSync(fakeLogFile, 'fake ok', 'utf8');
+    const originalRunCodex = loop.runCodex.bind(loop);
+    const originalPlanText = fs.readFileSync(planFile, 'utf8');
+    await assertPlanReadRegression(db, loop, {
+      projectId,
+      otherProjectId,
+      otherWorkspace,
+      planId,
+      plan,
+      planFile,
+      originalPlanText,
+    });
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
+      assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+      assert.match(prompt, /不运行测试、回归、验收、构建/, '执行 prompt 应把测试和验收推迟到最终节点');
+      await sleep(20);
+      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+      assert.equal(runningTask.status, 'running', '任务开始后应写入 running 状态');
+      assertIsoString(runningTask.started_at, '任务开始后应写入 started_at');
+      assert.equal(runningTask.finished_at, null, '任务运行中不应写入 finished_at');
+      assert.equal(runningTask.duration_ms, 0, '首次运行中累计耗时应保持 0');
+      const runningSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+      assertTaskDurationShape(runningSnapshotTask, '运行中任务快照');
+      assert.equal(typeof runningSnapshotTask.run_duration_ms, 'number', '运行中任务快照应包含实时耗时');
+      fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-last.txt') };
+    };
+    const executeResult = await loop.executeTask(workspace, plan, executableTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(executeResult.exitCode, 0, '模拟执行应成功');
+    loop.completeTask(workspace, plan, executableTask, executeResult);
+    const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+    assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
+    assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+    assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+    assert.equal(
+      completedTask.status,
+      'completed',
+      '系统应更新任务入库状态',
+    );
+    assertIsoString(completedTask.started_at, '任务完成后应保留 started_at');
+    assertIsoString(completedTask.finished_at, '任务完成后应写入 finished_at');
+    assert.ok(completedTask.duration_ms > 0, '任务完成后应写入正数 duration_ms');
+    const completedSnapshotTask = taskByKey(loop.snapshot(projectId), 'P001');
+    assertTaskDurationShape(completedSnapshotTask, '已完成任务快照');
+    assert.ok(completedSnapshotTask.duration_ms > 0, '已完成任务快照应包含累计耗时');
+    const completedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P001');
+    assertTaskEventOrder(completedTaskEvents, ['task.succeeded', 'task.started'], '成功任务事件');
+    assertTaskEventMeta(completedTaskEvents[0], executableTask, 'completed', '成功结束任务事件');
+    assert.equal(completedTaskEvents[0].meta.log, fakeLogFile, '成功结束事件 meta 应包含日志路径');
+    assert.equal(completedTaskEvents[0].meta.exitCode, 0, '成功结束事件 meta 应包含退出码');
+    assertTaskEventMeta(completedTaskEvents[1], executableTask, 'running', '开始任务事件');
+    assert.equal(
+      db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+      1,
+      '系统应更新 plan 完成计数',
+    );
+
+    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P002/, '重试任务首次执行 prompt 应锁定指定任务');
+      await sleep(20);
+      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+      assert.equal(runningRetryTask.status, 'running', '失败前任务应处于 running 状态');
+      assertIsoString(runningRetryTask.started_at, '失败前任务应写入 started_at');
+      assert.equal(runningRetryTask.finished_at, null, '失败前任务运行中不应写入 finished_at');
+      assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '失败前任务快照');
+      return {
+        exitCode: 1,
+        logFile: fakeLogFile,
+        lastFile: path.join(workspace, 'fake-failed.txt'),
+        output: 'PathAccessException: Permission denied while reading .dart_tool',
+        errorMessage: 'PathAccessException: Permission denied while reading .dart_tool',
+      };
+    };
+    const failedResult = await loop.executeTask(workspace, plan, retryTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(failedResult.exitCode, 1, '模拟失败应返回非 0 exitCode');
+    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+    assert.equal(failedTask.status, 'pending', '任务失败后应回退为 pending');
+    assertIsoString(failedTask.started_at, '任务失败后应保留 started_at');
+    assertIsoString(failedTask.finished_at, '任务失败后应写入 finished_at');
+    assert.ok(failedTask.duration_ms > 0, '任务失败后应累计正数 duration_ms');
+    const failedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
+    assertTaskEventOrder(failedTaskEvents, ['task.failed', 'task.started'], '失败任务事件');
+    assertTaskEventMeta(failedTaskEvents[0], retryTask, 'failed', '失败任务事件');
+    assert.equal(failedTaskEvents[0].meta.log, fakeLogFile, '失败事件 meta 应包含日志路径');
+    assert.equal(failedTaskEvents[0].meta.exitCode, 1, '失败事件 meta 应包含退出码');
+    assert.equal(failedTaskEvents[0].meta.failureKind, 'environment_permission', 'failed task event should classify permission blockers');
+    assert.equal(failedTaskEvents[0].meta.environmentBlocked, true, 'failed task event should mark environment blockers');
+    assertTaskEventMeta(failedTaskEvents[1], retryTask, 'running', '失败前开始任务事件');
+
+    const firstAttemptDurationMs = failedTask.duration_ms;
+    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P002/, '重试任务再次执行 prompt 应锁定指定任务');
+      await sleep(20);
+      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+      assert.equal(runningRetryTask.status, 'running', '重试时任务应重新进入 running 状态');
+      assertIsoString(runningRetryTask.started_at, '重试时任务应刷新 started_at');
+      assert.equal(runningRetryTask.finished_at, null, '重试运行中应清空 finished_at');
+      assert.equal(runningRetryTask.duration_ms, firstAttemptDurationMs, '重试运行中不应丢失历史累计耗时');
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-retry.txt') };
+    };
+    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(retryResult.exitCode, 0, '模拟重试应成功');
+    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
+    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+    assert.equal(retriedTask.status, 'completed', '重试成功后任务应完成');
+    assertIsoString(retriedTask.finished_at, '重试成功后应写入 finished_at');
+    assert.ok(retriedTask.duration_ms > firstAttemptDurationMs, '重试成功后应继续累加 duration_ms');
+    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P002'), '重试完成任务快照');
+
+    const stoppableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P003']);
+    loop.startTaskRun(stoppableTask.id, nowIso());
+    await sleep(20);
+    loop.stopTask(projectId, stoppableTask.id);
+    const stoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+    assert.equal(stoppedTask.status, 'pending', '手动停止后任务应回到 pending 以便重试');
+    assertIsoString(stoppedTask.finished_at, '手动停止后应写入 finished_at');
+    assert.ok(stoppedTask.duration_ms > 0, '手动停止后应累计耗时');
+    const stoppedTaskEvents = taskEventsByKey(loop.snapshot(projectId), 'P003');
+    assertTaskEventOrder(stoppedTaskEvents, ['task.stop.requested'], '手动停止任务事件');
+    assertTaskEventMeta(stoppedTaskEvents[0], stoppableTask, 'stopping', '手动停止任务事件');
+
+    const stoppedDurationMs = stoppedTask.duration_ms;
+    const retryStoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+    loop.runCodex = async (_workspace, prompt) => {
+      assert.match(prompt, /只执行指定任务 P003/, '停止后重试任务 prompt 应锁定指定任务');
+      await sleep(20);
+      const runningStoppedRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+      assert.equal(runningStoppedRetryTask.status, 'running', '停止后重试应重新进入 running 状态');
+      assert.equal(runningStoppedRetryTask.duration_ms, stoppedDurationMs, '停止后重试不应丢失停止前耗时');
+      return { exitCode: 0, logFile: fakeLogFile, lastFile: path.join(workspace, 'fake-stopped-retry.txt') };
+    };
+    const stoppedRetryResult = await loop.executeTask(workspace, plan, retryStoppedTask);
+    loop.runCodex = originalRunCodex;
+    assert.equal(stoppedRetryResult.exitCode, 0, '手动停止后的重试应成功');
+    loop.completeTask(workspace, plan, retryStoppedTask, stoppedRetryResult);
+    const stoppedRetriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+    assert.equal(stoppedRetriedTask.status, 'completed', '手动停止后任务应可重试完成');
+    assert.ok(stoppedRetriedTask.duration_ms > stoppedDurationMs, '手动停止后重试应继续累加耗时');
+    assertTaskDurationShape(taskByKey(loop.snapshot(projectId), 'P003'), '停止后重试完成任务快照');
+
+    fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+    loop.syncPlanTasks(planId, planFile);
+    await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+    snapshot = loop.snapshot(projectId);
+    assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+    assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+    assertWorkspaceSearchRegression(snapshot);
+    assertFrontendInteractionSourceSmoke();
+    await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
+
+    await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+
+    await assertWorkspaceOpenFileIpcSmoke(db, loop, workspace, projectId);
+
+    await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
+
+**Evaluating plan loading issues**
+
+I’m considering a potential issue with the PlanLists run where JSX may transform to require("react/jsx-runtime") unnecessarily. It looks like this doesn't need to happen until the components are called. I might need to include BasePlanList with React and other necessary modules. Oh, and I’m wondering if I should stub out the .css file — probably won’t need any CSS imports, which is fine!
+codex
+我会新增一个 smoke 回归函数，用合成事件直接断言 `formatEvent` 和搜索文本输出。
+  ✓ 定位 smoke 覆盖结构
+  → 补充事件文案断言
+  • 静态检查变更范围
+codex
+现在 patch smoke：加入调用点和事件文案回归函数，不启动 smoke。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\scripts\smoke-test.js
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 4621f78688d2cb7ff4cd145b8cf7bb42262d8060..21d07561e9b432194640cacc5651bfd33e50b8a0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -296,6 +296,7 @@
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+     assertWorkspaceSearchRegression(snapshot);
+     assertFrontendInteractionSourceSmoke();
++    assertEventPresentationCopyRegression();
+     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
+ 
+     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+@@ -516,6 +517,29 @@
+   assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+ }
+ 
++function assertEventPresentationCopyRegression() {
++  const { formatEvent, getEventSearchText } = loadRendererTsModule(
++    path.join(__dirname, '..', 'src', 'renderer', 'components', 'PlanLists.tsx'),
++  );
++  const event = (type, message = '') => ({
++    id: 9000,
++    project_id: 1,
++    type,
++    message,
++    meta: null,
++    created_at: '2026-06-27T00:00:00.000Z',
++  });
++
++  assert.equal(formatEvent(event('scan.done', '扫描发现 1 条需求')).title, '扫描完成', 'scan.done 应显示中文标题');
++  assert.equal(formatEvent(event('feedback.created', '收到反馈')).title, '反馈已创建', 'feedback.created 应显示中文标题');
++  assert.equal(formatEvent(event('plan.generated', '计划文件已生成')).title, '计划已生成', 'plan.generated 应显示中文标题');
++  assert.equal(formatEvent(event('system.unknown')).title, 'system.unknown', '未知事件类型应保留原始 key');
++
++  const scanSearchText = getEventSearchText(event('scan.done'));
++  assert.match(scanSearchText, /扫描完成/, '事件搜索文本应包含中文展示标题');
++  assert.match(scanSearchText, /scan\.done/, '事件搜索文本应保留原始事件 key');
++}
++
+ async function assertPlanReadRegression(
+   db,
+   loop,
+
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 4621f78688d2cb7ff4cd145b8cf7bb42262d8060..21d07561e9b432194640cacc5651bfd33e50b8a0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -296,6 +296,7 @@
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+     assertWorkspaceSearchRegression(snapshot);
+     assertFrontendInteractionSourceSmoke();
++    assertEventPresentationCopyRegression();
+     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
+ 
+     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+@@ -516,6 +517,29 @@
+   assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+ }
+ 
++function assertEventPresentationCopyRegression() {
++  const { formatEvent, getEventSearchText } = loadRendererTsModule(
++    path.join(__dirname, '..', 'src', 'renderer', 'components', 'PlanLists.tsx'),
++  );
++  const event = (type, message = '') => ({
++    id: 9000,
++    project_id: 1,
++    type,
++    message,
++    meta: null,
++    created_at: '2026-06-27T00:00:00.000Z',
++  });
++
++  assert.equal(formatEvent(event('scan.done', '扫描发现 1 条需求')).title, '扫描完成', 'scan.done 应显示中文标题');
++  assert.equal(formatEvent(event('feedback.created', '收到反馈')).title, '反馈已创建', 'feedback.created 应显示中文标题');
++  assert.equal(formatEvent(event('plan.generated', '计划文件已生成')).title, '计划已生成', 'plan.generated 应显示中文标题');
++  assert.equal(formatEvent(event('system.unknown')).title, 'system.unknown', '未知事件类型应保留原始 key');
++
++  const scanSearchText = getEventSearchText(event('scan.done'));
++  assert.match(scanSearchText, /扫描完成/, '事件搜索文本应包含中文展示标题');
++  assert.match(scanSearchText, /scan\.done/, '事件搜索文本应保留原始事件 key');
++}
++
+ async function assertPlanReadRegression(
+   db,
+   loop,
+
+codex
+回归覆盖已补充。现在只做静态定位检查，不运行 smoke。
+  ✓ 定位 smoke 覆盖结构
+  ✓ 补充事件文案断言
+  → 静态检查变更范围
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 4621f78688d2cb7ff4cd145b8cf7bb42262d8060..21d07561e9b432194640cacc5651bfd33e50b8a0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -296,6 +296,7 @@
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+     assertWorkspaceSearchRegression(snapshot);
+     assertFrontendInteractionSourceSmoke();
++    assertEventPresentationCopyRegression();
+     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
+ 
+     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+@@ -516,6 +517,29 @@
+   assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+ }
+ 
++function assertEventPresentationCopyRegression() {
++  const { formatEvent, getEventSearchText } = loadRendererTsModule(
++    path.join(__dirname, '..', 'src', 'renderer', 'components', 'PlanLists.tsx'),
++  );
++  const event = (type, message = '') => ({
++    id: 9000,
++    project_id: 1,
++    type,
++    message,
++    meta: null,
++    created_at: '2026-06-27T00:00:00.000Z',
++  });
++
++  assert.equal(formatEvent(event('scan.done', '扫描发现 1 条需求')).title, '扫描完成', 'scan.done 应显示中文标题');
++  assert.equal(formatEvent(event('feedback.created', '收到反馈')).title, '反馈已创建', 'feedback.created 应显示中文标题');
++  assert.equal(formatEvent(event('plan.generated', '计划文件已生成')).title, '计划已生成', 'plan.generated 应显示中文标题');
++  assert.equal(formatEvent(event('system.unknown')).title, 'system.unknown', '未知事件类型应保留原始 key');
++
++  const scanSearchText = getEventSearchText(event('scan.done'));
++  assert.match(scanSearchText, /扫描完成/, '事件搜索文本应包含中文展示标题');
++  assert.match(scanSearchText, /scan\.done/, '事件搜索文本应保留原始事件 key');
++}
++
+ async function assertPlanReadRegression(
+   db,
+   loop,
+
+codex
+我会确认新增函数和调用点位置，以及本任务文件状态。
+exec
+powershell.exe -Command "Select-String -Path scripts\\smoke-test.js,src\\renderer\\components\\PlanLists.tsx -Pattern 'assertEventPresentationCopyRegression|scan\\.done|feedback\\.created|plan\\.generated|system\\.unknown|getEventSearchText|扫描完成|反馈已创建|计划已生成' | ForEach-Object { \""'$($_.Path.Replace((Get-Location).Path + [IO.Path]::DirectorySeparatorChar,'"'')):"'$($_.LineNumber):$($_.Line)" }; "--- status ---"; git status --short -- scripts'"\\smoke-test.js src\\renderer\\components\\PlanLists.tsx" in D:\project\GitHub\autoplan
+ succeeded in 521ms:
+scripts\smoke-test.js:299:    assertEventPresentationCopyRegression();
+scripts\smoke-test.js:520:function assertEventPresentationCopyRegression() {
+scripts\smoke-test.js:521:  const { formatEvent, getEventSearchText } = loadRendererTsModule(
+scripts\smoke-test.js:533:  assert.equal(formatEvent(event('scan.done', '扫描发现 1 条需求')).title, '扫描完成', 'scan.done 应显示中文标题');
+scripts\smoke-test.js:534:  assert.equal(formatEvent(event('feedback.created', '收到反馈')).title, '反馈已创建', 'feedback.created 应显示中文标题');
+scripts\smoke-test.js:535:  assert.equal(formatEvent(event('plan.generated', '计划文件已生成')).title, '计划已生成', 'plan.generated 应显示中文标题');
+scripts\smoke-test.js:536:  assert.equal(formatEvent(event('system.unknown')).title, 'system.unknown', '未知事件类型应保留原始 key');
+scripts\smoke-test.js:538:  const scanSearchText = getEventSearchText(event('scan.done'));
+scripts\smoke-test.js:539:  assert.match(scanSearchText, /扫描完成/, '事件搜索文本应包含中文展示标题');
+scripts\smoke-test.js:2165:     WHERE project_id = ? AND type = 'plan.generated'
+scripts\smoke-test.js:2169:  assert.ok(event, '应记录 plan.generated 事件');
+scripts\smoke-test.js:2171:  assert.equal(meta.planId, planId, 'plan.generated 事件应对应当前 plan');
+src\renderer\components\PlanLists.tsx:17:import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+src\renderer\components\PlanLists.tsx:23:  'scan.done': '扫描完成',
+src\renderer\components\PlanLists.tsx:24:  'feedback.created': '反馈已创建',
+src\renderer\components\PlanLists.tsx:25:  'plan.generated': '计划已生成',
+src\renderer\components\PlanLists.tsx:35:export function getEventSearchText(event: AppEvent) {
+--- status ---
+ M scripts/smoke-test.js
+ M src/renderer/components/PlanLists.tsx
+
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 4621f78688d2cb7ff4cd145b8cf7bb42262d8060..21d07561e9b432194640cacc5651bfd33e50b8a0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -296,6 +296,7 @@
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+     assertWorkspaceSearchRegression(snapshot);
+     assertFrontendInteractionSourceSmoke();
++    assertEventPresentationCopyRegression();
+     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
+ 
+     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+@@ -516,6 +517,29 @@
+   assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+ }
+ 
++function assertEventPresentationCopyRegression() {
++  const { formatEvent, getEventSearchText } = loadRendererTsModule(
++    path.join(__dirname, '..', 'src', 'renderer', 'components', 'PlanLists.tsx'),
++  );
++  const event = (type, message = '') => ({
++    id: 9000,
++    project_id: 1,
++    type,
++    message,
++    meta: null,
++    created_at: '2026-06-27T00:00:00.000Z',
++  });
++
++  assert.equal(formatEvent(event('scan.done', '扫描发现 1 条需求')).title, '扫描完成', 'scan.done 应显示中文标题');
++  assert.equal(formatEvent(event('feedback.created', '收到反馈')).title, '反馈已创建', 'feedback.created 应显示中文标题');
++  assert.equal(formatEvent(event('plan.generated', '计划文件已生成')).title, '计划已生成', 'plan.generated 应显示中文标题');
++  assert.equal(formatEvent(event('system.unknown')).title, 'system.unknown', '未知事件类型应保留原始 key');
++
++  const scanSearchText = getEventSearchText(event('scan.done'));
++  assert.match(scanSearchText, /扫描完成/, '事件搜索文本应包含中文展示标题');
++  assert.match(scanSearchText, /scan\.done/, '事件搜索文本应保留原始事件 key');
++}
++
+ async function assertPlanReadRegression(
+   db,
+   loop,
+
+codex
+静态检查确认新增覆盖点存在；按要求不运行任何验证命令。
+  ✓ 定位 smoke 覆盖结构
+  ✓ 补充事件文案断言
+  ✓ 静态检查变更范围
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 4621f78688d2cb7ff4cd145b8cf7bb42262d8060..21d07561e9b432194640cacc5651bfd33e50b8a0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -296,6 +296,7 @@
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+     assertWorkspaceSearchRegression(snapshot);
+     assertFrontendInteractionSourceSmoke();
++    assertEventPresentationCopyRegression();
+     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
+ 
+     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+@@ -516,6 +517,29 @@
+   assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+ }
+ 
++function assertEventPresentationCopyRegression() {
++  const { formatEvent, getEventSearchText } = loadRendererTsModule(
++    path.join(__dirname, '..', 'src', 'renderer', 'components', 'PlanLists.tsx'),
++  );
++  const event = (type, message = '') => ({
++    id: 9000,
++    project_id: 1,
++    type,
++    message,
++    meta: null,
++    created_at: '2026-06-27T00:00:00.000Z',
++  });
++
++  assert.equal(formatEvent(event('scan.done', '扫描发现 1 条需求')).title, '扫描完成', 'scan.done 应显示中文标题');
++  assert.equal(formatEvent(event('feedback.created', '收到反馈')).title, '反馈已创建', 'feedback.created 应显示中文标题');
++  assert.equal(formatEvent(event('plan.generated', '计划文件已生成')).title, '计划已生成', 'plan.generated 应显示中文标题');
++  assert.equal(formatEvent(event('system.unknown')).title, 'system.unknown', '未知事件类型应保留原始 key');
++
++  const scanSearchText = getEventSearchText(event('scan.done'));
++  assert.match(scanSearchText, /扫描完成/, '事件搜索文本应包含中文展示标题');
++  assert.match(scanSearchText, /scan\.done/, '事件搜索文本应保留原始事件 key');
++}
++
+ async function assertPlanReadRegression(
+   db,
+   loop,
+
+已完成 P004，未修改 plan 文件，未运行 smoke/测试/构建/lint。
+
+**变更内容**
+- 在 `scripts/smoke-test.js:299` 接入新的事件文案回归覆盖函数。
+- 在 `scripts/smoke-test.js:520` 新增 `assertEventPresentationCopyRegression()`。
+- 覆盖 `scan.done`、`feedback.created`、`plan.generated` 分别显示“扫描完成 / 反馈已创建 / 计划已生成”。
+- 覆盖未知事件 `system.unknown` 继续显示原始 key。
+- 覆盖 `getEventSearchText` 同时包含中文展示标题和原始 `scan.done` key，保证搜索兼容。
+
+**说明**
+- `src/renderer/components/PlanLists.tsx` 中的映射入口沿用前序任务结果，本次未额外改动该文件。
+- 验证命令留给 P005 的最终验收阶段执行。
+codex
+已完成 P004，未修改 plan 文件，未运行 smoke/测试/构建/lint。
+
+**变更内容**
+- 在 `scripts/smoke-test.js:299` 接入新的事件文案回归覆盖函数。
+- 在 `scripts/smoke-test.js:520` 新增 `assertEventPresentationCopyRegression()`。
+- 覆盖 `scan.done`、`feedback.created`、`plan.generated` 分别显示“扫描完成 / 反馈已创建 / 计划已生成”。
+- 覆盖未知事件 `system.unknown` 继续显示原始 key。
+- 覆盖 `getEventSearchText` 同时包含中文展示标题和原始 `scan.done` key，保证搜索兼容。
+
+**说明**
+- `src/renderer/components/PlanLists.tsx` 中的映射入口沿用前序任务结果，本次未额外改动该文件。
+- 验证命令留给 P005 的最终验收阶段执行。
+diff --git a/scripts/smoke-test.js b/scripts/smoke-test.js
+index 4621f78688d2cb7ff4cd145b8cf7bb42262d8060..21d07561e9b432194640cacc5651bfd33e50b8a0
+--- a/scripts/smoke-test.js
++++ b/scripts/smoke-test.js
+@@ -296,6 +296,7 @@
+     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+     assertWorkspaceSearchRegression(snapshot);
+     assertFrontendInteractionSourceSmoke();
++    assertEventPresentationCopyRegression();
+     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
+ 
+     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
+@@ -516,6 +517,29 @@
+   assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+ }
+ 
++function assertEventPresentationCopyRegression() {
++  const { formatEvent, getEventSearchText } = loadRendererTsModule(
++    path.join(__dirname, '..', 'src', 'renderer', 'components', 'PlanLists.tsx'),
++  );
++  const event = (type, message = '') => ({
++    id: 9000,
++    project_id: 1,
++    type,
++    message,
++    meta: null,
++    created_at: '2026-06-27T00:00:00.000Z',
++  });
++
++  assert.equal(formatEvent(event('scan.done', '扫描发现 1 条需求')).title, '扫描完成', 'scan.done 应显示中文标题');
++  assert.equal(formatEvent(event('feedback.created', '收到反馈')).title, '反馈已创建', 'feedback.created 应显示中文标题');
++  assert.equal(formatEvent(event('plan.generated', '计划文件已生成')).title, '计划已生成', 'plan.generated 应显示中文标题');
++  assert.equal(formatEvent(event('system.unknown')).title, 'system.unknown', '未知事件类型应保留原始 key');
++
++  const scanSearchText = getEventSearchText(event('scan.done'));
++  assert.match(scanSearchText, /扫描完成/, '事件搜索文本应包含中文展示标题');
++  assert.match(scanSearchText, /scan\.done/, '事件搜索文本应保留原始事件 key');
++}
++
+ async function assertPlanReadRegression(
+   db,
+   loop,
+
+tokens used
+244,629

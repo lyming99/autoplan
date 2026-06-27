@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoPlan · 任务与计划</title>
+    <style>
+      /* ============================================================
+         设计系统 · Design Tokens（与 workspace.html 完全一致）
+         ============================================================ */
+      :root {
+        color-scheme: light;
+        --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+        --brand-50: #eef4ff;
+        --brand-100: #dbe7ff;
+        --brand-500: #3b6ef5;
+        --brand-600: #255fbd;
+        --brand-700: #1d4a94;
+        --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+
+        --bg-app: #f4f6fb;
+        --bg-elevated: #ffffff;
+        --bg-soft: #f8fafd;
+        --bg-hover: #eef2f9;
+        --line: #e2e8f1;
+        --line-soft: #eef2f8;
+
+        --text-1: #172033;
+        --text-2: #475067;
+        --text-3: #7c879b;
+        --text-4: #a4adc0;
+
+        --success: #18a957;
+        --success-bg: #e7f7ee;
+        --warning: #e08600;
+        --warning-bg: #fdf3e3;
+        --danger: #e5484d;
+        --danger-bg: #fdecec;
+        --info: #2563eb;
+        --info-bg: #e8f0ff;
+
+        --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+        --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+        --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+        --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+
+        font-family: var(--font-sans);
+        background: var(--bg-app);
+        color: var(--text-1);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { overflow: hidden; font-size: 14px; -webkit-font-smoothing: antialiased; }
+      h1, h2, h3, h4, p { margin: 0; }
+      button { font: inherit; cursor: pointer; }
+      a { color: var(--brand-600); text-decoration: none; }
+      code { font-family: var(--font-mono); }
+      .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+      .icon {
+        width: 1em; height: 1em; flex: 0 0 auto;
+        display: inline-block; vertical-align: -0.15em;
+        fill: none; stroke: currentColor; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round;
+      }
+      .icon-sm { width: 14px; height: 14px; }
+
+      /* 应用骨架 */
+      .app { display: grid; grid-template-columns: 248px 1fr; height: 100vh; }
+
+      /* 侧边栏 */
+      .sidebar {
+        display: flex; flex-direction: column; gap: 6px;
+        padding: 22px 14px 18px;
+        background: var(--bg-elevated); border-right: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: 12px; padding: 4px 10px 22px; }
+      .brand-mark {
+        display: grid; place-items: center; width: 40px; height: 40px;
+        border-radius: 12px; background: var(--brand-grad); color: #fff;
+        font-weight: 800; font-size: 18px; box-shadow: 0 8px 18px rgba(77, 110, 255, 0.35);
+      }
+      .brand-name { font-size: 17px; font-weight: 700; }
+      .brand-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+      .project-switcher {
+        margin: 0 4px 10px; padding: 10px;
+        border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft);
+      }
+      .project-label {
+        font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+        font-weight: 700; color: var(--text-4); margin-bottom: 8px;
+      }
+      .project-select-trigger {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-elevated); text-align: left;
+      }
+      .project-avatar {
+        width: 26px; height: 26px; flex: 0 0 auto; border-radius: 7px;
+        background: var(--brand-grad); color: #fff; font-weight: 700; font-size: 12px;
+        display: grid; place-items: center;
+      }
+      .project-main { min-width: 0; flex: 1 1 auto; }
+      .project-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .project-path { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+      .nav-group-label {
+        padding: 16px 12px 6px; font-size: 10.5px; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--text-4); font-weight: 700;
+      }
+      .nav-item {
+        display: flex; align-items: center; gap: 12px; width: 100%;
+        padding: 10px 12px; border: 0; border-radius: var(--r-md);
+        background: transparent; color: var(--text-2); text-align: left;
+        font-size: 13.5px; font-weight: 500; transition: background .14s, color .14s;
+      }
+      .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+      .nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+      .nav-item.active .nav-ico { color: var(--brand-600); }
+      .nav-ico { width: 20px; height: 20px; flex: 0 0 auto; color: var(--text-3); display: grid; place-items: center; }
+      .nav-ico .icon { width: 18px; height: 18px; }
+      .nav-badge {
+        margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px;
+        border-radius: 999px; background: var(--line); color: var(--text-2);
+        font-size: 11px; font-weight: 700; display: grid; place-items: center;
+      }
+      .nav-item.active .nav-badge { background: var(--brand-600); color: #fff; }
+      .sidebar-footer {
+        margin-top: auto; padding: 12px; border-radius: var(--r-md);
+        background: var(--bg-soft); border: 1px solid var(--line-soft);
+      }
+      .loop-mini { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2); }
+      .loop-mini b { color: var(--text-1); }
+      .led { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-bg); }
+      .led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+      @keyframes led-pulse { 0%,100% { box-shadow: 0 0 0 4px var(--success-bg); } 50% { box-shadow: 0 0 0 7px rgba(24,169,87,.15); } }
+
+      /* 主区 */
+      .main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
+      .topbar {
+        display: flex; align-items: center; gap: 16px; padding: 16px 28px;
+        background: var(--bg-elevated); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+      }
+      .topbar-title h1 { font-size: 18px; font-weight: 700; }
+      .topbar-title p { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+      .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px;
+        border-radius: 999px; font-size: 12px; font-weight: 600;
+        background: var(--bg-soft); border: 1px solid var(--line); color: var(--text-2);
+      }
+      .pill .led { width: 7px; height: 7px; box-shadow: 0 0 0 3px var(--success-bg); }
+
+      .view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+
+      /* 通用组件 */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+        padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--bg-elevated); color: var(--text-1); font-size: 12.5px; font-weight: 600;
+        transition: background .14s, border-color .14s, transform .06s;
+      }
+      .btn:hover { background: var(--bg-hover); }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+      .btn-primary:hover { background: var(--brand-700); }
+      .btn-sm { padding: 5px 10px; font-size: 11.5px; }
+      .btn-ghost { border-color: transparent; background: transparent; color: var(--text-3); }
+      .btn-ghost:hover { background: var(--bg-hover); color: var(--text-1); }
+      .btn .icon { width: 14px; height: 14px; }
+
+      .chip {
+        display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+        border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+      }
+      .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+      .chip-pending { color: var(--text-3); background: var(--bg-soft); }
+      .chip-running { color: var(--info); background: var(--info-bg); }
+      .chip-completed { color: var(--success); background: var(--success-bg); }
+      .chip-failed { color: var(--danger); background: var(--danger-bg); }
+      .chip-waiting { color: var(--warning); background: var(--warning-bg); }
+      .chip-accepted { color: var(--success); background: var(--success-bg); }
+
+      .mono { font-family: var(--font-mono); }
+
+      ::-webkit-scrollbar { width:9px; height:9px; }
+      ::-webkit-scrollbar-thumb { background:#d4dce8; border-radius:999px; border:2px solid transparent; background-clip:content-box; }
+      ::-webkit-scrollbar-track { background:transparent; }
+
+      .watermark { position:fixed; right:18px; bottom:14px; z-index:50; font-size:10.5px; color:var(--text-4); background:var(--bg-elevated); border:1px solid var(--line); padding:4px 10px; border-radius:999px; box-shadow:var(--shadow-sm); }
+
+      /* ============================================================
+         任务与计划页专属
+         ============================================================ */
+      .tasks-view {
+        display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+        gap: 18px; height: 100%; min-height: 0;
+        padding: 20px 28px 24px;
+      }
+      .col { display: flex; flex-direction: column; min-height: 0; }
+      .col-card {
+        display: flex; flex-direction: column; min-height: 0; flex: 1 1 0;
+        background: var(--bg-elevated); border: 1px solid var(--line);
+        border-radius: var(--r-lg); overflow: hidden;
+      }
+      .col-head {
+        display: flex; align-items: center; gap: 10px; flex: 0 0 auto;
+        padding: 13px 16px; border-bottom: 1px solid var(--line-soft);
+      }
+      .col-head h2 { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+      .col-head h2 .count {
+        font-size: 11.5px; font-weight: 600; color: var(--text-4);
+      }
+      .col-head .spacer { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+
+      .col-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 12px; }
+
+      /* 筛选标签（Plan 状态 / Task 状态共用） */
+      .filter-tabs { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 6px 12px; }
+      .filter-tab {
+        display: inline-flex; align-items: center; gap: 6px;
+        padding: 5px 11px; border: 1px solid var(--line); border-radius: 999px;
+        background: var(--bg-elevated); color: var(--text-2);
+        font-size: 12px; font-weight: 600; transition: all .14s;
+      }
+      .filter-tab:hover { border-color: #c6d1e3; color: var(--text-1); }
+      .filter-tab.active { background: var(--brand-50); border-color: #cdd8ea; color: var(--brand-700); }
+      .filter-tab .fc { font-size: 10.5px; font-weight: 700; color: var(--text-4); }
+      .filter-tab.active .fc { color: var(--brand-600); }
+
+      /* ============ Plan 卡片 ============ */
+      .plan-list { display: flex; flex-direction: column; gap: 10px; }
+      .plan-card {
+        padding: 13px 15px;
+        border: 1px solid var(--line-soft); border-radius: var(--r-md);
+        background: var(--bg-elevated);
+        transition: border-color .14s, background .14s;
+      }
+      .plan-card:hover { border-color: var(--line); }
+      .plan-card.selected { border-color: #d6e0f3; background: var(--brand-50); }
+
+      .plan-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .plan-path {
+        font-family: var(--font-mono); font-size: 12.5px; color: var(--text-1);
+        font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%;
+      }
+      .plan-title { font-size: 13px; font-weight: 600; color: var(--text-1); margin-top: 4px; }
+      .plan-title.muted { color: var(--text-3); font-weight: 500; }
+
+      .plan-progress { margin-top: 11px; }
+      .progress-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; font-size: 11.5px; }
+      .progress-head .ph-left { color: var(--text-2); font-weight: 600; }
+      .progress-head .ph-right { color: var(--text-3); font-family: var(--font-mono); }
+      .progress { height: 6px; border-radius: 999px; background: var(--line); overflow: hidden; }
+      .progress > span { display: block; height: 100%; border-radius: 999px; background: var(--brand-grad); transition: width .3s; }
+      .progress.success > span { background: var(--success); }
+
+      /* 并发建议摘要 */
+      .concurrency-row {
+        display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+        margin-top: 11px;
+      }
+      .conc-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; color: var(--text-2); }
+      .conc-item .conc-ico { width: 14px; height: 14px; color: var(--text-3); display: grid; place-items: center; }
+      .conc-item .conc-ico .icon { width: 13px; height: 13px; }
+      .conc-item b { color: var(--text-1); font-family: var(--font-mono); font-size: 12px; }
+      .conc-item.parallel .conc-ico { color: var(--success); }
+      .conc-item.batch .conc-ico { color: var(--info); }
+      .conc-item.serial .conc-ico { color: var(--warning); }
+      .conc-reason { margin-left: auto; font-size: 11px; color: var(--danger); display: inline-flex; align-items: center; gap: 4px; }
+
+      .plan-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 11px; font-size: 11px; color: var(--text-3); }
+      .plan-meta .meta-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); }
+      .cli-tag {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-size: 11px; font-weight: 600; color: var(--text-2);
+      }
+      .cli-tag .icon { width: 12px; height: 12px; color: var(--text-3); }
+
+      .plan-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+
+      /* ============ Task 列表 ============ */
+      .task-groups { display: flex; flex-direction: column; gap: 14px; }
+      .task-group { }
+
+      .task-group-head {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        padding: 4px 2px 8px; border: 0; background: transparent; text-align: left;
+        font: inherit; cursor: pointer;
+      }
+
+      .tg-caret { flex: 0 0 auto; width: 14px; height: 14px; color: var(--text-4); display: grid; place-items: center; transition: transform .16s; }
+      .tg-caret .icon { width: 14px; height: 14px; }
+      .task-group.collapsed .tg-caret { transform: rotate(-90deg); }
+
+      .tg-dot { flex: 0 0 auto; width: 7px; height: 7px; border-radius: 50%; background: var(--text-4); }
+      .task-group.has-running .tg-dot { background: var(--info); animation: led-pulse 1.6s ease-in-out infinite; box-shadow: 0 0 0 3px var(--info-bg); }
+      .task-group.completed .tg-dot { background: var(--success); }
+
+      .task-group-head .tg-title { font-size: 12px; font-weight: 700; color: var(--text-2); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+      .task-group-head .tg-summary { font-size: 11px; color: var(--text-4); margin-left: auto; white-space: nowrap; }
+      .task-group-head .tg-count { flex: 0 0 auto; font-size: 11px; font-weight: 600; color: var(--text-4); }
+      .task-group.has-running .tg-count { color: var(--info); }
+      .task-group.completed .tg-count { color: var(--success); }
+
+      .task-group-body { display: flex; flex-direction: column; gap: 6px; }
+      .task-group.collapsed .task-group-body { display: none; }
+
+      .task-item {
+        display: flex; flex-direction: column; gap: 7px;
+        padding: 11px 13px;
+        border: 1px solid var(--line-soft); border-radius: var(--r-md);
+        background: var(--bg-elevated);
+        transition: border-color .14s, background .14s;
+      }
+      .task-item:hover { border-color: var(--line); }
+      .task-item.completed { opacity: .75; }
+
+      .task-top { display: flex; align-items: center; gap: 8px; }
+      .task-key {
+        font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+        color: var(--brand-600); flex: 0 0 auto;
+      }
+      .task-title { font-size: 13px; font-weight: 600; color: var(--text-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1 1 auto; }
+      .task-duration { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+      .task-duration.running { color: var(--info); font-weight: 600; }
+
+      .task-file {
+        display: inline-flex; align-items: center; gap: 5px; font-family: var(--font-mono);
+        font-size: 11px; color: var(--brand-600); align-self: flex-start;
+      }
+      .task-file .icon { width: 12px; height: 12px; }
+
+      .scope-files { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .scope-chip {
+        display: inline-flex; align-items: center; gap: 4px;
+        font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3);
+      }
+      .scope-chip small { font-family: var(--font-sans); font-size: 10px; color: var(--text-4); }
+      .scope-chip.openable { color: var(--brand-600); cursor: pointer; }
+      .scope-chip.openable:hover { text-decoration: underline; }
+      .scope-chip.special.unknown { color: var(--warning); }
+      .scope-chip.special.validation { color: var(--info); }
+      .scope-chip .icon { width: 11px; height: 11px; }
+
+      .task-actions { display: flex; align-items: center; gap: 6px; margin-top: 1px; }
+
+      .empty {
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+        padding: 48px 20px; text-align: center; color: var(--text-4);
+      }
+      .empty .empty-ico { width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center; background: var(--bg-soft); color: var(--text-4); }
+      .empty .empty-ico .icon { width: 20px; height: 20px; }
+      .empty p { font-size: 12.5px; }
+
+      /* ============ 并发执行确认弹层 ============ */
+      .modal-mask {
+        position: fixed; inset: 0; z-index: 60; display: none;
+        background: rgba(23, 32, 51, 0.42); backdrop-filter: blur(2px);
+        align-items: center; justify-content: center; padding: 24px;
+      }
+      .modal-mask.open { display: flex; }
+      .modal {
+        width: 100%; max-width: 540px; max-height: 80vh; display: flex; flex-direction: column;
+        background: var(--bg-elevated); border-radius: var(--r-lg); box-shadow: var(--shadow-lg);
+      }
+      .modal-head {
+        display: flex; align-items: center; gap: 10px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft);
+      }
+      .modal-head h3 { font-size: 14.5px; font-weight: 700; }
+      .modal-head .modal-close {
+        margin-left: auto; width: 28px; height: 28px; border-radius: 7px; border: 0;
+        background: transparent; color: var(--text-3); font-size: 18px; line-height: 1; display: grid; place-items: center;
+      }
+      .modal-head .modal-close:hover { background: var(--bg-hover); color: var(--text-1); }
+      .modal-body { padding: 16px 18px; overflow: auto; }
+      .modal-body > p { font-size: 12.5px; color: var(--text-3); margin-bottom: 14px; line-height: 1.55; }
+      .batch-card { border: 1px solid var(--line); border-radius: var(--r-md); margin-bottom: 10px; overflow: hidden; }
+      .batch-head { display: flex; align-items: center; gap: 8px; padding: 10px 13px; background: var(--bg-soft); border-bottom: 1px solid var(--line-soft); }
+      .batch-head strong { font-size: 12.5px; color: var(--text-1); }
+      .batch-head .batch-reason { margin-left: auto; font-size: 11px; color: var(--success); font-weight: 600; }
+      .batch-card ul { list-style: none; margin: 0; padding: 6px; }
+      .batch-card li { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: var(--r-sm); font-size: 12px; }
+      .batch-card li:hover { background: var(--bg-soft); }
+      .batch-card li .bk { font-family: var(--font-mono); font-size: 10.5px; font-weight: 700; color: var(--brand-700); background: var(--brand-50); padding: 1px 6px; border-radius: 4px; }
+      .batch-card li .bt { color: var(--text-1); }
+      .batch-card li .bs { margin-left: auto; font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); }
+      .modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 14px 18px; border-top: 1px solid var(--line-soft); }
+    </style>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-overview" viewBox="0 0 24 24"><path d="M4 13a8 8 0 1 1 16 0"></path><path d="m12 13 4-4"></path><path d="M6 19h12"></path></symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></symbol>
+      <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m15.5 5.5 3 3"></path><path d="M4 20l4.5-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20Z"></path></symbol>
+      <symbol id="icon-check-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="m8 12 3 3 5-6"></path></symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 7h11"></path><path d="M9 12h11"></path><path d="M9 17h11"></path><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"></circle></symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V20a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H10a1.6 1.6 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V10a1.6 1.6 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"></path></symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7-11-7Z"></path></symbol>
+      <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"></rect></symbol>
+      <symbol id="icon-zap" viewBox="0 0 24 24"><path d="M13 2 3 14h9l-1 8 10-12h-9l1-8Z"></path></symbol>
+      <symbol id="icon-layers" viewBox="0 0 24 24"><path d="m12 2 9 5-9 5-9-5 9-5Z"></path><path d="m3 12 9 5 9-5"></path><path d="m3 17 9 5 9-5"></path></symbol>
+      <symbol id="icon-git-branch" viewBox="0 0 24 24"><circle cx="6" cy="6" r="2.5"></circle><circle cx="6" cy="18" r="2.5"></circle><circle cx="18" cy="8" r="2.5"></circle><path d="M6 8.5v7"></path><path d="M18 10.5c0 4-6 3.5-6 7.5"></path></symbol>
+      <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-13.7 5.6"></path><path d="M4 12A8 8 0 0 1 17.7 6.4"></path><path d="M17.7 3.8v2.6h-2.6"></path><path d="M6.3 20.2v-2.6h2.6"></path></symbol>
+      <symbol id="icon-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"></path><path d="m8 6-6 6 6 6"></path></symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"></path><path d="M14 3v5h5"></path></symbol>
+      <symbol id="icon-doc" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"></path><path d="M14 3v5h5"></path><path d="M9 13h6"></path><path d="M9 17h6"></path></symbol>
+      <symbol id="icon-brain" viewBox="0 0 24 24"><path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v.5a2.5 2.5 0 0 0-2 4 2.5 2.5 0 0 0 .5 4 2.5 2.5 0 0 0 4 3 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 4-3 2.5 2.5 0 0 0 .5-4 2.5 2.5 0 0 0-2-4v-.5A2.5 2.5 0 0 0 14.5 2 2.5 2.5 0 0 0 12 3.5 2.5 2.5 0 0 0 9.5 2Z"></path><path d="M12 3.5v17"></path></symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
+      <symbol id="icon-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></symbol>
+      <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></symbol>
+      <symbol id="icon-folder-open" viewBox="0 0 24 24"><path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v2"></path><path d="m4 20 2-8h17l-2.5 8a2 2 0 0 1-1.9 1.4H4Z"></path></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></symbol>
+      <symbol id="icon-inbox" viewBox="0 0 24 24"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.5 5h13l3.5 7v6a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-6l3.5-7Z"></path></symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+    </svg>
+    <div class="app">
+      <!-- ===================== 应用侧边栏 ===================== -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <div class="brand-name">AutoPlan</div>
+            <div class="brand-sub">需求 · 计划 · 执行 · 验收</div>
+          </div>
+        </div>
+        <div class="project-switcher">
+          <div class="project-label">当前项目</div>
+          <div class="project-select-trigger">
+            <span class="project-avatar" style="background:linear-gradient(135deg,#4f7bff,#6d5dfc)">W</span>
+            <span class="project-main">
+              <span class="project-name">wenz_richtext</span>
+              <span class="project-path">wenz_flutter/wenz_richtext</span>
+            </span>
+          </div>
+        </div>
+        <div class="nav-group-label">工作区</div>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-overview"></use></svg></span> 概览</button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-target"></use></svg></span> 需求 <span class="nav-badge">4</span></button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-pencil"></use></svg></span> 反馈 <span class="nav-badge">2</span></button>
+        <div class="nav-group-label">执行</div>
+        <button class="nav-item active"><span class="nav-ico"><svg class="icon"><use href="#icon-check-square"></use></svg></span> 任务与计划 <span class="nav-badge">1</span></button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-list"></use></svg></span> 事件流</button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-settings"></use></svg></span> 设置</button>
+        <div class="sidebar-footer">
+          <div class="loop-mini"><span class="led running"></span><span>循环 <b>运行中</b></span></div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:6px;font-family:var(--font-mono);">Codex · 思考 xhigh · 5s</div>
+        </div>
+      </aside>
+
+      <!-- ===================== 主区 ===================== -->
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-title">
+            <h1>任务与计划</h1>
+            <p>Plan 与任务进度，支持并发执行与全文阅读</p>
+          </div>
+          <div class="topbar-actions">
+            <span class="pill"><span class="led running"></span> running · execute-task</span>
+            <button class="btn btn-sm">单轮执行</button>
+            <button class="btn btn-sm btn-primary"><svg class="icon"><use href="#icon-play"></use></svg>启动</button>
+          </div>
+        </header>
+
+        <section class="view">
+          <div class="tasks-view">
+
+            <!-- ============ 左列：Plan ============ -->
+            <div class="col">
+              <div class="col-card">
+                <div class="col-head">
+                  <h2>Plan <span class="count">3</span></h2>
+                  <div class="spacer">
+                    <button class="btn btn-sm btn-ghost"><svg class="icon"><use href="#icon-refresh"></use></svg></button>
+                  </div>
+                </div>
+                <div class="col-body">
+                  <div class="filter-tabs" id="planFilters">
+                    <button class="filter-tab active" data-filter="all">全部 <span class="fc">3</span></button>
+                    <button class="filter-tab" data-filter="running">执行中 <span class="fc">1</span></button>
+                    <button class="filter-tab" data-filter="draft">草稿 <span class="fc">1</span></button>
+                    <button class="filter-tab" data-filter="completed">已完成 <span class="fc">1</span></button>
+                  </div>
+
+                  <div class="plan-list">
+                    <!-- 执行中 -->
+                    <div class="plan-card running selected">
+                      <div class="plan-top">
+                        <span class="chip chip-running">running</span>
+                        <span class="plan-path">plan_20260627-1032.md</span>
+                      </div>
+                      <div class="plan-title">富文本图片粘贴支持</div>
+                      <div class="plan-progress">
+                        <div class="progress-head">
+                          <span class="ph-left">任务进度</span>
+                          <span class="ph-right">3 / 7 · 43%</span>
+                        </div>
+                        <div class="progress"><span style="width:43%"></span></div>
+                      </div>
+                      <div class="concurrency-row">
+                        <span class="conc-item parallel"><span class="conc-ico"><svg class="icon"><use href="#icon-zap"></use></svg></span>可并发 <b>4</b></span>
+                        <span class="conc-item batch"><span class="conc-ico"><svg class="icon"><use href="#icon-layers"></use></svg></span>建议 <b>2</b> 批</span>
+                        <span class="conc-item serial"><span class="conc-ico"><svg class="icon"><use href="#icon-git-branch"></use></svg></span>串行 <b>3</b></span>
+                      </div>
+                      <div class="plan-meta">
+                        <span class="cli-tag"><svg class="icon"><use href="#icon-code"></use></svg>Codex · 思考 xhigh</span>
+                        <span class="meta-dot"></span>
+                        <span class="mono">a1b2c3d4e5f6</span>
+                        <span class="meta-dot"></span>
+                        <span>06-27 10:32</span>
+                      </div>
+                      <div class="plan-actions">
+                        <button class="btn btn-sm btn-primary"><svg class="icon"><use href="#icon-zap"></use></svg>并发执行</button>
+                        <button class="btn btn-sm"><svg class="icon"><use href="#icon-doc"></use></svg>阅读全文</button>
+                        <span style="margin-left:auto;font-size:11px;color:var(--text-3);">验收 pending</span>
+                      </div>
+                    </div>
+
+                    <!-- 草稿 -->
+                    <div class="plan-card draft">
+                      <div class="plan-top">
+                        <span class="chip chip-waiting">draft</span>
+                        <span class="plan-path">plan_requirement_31_draft.md</span>
+                      </div>
+                      <div class="plan-title muted">来自 需求 #6 · 待显式执行</div>
+                      <div class="plan-progress">
+                        <div class="progress-head">
+                          <span class="ph-left">任务进度</span>
+                          <span class="ph-right">0 / 6 · 0%</span>
+                        </div>
+                        <div class="progress"><span style="width:0%"></span></div>
+                      </div>
+                      <div class="concurrency-row">
+                        <span class="conc-item parallel"><span class="conc-ico"><svg class="icon"><use href="#icon-zap"></use></svg></span>可并发 <b>3</b></span>
+                        <span class="conc-item batch"><span class="conc-ico"><svg class="icon"><use href="#icon-layers"></use></svg></span>建议 <b>2</b> 批</span>
+                        <span class="conc-item serial"><span class="conc-ico"><svg class="icon"><use href="#icon-git-branch"></use></svg></span>串行 <b>1</b></span>
+                      </div>
+                      <div class="plan-meta">
+                        <span class="cli-tag"><svg class="icon"><use href="#icon-code"></use></svg>Codex · 思考 medium</span>
+                        <span class="meta-dot"></span>
+                        <span class="mono">7f8e9d0c1b2a</span>
+                        <span class="meta-dot"></span>
+                        <span>06-27 09:18</span>
+                      </div>
+                      <div class="plan-actions">
+                        <button class="btn btn-sm" disabled style="opacity:.55"><svg class="icon"><use href="#icon-zap"></use></svg>并发执行</button>
+                        <button class="btn btn-sm"><svg class="icon"><use href="#icon-doc"></use></svg>阅读全文</button>
+                      </div>
+                    </div>
+
+                    <!-- 已完成 -->
+                    <div class="plan-card completed">
+                      <div class="plan-top">
+                        <span class="chip chip-completed">completed</span>
+                        <span class="plan-path">plan_20260627-0810.md</span>
+                      </div>
+                      <div class="plan-title">工具栏样式对齐飞书文档</div>
+                      <div class="plan-progress">
+                        <div class="progress-head">
+                          <span class="ph-left">任务进度</span>
+                          <span class="ph-right">5 / 5 · 100%</span>
+                        </div>
+                        <div class="progress success"><span style="width:100%"></span></div>
+                      </div>
+                      <div class="plan-meta">
+                        <span class="cli-tag"><svg class="icon"><use href="#icon-code"></use></svg>Codex · 思考 high</span>
+                        <span class="meta-dot"></span>
+                        <span class="mono">c3d4e5f6a7b8</span>
+                        <span class="meta-dot"></span>
+                        <span>06-27 08:10</span>
+                      </div>
+                      <div class="plan-actions">
+                        <button class="btn btn-sm" disabled style="opacity:.55"><svg class="icon"><use href="#icon-zap"></use></svg>已完成</button>
+                        <button class="btn btn-sm"><svg class="icon"><use href="#icon-doc"></use></svg>阅读全文</button>
+                        <span style="margin-left:auto;font-size:11px;color:var(--success);font-weight:600;">验收 passed</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ============ 右列：任务 ============ -->
+            <div class="col">
+              <div class="col-card">
+                <div class="col-head">
+                  <h2>任务 <span class="count">7</span></h2>
+                  <div class="spacer">
+                    <span style="font-size:11px;color:var(--text-3);">关联 plan_20260627-1032</span>
+                  </div>
+                </div>
+                <div class="col-body">
+                  <div class="filter-tabs" id="taskFilters">
+                    <button class="filter-tab active" data-filter="all">全部 <span class="fc">7</span></button>
+                    <button class="filter-tab" data-filter="running">进行中 <span class="fc">1</span></button>
+                    <button class="filter-tab" data-filter="queued">队列中 <span class="fc">3</span></button>
+                    <button class="filter-tab" data-filter="completed">已完成 <span class="fc">3</span></button>
+                  </div>
+
+                  <div class="task-groups">
+                    <!-- 分组：plan_20260627-1032 -->
+                    <div class="task-group has-running">
+                      <button type="button" class="task-group-head" aria-expanded="true">
+                        <span class="tg-caret"><svg class="icon"><use href="#icon-chevron-down"></use></svg></span>
+                        <span class="tg-dot"></span>
+                        <span class="tg-title">plan_20260627-1032 · 富文本图片粘贴</span>
+                        <span class="tg-count">4</span>
+                        <span class="tg-summary">最新更新 06-27 10:42</span>
+                      </button>
+                      <div class="task-group-body">
+                      <!-- 执行中 -->
+                      <div class="task-item running">
+                        <div class="task-top">
+                          <span class="task-key">P004</span>
+                          <span class="task-title">富文本选区处理</span>
+                          <span class="chip chip-running" style="margin-left:auto">running</span>
+                          <span class="task-duration running">已运行 2 分 14 秒</span>
+                        </div>
+                        <span class="task-file"><svg class="icon"><use href="#icon-file"></use></svg>lib/editor/selection.dart</span>
+                        <div class="scope-files">
+                          <span class="scope-chip openable"><svg class="icon"><use href="#icon-folder-open"></use></svg>lib/editor/selection.dart</span>
+                          <span class="scope-chip openable"><svg class="icon"><use href="#icon-folder-open"></use></svg>lib/editor/selection_controller.dart</span>
+                        </div>
+                        <div class="task-actions">
+                          <button class="btn btn-sm" disabled style="opacity:.55"><svg class="icon"><use href="#icon-play"></use></svg>执行</button>
+                          <button class="btn btn-sm"><svg class="icon"><use href="#icon-stop"></use></svg>停止</button>
+                        </div>
+                      </div>
+
+                      <!-- 队列中 -->
+                      <div class="task-item">
+                        <div class="task-top">
+                          <span class="task-key">P005</span>
+                          <span class="task-title">截图粘贴 OSS 上传流程</span>
+                          <span class="chip chip-pending" style="margin-left:auto">pending</span>
+                          <span class="task-duration">未开始</span>
+                        </div>
+                        <div class="scope-files">
+                          <span class="scope-chip openable"><svg class="icon"><use href="#icon-folder-open"></use></svg>lib/services/oss_upload.dart</span>
+                          <span class="scope-chip special.unknown"><svg class="icon"><use href="#icon-alert"></use></svg>unknown<small>· 无法判断影响范围</small></span>
+                        </div>
+                        <div class="task-actions">
+                          <button class="btn btn-sm btn-primary"><svg class="icon"><use href="#icon-play"></use></svg>执行</button>
+                          <button class="btn btn-sm" disabled style="opacity:.55"><svg class="icon"><use href="#icon-stop"></use></svg>停止</button>
+                        </div>
+                      </div>
+
+                      <div class="task-item">
+                        <div class="task-top">
+                          <span class="task-key">P006</span>
+                          <span class="task-title">image 节点插入与渲染</span>
+                          <span class="chip chip-pending" style="margin-left:auto">pending</span>
+                          <span class="task-duration">未开始</span>
+                        </div>
+                        <div class="scope-files">
+                          <span class="scope-chip openable"><svg class="icon"><use href="#icon-folder-open"></use></svg>lib/nodes/image_node.dart</span>
+                        </div>
+                        <div class="task-actions">
+                          <button class="btn btn-sm btn-primary"><svg class="icon"><use href="#icon-play"></use></svg>执行</button>
+                          <button class="btn btn-sm" disabled style="opacity:.55"><svg class="icon"><use href="#icon-stop"></use></svg>停止</button>
+                        </div>
+                      </div>
+
+                      <!-- 已完成 -->
+                      <div class="task-item completed">
+                        <div class="task-top">
+                          <span class="task-key">P003</span>
+                          <span class="task-title">段落样式 H1/H2/H3 切换</span>
+                          <span class="chip chip-completed" style="margin-left:auto">done</span>
+                          <span class="task-duration">耗时 8 分 32 秒</span>
+                        </div>
+                        <div class="scope-files">
+                          <span class="scope-chip openable"><svg class="icon"><use href="#icon-folder-open"></use></svg>lib/blocks/paragraph.dart</span>
+                          <span class="scope-chip special.validation"><svg class="icon"><use href="#icon-check-square"></use></svg>validation<small>· 完整验收任务</small></span>
+                        </div>
+                        <div class="task-actions">
+                          <button class="btn btn-sm" disabled style="opacity:.55"><svg class="icon"><use href="#icon-play"></use></svg>执行</button>
+                        </div>
+                      </div>
+                      </div>
+                    </div>
+
+                    <!-- 分组：plan_20260627-0810（已完成，默认折叠） -->
+                    <div class="task-group completed collapsed">
+                      <button type="button" class="task-group-head" aria-expanded="false">
+                        <span class="tg-caret"><svg class="icon"><use href="#icon-chevron-down"></use></svg></span>
+                        <span class="tg-dot"></span>
+                        <span class="tg-title">plan_20260627-0810 · 工具栏样式</span>
+                        <span class="tg-count">2</span>
+                        <span class="tg-summary">最新完成 06-27 09:50</span>
+                      </button>
+                      <div class="task-group-body">
+                      <div class="task-item completed">
+                        <div class="task-top">
+                          <span class="task-key">P002</span>
+                          <span class="task-title">工具栏分组竖线样式</span>
+                          <span class="chip chip-completed" style="margin-left:auto">done</span>
+                          <span class="task-duration">耗时 5 分 11 秒</span>
+                        </div>
+                        <div class="scope-files">
+                          <span class="scope-chip openable"><svg class="icon"><use href="#icon-folder-open"></use></svg>lib/widgets/toolbar.dart</span>
+                        </div>
+                        <div class="task-actions">
+                          <button class="btn btn-sm" disabled style="opacity:.55"><svg class="icon"><use href="#icon-play"></use></svg>执行</button>
+                        </div>
+                      </div>
+                      <div class="task-item completed">
+                        <div class="task-top">
+                          <span class="task-key">P001</span>
+                          <span class="task-title">悬浮态浅灰底样式</span>
+                          <span class="chip chip-completed" style="margin-left:auto">done</span>
+                          <span class="task-duration">耗时 3 分 47 秒</span>
+                        </div>
+                        <div class="scope-files">
+                          <span class="scope-chip openable"><svg class="icon"><use href="#icon-folder-open"></use></svg>lib/widgets/toolbar_item.dart</span>
+                        </div>
+                        <div class="task-actions">
+                          <button class="btn btn-sm" disabled style="opacity:.55"><svg class="icon"><use href="#icon-play"></use></svg>执行</button>
+                        </div>
+                      </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <!-- ============ 并发执行确认弹层 ============ -->
+    <div class="modal-mask" id="parallelModal">
+      <div class="modal">
+        <div class="modal-head">
+          <h3>确认并发执行</h3>
+          <button class="modal-close" id="closeParallel">×</button>
+        </div>
+        <div class="modal-body">
+          <p>确认后将按以下安全批次启动，取消不会改变任务状态。</p>
+          <div class="batch-card">
+            <div class="batch-head"><strong>批次 1</strong><span class="batch-reason">scope 互不重叠</span></div>
+            <ul>
+              <li><span class="bk">P005</span><span class="bt">截图粘贴 OSS 上传流程</span><span class="bs">lib/services/oss_upload.dart</span></li>
+              <li><span class="bk">P006</span><span class="bt">image 节点插入与渲染</span><span class="bs">lib/nodes/image_node.dart</span></li>
+            </ul>
+          </div>
+          <div class="batch-card">
+            <div class="batch-head"><strong>批次 2</strong><span class="batch-reason">等待批次 1 完成</span></div>
+            <ul>
+              <li><span class="bk">P007</span><span class="bt">粘贴进度弹窗组件</span><span class="bs">lib/widgets/upload_progress.dart</span></li>
+              <li><span class="bk">P008</span><span class="bt">文件粘贴区分逻辑</span><span class="bs">lib/editor/paste_handler.dart</span></li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-foot">
+          <button class="btn btn-sm" id="cancelParallel">取消</button>
+          <button class="btn btn-sm btn-primary"><svg class="icon"><use href="#icon-zap"></use></svg>确认并发执行</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="watermark">AutoPlan · 任务与计划设计稿</div>
+
+    <script>
+      /* ---------- Plan / Task 筛选标签切换（演示） ---------- */
+      const bindFilters = (containerId) => {
+        const tabs = document.querySelectorAll(`#${containerId} .filter-tab`);
+        tabs.forEach((tab) => {
+          tab.addEventListener('click', () => {
+            tabs.forEach((t) => t.classList.remove('active'));
+            tab.classList.add('active');
+          });
+        });
+      };
+      bindFilters('planFilters');
+      bindFilters('taskFilters');
+
+      /* ---------- 并发执行确认弹层 ---------- */
+      const modal = document.getElementById('parallelModal');
+      document.querySelectorAll('.plan-card .btn-primary').forEach((btn) => {
+        if (btn.textContent.includes('并发执行') && !btn.disabled) {
+          btn.addEventListener('click', () => modal.classList.add('open'));
+        }
+      });
+      const close = () => modal.classList.remove('open');
+      modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
+      document.getElementById('closeParallel').addEventListener('click', close);
+      document.getElementById('cancelParallel').addEventListener('click', close);
+
+      /* ---------- Plan 卡片选中态（演示） ---------- */
+      document.querySelectorAll('.plan-card').forEach((card) => {
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('button')) return;
+          document.querySelectorAll('.plan-card').forEach((c) => c.classList.remove('selected'));
+          card.classList.add('selected');
+        });
+      });
+
+      /* ---------- 任务分组折叠/展开 ---------- */
+      document.querySelectorAll('.task-group-head').forEach((head) => {
+        head.addEventListener('click', () => {
+          const group = head.closest('.task-group');
+          const collapsed = group.classList.toggle('collapsed');
+          head.setAttribute('aria-expanded', String(!collapsed));
+        });
+      });
+    </script>
+  </body>
+</html>

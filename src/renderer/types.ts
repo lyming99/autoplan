@@ -593,9 +593,18 @@ export interface CreateProjectInput {
 }
 
 export const MCP_TOOL_NAMES = {
+  LIST_PROJECTS: 'list_projects',
+  GET_PROJECT: 'get_project',
   CREATE_PROJECT: 'create_project',
+  LIST_REQUIREMENTS: 'list_requirements',
   CREATE_REQUIREMENT: 'create_requirement',
+  LIST_FEEDBACK: 'list_feedback',
   CREATE_FEEDBACK: 'create_feedback',
+  LIST_PLANS: 'list_plans',
+  GET_PLAN: 'get_plan',
+  LIST_TASKS: 'list_tasks',
+  START_LOOP: 'start_loop',
+  STOP_LOOP: 'stop_loop',
 } as const;
 
 export type McpToolName = (typeof MCP_TOOL_NAMES)[keyof typeof MCP_TOOL_NAMES];
@@ -604,6 +613,7 @@ export type McpStatusKind = 'disabled' | 'configured' | 'running' | 'error';
 export type McpAgentCliProvider = 'codex' | 'claude';
 export type McpCodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh';
 export type McpIntakeStatus = 'open' | 'completed' | 'closed';
+export interface McpToolDoc { name: McpToolName | string; title: string; description: string; markdown: string; }
 
 export interface McpStatus {
   enabled: boolean;
@@ -614,8 +624,11 @@ export interface McpStatus {
   port: number | null;
   path: string | null;
   url: string | null;
+  authToken: string;
+  authHeader: string;
   localOnly: boolean;
   tools: McpToolName[];
+  toolDocs: McpToolDoc[];
   connectionExample: string;
   note: string;
   lastEvent?: {
@@ -709,6 +722,7 @@ export interface LoopConfigInput {
   agentCliProvider?: AgentCliProvider;
   agentCliCommand?: string;
   codexReasoningEffort?: CodexReasoningEffort;
+  mcpAuthToken?: string;
 }
 
 export interface ProjectIdInput {

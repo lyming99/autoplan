@@ -1,0 +1,2947 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0993-4d92-7d32-987f-fe648a26fca3
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_37_20260627-225309.md
+指定任务：- [ ] P001: 梳理计划阅读与预览冲突点 <!-- scope: src/renderer/components/plans/PlanList.tsx,src/renderer/components/MarkdownReader.tsx,src/renderer/styles/components.css -->
+任务 scope：src/renderer/components/plans/planlist.tsx, src/renderer/components/markdownreader.tsx, src/renderer/styles/components.css
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Considering modifications**
+
+I need to think about what modifications are necessary. I'll also need to inspect the current setup to figure out what changes to make. Maybe I should plan my next steps carefully. First, I’ll read through the plan in a read-only format along with any related files. It feels important to understand everything before moving forward! Let’s see how we can refine this process together.
+codex
+我会先只读查看计划与限定 scope 文件，定位冲突点后做最小修改。
+  → 读取计划与相关代码
+  • 定位阅读预览冲突
+  • 实施限定范围修改
+  • 检查改动范围
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_requirement_37_20260627-225309.md' -Encoding UTF8; Write-Output '--- PlanList ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\renderer\\components\\plans\\PlanList.tsx' -Encoding UTF8; Write-Output '--- MarkdownReader ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\renderer\\components\\MarkdownReader.tsx' -Encoding UTF8; Write-Output '--- CSS ---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\src\\renderer\\styles\\components.css' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 344ms:
+# 需求 #37 开发计划：计划阅读隐藏任务拆解并修复 Markdown 预览任务列表
+
+## 背景
+
+需求 #37 指出：“计划阅读前文界面，不要显示任务拆解，在markdown预览里面显示，但是markdown预览任务列表有问题，是不是markdown格式冲突？处理一下”。当前计划阅读弹窗同时展示了任务拆解解析摘要和 Markdown 正文预览，容易在阅读前文时重复暴露任务拆解内容；同时 Markdown 预览中的 GFM checkbox 任务行可能与 AutoPlan 任务拆解格式 `- [ ] P001: ... <!-- scope: ... -->`、HTML 注释 scope、以及全局任务列表样式发生渲染或样式冲突，需要统一处理。
+
+## 设计约束
+
+- 本计划只处理计划阅读全文弹窗、MarkdownReader 对任务列表的渲染兼容、相关样式隔离和必要测试覆盖，不改动计划生成、任务执行、并发调度、数据库结构或任务解析规则。
+- “计划阅读前文界面”不再单独展示任务拆解解析结果或任务明细；任务拆解内容仅作为 Markdown 正文的一部分在预览区域展示。
+- Markdown 预览必须兼容 AutoPlan 任务拆解硬性格式，不能因为 `- [ ]`、`P001:` 或 `<!-- scope: ... -->` 导致任务行丢失、合并、嵌套错位或 checkbox 可交互误导。
+- MarkdownReader 的修复应保持通用 Markdown 阅读能力，避免影响普通列表、代码块、表格、引用块、链接和非任务 checkbox 的现有展示。
+- 不要把运行测试、回归、构建拆成普通开发任务；最终检查统一放入最后的“完整验收”节点。
+
+## 任务拆解
+
+- [ ] P001: 梳理计划阅读与预览冲突点 <!-- scope: src/renderer/components/plans/PlanList.tsx,src/renderer/components/MarkdownReader.tsx,src/renderer/styles/components.css -->
+  - 验收要点：确认计划阅读弹窗中“前文界面”、任务拆解解析摘要、Markdown 正文预览三者的当前层级、展示条件和数据来源。
+  - 验收要点：复核 AutoPlan 任务行在 `react-markdown` + `remark-gfm` 下的渲染结果，明确 HTML 注释 scope、checkbox、列表缩进和自定义 input 渲染之间的冲突点。
+  - 验收要点：确定本次改动边界，不修改任务解析器输出、不改变计划文件格式、不影响计划卡片列表的任务统计展示。
+
+- [ ] P002: 隐藏计划阅读任务拆解摘要 <!-- scope: src/renderer/components/plans/PlanList.tsx -->
+  - 验收要点：计划阅读全文弹窗不再在 Markdown 正文预览之前展示“任务拆解解析结果”区块、任务数量提示或解析警告的独立摘要。
+  - 验收要点：刷新、关闭、错误提示、加载态、文件路径、更新时间和计划摘要等阅读辅助信息继续正常显示。
+  - 验收要点：任务拆解内容仍保留在 Markdown 正文预览中，用户可以通过正文中的 `## 任务拆解` 章节阅读完整任务行。
+  - 验收要点：当计划文件缺少任务拆解或解析失败时，不再通过已隐藏区块打扰前文阅读，但读取错误仍通过原有错误区域呈现。
+
+- [ ] P003: 修复 Markdown 任务列表渲染 <!-- scope: src/renderer/components/MarkdownReader.tsx -->
+  - 验收要点：`- [ ] P001: 任务标题 <!-- scope: ... -->` 和 `- [x] P002: ...` 在 Markdown 预览中按独立任务列表项展示，不被合并为普通段落或丢失标题文本。
+  - 验收要点：scope HTML 注释不在预览中显示，但也不破坏任务行的 checkbox、编号、标题和后续缩进验收要点展示。
+  - 验收要点：预览内 checkbox 使用只读/禁用语义，避免用户误以为可在 Markdown 预览中直接勾选任务状态。
+  - 验收要点：普通无序列表、有序列表、嵌套列表、代码块里的 `- [ ]` 文本和表格内容不因本次任务列表修复而异常渲染。
+
+- [ ] P004: 隔离 Markdown 预览列表样式 <!-- scope: src/renderer/styles/components.css -->
+  - 验收要点：Markdown 预览中的 GFM task list 有稳定缩进、行高和 checkbox 对齐，长任务标题与中文验收要点换行后仍易读。
+  - 验收要点：`.markdown-reader` 内部样式不污染业务任务列表组件，现有任务面板、计划列表和弹窗按钮样式不被覆盖。
+  - 验收要点：任务拆解章节下的验收要点作为普通缩进 bullet 展示，不被渲染成嵌套 checkbox 或错误继承任务行样式。
+  - 验收要点：深色/浅色主题下 checkbox、链接、代码、注释被隐藏后的空白和列表间距保持可读。
+
+- [ ] P005: 补充 Markdown 阅读测试覆盖 <!-- scope: src/renderer/components/MarkdownReader.tsx,src/renderer/components/plans/PlanList.tsx,scripts/smoke-test.js -->
+  - 验收要点：覆盖计划阅读弹窗隐藏独立任务拆解摘要、但 Markdown 正文仍显示 `## 任务拆解` 章节的场景。
+  - 验收要点：覆盖 AutoPlan 标准任务行、已完成任务行、带 scope HTML 注释任务行和带缩进验收要点任务行的预览渲染场景。
+  - 验收要点：覆盖代码块中包含 `- [ ] P001` 文本时不被当作可视化任务 checkbox 处理的场景。
+  - 验收要点：测试代码只描述和校验阅读/预览行为，不在该任务内承担最终完整验收命令职责。
+
+- [ ] P006: 完整验收 <!-- scope: validation -->
+  - 验收要点：执行最终验收命令 `npm run check && npm run smoke`，范围覆盖 TypeScript 编译、MarkdownReader 渲染兼容、计划阅读弹窗展示逻辑和 smoke 主流程。
+  - 验收要点：手动打开包含标准 `## 任务拆解` 的计划文件，确认阅读弹窗前文区域不再出现独立任务拆解摘要，任务拆解仅在 Markdown 正文预览中出现。
+  - 验收要点：在 Markdown 预览中确认 `- [ ] P001: ... <!-- scope: ... -->` 每个任务独占一行、checkbox 对齐、scope 注释不显示、验收要点缩进正常。
+  - 验收要点：确认普通 Markdown 列表、表格、引用、代码块、链接和计划摘要信息没有明显回退。
+  - 验收要点：通过标准为最终验收命令退出码为 0，且手动验证计划阅读隐藏任务拆解摘要与 Markdown 预览任务列表修复均符合需求 #37。
+
+## 总体验收标准
+
+- 阅读聚焦：计划阅读全文弹窗不再在 Markdown 正文预览前单独展示任务拆解解析摘要或任务明细，前文阅读不被任务拆解区域打断。
+- 正文保留：计划文件中的 `## 任务拆解` 章节仍在 Markdown 预览中按原文结构展示，符合 AutoPlan 任务拆解硬性格式。
+- 列表正确：标准任务行 `- [ ] P001: 任务标题 <!-- scope: ... -->` 独占一行、编号连续可见、标题完整、scope 注释隐藏且不破坏渲染。
+- 样式隔离：Markdown 任务列表样式只作用于 `.markdown-reader`，不影响业务任务列表、计划列表和其他弹窗控件。
+- 兼容稳定：普通 Markdown 内容、代码块中的任务格式文本、嵌套验收要点和主题配色均保持可读且无明显回退。
+- 最终验收命令：执行 `npm run check && npm run smoke`；验收范围为计划阅读弹窗、MarkdownReader 任务列表渲染、样式隔离和现有 smoke 主流程；通过标准为命令退出码为 0，且手动验证需求 #37 描述的问题已修复。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：需求 #37 开发计划已创建，待执行。
+--- PlanList ---
+import type { KeyboardEvent, ReactNode } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+import { MarkdownReader } from '../MarkdownReader';
+import { planCliSummaryLabel } from '../shared';
+import { formatChinaDateTime } from '../../utils/time';
+import {
+  formatPlanDurationSummary,
+  planTitle,
+  tasksForPlan,
+  type ParallelRunRequest,
+} from '../../utils/planTasks';
+
+function hasPlanReaderUpdate(
+  readingPlan: Plan | null,
+  latestPlan: Plan | null | undefined,
+  result: WorkspacePlanReadState['result'],
+) {
+  if (!readingPlan || !latestPlan) return false;
+  if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+
+  const readFilePath = result?.file_path || readingPlan.file_path || '';
+  const readHash = result?.hash || readingPlan.hash || '';
+  const readUpdatedAt = result?.updated_at || readingPlan.updated_at || '';
+  return (
+    (latestPlan.file_path || '') !== readFilePath ||
+    (latestPlan.hash || '') !== readHash ||
+    (latestPlan.updated_at || '') !== readUpdatedAt ||
+    (latestPlan.status || '') !== (readingPlan.status || '')
+  );
+}
+
+const PLAN_READER_FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function getPlanReaderFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+    (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+  );
+}
+
+function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+  if (hasRunningTask) return '该计划已有任务执行中';
+  if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+  if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+  return '';
+}
+
+function getPlanProgressPercent(plan: Plan) {
+  const total = Math.max(0, Number(plan.total_tasks || 0));
+  if (!total) return 0;
+  return Math.max(0, Math.min(100, Math.round((Number(plan.completed_tasks || 0) / total) * 100)));
+}
+
+function planCardState(plan: Plan, hasRunningTask: boolean) {
+  if (plan.is_draft || plan.status === 'draft') return 'draft';
+  if (plan.validation_passed || plan.status === 'completed') return 'completed';
+  if (hasRunningTask || plan.status === 'running') return 'running';
+  return 'active';
+}
+
+function planCardChipClass(state: string) {
+  if (state === 'completed') return 'chip-completed';
+  if (state === 'running') return 'chip-running';
+  if (state === 'draft') return 'chip-waiting';
+  return 'chip-pending';
+}
+
+function readPlanTaskStatusLabel(status: string) {
+  if (status === 'completed') return '已完成';
+  if (status === 'running') return '执行中';
+  if (status === 'blocked') return '已阻塞';
+  if (status === 'failed') return '失败';
+  return '待执行';
+}
+
+function readPlanTaskScopeLabel(task: ReadPlanTask) {
+  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+}
+
+function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+  if (!result) return false;
+  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+}
+
+
+export function PlanList({
+  emptyText = '暂无 plan。',
+  latestReadingPlan,
+  onCloseReader,
+  onOpenReader,
+  onRunParallel,
+  onRefreshReader,
+  plans,
+  readerState,
+  renderPlanControls,
+  selectedPlanId,
+  tasks = [],
+  totalPlanCount = plans.length,
+}: {
+  emptyText?: string;
+  latestReadingPlan?: Plan | null;
+  onCloseReader: () => void;
+  onOpenReader: (plan: Plan) => void;
+  onRunParallel?: (request: ParallelRunRequest) => void;
+  onRefreshReader: () => void;
+  plans: Plan[];
+  readerState: WorkspacePlanReadState;
+  renderPlanControls?: (plan: Plan) => ReactNode;
+  selectedPlanId?: number | null;
+  tasks?: PlanTask[];
+  totalPlanCount?: number;
+}) {
+  const readingPlan = readerState.plan;
+  const planReadResult = readerState.result;
+  const planReadError = readerState.error;
+  const planReading = readerState.loading;
+  const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+  const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+  const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+  const readerPlanForSummary = latestReadingPlan || readingPlan;
+  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+  const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+  const readerTasks = planReadResult?.tasks || [];
+  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+  const readerDialogId = useId();
+  const readerTitleId = useId();
+  const readerDescriptionId = useId();
+  const readerContentId = useId();
+  const readerDialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+  const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+  const readerStatusText = planReadError
+    ? `读取失败：${planReadError}`
+    : planReading
+      ? '正在读取 Plan 全文。'
+      : latestPlanUpdated
+        ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+        : 'Plan 全文已加载，当前为只读阅读模式。';
+
+  useEffect(() => {
+    if (!readingPlan) return undefined;
+
+    previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      readerDialogRef.current?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      previouslyFocusedElementRef.current?.focus();
+    };
+  }, [readingPlan?.id, readingPlan?.project_id]);
+
+  function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      onCloseReader();
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+
+    const dialog = readerDialogRef.current;
+    if (!dialog) return;
+
+    const focusableElements = getPlanReaderFocusableElements(dialog);
+    if (!focusableElements.length) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const firstFocusableElement = focusableElements[0];
+    const lastFocusableElement = focusableElements[focusableElements.length - 1];
+
+    if (document.activeElement === dialog) {
+      event.preventDefault();
+      (event.shiftKey ? lastFocusableElement : firstFocusableElement).focus();
+      return;
+    }
+
+    if (event.shiftKey && document.activeElement === firstFocusableElement) {
+      event.preventDefault();
+      lastFocusableElement.focus();
+      return;
+    }
+
+    if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+      event.preventDefault();
+      firstFocusableElement.focus();
+    }
+  }
+
+  return (
+    <>
+      {plans.length ? (
+        <div className="list compact plan-card-list">
+          {plans.map((plan) => {
+            const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+            const durationSummary = formatPlanDurationSummary(planTasks);
+            const title = planTitle(plan);
+            const progressPercent = getPlanProgressPercent(plan);
+            const cliSummary = planCliSummaryLabel(plan);
+            const readingThisPlan = Boolean(
+              readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+            );
+            const disableRead = planReading && readingThisPlan;
+            const suggestion = plan.concurrency_suggestion;
+            const runningInPlan = planTasks.some((task) => task.status === 'running');
+            const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
+            const canRunParallel = Boolean(onRunParallel && suggestion?.hasSafeParallelBatches && !parallelDisabledReason);
+            const cardState = planCardState(plan, runningInPlan);
+            const selected = selectedPlanId === plan.id;
+            const progressTone = plan.validation_passed || plan.status === 'completed' ? ' success' : runningInPlan ? ' running' : '';
+            return (
+              <article
+                className={`plan-card ${cardState}${selected ? ' selected' : ''}`}
+                key={plan.id}
+                data-plan-status={cardState}
+                data-selected={selected ? 'true' : undefined}
+              >
+                <div className="plan-top">
+                  <span className={`chip ${planCardChipClass(cardState)}`}>{plan.status}</span>
+                  <span className="plan-path" title={plan.file_path}>{plan.file_path}</span>
+                </div>
+
+                {title ? <div className={`plan-title${cardState === 'draft' ? ' muted' : ''}`} title={title}>{title}</div> : null}
+
+                <div className="plan-progress">
+                  <div className="progress-head">
+                    <span className="ph-left">任务进度</span>
+                    <span className="ph-right">{plan.completed_tasks} / {plan.total_tasks} · {progressPercent}%</span>
+                  </div>
+                  <div className={`progress${progressTone}`} aria-hidden="true">
+                    <span style={{ width: `${progressPercent}%` }} />
+                  </div>
+                  <div className="plan-progress-subline">{durationSummary}</div>
+                </div>
+
+                <div className="concurrency-row">
+                  <span className="conc-item parallel">可并发 <b>{suggestion?.parallelTaskCount || 0}</b></span>
+                  <span className="conc-item batch">建议 <b>{suggestion?.batchCount || 0}</b> 批</span>
+                  <span className="conc-item serial">串行 <b>{suggestion?.serialTaskCount || 0}</b></span>
+                  {parallelDisabledReason ? <span className="conc-item blocked" title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
+                </div>
+
+                <div className="plan-meta">
+                  <span className="cli-tag">{cliSummary}</span>
+                  <span className="meta-dot" />
+                  <span className="mono">{plan.hash?.slice(0, 12) || 'no-hash'}</span>
+                  <span className="meta-dot" />
+                  <span>{formatChinaDateTime(plan.updated_at)}</span>
+                </div>
+
+                <div className="plan-actions">
+                  <div className="plan-primary-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary plan-parallel-link"
+                      disabled={!canRunParallel}
+                      title={parallelDisabledReason || undefined}
+                      onClick={() => setConfirmingPlan(plan)}
+                    >
+                      并发执行
+                    </button>
+                    <button
+                      type="button"
+                      className="btn btn-sm plan-read-link"
+                      aria-haspopup="dialog"
+                      aria-controls={readingThisPlan ? readerDialogId : undefined}
+                      aria-expanded={readingThisPlan}
+                      aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+                      disabled={disableRead}
+                      onClick={() => onOpenReader(plan)}
+                    >
+                      {disableRead ? '读取中…' : '阅读全文'}
+                    </button>
+                  </div>
+                  {renderPlanControls ? <div className="plan-secondary-actions">{renderPlanControls(plan)}</div> : null}
+                  <span className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}>
+                    验收 {plan.validation_passed ? 'passed' : 'pending'}
+                  </span>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty">{emptyText}</div>
+      )}
+
+      {confirmingPlan ? (
+        <div className="modal-mask" onClick={() => setConfirmingPlan(null)}>
+          <div className="modal parallel-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h3>确认并发执行</h3>
+              <button type="button" className="modal-close" onClick={() => setConfirmingPlan(null)} aria-label="关闭并发执行确认">
+                ×
+              </button>
+            </div>
+            <div className="parallel-confirm-body">
+              <p>确认后将按以下安全批次启动；取消不会改变任务状态。</p>
+              {confirmingPlan.concurrency_suggestion.batches.map((batch) => (
+                <section className="parallel-batch-card" key={batch.batch}>
+                  <div className="parallel-batch-head">
+                    <strong>批次 {batch.batch}</strong>
+                    <span>{batch.reason}</span>
+                  </div>
+                  <ul>
+                    {batch.tasks.map((task) => (
+                      <li key={task.id}>
+                        <span>{task.task_key} · {task.title}</span>
+                        <small className="mono">{task.scopes.join(', ')}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+              {confirmingPlan.concurrency_suggestion.serialTasks.length ? (
+                <details className="parallel-serial-reasons">
+                  <summary>查看不建议并发原因</summary>
+                  <ul>
+                    {confirmingPlan.concurrency_suggestion.serialTasks.map((task) => (
+                      <li key={task.id}>{task.task_key}：{task.reason}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn" onClick={() => setConfirmingPlan(null)}>取消</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const plan = confirmingPlan;
+                  setConfirmingPlan(null);
+                  onRunParallel?.({
+                    plan,
+                    batches: plan.concurrency_suggestion.batches.map((batch) => ({
+                      taskIds: batch.tasks.map((task) => task.id),
+                    })),
+                  });
+                }}
+              >
+                确认并发执行
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {readingPlan ? (
+        <div className="modal-mask" onClick={onCloseReader}>
+          <div
+            id={readerDialogId}
+            ref={readerDialogRef}
+            className="modal plan-reader-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={readerTitleId}
+            aria-describedby={readerDescriptionId}
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={handleReaderKeyDown}
+          >
+            <div className="modal-head plan-reader-head">
+              <div className="plan-reader-title">
+                <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+                <span className="plan-reader-path mono" title={readerFilePath}>
+                  {readerFilePath || '未记录文件路径'}
+                </span>
+                <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+                  {readerStatusText}
+                </p>
+              </div>
+              <div className="item-actions plan-reader-actions">
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={planReading}
+                  onClick={onRefreshReader}
+                  aria-label="重新读取 Plan 全文"
+                >
+                  {planReading ? '读取中…' : '刷新'}
+                </button>
+                <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+              <dl className="plan-reader-summary" aria-label="Plan 摘要">
+                <div className="plan-reader-summary-item">
+                  <dt>状态</dt>
+                  <dd>{readingPlan.status}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>CLI</dt>
+                  <dd>{readerCliSummary || '-'}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>更新时间</dt>
+                  <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>哈希</dt>
+                  <dd className="mono" title={readerHash}>
+                    {readerHash?.slice(0, 12) || '-'}
+                  </dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>任务拆解</dt>
+                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                </div>
+              </dl>
+
+              {latestPlanUpdated ? (
+                <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+                  Plan 列表信息已更新，可刷新读取最新正文。
+                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+                    刷新读取
+                  </button>
+                </div>
+              ) : null}
+              {planReadError ? (
+                <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+                  <span>{planReadError}</span>
+                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+                    重试
+                  </button>
+                </div>
+              ) : null}
+              {planReading ? (
+                <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                  正在读取 Plan 全文…
+                </div>
+              ) : null}
+              {!planReading && !planReadError && planReadResult ? (
+                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+                    {readerTaskParseMessage}
+                  </div>
+                  {readerTasks.length ? (
+                    <ul className="list compact" aria-label="已解析任务列表">
+                      {readerTasks.map((task) => (
+                        <li key={task.id} className="task-scope-chip">
+                          <span className="mono">{task.task_key}</span>
+                          <span>{task.title}</span>
+                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+              ) : null}
+              {!planReading && !planReadError ? (
+                <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                  <MarkdownReader
+                    markdown={planReadResult?.markdown ?? ''}
+                    emptyMessage="暂无计划正文"
+                    ariaLabel="Plan Markdown 正文内容"
+                  />
+                </section>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+--- MarkdownReader ---
+import type { ComponentProps, ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+
+export type MarkdownReaderProps = {
+  markdown?: string | null;
+  className?: string;
+  emptyMessage?: string;
+  ariaLabel?: string;
+  onOpenScopeFile?: (filePath: string) => void;
+};
+
+const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+const scopeSplitPattern = /[,，、;；]+/;
+const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+
+function normalizeSafeUrl(url: string): string | undefined {
+  const trimmedUrl = url.trim();
+
+  if (!trimmedUrl || trimmedUrl.startsWith('//')) {
+    return undefined;
+  }
+
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedUrl)) {
+    try {
+      const parsedUrl = new URL(trimmedUrl);
+      return allowedUrlProtocols.has(parsedUrl.protocol) ? trimmedUrl : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  return trimmedUrl;
+}
+
+const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+
+function toVisibleHtmlComment(comment: string) {
+  if (!comment.includes('`')) return `\`${comment}\``;
+  return `\`\` ${comment} \`\``;
+}
+
+function exposeHtmlComments(markdown: string) {
+  let fence: { char: string; length: number } | null = null;
+
+  return markdown
+    .split('\n')
+    .map((line) => {
+      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+
+      if (fence) {
+        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+          fence = null;
+        }
+        return line;
+      }
+
+      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+
+      if (fenceMatch) {
+        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+      }
+
+      return visibleLine;
+    })
+    .join('\n');
+}
+
+const markdownComponents: MarkdownComponents = {
+  a({ node: _node, href, children, ...props }) {
+    const safeHref = href ? normalizeSafeUrl(href) : undefined;
+    const isExternalLink = Boolean(safeHref && /^https?:\/\//i.test(safeHref));
+
+    return (
+      <a
+        {...props}
+        href={safeHref}
+        target={isExternalLink ? '_blank' : undefined}
+        rel={isExternalLink ? 'noreferrer noopener' : undefined}
+      >
+        {children}
+      </a>
+    );
+  },
+  input({ node: _node, type, checked, ...props }) {
+    if (type !== 'checkbox') return <input {...props} type={type} />;
+
+    return (
+      <input
+        {...props}
+        type="checkbox"
+        checked={Boolean(checked)}
+        readOnly
+        disabled
+        aria-label={checked ? '已勾选任务' : '未勾选任务'}
+      />
+    );
+  },
+  pre({ node: _node, ...props }) {
+    return <pre {...props} tabIndex={0} aria-label="可滚动代码块" />;
+  },
+  table({ node: _node, ...props }) {
+    return (
+      <div className="markdown-reader-table" role="region" aria-label="可横向滚动表格" tabIndex={0}>
+        <table {...props} />
+      </div>
+    );
+  },
+};
+
+function normalizeScopeFilePath(value: string) {
+  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+}
+
+function childrenText(children: ReactNode) {
+  if (typeof children === 'string') return children;
+  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+  return '';
+}
+
+function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+  const parts: ReactNode[] = [];
+  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+  let lastIndex = 0;
+  for (const match of text.matchAll(scopeCommentPattern)) {
+    if (match.index === undefined) continue;
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    const files = String(match[1] || '')
+      .split(scopeSplitPattern)
+      .map((item) => normalizeScopeFilePath(item))
+      .filter(Boolean);
+    parts.push(
+      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+        <span className="markdown-scope-label">scope</span>
+        {files.length ? files.map((filePath) => {
+          const special = filePath === 'unknown' || filePath === 'validation';
+          return (
+            <button
+              type="button"
+              key={`${match.index}-${filePath}`}
+              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+              disabled={special}
+              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+              onClick={() => openScopeFile(filePath)}
+            >
+              {filePath}
+            </button>
+          );
+        }) : <span className="markdown-scope-link special mono">unknown</span>}
+      </span>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts.length ? parts : text;
+}
+
+function readProjectIdFromLocation() {
+  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+      ? parsed.mode
+      : 'system';
+    return { mode, command: String(parsed?.command || '') };
+  } catch {
+    return { mode: 'system', command: '' };
+  }
+}
+
+async function openScopeFileFromReader(filePath: string) {
+  const projectId = readProjectIdFromLocation();
+  const settings = readScopeFileSettings();
+  try {
+    const result = await (window.autoplan as typeof window.autoplan & {
+      openWorkspaceFile?: (input: {
+        projectId: number;
+        filePath: string;
+        mode: ScopeFileOpenMode;
+        command?: string;
+      }) => Promise<{ ok: boolean; error: string | null }>;
+    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+  return {
+    ...markdownComponents,
+    p({ node: _node, children, ...props }) {
+      const text = childrenText(children);
+      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+      return <p {...props}>{nextChildren}</p>;
+    },
+    li({ node: _node, children, ...props }) {
+      const text = childrenText(children);
+      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+      return <li {...props}>{nextChildren}</li>;
+    },
+    code({ node: _node, children, ...props }) {
+      const text = childrenText(children);
+      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+      }
+      return <code {...props}>{children}</code>;
+    },
+  };
+}
+
+export function MarkdownReader({
+  markdown,
+  className,
+  emptyMessage = '暂无计划正文',
+  ariaLabel = 'Markdown 正文',
+  onOpenScopeFile,
+}: MarkdownReaderProps) {
+  const content = markdown ?? '';
+  const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+
+  if (!content.trim()) {
+    return (
+      <div className={`${classes} markdown-reader-empty`} role="status" aria-live="polite">
+        {emptyMessage}
+      </div>
+    );
+  }
+
+  return (
+    <div className={classes} role="region" aria-label={ariaLabel}>
+      <ReactMarkdown
+        components={createMarkdownComponents(onOpenScopeFile)}
+        remarkPlugins={[remarkGfm]}
+        urlTransform={safeUrlTransform}
+      >
+        {exposeHtmlComments(content)}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+export default MarkdownReader;
+--- CSS ---
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 9px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); color: var(--text-1); font-size: 13px; font-weight: 600; transition: background 0.14s, border-color 0.14s, transform 0.06s; }
+.btn:hover { background: var(--bg-hover); }
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.btn-primary:hover { background: var(--brand-700); }
+.btn-danger { background: var(--danger); border-color: var(--danger); color: #fff; }
+.btn-sm { padding: 6px 12px; font-size: 12px; }
+.btn-link { display: inline-flex; align-items: center; gap: 5px; background: transparent; border: 0; color: var(--brand-600); font-size: 12px; font-weight: 600; padding: 4px 8px; }
+.btn-link:hover { text-decoration: underline; }
+button:disabled, .btn:disabled, .btn-link:disabled { opacity: 0.58; cursor: not-allowed; text-decoration: none; }
+.btn-primary:disabled, .btn-primary:disabled:hover { background: var(--bg-soft); border-color: var(--line); color: var(--text-4); }
+button:focus-visible, a:focus-visible, [tabindex]:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.btn-link:focus-visible, .modal-close:focus-visible { border-radius: var(--r-sm); box-shadow: 0 0 0 3px var(--brand-50); }
+
+.card { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+.card-head { display: flex; align-items: center; gap: 12px; padding: 16px 18px; border-bottom: 1px solid var(--line-soft); }
+.card-head h2 { font-size: 14.5px; font-weight: 700; }
+.card-head .hint { font-size: 12px; color: var(--text-3); }
+.card-head .spacer { margin-left: auto; }
+.card-body { padding: 16px 18px; }
+
+.settings-nav-label {
+  padding: 4px 10px 10px; color: var(--text-4); font-size: 10.5px; font-weight: 800;
+  letter-spacing: 0.12em; text-transform: uppercase;
+}
+.settings-nav-item {
+  display: flex; align-items: center; gap: 11px; width: 100%; min-width: 0;
+  margin-bottom: 2px; padding: 9px 10px; border: 0; border-radius: var(--r-md);
+  background: transparent; color: var(--text-2); text-align: left; font-size: 13px; font-weight: 600;
+  transition: background 0.14s, color 0.14s;
+}
+.settings-nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+.settings-nav-item.active { background: var(--brand-50); color: var(--brand-700); }
+.snav-ico {
+  position: relative; display: grid; place-items: center; width: 18px; height: 18px; flex: 0 0 auto;
+  border-radius: 6px; background: var(--bg-soft); color: var(--text-3);
+}
+.snav-ico::before { content: ""; width: 8px; height: 8px; border: 2px solid currentColor; border-radius: 3px; }
+.settings-nav-item.active .snav-ico { background: var(--bg-elevated); color: var(--brand-600); }
+.snav-text { display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.snav-text > span, .snav-text small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.snav-text small { color: var(--text-4); font-size: 11px; font-weight: 500; }
+.snav-meta {
+  flex: 0 0 auto; max-width: 86px; overflow: hidden; padding: 1px 7px; border: 1px solid var(--line);
+  border-radius: 999px; background: var(--bg-soft); color: var(--text-4); font-size: 10.5px; font-weight: 700;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.snav-meta.ok { border-color: rgba(41,151,90,0.28); background: var(--success-bg); color: var(--success); }
+.snav-meta.warn { border-color: rgba(220,158,54,0.3); background: var(--warning-bg); color: var(--warning); }
+.settings-pane { display: none; max-width: 720px; padding: 26px 32px 24px; }
+.settings-pane.active { display: block; }
+.pane-head { margin-bottom: 20px; }
+.pane-head h2 { display: flex; align-items: center; gap: 10px; min-width: 0; font-size: 18px; font-weight: 750; }
+.pane-head p { margin: 6px 0 0; color: var(--text-3); font-size: 12.5px; line-height: 1.55; }
+.pane-ico { display: grid; place-items: center; width: 30px; height: 30px; flex: 0 0 auto; border-radius: 9px; background: var(--brand-50); color: var(--brand-600); }
+.pane-ico::before { content: ""; width: 12px; height: 12px; border: 2px solid currentColor; border-radius: 4px; }
+.set-card { overflow: hidden; margin-bottom: 16px; border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
+.set-card-head { padding: 14px 18px; border-bottom: 1px solid var(--line-soft); background: var(--bg-soft); }
+.set-card-head h3 { color: var(--text-1); font-size: 13px; font-weight: 750; }
+.set-card-hint { margin-top: 3px; color: var(--text-3); font-size: 11.5px; }
+.set-card-body { padding: 6px 18px 8px; }
+.settings-pane .field { gap: 6px; margin-bottom: 0; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.settings-pane .field:last-child { border-bottom: 0; }
+.field-label { display: flex; align-items: center; gap: 6px; color: var(--text-2); font-size: 12px; font-weight: 700; }
+.field-label .tag { margin-left: 4px; padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg-soft); color: var(--text-4); font-size: 10px; font-weight: 800; }
+.field-input, .field-select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); font: inherit; font-size: 13px; transition: border-color 0.14s, box-shadow 0.14s; }
+.field-input:focus, .field-select:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+.field-input.mono, .field-select.mono { font-family: var(--font-mono); font-size: 12px; }
+.field-hint { color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
+.field-hint code, .inline-banner code { padding: 0 5px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg-soft); font-size: 11px; }
+.input-affix { display: flex; align-items: stretch; }
+.input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+.input-affix .affix { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 700; }
+.settings-actions { justify-content: flex-end; margin-top: 10px; padding: 12px 0 0; }
+.info-row { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+.info-row:last-of-type { border-bottom: 0; }
+.info-key { color: var(--text-3); font-size: 12px; font-weight: 700; }
+.info-val { min-width: 0; color: var(--text-1); font-size: 13px; overflow-wrap: anywhere; }
+.info-val .mono { font-family: var(--font-mono); font-size: 12.5px; }
+.mcp-status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; background: var(--bg-soft); color: var(--text-2); font-size: 11.5px; font-weight: 750; }
+.mcp-status::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+.mcp-status.ok { color: var(--success); background: var(--success-bg); }
+.mcp-status.warn { color: var(--warning); background: var(--warning-bg); }
+.tool-tags { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.tool-tag { display: inline-flex; align-items: center; max-width: 100%; padding: 4px 8px; border: 1px solid var(--line-soft); border-radius: 999px; background: var(--bg-soft); color: var(--brand-700); font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.inline-banner { display: flex; gap: 10px; margin-top: 12px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-soft); color: var(--text-2); font-size: 12px; line-height: 1.55; }
+.inline-banner.info { border-color: rgba(45,126,255,0.22); background: var(--info-bg); }
+.dim { color: var(--text-4); }
+
+/* 表单型卡片（如循环控制）：head 之后给 body 留内边距 */
+.editor.card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.editor > .card-head { flex: 0 0 auto; }
+.editor > .field,
+.editor > .button-row,
+.editor > .control-row { padding: 0 18px; }
+.editor > .field:first-of-type { padding-top: 16px; }
+.editor > .button-row { padding: 4px 18px 18px; flex-wrap: wrap; }
+.editor .button-row button {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 7px 14px; border: 1px solid var(--line); border-radius: var(--r-sm);
+  background: var(--bg-elevated); color: var(--text-1); font-size: 12.5px; font-weight: 600;
+  transition: background 0.14s, border-color 0.14s;
+}
+.editor .button-row button:hover { background: var(--bg-hover); }
+.editor .button-row button[type="submit"] { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+.editor .button-row button[type="submit"]:hover { background: var(--brand-700); }
+
+.chip { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; text-transform: uppercase; }
+.chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.chip-pending { color: var(--text-3); background: var(--bg-soft); }
+.chip-running { color: var(--info); background: var(--info-bg); }
+.chip-completed { color: var(--success); background: var(--success-bg); }
+.chip-failed { color: var(--danger); background: var(--danger-bg); }
+.chip-stopped { color: var(--warning); background: var(--warning-bg); }
+.chip-waiting { color: var(--warning); background: var(--warning-bg); }
+
+.empty { color: var(--text-3); padding: 28px 18px; text-align: center; font-size: 13px; }
+.error-banner { padding: 12px 16px; margin-bottom: 16px; border-radius: var(--r-md); background: var(--danger-bg); border: 1px solid #f3c2c4; color: var(--danger); font-size: 13px; }
+.req { color: var(--danger); }
+.danger-text { color: var(--danger); }
+
+.app-icon { display: inline-block; flex: 0 0 auto; width: var(--icon-size, 1em); height: var(--icon-size, 1em); color: inherit; vertical-align: -0.14em; }
+.app-icon * { vector-effect: non-scaling-stroke; }
+.app-icon-muted { color: var(--text-3); }
+.app-icon-brand { color: var(--brand-600); }
+.app-icon-success { color: var(--success); }
+.app-icon-warning { color: var(--warning); }
+.app-icon-danger { color: var(--danger); }
+.icon-with-text { display: inline-flex; align-items: center; gap: 6px; }
+.icon-surface { display: inline-grid; place-items: center; width: var(--icon-surface-size, 36px); height: var(--icon-surface-size, 36px); border-radius: 50%; color: var(--icon-surface-color, currentColor); background: var(--icon-surface-bg, transparent); }
+.icon-surface-brand { --icon-surface-color: var(--brand-600); --icon-surface-bg: var(--brand-50); }
+.icon-surface-success { --icon-surface-color: var(--success); --icon-surface-bg: var(--success-bg); }
+.icon-surface-warning { --icon-surface-color: var(--warning); --icon-surface-bg: var(--warning-bg); }
+.icon-surface-danger { --icon-surface-color: var(--danger); --icon-surface-bg: var(--danger-bg); }
+
+.list { display: grid; gap: 10px; padding: 16px 18px; }
+.list.compact { max-height: none; overflow: auto; }
+.item { min-width: 0; border: 1px solid var(--line-soft); border-radius: var(--r-md); padding: 12px; background: var(--bg-soft); }
+.item-title { display: flex; justify-content: space-between; gap: 12px; min-width: 0; font-weight: 650; align-items: center; }
+.item-title > span:first-child { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.item-title-right { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex: 0 0 auto; }
+.item-actions { display: inline-flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 4px; }
+.item-actions .btn-link { padding: 3px 6px; font-size: 12px; white-space: nowrap; }
+.item-actions .danger-link { color: var(--danger); }
+.item-actions .btn-link:disabled { color: var(--text-4); cursor: not-allowed; text-decoration: none; }
+.item-body { margin-top: 10px; color: var(--text-2); overflow-wrap: anywhere; }
+.plain-text { line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+.plan-card-list { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+.plan-card {
+  display: grid; gap: 0; min-width: 0; padding: 13px 15px;
+  border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-elevated);
+  transition: border-color 0.14s, background 0.14s, box-shadow 0.14s;
+}
+.plan-card:hover { border-color: var(--line); box-shadow: var(--shadow-sm); }
+.plan-card.selected { border-color: #d6e0f3; background: var(--brand-50); }
+.plan-card.running { border-color: rgba(45,126,255,0.28); }
+.plan-card.draft { background: linear-gradient(180deg, var(--bg-elevated), rgba(255,247,237,0.72)); }
+.plan-card.completed { background: linear-gradient(180deg, var(--bg-elevated), rgba(236,253,245,0.7)); }
+.plan-top { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+.plan-path {
+  flex: 1 1 160px; min-width: 0; max-width: 100%; overflow: hidden; color: var(--text-1);
+  font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap;
+}
+.plan-title { margin-top: 4px; color: var(--text-1); font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+.plan-title.muted { color: var(--text-3); font-weight: 500; }
+.plan-progress { margin-top: 11px; }
+.progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 6px; font-size: 11.5px; }
+.progress-head .ph-left { color: var(--text-2); font-weight: 600; }
+.progress-head .ph-right { flex: 0 0 auto; color: var(--text-3); font-family: var(--font-mono); }
+.progress { height: 6px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.progress > span { display: block; height: 100%; border-radius: 999px; background: var(--brand-grad); transition: width 0.3s; }
+.progress.success > span { background: var(--success); }
+.progress.running > span { background: var(--info); }
+.plan-progress-subline { margin-top: 5px; color: var(--text-3); font-size: 11px; }
+.concurrency-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 11px; }
+.conc-item { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); font-size: 11.5px; }
+.conc-item b { color: var(--text-1); font-family: var(--font-mono); font-size: 12px; }
+.conc-item.parallel b { color: var(--success); }
+.conc-item.batch b { color: var(--info); }
+.conc-item.serial b { color: var(--warning); }
+.conc-item.blocked { max-width: 100%; color: var(--danger); overflow-wrap: anywhere; }
+.plan-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; margin-top: 11px; color: var(--text-3); font-size: 11px; }
+.plan-meta .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meta-dot { flex: 0 0 auto; width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); }
+.cli-tag { display: inline-flex; align-items: center; gap: 4px; min-width: 0; color: var(--text-2); font-size: 11px; font-weight: 600; }
+.plan-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.plan-primary-actions, .plan-secondary-actions { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
+.plan-secondary-actions .btn-link { padding: 3px 5px; }
+.plan-select-button.active { color: var(--brand-700); text-decoration: underline; }
+.plan-validation { margin-left: auto; color: var(--text-3); font-size: 11px; white-space: nowrap; }
+.plan-validation.passed { color: var(--success); }
+.plan-validation.pending { color: var(--text-3); }
+.plan-list-error { margin: 10px 12px 0; }
+.task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+.task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 10px; }
+.task-groups { display: flex; flex-direction: column; gap: 14px; }
+.task-plan-group {
+  display: grid; gap: 8px; min-width: 0; padding: 10px;
+  border: 1px solid transparent; border-radius: var(--r-lg); background: var(--bg-elevated);
+}
+.task-plan-group.has-running, .task-plan-group:has(.chip-running) { border-color: rgba(45,126,255,0.2); background: linear-gradient(180deg, var(--bg-elevated), rgba(239,246,255,0.76)); }
+.task-plan-group-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  width: 100%; min-width: 0; padding: 4px 2px 8px; border: 0; background: transparent; text-align: left;
+}
+.task-plan-group-toggle { cursor: pointer; }
+.task-plan-group-toggle:hover .task-plan-group-title { color: var(--brand-700); }
+.task-plan-group-title-wrap { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+.task-plan-group-chevron { flex: 0 0 auto; color: var(--text-3); font-size: 11px; transition: transform 0.14s; }
+.task-plan-group.is-collapsed .task-plan-group-chevron { transform: rotate(-90deg); }
+.task-plan-group-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
+.task-plan-group.has-running .task-plan-group-dot, .task-plan-group:has(.chip-running) .task-plan-group-dot { background: var(--info); box-shadow: 0 0 0 4px var(--info-bg); }
+.task-plan-group-meta { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex: 0 1 50%; }
+.task-plan-group-counts {
+  flex: 0 0 auto; padding: 2px 8px; border-radius: 999px; background: var(--bg-soft);
+  color: var(--text-3); font-size: 11px; font-weight: 700; white-space: nowrap;
+}
+.task-plan-group-title {
+  min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--text-1);
+  font-family: var(--font-mono); font-size: 12px; font-weight: 750; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap;
+}
+.task-plan-group-summary {
+  flex: 1 1 auto; min-width: 0; color: var(--text-3); font-size: 12px; line-height: 1.45;
+  overflow: hidden; text-align: right; text-overflow: ellipsis; white-space: nowrap;
+}
+.task-plan-group-items { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.task-plan-group .item, .task-item {
+  min-width: 0; padding: 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md);
+  background: var(--bg-soft);
+}
+.task-plan-group .item.running, .task-plan-group .item:has(.chip-running), .task-item.running { border-color: rgba(45,126,255,0.22); background: var(--info-bg); }
+.task-plan-group .item-title, .task-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.task-key {
+  flex: 0 0 auto; padding: 2px 7px; border-radius: 6px; background: var(--brand-50);
+  color: var(--brand-700); font-family: var(--font-mono); font-size: 10.5px; font-weight: 800;
+}
+.task-title { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--text-1); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.task-duration { flex: 0 0 auto; color: var(--text-3); font-family: var(--font-mono); font-size: 10.5px; white-space: nowrap; }
+.task-duration.running { color: var(--info); font-weight: 700; }
+.task-file, .task-file-link {
+  display: inline-flex; align-items: center; max-width: 100%; justify-content: flex-start; margin-top: 8px;
+  padding: 0; color: var(--text-2); text-align: left; white-space: normal; word-break: break-word; overflow-wrap: anywhere;
+}
+.task-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+.task-meta { color: var(--text-3); font-size: 11px; text-align: right; }
+.task-filter-tabs {
+  display: flex; align-items: center; gap: 6px; padding: 12px 18px 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.task-filter-tab {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  min-width: 0; min-height: 32px; flex: 1 1 0; padding: 6px 9px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--bg-elevated);
+  color: var(--text-2); font-size: 12px; font-weight: 700; white-space: nowrap;
+  transition: background 0.14s, border-color 0.14s, color 0.14s;
+}
+.task-filter-tab:hover { background: var(--bg-hover); }
+.task-filter-tab.active { border-color: var(--brand-600); background: var(--brand-50); color: var(--brand-600); }
+.task-filter-count {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 999px; background: var(--bg-soft); color: inherit; font-size: 11px; font-weight: 800;
+}
+.task-filter-tab.active .task-filter-count { background: rgba(255,255,255,0.72); }
+.plan-selection-bar {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px; border-bottom: 1px solid var(--line-soft); color: var(--text-3); font-size: 12px;
+}
+.plan-selection-bar.is-active { background: var(--brand-50); color: var(--brand-700); }
+.plan-selection-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.plan-selection-clear { flex: 0 0 auto; }
+.plan-selection-clear:disabled { color: var(--text-4); }
+.task-body-stack { display: grid; gap: 8px; min-width: 0; }
+.task-scope-files, .scope-files { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin-top: 8px; }
+.task-scope-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0;
+  padding: 4px 8px; border: 1px solid var(--line-soft); border-radius: 999px;
+  background: var(--bg-elevated); color: var(--text-2); font-size: 11px; line-height: 1.35;
+}
+.task-scope-chip .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-scope-chip small { flex: 0 0 auto; color: var(--text-4); font-size: 10px; }
+.task-scope-chip.openable { border-color: rgba(41,151,90,0.26); background: var(--success-bg); color: var(--success); }
+.task-scope-chip.validation, .task-scope-chip[title="完整验收任务"] { border-color: rgba(45,126,255,0.24); background: var(--info-bg); color: var(--info); }
+.task-scope-chip.unknown, .task-scope-chip.special { border-color: rgba(220,158,54,0.28); background: var(--warning-bg); color: var(--warning); }
+.markdown-reader { min-width: 0; max-width: 100%; color: var(--text-1); font-size: 13.5px; line-height: 1.72; overflow-wrap: anywhere; }
+.markdown-reader > :first-child { margin-top: 0; }
+.markdown-reader > :last-child { margin-bottom: 0; }
+.markdown-reader-empty { padding: 28px 18px; border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--bg-soft); color: var(--text-3); text-align: center; font-size: 13px; }
+.markdown-reader h1 { margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); font-size: 22px; line-height: 1.3; font-weight: 800; }
+.markdown-reader h2 { margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); font-size: 18px; line-height: 1.35; font-weight: 750; }
+.markdown-reader h3 { margin: 20px 0 8px; font-size: 15.5px; line-height: 1.4; font-weight: 700; }
+.markdown-reader h4, .markdown-reader h5, .markdown-reader h6 { margin: 16px 0 8px; font-size: 14px; line-height: 1.4; font-weight: 700; }
+.markdown-reader p { margin: 0 0 12px; color: var(--text-2); }
+.markdown-reader a { color: var(--brand-600); overflow-wrap: anywhere; word-break: break-word; }
+.markdown-reader a:hover { text-decoration: underline; }
+.markdown-scope-files { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; vertical-align: baseline; }
+.markdown-scope-label { padding: 2px 6px; border-radius: 999px; background: var(--brand-50); color: var(--brand-600); font-size: 11px; font-weight: 800; }
+.markdown-scope-link {
+  max-width: min(100%, 360px); padding: 2px 7px; border: 1px solid var(--line-soft); border-radius: 999px;
+  background: var(--bg-elevated); color: var(--brand-600); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.markdown-scope-link:hover:not(:disabled) { border-color: var(--brand-500); background: var(--brand-50); text-decoration: none; }
+.markdown-scope-link.special, .markdown-scope-link:disabled { color: var(--text-4); cursor: not-allowed; }
+.markdown-reader ul, .markdown-reader ol { margin: 0 0 14px; padding-left: 1.45em; color: var(--text-2); }
+.markdown-reader li { margin: 4px 0; }
+.markdown-reader li > p { margin: 6px 0; }
+.markdown-reader .contains-task-list { list-style: none; padding-left: 1.2em; }
+.markdown-reader .task-list-item { margin-left: -1.2em; }
+.markdown-reader input[type="checkbox"] { width: auto; margin: 0 7px 0 0; accent-color: var(--brand-600); vertical-align: -2px; }
+.markdown-reader .task-list-item > input[type="checkbox"] { margin-top: 0.42em; }
+.markdown-reader blockquote { margin: 14px 0; padding: 10px 14px; border-left: 3px solid var(--brand-500); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--brand-50); color: var(--text-2); }
+.markdown-reader blockquote p { color: inherit; }
+.markdown-reader code { padding: 2px 5px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--bg-soft); color: var(--text-1); font-family: var(--font-mono); font-size: 0.92em; word-break: break-word; }
+.markdown-reader pre { max-width: 100%; margin: 14px 0; padding: 12px 14px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); box-shadow: inset 0 1px 0 rgba(255,255,255,0.65); }
+.markdown-reader pre code { display: block; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-1); white-space: pre; word-break: normal; overflow-wrap: normal; }
+.markdown-reader pre:focus-visible, .markdown-reader-table:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+.markdown-reader-table { max-width: 100%; margin: 14px 0; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+.markdown-reader-table table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+.markdown-reader th, .markdown-reader td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+.markdown-reader th { background: var(--bg-soft); color: var(--text-1); font-weight: 700; }
+.markdown-reader tr:nth-child(even) td { background: rgba(248,250,253,0.65); }
+.markdown-reader hr { margin: 20px 0; border: 0; border-top: 1px solid var(--line); }
+.markdown-reader img { max-width: 100%; height: auto; border-radius: var(--r-md); box-shadow: var(--shadow-sm); }
+.meta { margin-top: 6px; color: var(--text-3); font-size: 12px; word-break: break-all; overflow-wrap: anywhere; }
+.event-list { min-width: 0; }
+.event-item { display: grid; gap: 8px; border-left: 3px solid transparent; }
+.event-title { align-items: flex-start; }
+.event-title > span:first-child { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; line-height: 1.45; }
+.event-badge { flex: 0 0 auto; display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; white-space: nowrap; }
+.event-badge-start, .event-badge-updated { color: var(--info); background: var(--info-bg); }
+.event-badge-success { color: var(--success); background: var(--success-bg); }
+.event-badge-failed { color: var(--danger); background: var(--danger-bg); }
+.event-badge-stopped, .event-badge-stopping { color: var(--warning); background: var(--warning-bg); }
+.event-item-start { border-left-color: var(--info); }
+.event-item-success { border-left-color: var(--success); }
+.event-item-failed { border-left-color: var(--danger); }
+.event-item-stopped, .event-item-stopping { border-left-color: var(--warning); }
+.event-item-updated { border-left-color: var(--info); }
+.event-item .item-body, .event-meta { margin-top: 0; }
+.button-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
+
+/* 需求/反馈卡片：进度 + 操作脚 + 追加任务 */
+.intake-progress { margin-top: 12px; }
+.intake-item .item-foot {
+  display: flex; align-items: center; gap: 12px; margin-top: 12px;
+  padding-top: 10px; border-top: 1px solid var(--line-soft);
+}
+.intake-item .item-foot .meta { margin-top: 0; margin-left: auto; }
+.intake-item .item-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.intake-item .danger-link { color: var(--danger); }
+.intake-item .danger-link:hover { text-decoration: underline; }
+.append-row {
+  display: flex; gap: 8px; margin-top: 12px;
+  padding: 10px; border-radius: var(--r-sm);
+  background: var(--bg-soft); border: 1px dashed var(--line);
+}
+.append-input { flex: 1 1 auto; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: 12.5px; }
+.append-input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+.inline-editor { display: grid; gap: 10px; margin-top: 12px; }
+.inline-editor .field { margin-bottom: 0; }
+.inline-editor textarea { min-height: 140px; }
+.attachment-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
+.attachment-thumb, .attachment-file { display: grid; gap: 6px; width: 120px; padding: 8px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); }
+.attachment-thumb img { width: 100%; aspect-ratio: 1; border-radius: 4px; object-fit: cover; background: var(--brand-50); }
+.attachment-thumb span, .attachment-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.attachment-file small { color: var(--text-3); font-size: 12px; }
+
+.modal-mask { position: fixed; inset: 0; z-index: 100; overflow: auto; background: rgba(23,32,51,0.42); backdrop-filter: blur(2px); display: flex; align-items: center; justify-content: center; padding: 24px; }
+.modal { width: 100%; max-width: 480px; background: var(--bg-elevated); border-radius: var(--r-lg); box-shadow: var(--shadow-lg); overflow: hidden; }
+.modal-confirm { max-width: 400px; text-align: center; padding: 28px 24px 0; }
+.modal-head { display: flex; align-items: center; gap: 12px; padding: 18px 22px; border-bottom: 1px solid var(--line-soft); }
+.modal-head h3 { font-size: 16px; font-weight: 700; }
+.modal-close { margin-left: auto; width: 30px; height: 30px; border-radius: 8px; border: 0; background: transparent; color: var(--text-3); display: grid; place-items: center; }
+.modal-close:hover { background: var(--bg-hover); color: var(--text-1); }
+.modal-form { padding: 20px 22px; }
+.modal-confirm p { font-size: 13px; color: var(--text-2); line-height: 1.6; margin: 8px 0 4px; }
+.modal-danger-icon { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 50%; background: var(--danger-bg); color: var(--danger); margin: 0 auto 14px; }
+.modal-foot { display: flex; justify-content: flex-end; gap: 10px; padding: 16px 22px; border-top: 1px solid var(--line-soft); background: var(--bg-soft); }
+
+.parallel-confirm-modal { max-width: min(680px, calc(100vw - 48px)); max-height: min(86dvh, 760px); display: flex; flex-direction: column; }
+.parallel-confirm-body { display: grid; gap: 12px; min-height: 0; overflow: auto; padding: 18px 22px; color: var(--text-2); font-size: 13px; line-height: 1.55; }
+.parallel-confirm-body p { margin: 0; }
+.parallel-batch-card { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-soft); }
+.parallel-batch-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; min-width: 0; }
+.parallel-batch-head strong { color: var(--text-1); font-size: 13px; }
+.parallel-batch-head span { min-width: 0; color: var(--text-3); font-size: 12px; text-align: right; overflow-wrap: anywhere; }
+.parallel-batch-card ul, .parallel-serial-reasons ul { display: grid; gap: 8px; margin: 0; padding-left: 18px; }
+.parallel-batch-card li { min-width: 0; }
+.parallel-batch-card li span, .parallel-batch-card li small { display: block; min-width: 0; overflow-wrap: anywhere; }
+.parallel-batch-card li small { margin-top: 2px; color: var(--text-3); font-size: 11px; }
+.parallel-serial-reasons { padding: 10px 12px; border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--bg-elevated); }
+.parallel-serial-reasons summary { cursor: pointer; color: var(--brand-600); font-weight: 700; }
+.parallel-serial-reasons ul { margin-top: 10px; color: var(--text-3); font-size: 12px; }
+
+.plan-reader-modal { width: 100%; max-width: min(920px, calc(100vw - 48px)); max-height: min(86dvh, 860px); display: flex; flex-direction: column; }
+.plan-reader-head { flex: 0 0 auto; align-items: flex-start; }
+.plan-reader-title { min-width: 0; display: flex; flex: 1 1 auto; flex-direction: column; gap: 5px; }
+.plan-reader-path { max-width: 100%; overflow: hidden; color: var(--text-3); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.plan-reader-actions { flex: 0 0 auto; }
+.plan-reader-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 22px 22px; display: flex; flex-direction: column; gap: 14px; }
+.plan-reader-body:focus-visible { outline: 2px solid var(--brand-500); outline-offset: -4px; }
+.plan-reader-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+.plan-reader-summary-item { min-width: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-soft); }
+.plan-reader-summary-item dt { display: block; margin-bottom: 4px; color: var(--text-3); font-size: 11px; font-weight: 700; }
+.plan-reader-summary-item dd { display: block; min-width: 0; margin: 0; overflow: hidden; color: var(--text-1); font-size: 12.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+.plan-reader-content { min-width: 0; padding: 16px; overflow: visible; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
+.plan-reader-loading, .plan-reader-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-radius: var(--r-md); font-size: 13px; line-height: 1.5; }
+.plan-reader-loading { border: 1px dashed var(--line); background: var(--bg-soft); color: var(--text-3); }
+.plan-reader-error { border: 1px solid rgba(229,72,77,0.28); background: var(--danger-bg); color: var(--danger); }
+
+codex
+计划很明确；现在聚焦三个 scope 文件里的阅读弹窗与 Markdown 渲染实现。
+exec
+powershell.exe -Command "rg -n \"task|Task|任务|MarkdownReader|plan-reader|remark|checkbox|input|li\\(|components\" src/renderer/components/plans/PlanList.tsx src/renderer/components/MarkdownReader.tsx src/renderer/styles/components.css" in D:\project\GitHub\autoplan
+ succeeded in 226ms:
+src/renderer/components/MarkdownReader.tsx:3:import remarkGfm from 'remark-gfm';
+src/renderer/components/MarkdownReader.tsx:6:type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+src/renderer/components/MarkdownReader.tsx:10:export type MarkdownReaderProps = {
+src/renderer/components/MarkdownReader.tsx:91:  input({ node: _node, type, checked, ...props }) {
+src/renderer/components/MarkdownReader.tsx:92:    if (type !== 'checkbox') return <input {...props} type={type} />;
+src/renderer/components/MarkdownReader.tsx:95:      <input
+src/renderer/components/MarkdownReader.tsx:97:        type="checkbox"
+src/renderer/components/MarkdownReader.tsx:101:        aria-label={checked ? '已勾选任务' : '未勾选任务'}
+src/renderer/components/MarkdownReader.tsx:186:      openWorkspaceFile?: (input: {
+src/renderer/components/MarkdownReader.tsx:207:    li({ node: _node, children, ...props }) {
+src/renderer/components/MarkdownReader.tsx:222:export function MarkdownReader({
+src/renderer/components/MarkdownReader.tsx:228:}: MarkdownReaderProps) {
+src/renderer/components/MarkdownReader.tsx:243:        components={createMarkdownComponents(onOpenScopeFile)}
+src/renderer/components/MarkdownReader.tsx:244:        remarkPlugins={[remarkGfm]}
+src/renderer/components/MarkdownReader.tsx:253:export default MarkdownReader;
+src/renderer/styles/components.css:66:.field-input, .field-select { width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); font: inherit; font-size: 13px; transition: border-color 0.14s, box-shadow 0.14s; }
+src/renderer/styles/components.css:67:.field-input:focus, .field-select:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+src/renderer/styles/components.css:68:.field-input.mono, .field-select.mono { font-family: var(--font-mono); font-size: 12px; }
+src/renderer/styles/components.css:71:.input-affix { display: flex; align-items: stretch; }
+src/renderer/styles/components.css:72:.input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+src/renderer/styles/components.css:73:.input-affix .affix { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 700; }
+src/renderer/styles/components.css:194:.task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+src/renderer/styles/components.css:195:.task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 10px; }
+src/renderer/styles/components.css:196:.task-groups { display: flex; flex-direction: column; gap: 14px; }
+src/renderer/styles/components.css:197:.task-plan-group {
+src/renderer/styles/components.css:201:.task-plan-group.has-running, .task-plan-group:has(.chip-running) { border-color: rgba(45,126,255,0.2); background: linear-gradient(180deg, var(--bg-elevated), rgba(239,246,255,0.76)); }
+src/renderer/styles/components.css:202:.task-plan-group-head {
+src/renderer/styles/components.css:206:.task-plan-group-toggle { cursor: pointer; }
+src/renderer/styles/components.css:207:.task-plan-group-toggle:hover .task-plan-group-title { color: var(--brand-700); }
+src/renderer/styles/components.css:208:.task-plan-group-title-wrap { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+src/renderer/styles/components.css:209:.task-plan-group-chevron { flex: 0 0 auto; color: var(--text-3); font-size: 11px; transition: transform 0.14s; }
+src/renderer/styles/components.css:210:.task-plan-group.is-collapsed .task-plan-group-chevron { transform: rotate(-90deg); }
+src/renderer/styles/components.css:211:.task-plan-group-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
+src/renderer/styles/components.css:212:.task-plan-group.has-running .task-plan-group-dot, .task-plan-group:has(.chip-running) .task-plan-group-dot { background: var(--info); box-shadow: 0 0 0 4px var(--info-bg); }
+src/renderer/styles/components.css:213:.task-plan-group-meta { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex: 0 1 50%; }
+src/renderer/styles/components.css:214:.task-plan-group-counts {
+src/renderer/styles/components.css:218:.task-plan-group-title {
+src/renderer/styles/components.css:222:.task-plan-group-summary {
+src/renderer/styles/components.css:226:.task-plan-group-items { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+src/renderer/styles/components.css:227:.task-plan-group .item, .task-item {
+src/renderer/styles/components.css:231:.task-plan-group .item.running, .task-plan-group .item:has(.chip-running), .task-item.running { border-color: rgba(45,126,255,0.22); background: var(--info-bg); }
+src/renderer/styles/components.css:232:.task-plan-group .item-title, .task-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+src/renderer/styles/components.css:233:.task-key {
+src/renderer/styles/components.css:237:.task-title { flex: 1 1 auto; min-width: 0; overflow: hidden; color: var(--text-1); font-size: 13px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+src/renderer/styles/components.css:238:.task-duration { flex: 0 0 auto; color: var(--text-3); font-family: var(--font-mono); font-size: 10.5px; white-space: nowrap; }
+src/renderer/styles/components.css:239:.task-duration.running { color: var(--info); font-weight: 700; }
+src/renderer/styles/components.css:240:.task-file, .task-file-link {
+src/renderer/styles/components.css:244:.task-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+src/renderer/styles/components.css:245:.task-meta { color: var(--text-3); font-size: 11px; text-align: right; }
+src/renderer/styles/components.css:246:.task-filter-tabs {
+src/renderer/styles/components.css:250:.task-filter-tab {
+src/renderer/styles/components.css:257:.task-filter-tab:hover { background: var(--bg-hover); }
+src/renderer/styles/components.css:258:.task-filter-tab.active { border-color: var(--brand-600); background: var(--brand-50); color: var(--brand-600); }
+src/renderer/styles/components.css:259:.task-filter-count {
+src/renderer/styles/components.css:263:.task-filter-tab.active .task-filter-count { background: rgba(255,255,255,0.72); }
+src/renderer/styles/components.css:272:.task-body-stack { display: grid; gap: 8px; min-width: 0; }
+src/renderer/styles/components.css:273:.task-scope-files, .scope-files { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin-top: 8px; }
+src/renderer/styles/components.css:274:.task-scope-chip {
+src/renderer/styles/components.css:279:.task-scope-chip .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+src/renderer/styles/components.css:280:.task-scope-chip small { flex: 0 0 auto; color: var(--text-4); font-size: 10px; }
+src/renderer/styles/components.css:281:.task-scope-chip.openable { border-color: rgba(41,151,90,0.26); background: var(--success-bg); color: var(--success); }
+src/renderer/styles/components.css:282:.task-scope-chip.validation, .task-scope-chip[title="完整验收任务"] { border-color: rgba(45,126,255,0.24); background: var(--info-bg); color: var(--info); }
+src/renderer/styles/components.css:283:.task-scope-chip.unknown, .task-scope-chip.special { border-color: rgba(220,158,54,0.28); background: var(--warning-bg); color: var(--warning); }
+src/renderer/styles/components.css:306:.markdown-reader .contains-task-list { list-style: none; padding-left: 1.2em; }
+src/renderer/styles/components.css:307:.markdown-reader .task-list-item { margin-left: -1.2em; }
+src/renderer/styles/components.css:308:.markdown-reader input[type="checkbox"] { width: auto; margin: 0 7px 0 0; accent-color: var(--brand-600); vertical-align: -2px; }
+src/renderer/styles/components.css:309:.markdown-reader .task-list-item > input[type="checkbox"] { margin-top: 0.42em; }
+src/renderer/styles/components.css:341:/* 需求/反馈卡片：进度 + 操作脚 + 追加任务 */
+src/renderer/styles/components.css:356:.append-input { flex: 1 1 auto; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); font: inherit; font-size: 12.5px; }
+src/renderer/styles/components.css:357:.append-input:focus { outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50); }
+src/renderer/styles/components.css:394:.plan-reader-modal { width: 100%; max-width: min(920px, calc(100vw - 48px)); max-height: min(86dvh, 860px); display: flex; flex-direction: column; }
+src/renderer/styles/components.css:395:.plan-reader-head { flex: 0 0 auto; align-items: flex-start; }
+src/renderer/styles/components.css:396:.plan-reader-title { min-width: 0; display: flex; flex: 1 1 auto; flex-direction: column; gap: 5px; }
+src/renderer/styles/components.css:397:.plan-reader-path { max-width: 100%; overflow: hidden; color: var(--text-3); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+src/renderer/styles/components.css:398:.plan-reader-actions { flex: 0 0 auto; }
+src/renderer/styles/components.css:399:.plan-reader-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 22px 22px; display: flex; flex-direction: column; gap: 14px; }
+src/renderer/styles/components.css:400:.plan-reader-body:focus-visible { outline: 2px solid var(--brand-500); outline-offset: -4px; }
+src/renderer/styles/components.css:401:.plan-reader-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+src/renderer/styles/components.css:402:.plan-reader-summary-item { min-width: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-soft); }
+src/renderer/styles/components.css:403:.plan-reader-summary-item dt { display: block; margin-bottom: 4px; color: var(--text-3); font-size: 11px; font-weight: 700; }
+src/renderer/styles/components.css:404:.plan-reader-summary-item dd { display: block; min-width: 0; margin: 0; overflow: hidden; color: var(--text-1); font-size: 12.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+src/renderer/styles/components.css:405:.plan-reader-content { min-width: 0; padding: 16px; overflow: visible; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
+src/renderer/styles/components.css:406:.plan-reader-loading, .plan-reader-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-radius: var(--r-md); font-size: 13px; line-height: 1.5; }
+src/renderer/styles/components.css:407:.plan-reader-loading { border: 1px dashed var(--line); background: var(--bg-soft); color: var(--text-3); }
+src/renderer/styles/components.css:408:.plan-reader-error { border: 1px solid rgba(229,72,77,0.28); background: var(--danger-bg); color: var(--danger); }
+src/renderer/components/plans/PlanList.tsx:3:import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+src/renderer/components/plans/PlanList.tsx:4:import { MarkdownReader } from '../MarkdownReader';
+src/renderer/components/plans/PlanList.tsx:10:  tasksForPlan,
+src/renderer/components/plans/PlanList.tsx:12:} from '../../utils/planTasks';
+src/renderer/components/plans/PlanList.tsx:36:  'input:not([disabled]):not([type="hidden"])',
+src/renderer/components/plans/PlanList.tsx:48:function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+src/renderer/components/plans/PlanList.tsx:49:  if (hasRunningTask) return '该计划已有任务执行中';
+src/renderer/components/plans/PlanList.tsx:56:  const total = Math.max(0, Number(plan.total_tasks || 0));
+src/renderer/components/plans/PlanList.tsx:58:  return Math.max(0, Math.min(100, Math.round((Number(plan.completed_tasks || 0) / total) * 100)));
+src/renderer/components/plans/PlanList.tsx:61:function planCardState(plan: Plan, hasRunningTask: boolean) {
+src/renderer/components/plans/PlanList.tsx:64:  if (hasRunningTask || plan.status === 'running') return 'running';
+src/renderer/components/plans/PlanList.tsx:75:function readPlanTaskStatusLabel(status: string) {
+src/renderer/components/plans/PlanList.tsx:83:function readPlanTaskScopeLabel(task: ReadPlanTask) {
+src/renderer/components/plans/PlanList.tsx:84:  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+src/renderer/components/plans/PlanList.tsx:87:function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+src/renderer/components/plans/PlanList.tsx:89:  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+src/renderer/components/plans/PlanList.tsx:104:  tasks = [],
+src/renderer/components/plans/PlanList.tsx:117:  tasks?: PlanTask[];
+src/renderer/components/plans/PlanList.tsx:130:  const readerTasks = planReadResult?.tasks || [];
+src/renderer/components/plans/PlanList.tsx:131:  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+src/renderer/components/plans/PlanList.tsx:132:  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+src/renderer/components/plans/PlanList.tsx:133:  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+src/renderer/components/plans/PlanList.tsx:134:  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+src/renderer/components/plans/PlanList.tsx:209:            const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+src/renderer/components/plans/PlanList.tsx:210:            const durationSummary = formatPlanDurationSummary(planTasks);
+src/renderer/components/plans/PlanList.tsx:219:            const runningInPlan = planTasks.some((task) => task.status === 'running');
+src/renderer/components/plans/PlanList.tsx:241:                    <span className="ph-left">任务进度</span>
+src/renderer/components/plans/PlanList.tsx:242:                    <span className="ph-right">{plan.completed_tasks} / {plan.total_tasks} · {progressPercent}%</span>
+src/renderer/components/plans/PlanList.tsx:251:                  <span className="conc-item parallel">可并发 <b>{suggestion?.parallelTaskCount || 0}</b></span>
+src/renderer/components/plans/PlanList.tsx:253:                  <span className="conc-item serial">串行 <b>{suggestion?.serialTaskCount || 0}</b></span>
+src/renderer/components/plans/PlanList.tsx:312:              <p>确认后将按以下安全批次启动；取消不会改变任务状态。</p>
+src/renderer/components/plans/PlanList.tsx:320:                    {batch.tasks.map((task) => (
+src/renderer/components/plans/PlanList.tsx:321:                      <li key={task.id}>
+src/renderer/components/plans/PlanList.tsx:322:                        <span>{task.task_key} · {task.title}</span>
+src/renderer/components/plans/PlanList.tsx:323:                        <small className="mono">{task.scopes.join(', ')}</small>
+src/renderer/components/plans/PlanList.tsx:329:              {confirmingPlan.concurrency_suggestion.serialTasks.length ? (
+src/renderer/components/plans/PlanList.tsx:333:                    {confirmingPlan.concurrency_suggestion.serialTasks.map((task) => (
+src/renderer/components/plans/PlanList.tsx:334:                      <li key={task.id}>{task.task_key}：{task.reason}</li>
+src/renderer/components/plans/PlanList.tsx:351:                      taskIds: batch.tasks.map((task) => task.id),
+src/renderer/components/plans/PlanList.tsx:368:            className="modal plan-reader-modal"
+src/renderer/components/plans/PlanList.tsx:377:            <div className="modal-head plan-reader-head">
+src/renderer/components/plans/PlanList.tsx:378:              <div className="plan-reader-title">
+src/renderer/components/plans/PlanList.tsx:380:                <span className="plan-reader-path mono" title={readerFilePath}>
+src/renderer/components/plans/PlanList.tsx:387:              <div className="item-actions plan-reader-actions">
+src/renderer/components/plans/PlanList.tsx:402:            <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+src/renderer/components/plans/PlanList.tsx:403:              <dl className="plan-reader-summary" aria-label="Plan 摘要">
+src/renderer/components/plans/PlanList.tsx:404:                <div className="plan-reader-summary-item">
+src/renderer/components/plans/PlanList.tsx:408:                <div className="plan-reader-summary-item">
+src/renderer/components/plans/PlanList.tsx:412:                <div className="plan-reader-summary-item">
+src/renderer/components/plans/PlanList.tsx:416:                <div className="plan-reader-summary-item">
+src/renderer/components/plans/PlanList.tsx:422:                <div className="plan-reader-summary-item">
+src/renderer/components/plans/PlanList.tsx:423:                  <dt>任务拆解</dt>
+src/renderer/components/plans/PlanList.tsx:424:                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+src/renderer/components/plans/PlanList.tsx:437:                <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+src/renderer/components/plans/PlanList.tsx:445:                <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+src/renderer/components/plans/PlanList.tsx:450:                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+src/renderer/components/plans/PlanList.tsx:451:                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+src/renderer/components/plans/PlanList.tsx:452:                    {readerTaskParseMessage}
+src/renderer/components/plans/PlanList.tsx:454:                  {readerTasks.length ? (
+src/renderer/components/plans/PlanList.tsx:455:                    <ul className="list compact" aria-label="已解析任务列表">
+src/renderer/components/plans/PlanList.tsx:456:                      {readerTasks.map((task) => (
+src/renderer/components/plans/PlanList.tsx:457:                        <li key={task.id} className="task-scope-chip">
+src/renderer/components/plans/PlanList.tsx:458:                          <span className="mono">{task.task_key}</span>
+src/renderer/components/plans/PlanList.tsx:459:                          <span>{task.title}</span>
+src/renderer/components/plans/PlanList.tsx:460:                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+src/renderer/components/plans/PlanList.tsx:461:                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+src/renderer/components/plans/PlanList.tsx:469:                <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+src/renderer/components/plans/PlanList.tsx:470:                  <MarkdownReader
+
+codex
+已看到独立“任务拆解解析结果”区块；接下来检查渲染细节并 patch。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'src\\renderer\\components\\MarkdownReader.tsx' -Encoding UTF8 | Select-Object -First 280; Write-Output '--- planlist relevant ---'; Get-Content -LiteralPath 'src\\renderer\\components\\plans\\PlanList.tsx' -Encoding UTF8 | Select-Object -Skip 360 -First 130; Write-Output '--- css markdown relevant ---'; Get-Content -LiteralPath 'src\\renderer\\styles\\components.css' -Encoding UTF8 | Select-Object -Skip 640 -First 180" in D:\project\GitHub\autoplan
+ succeeded in 322ms:
+import type { ComponentProps, ReactNode } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+
+type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+
+export type MarkdownReaderProps = {
+  markdown?: string | null;
+  className?: string;
+  emptyMessage?: string;
+  ariaLabel?: string;
+  onOpenScopeFile?: (filePath: string) => void;
+};
+
+const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+const scopeSplitPattern = /[,，、;；]+/;
+const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+
+function normalizeSafeUrl(url: string): string | undefined {
+  const trimmedUrl = url.trim();
+
+  if (!trimmedUrl || trimmedUrl.startsWith('//')) {
+    return undefined;
+  }
+
+  if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedUrl)) {
+    try {
+      const parsedUrl = new URL(trimmedUrl);
+      return allowedUrlProtocols.has(parsedUrl.protocol) ? trimmedUrl : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  return trimmedUrl;
+}
+
+const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+
+function toVisibleHtmlComment(comment: string) {
+  if (!comment.includes('`')) return `\`${comment}\``;
+  return `\`\` ${comment} \`\``;
+}
+
+function exposeHtmlComments(markdown: string) {
+  let fence: { char: string; length: number } | null = null;
+
+  return markdown
+    .split('\n')
+    .map((line) => {
+      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+
+      if (fence) {
+        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+          fence = null;
+        }
+        return line;
+      }
+
+      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+
+      if (fenceMatch) {
+        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+      }
+
+      return visibleLine;
+    })
+    .join('\n');
+}
+
+const markdownComponents: MarkdownComponents = {
+  a({ node: _node, href, children, ...props }) {
+    const safeHref = href ? normalizeSafeUrl(href) : undefined;
+    const isExternalLink = Boolean(safeHref && /^https?:\/\//i.test(safeHref));
+
+    return (
+      <a
+        {...props}
+        href={safeHref}
+        target={isExternalLink ? '_blank' : undefined}
+        rel={isExternalLink ? 'noreferrer noopener' : undefined}
+      >
+        {children}
+      </a>
+    );
+  },
+  input({ node: _node, type, checked, ...props }) {
+    if (type !== 'checkbox') return <input {...props} type={type} />;
+
+    return (
+      <input
+        {...props}
+        type="checkbox"
+        checked={Boolean(checked)}
+        readOnly
+        disabled
+        aria-label={checked ? '已勾选任务' : '未勾选任务'}
+      />
+    );
+  },
+  pre({ node: _node, ...props }) {
+    return <pre {...props} tabIndex={0} aria-label="可滚动代码块" />;
+  },
+  table({ node: _node, ...props }) {
+    return (
+      <div className="markdown-reader-table" role="region" aria-label="可横向滚动表格" tabIndex={0}>
+        <table {...props} />
+      </div>
+    );
+  },
+};
+
+function normalizeScopeFilePath(value: string) {
+  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+}
+
+function childrenText(children: ReactNode) {
+  if (typeof children === 'string') return children;
+  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+  return '';
+}
+
+function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+  const parts: ReactNode[] = [];
+  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+  let lastIndex = 0;
+  for (const match of text.matchAll(scopeCommentPattern)) {
+    if (match.index === undefined) continue;
+    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+    const files = String(match[1] || '')
+      .split(scopeSplitPattern)
+      .map((item) => normalizeScopeFilePath(item))
+      .filter(Boolean);
+    parts.push(
+      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+        <span className="markdown-scope-label">scope</span>
+        {files.length ? files.map((filePath) => {
+          const special = filePath === 'unknown' || filePath === 'validation';
+          return (
+            <button
+              type="button"
+              key={`${match.index}-${filePath}`}
+              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+              disabled={special}
+              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+              onClick={() => openScopeFile(filePath)}
+            >
+              {filePath}
+            </button>
+          );
+        }) : <span className="markdown-scope-link special mono">unknown</span>}
+      </span>,
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+  return parts.length ? parts : text;
+}
+
+function readProjectIdFromLocation() {
+  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+      ? parsed.mode
+      : 'system';
+    return { mode, command: String(parsed?.command || '') };
+  } catch {
+    return { mode: 'system', command: '' };
+  }
+}
+
+async function openScopeFileFromReader(filePath: string) {
+  const projectId = readProjectIdFromLocation();
+  const settings = readScopeFileSettings();
+  try {
+    const result = await (window.autoplan as typeof window.autoplan & {
+      openWorkspaceFile?: (input: {
+        projectId: number;
+        filePath: string;
+        mode: ScopeFileOpenMode;
+        command?: string;
+      }) => Promise<{ ok: boolean; error: string | null }>;
+    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+  return {
+    ...markdownComponents,
+    p({ node: _node, children, ...props }) {
+      const text = childrenText(children);
+      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+      return <p {...props}>{nextChildren}</p>;
+    },
+    li({ node: _node, children, ...props }) {
+      const text = childrenText(children);
+      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+      return <li {...props}>{nextChildren}</li>;
+    },
+    code({ node: _node, children, ...props }) {
+      const text = childrenText(children);
+      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+      }
+      return <code {...props}>{children}</code>;
+    },
+  };
+}
+
+export function MarkdownReader({
+  markdown,
+  className,
+  emptyMessage = '暂无计划正文',
+  ariaLabel = 'Markdown 正文',
+  onOpenScopeFile,
+}: MarkdownReaderProps) {
+  const content = markdown ?? '';
+  const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+
+  if (!content.trim()) {
+    return (
+      <div className={`${classes} markdown-reader-empty`} role="status" aria-live="polite">
+        {emptyMessage}
+      </div>
+    );
+  }
+
+  return (
+    <div className={classes} role="region" aria-label={ariaLabel}>
+      <ReactMarkdown
+        components={createMarkdownComponents(onOpenScopeFile)}
+        remarkPlugins={[remarkGfm]}
+        urlTransform={safeUrlTransform}
+      >
+        {exposeHtmlComments(content)}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
+export default MarkdownReader;
+--- planlist relevant ---
+      ) : null}
+
+      {readingPlan ? (
+        <div className="modal-mask" onClick={onCloseReader}>
+          <div
+            id={readerDialogId}
+            ref={readerDialogRef}
+            className="modal plan-reader-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={readerTitleId}
+            aria-describedby={readerDescriptionId}
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={handleReaderKeyDown}
+          >
+            <div className="modal-head plan-reader-head">
+              <div className="plan-reader-title">
+                <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+                <span className="plan-reader-path mono" title={readerFilePath}>
+                  {readerFilePath || '未记录文件路径'}
+                </span>
+                <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+                  {readerStatusText}
+                </p>
+              </div>
+              <div className="item-actions plan-reader-actions">
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={planReading}
+                  onClick={onRefreshReader}
+                  aria-label="重新读取 Plan 全文"
+                >
+                  {planReading ? '读取中…' : '刷新'}
+                </button>
+                <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+              <dl className="plan-reader-summary" aria-label="Plan 摘要">
+                <div className="plan-reader-summary-item">
+                  <dt>状态</dt>
+                  <dd>{readingPlan.status}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>CLI</dt>
+                  <dd>{readerCliSummary || '-'}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>更新时间</dt>
+                  <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>哈希</dt>
+                  <dd className="mono" title={readerHash}>
+                    {readerHash?.slice(0, 12) || '-'}
+                  </dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>任务拆解</dt>
+                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                </div>
+              </dl>
+
+              {latestPlanUpdated ? (
+                <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+                  Plan 列表信息已更新，可刷新读取最新正文。
+                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+                    刷新读取
+                  </button>
+                </div>
+              ) : null}
+              {planReadError ? (
+                <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+                  <span>{planReadError}</span>
+                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+                    重试
+                  </button>
+                </div>
+              ) : null}
+              {planReading ? (
+                <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                  正在读取 Plan 全文…
+                </div>
+              ) : null}
+              {!planReading && !planReadError && planReadResult ? (
+                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+                    {readerTaskParseMessage}
+                  </div>
+                  {readerTasks.length ? (
+                    <ul className="list compact" aria-label="已解析任务列表">
+                      {readerTasks.map((task) => (
+                        <li key={task.id} className="task-scope-chip">
+                          <span className="mono">{task.task_key}</span>
+                          <span>{task.title}</span>
+                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </section>
+              ) : null}
+              {!planReading && !planReadError ? (
+                <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                  <MarkdownReader
+                    markdown={planReadResult?.markdown ?? ''}
+                    emptyMessage="暂无计划正文"
+                    ariaLabel="Plan Markdown 正文内容"
+                  />
+                </section>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+--- css markdown relevant ---
+
+codex
+MarkdownReader 已有 checkbox 只读处理，但 scope 注释被转成可见 chip，需按本任务边界调整隐藏与列表语义。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src\\renderer\\components\\MarkdownReader.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; '"'{0,4}: {1}' -f "'$i, $_ }' in D:\project\GitHub\autoplan
+ succeeded in 262ms:
+   1: import type { ComponentProps, ReactNode } from 'react';
+   2: import ReactMarkdown from 'react-markdown';
+   3: import remarkGfm from 'remark-gfm';
+   4: 
+   5: type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+   6: type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+   7: type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+   8: type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+   9: 
+  10: export type MarkdownReaderProps = {
+  11:   markdown?: string | null;
+  12:   className?: string;
+  13:   emptyMessage?: string;
+  14:   ariaLabel?: string;
+  15:   onOpenScopeFile?: (filePath: string) => void;
+  16: };
+  17: 
+  18: const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+  19: const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+  20: const scopeSplitPattern = /[,，、;；]+/;
+  21: const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+  22: 
+  23: function normalizeSafeUrl(url: string): string | undefined {
+  24:   const trimmedUrl = url.trim();
+  25: 
+  26:   if (!trimmedUrl || trimmedUrl.startsWith('//')) {
+  27:     return undefined;
+  28:   }
+  29: 
+  30:   if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedUrl)) {
+  31:     try {
+  32:       const parsedUrl = new URL(trimmedUrl);
+  33:       return allowedUrlProtocols.has(parsedUrl.protocol) ? trimmedUrl : undefined;
+  34:     } catch {
+  35:       return undefined;
+  36:     }
+  37:   }
+  38: 
+  39:   return trimmedUrl;
+  40: }
+  41: 
+  42: const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+  43: 
+  44: function toVisibleHtmlComment(comment: string) {
+  45:   if (!comment.includes('`')) return `\`${comment}\``;
+  46:   return `\`\` ${comment} \`\``;
+  47: }
+  48: 
+  49: function exposeHtmlComments(markdown: string) {
+  50:   let fence: { char: string; length: number } | null = null;
+  51: 
+  52:   return markdown
+  53:     .split('\n')
+  54:     .map((line) => {
+  55:       const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+  56: 
+  57:       if (fence) {
+  58:         if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+  59:           fence = null;
+  60:         }
+  61:         return line;
+  62:       }
+  63: 
+  64:       const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+  65: 
+  66:       if (fenceMatch) {
+  67:         fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+  68:       }
+  69: 
+  70:       return visibleLine;
+  71:     })
+  72:     .join('\n');
+  73: }
+  74: 
+  75: const markdownComponents: MarkdownComponents = {
+  76:   a({ node: _node, href, children, ...props }) {
+  77:     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+  78:     const isExternalLink = Boolean(safeHref && /^https?:\/\//i.test(safeHref));
+  79: 
+  80:     return (
+  81:       <a
+  82:         {...props}
+  83:         href={safeHref}
+  84:         target={isExternalLink ? '_blank' : undefined}
+  85:         rel={isExternalLink ? 'noreferrer noopener' : undefined}
+  86:       >
+  87:         {children}
+  88:       </a>
+  89:     );
+  90:   },
+  91:   input({ node: _node, type, checked, ...props }) {
+  92:     if (type !== 'checkbox') return <input {...props} type={type} />;
+  93: 
+  94:     return (
+  95:       <input
+  96:         {...props}
+  97:         type="checkbox"
+  98:         checked={Boolean(checked)}
+  99:         readOnly
+ 100:         disabled
+ 101:         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+ 102:       />
+ 103:     );
+ 104:   },
+ 105:   pre({ node: _node, ...props }) {
+ 106:     return <pre {...props} tabIndex={0} aria-label="可滚动代码块" />;
+ 107:   },
+ 108:   table({ node: _node, ...props }) {
+ 109:     return (
+ 110:       <div className="markdown-reader-table" role="region" aria-label="可横向滚动表格" tabIndex={0}>
+ 111:         <table {...props} />
+ 112:       </div>
+ 113:     );
+ 114:   },
+ 115: };
+ 116: 
+ 117: function normalizeScopeFilePath(value: string) {
+ 118:   return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+ 119: }
+ 120: 
+ 121: function childrenText(children: ReactNode) {
+ 122:   if (typeof children === 'string') return children;
+ 123:   if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+ 124:   return '';
+ 125: }
+ 126: 
+ 127: function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+ 128:   const parts: ReactNode[] = [];
+ 129:   const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+ 130:   let lastIndex = 0;
+ 131:   for (const match of text.matchAll(scopeCommentPattern)) {
+ 132:     if (match.index === undefined) continue;
+ 133:     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+ 134:     const files = String(match[1] || '')
+ 135:       .split(scopeSplitPattern)
+ 136:       .map((item) => normalizeScopeFilePath(item))
+ 137:       .filter(Boolean);
+ 138:     parts.push(
+ 139:       <span className="markdown-scope-files" key={`scope-${match.index}`}>
+ 140:         <span className="markdown-scope-label">scope</span>
+ 141:         {files.length ? files.map((filePath) => {
+ 142:           const special = filePath === 'unknown' || filePath === 'validation';
+ 143:           return (
+ 144:             <button
+ 145:               type="button"
+ 146:               key={`${match.index}-${filePath}`}
+ 147:               className={`markdown-scope-link mono${special ? ' special' : ''}`}
+ 148:               disabled={special}
+ 149:               title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+ 150:               onClick={() => openScopeFile(filePath)}
+ 151:             >
+ 152:               {filePath}
+ 153:             </button>
+ 154:           );
+ 155:         }) : <span className="markdown-scope-link special mono">unknown</span>}
+ 156:       </span>,
+ 157:     );
+ 158:     lastIndex = match.index + match[0].length;
+ 159:   }
+ 160:   if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+ 161:   return parts.length ? parts : text;
+ 162: }
+ 163: 
+ 164: function readProjectIdFromLocation() {
+ 165:   const match = window.location.pathname.match(/\/projects\/(\d+)/);
+ 166:   return match ? Number(match[1]) : 0;
+ 167: }
+ 168: 
+ 169: function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+ 170:   try {
+ 171:     const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+ 172:     const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+ 173:       ? parsed.mode
+ 174:       : 'system';
+ 175:     return { mode, command: String(parsed?.command || '') };
+ 176:   } catch {
+ 177:     return { mode: 'system', command: '' };
+ 178:   }
+ 179: }
+ 180: 
+ 181: async function openScopeFileFromReader(filePath: string) {
+ 182:   const projectId = readProjectIdFromLocation();
+ 183:   const settings = readScopeFileSettings();
+ 184:   try {
+ 185:     const result = await (window.autoplan as typeof window.autoplan & {
+ 186:       openWorkspaceFile?: (input: {
+ 187:         projectId: number;
+ 188:         filePath: string;
+ 189:         mode: ScopeFileOpenMode;
+ 190:         command?: string;
+ 191:       }) => Promise<{ ok: boolean; error: string | null }>;
+ 192:     }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+ 193:     if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+ 194:   } catch (error) {
+ 195:     window.alert(error instanceof Error ? error.message : String(error));
+ 196:   }
+ 197: }
+ 198: 
+ 199: function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+ 200:   return {
+ 201:     ...markdownComponents,
+ 202:     p({ node: _node, children, ...props }) {
+ 203:       const text = childrenText(children);
+ 204:       const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+ 205:       return <p {...props}>{nextChildren}</p>;
+ 206:     },
+ 207:     li({ node: _node, children, ...props }) {
+ 208:       const text = childrenText(children);
+ 209:       const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+ 210:       return <li {...props}>{nextChildren}</li>;
+ 211:     },
+ 212:     code({ node: _node, children, ...props }) {
+ 213:       const text = childrenText(children);
+ 214:       if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+ 215:         return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+ 216:       }
+ 217:       return <code {...props}>{children}</code>;
+ 218:     },
+ 219:   };
+ 220: }
+ 221: 
+ 222: export function MarkdownReader({
+ 223:   markdown,
+ 224:   className,
+ 225:   emptyMessage = '暂无计划正文',
+ 226:   ariaLabel = 'Markdown 正文',
+ 227:   onOpenScopeFile,
+ 228: }: MarkdownReaderProps) {
+ 229:   const content = markdown ?? '';
+ 230:   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+ 231: 
+ 232:   if (!content.trim()) {
+ 233:     return (
+ 234:       <div className={`${classes} markdown-reader-empty`} role="status" aria-live="polite">
+ 235:         {emptyMessage}
+ 236:       </div>
+ 237:     );
+ 238:   }
+ 239: 
+ 240:   return (
+ 241:     <div className={classes} role="region" aria-label={ariaLabel}>
+ 242:       <ReactMarkdown
+ 243:         components={createMarkdownComponents(onOpenScopeFile)}
+ 244:         remarkPlugins={[remarkGfm]}
+ 245:         urlTransform={safeUrlTransform}
+ 246:       >
+ 247:         {exposeHtmlComments(content)}
+ 248:       </ReactMarkdown>
+ 249:     </div>
+ 250:   );
+ 251: }
+ 252: 
+ 253: export default MarkdownReader;
+
+**Evaluating code plan**
+
+I need to clarify a figure from the plan, specifically P001 which is about organizing rather than implementing. I could add documentation comments in the files, but maybe that won't be desirable. It seems I should focus just on P001, making no code changes while providing a summary of the conflict points. However, there's a part that says to not run tests after completion. I need to inspect the CSS markdown for conflicts involved.
+codex
+P001 更像梳理任务；我会确认 CSS 冲突来源，不提前隐藏或修复其它区块。
+exec
+powershell.exe -Command 'rg -n "markdown-reader|task-list|contains-task-list|plan-reader-task-summary|plan-reader-summary|plan-reader-content|markdown-scope" src/renderer/styles/components.css' in D:\project\GitHub\autoplan
+ succeeded in 195ms:
+194:.task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+195:.task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 10px; }
+284:.markdown-reader { min-width: 0; max-width: 100%; color: var(--text-1); font-size: 13.5px; line-height: 1.72; overflow-wrap: anywhere; }
+285:.markdown-reader > :first-child { margin-top: 0; }
+286:.markdown-reader > :last-child { margin-bottom: 0; }
+287:.markdown-reader-empty { padding: 28px 18px; border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--bg-soft); color: var(--text-3); text-align: center; font-size: 13px; }
+288:.markdown-reader h1 { margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); font-size: 22px; line-height: 1.3; font-weight: 800; }
+289:.markdown-reader h2 { margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); font-size: 18px; line-height: 1.35; font-weight: 750; }
+290:.markdown-reader h3 { margin: 20px 0 8px; font-size: 15.5px; line-height: 1.4; font-weight: 700; }
+291:.markdown-reader h4, .markdown-reader h5, .markdown-reader h6 { margin: 16px 0 8px; font-size: 14px; line-height: 1.4; font-weight: 700; }
+292:.markdown-reader p { margin: 0 0 12px; color: var(--text-2); }
+293:.markdown-reader a { color: var(--brand-600); overflow-wrap: anywhere; word-break: break-word; }
+294:.markdown-reader a:hover { text-decoration: underline; }
+295:.markdown-scope-files { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; vertical-align: baseline; }
+296:.markdown-scope-label { padding: 2px 6px; border-radius: 999px; background: var(--brand-50); color: var(--brand-600); font-size: 11px; font-weight: 800; }
+297:.markdown-scope-link {
+301:.markdown-scope-link:hover:not(:disabled) { border-color: var(--brand-500); background: var(--brand-50); text-decoration: none; }
+302:.markdown-scope-link.special, .markdown-scope-link:disabled { color: var(--text-4); cursor: not-allowed; }
+303:.markdown-reader ul, .markdown-reader ol { margin: 0 0 14px; padding-left: 1.45em; color: var(--text-2); }
+304:.markdown-reader li { margin: 4px 0; }
+305:.markdown-reader li > p { margin: 6px 0; }
+306:.markdown-reader .contains-task-list { list-style: none; padding-left: 1.2em; }
+307:.markdown-reader .task-list-item { margin-left: -1.2em; }
+308:.markdown-reader input[type="checkbox"] { width: auto; margin: 0 7px 0 0; accent-color: var(--brand-600); vertical-align: -2px; }
+309:.markdown-reader .task-list-item > input[type="checkbox"] { margin-top: 0.42em; }
+310:.markdown-reader blockquote { margin: 14px 0; padding: 10px 14px; border-left: 3px solid var(--brand-500); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--brand-50); color: var(--text-2); }
+311:.markdown-reader blockquote p { color: inherit; }
+312:.markdown-reader code { padding: 2px 5px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--bg-soft); color: var(--text-1); font-family: var(--font-mono); font-size: 0.92em; word-break: break-word; }
+313:.markdown-reader pre { max-width: 100%; margin: 14px 0; padding: 12px 14px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); box-shadow: inset 0 1px 0 rgba(255,255,255,0.65); }
+314:.markdown-reader pre code { display: block; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-1); white-space: pre; word-break: normal; overflow-wrap: normal; }
+315:.markdown-reader pre:focus-visible, .markdown-reader-table:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+316:.markdown-reader-table { max-width: 100%; margin: 14px 0; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+317:.markdown-reader-table table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+318:.markdown-reader th, .markdown-reader td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+319:.markdown-reader th { background: var(--bg-soft); color: var(--text-1); font-weight: 700; }
+320:.markdown-reader tr:nth-child(even) td { background: rgba(248,250,253,0.65); }
+321:.markdown-reader hr { margin: 20px 0; border: 0; border-top: 1px solid var(--line); }
+322:.markdown-reader img { max-width: 100%; height: auto; border-radius: var(--r-md); box-shadow: var(--shadow-sm); }
+401:.plan-reader-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+402:.plan-reader-summary-item { min-width: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-soft); }
+403:.plan-reader-summary-item dt { display: block; margin-bottom: 4px; color: var(--text-3); font-size: 11px; font-weight: 700; }
+404:.plan-reader-summary-item dd { display: block; min-width: 0; margin: 0; overflow: hidden; color: var(--text-1); font-size: 12.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+405:.plan-reader-content { min-width: 0; padding: 16px; overflow: visible; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
+
+codex
+我已确认 CSS 的 task-list 样式只在 `.markdown-reader` 内，但注释转换会改变 Markdown 语义。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src\\renderer\\components\\plans\\PlanList.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 1 -and $i -le 140) { '"'{0,4}: {1}' -f "'$i, $_ } }; Write-Output '"'---'; "'$i=0; Get-Content -LiteralPath '"'src\\renderer\\components\\plans\\PlanList.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 390 -and $i -le 480) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 311ms:
+   1: import type { KeyboardEvent, ReactNode } from 'react';
+   2: import { useEffect, useId, useRef, useState } from 'react';
+   3: import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+   4: import { MarkdownReader } from '../MarkdownReader';
+   5: import { planCliSummaryLabel } from '../shared';
+   6: import { formatChinaDateTime } from '../../utils/time';
+   7: import {
+   8:   formatPlanDurationSummary,
+   9:   planTitle,
+  10:   tasksForPlan,
+  11:   type ParallelRunRequest,
+  12: } from '../../utils/planTasks';
+  13: 
+  14: function hasPlanReaderUpdate(
+  15:   readingPlan: Plan | null,
+  16:   latestPlan: Plan | null | undefined,
+  17:   result: WorkspacePlanReadState['result'],
+  18: ) {
+  19:   if (!readingPlan || !latestPlan) return false;
+  20:   if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+  21: 
+  22:   const readFilePath = result?.file_path || readingPlan.file_path || '';
+  23:   const readHash = result?.hash || readingPlan.hash || '';
+  24:   const readUpdatedAt = result?.updated_at || readingPlan.updated_at || '';
+  25:   return (
+  26:     (latestPlan.file_path || '') !== readFilePath ||
+  27:     (latestPlan.hash || '') !== readHash ||
+  28:     (latestPlan.updated_at || '') !== readUpdatedAt ||
+  29:     (latestPlan.status || '') !== (readingPlan.status || '')
+  30:   );
+  31: }
+  32: 
+  33: const PLAN_READER_FOCUSABLE_SELECTOR = [
+  34:   'a[href]',
+  35:   'button:not([disabled])',
+  36:   'input:not([disabled]):not([type="hidden"])',
+  37:   'select:not([disabled])',
+  38:   'textarea:not([disabled])',
+  39:   '[tabindex]:not([tabindex="-1"])',
+  40: ].join(',');
+  41: 
+  42: function getPlanReaderFocusableElements(container: HTMLElement) {
+  43:   return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+  44:     (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+  45:   );
+  46: }
+  47: 
+  48: function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+  49:   if (hasRunningTask) return '该计划已有任务执行中';
+  50:   if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+  51:   if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+  52:   return '';
+  53: }
+  54: 
+  55: function getPlanProgressPercent(plan: Plan) {
+  56:   const total = Math.max(0, Number(plan.total_tasks || 0));
+  57:   if (!total) return 0;
+  58:   return Math.max(0, Math.min(100, Math.round((Number(plan.completed_tasks || 0) / total) * 100)));
+  59: }
+  60: 
+  61: function planCardState(plan: Plan, hasRunningTask: boolean) {
+  62:   if (plan.is_draft || plan.status === 'draft') return 'draft';
+  63:   if (plan.validation_passed || plan.status === 'completed') return 'completed';
+  64:   if (hasRunningTask || plan.status === 'running') return 'running';
+  65:   return 'active';
+  66: }
+  67: 
+  68: function planCardChipClass(state: string) {
+  69:   if (state === 'completed') return 'chip-completed';
+  70:   if (state === 'running') return 'chip-running';
+  71:   if (state === 'draft') return 'chip-waiting';
+  72:   return 'chip-pending';
+  73: }
+  74: 
+  75: function readPlanTaskStatusLabel(status: string) {
+  76:   if (status === 'completed') return '已完成';
+  77:   if (status === 'running') return '执行中';
+  78:   if (status === 'blocked') return '已阻塞';
+  79:   if (status === 'failed') return '失败';
+  80:   return '待执行';
+  81: }
+  82: 
+  83: function readPlanTaskScopeLabel(task: ReadPlanTask) {
+  84:   return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+  85: }
+  86: 
+  87: function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+  88:   if (!result) return false;
+  89:   return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+  90: }
+  91: 
+  92: 
+  93: export function PlanList({
+  94:   emptyText = '暂无 plan。',
+  95:   latestReadingPlan,
+  96:   onCloseReader,
+  97:   onOpenReader,
+  98:   onRunParallel,
+  99:   onRefreshReader,
+ 100:   plans,
+ 101:   readerState,
+ 102:   renderPlanControls,
+ 103:   selectedPlanId,
+ 104:   tasks = [],
+ 105:   totalPlanCount = plans.length,
+ 106: }: {
+ 107:   emptyText?: string;
+ 108:   latestReadingPlan?: Plan | null;
+ 109:   onCloseReader: () => void;
+ 110:   onOpenReader: (plan: Plan) => void;
+ 111:   onRunParallel?: (request: ParallelRunRequest) => void;
+ 112:   onRefreshReader: () => void;
+ 113:   plans: Plan[];
+ 114:   readerState: WorkspacePlanReadState;
+ 115:   renderPlanControls?: (plan: Plan) => ReactNode;
+ 116:   selectedPlanId?: number | null;
+ 117:   tasks?: PlanTask[];
+ 118:   totalPlanCount?: number;
+ 119: }) {
+ 120:   const readingPlan = readerState.plan;
+ 121:   const planReadResult = readerState.result;
+ 122:   const planReadError = readerState.error;
+ 123:   const planReading = readerState.loading;
+ 124:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+ 125:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+ 126:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+ 127:   const readerPlanForSummary = latestReadingPlan || readingPlan;
+ 128:   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+ 129:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+ 130:   const readerTasks = planReadResult?.tasks || [];
+ 131:   const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+ 132:   const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+ 133:   const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+ 134:   const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+ 135:   const readerDialogId = useId();
+ 136:   const readerTitleId = useId();
+ 137:   const readerDescriptionId = useId();
+ 138:   const readerContentId = useId();
+ 139:   const readerDialogRef = useRef<HTMLDivElement>(null);
+ 140:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+---
+ 390:                   className="btn-link"
+ 391:                   disabled={planReading}
+ 392:                   onClick={onRefreshReader}
+ 393:                   aria-label="重新读取 Plan 全文"
+ 394:                 >
+ 395:                   {planReading ? '读取中…' : '刷新'}
+ 396:                 </button>
+ 397:                 <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+ 398:                   ×
+ 399:                 </button>
+ 400:               </div>
+ 401:             </div>
+ 402:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+ 403:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+ 404:                 <div className="plan-reader-summary-item">
+ 405:                   <dt>状态</dt>
+ 406:                   <dd>{readingPlan.status}</dd>
+ 407:                 </div>
+ 408:                 <div className="plan-reader-summary-item">
+ 409:                   <dt>CLI</dt>
+ 410:                   <dd>{readerCliSummary || '-'}</dd>
+ 411:                 </div>
+ 412:                 <div className="plan-reader-summary-item">
+ 413:                   <dt>更新时间</dt>
+ 414:                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+ 415:                 </div>
+ 416:                 <div className="plan-reader-summary-item">
+ 417:                   <dt>哈希</dt>
+ 418:                   <dd className="mono" title={readerHash}>
+ 419:                     {readerHash?.slice(0, 12) || '-'}
+ 420:                   </dd>
+ 421:                 </div>
+ 422:                 <div className="plan-reader-summary-item">
+ 423:                   <dt>任务拆解</dt>
+ 424:                   <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+ 425:                 </div>
+ 426:               </dl>
+ 427: 
+ 428:               {latestPlanUpdated ? (
+ 429:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+ 430:                   Plan 列表信息已更新，可刷新读取最新正文。
+ 431:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 432:                     刷新读取
+ 433:                   </button>
+ 434:                 </div>
+ 435:               ) : null}
+ 436:               {planReadError ? (
+ 437:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+ 438:                   <span>{planReadError}</span>
+ 439:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 440:                     重试
+ 441:                   </button>
+ 442:                 </div>
+ 443:               ) : null}
+ 444:               {planReading ? (
+ 445:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+ 446:                   正在读取 Plan 全文…
+ 447:                 </div>
+ 448:               ) : null}
+ 449:               {!planReading && !planReadError && planReadResult ? (
+ 450:                 <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+ 451:                   <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+ 452:                     {readerTaskParseMessage}
+ 453:                   </div>
+ 454:                   {readerTasks.length ? (
+ 455:                     <ul className="list compact" aria-label="已解析任务列表">
+ 456:                       {readerTasks.map((task) => (
+ 457:                         <li key={task.id} className="task-scope-chip">
+ 458:                           <span className="mono">{task.task_key}</span>
+ 459:                           <span>{task.title}</span>
+ 460:                           <small>{readPlanTaskStatusLabel(task.status)}</small>
+ 461:                           <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+ 462:                         </li>
+ 463:                       ))}
+ 464:                     </ul>
+ 465:                   ) : null}
+ 466:                 </section>
+ 467:               ) : null}
+ 468:               {!planReading && !planReadError ? (
+ 469:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+ 470:                   <MarkdownReader
+ 471:                     markdown={planReadResult?.markdown ?? ''}
+ 472:                     emptyMessage="暂无计划正文"
+ 473:                     ariaLabel="Plan Markdown 正文内容"
+ 474:                   />
+ 475:                 </section>
+ 476:               ) : null}
+ 477:             </div>
+ 478:           </div>
+ 479:         </div>
+ 480:       ) : null}
+
+codex
+变量来源也已定位：摘要来自读库解析结果，正文来自同一个读取结果的 markdown 字段。
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src\\renderer\\components\\plans\\PlanList.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -ge 120 -and $i -le 175) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 258ms:
+ 120:   const readingPlan = readerState.plan;
+ 121:   const planReadResult = readerState.result;
+ 122:   const planReadError = readerState.error;
+ 123:   const planReading = readerState.loading;
+ 124:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+ 125:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+ 126:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+ 127:   const readerPlanForSummary = latestReadingPlan || readingPlan;
+ 128:   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+ 129:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+ 130:   const readerTasks = planReadResult?.tasks || [];
+ 131:   const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+ 132:   const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+ 133:   const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+ 134:   const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+ 135:   const readerDialogId = useId();
+ 136:   const readerTitleId = useId();
+ 137:   const readerDescriptionId = useId();
+ 138:   const readerContentId = useId();
+ 139:   const readerDialogRef = useRef<HTMLDivElement>(null);
+ 140:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+ 141:   const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+ 142:   const readerStatusText = planReadError
+ 143:     ? `读取失败：${planReadError}`
+ 144:     : planReading
+ 145:       ? '正在读取 Plan 全文。'
+ 146:       : latestPlanUpdated
+ 147:         ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+ 148:         : 'Plan 全文已加载，当前为只读阅读模式。';
+ 149: 
+ 150:   useEffect(() => {
+ 151:     if (!readingPlan) return undefined;
+ 152: 
+ 153:     previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+ 154:     const focusFrame = window.requestAnimationFrame(() => {
+ 155:       readerDialogRef.current?.focus();
+ 156:     });
+ 157: 
+ 158:     return () => {
+ 159:       window.cancelAnimationFrame(focusFrame);
+ 160:       previouslyFocusedElementRef.current?.focus();
+ 161:     };
+ 162:   }, [readingPlan?.id, readingPlan?.project_id]);
+ 163: 
+ 164:   function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+ 165:     if (event.key === 'Escape') {
+ 166:       event.stopPropagation();
+ 167:       onCloseReader();
+ 168:       return;
+ 169:     }
+ 170: 
+ 171:     if (event.key !== 'Tab') return;
+ 172: 
+ 173:     const dialog = readerDialogRef.current;
+ 174:     if (!dialog) return;
+ 175: 
+
+**Considering testing options**
+
+I think the scope doesn't include documents, so that rules out some ideas. Maybe I can use the Node REPL to test markdown rendering, but I should be cautious about running certain commands. It might be best to reason from the code instead. I wonder if inspecting package versions is necessary? Actually, it doesn't seem needed right now. I should focus on checking the git status instead. That feels like a more straightforward task!
+codex
+P001 不要求行为变更；我会确认工作区状态，避免误改其它任务范围。
+exec
+powershell.exe -Command 'git status --short' in D:\project\GitHub\autoplan
+ succeeded in 229ms:
+ M README.md
+ M docs/release.md
+ M package.json
+ M scripts/check-file-lengths.js
+ M scripts/smoke-test.js
+ M src/agentCli.js
+ M src/database.js
+ M src/loop/runtime.js
+ M src/loop/snapshots.js
+ M src/loop/taskExecution.js
+ M src/loop/workspaceFiles.js
+ M src/loopService.js
+ M src/mcpTools.js
+ M src/preload.js
+ M src/renderer/components/Composer.tsx
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/components/icons.tsx
+ M src/renderer/components/plans/PlanList.tsx
+ M src/renderer/components/plans/TaskList.tsx
+ M src/renderer/components/workspace/WorkspaceSettingsView.tsx
+ M src/renderer/hooks/useSnapshot.ts
+ M src/renderer/styles/components.css
+ M src/renderer/styles/workspace.css
+ M src/renderer/types.ts
+ M src/renderer/utils/planTasks.ts
+ M ui/README.md
+?? .autoplan-runtime/
+?? .claude/
+?? docs/plan/plan_feedback_14_20260627-131553.md
+?? docs/plan/plan_feedback_15_20260627-132045.md
+?? docs/plan/plan_feedback_16_20260627-133130.md
+?? docs/plan/plan_feedback_17_20260627-133901.md
+?? docs/plan/plan_feedback_18_20260627-134350.md
+?? docs/plan/plan_feedback_19_20260627-134658.md
+?? docs/plan/plan_feedback_20_20260627-183133.md
+?? docs/plan/plan_requirement_28_20260627-123944.md
+?? docs/plan/plan_requirement_29_20260627-124433.md
+?? docs/plan/plan_requirement_30_20260627-125155.md
+?? docs/plan/plan_requirement_31_20260627-130629.md
+?? docs/plan/plan_requirement_32_20260627-131242.md
+?? docs/plan/plan_requirement_36_20260627-220305.md
+?? docs/plan/plan_requirement_36_20260627-221620.md
+?? docs/plan/plan_requirement_37_20260627-225309.md
+?? docs/progress/logs/20260627-123944_gen-requirement-28.last.txt
+?? docs/progress/logs/20260627-123944_gen-requirement-28.log
+?? docs/progress/logs/20260627-124103_execute-P001.last.txt
+?? docs/progress/logs/20260627-124103_execute-P001.log
+?? docs/progress/logs/20260627-124250_gen-requirement-29.log
+?? docs/progress/logs/20260627-124254_execute-P002.last.txt
+?? docs/progress/logs/20260627-124254_execute-P002.log
+?? docs/progress/logs/20260627-124433_gen-requirement-29.last.txt
+?? docs/progress/logs/20260627-124433_gen-requirement-29.log
+?? docs/progress/logs/20260627-124649_execute-P001.last.txt
+?? docs/progress/logs/20260627-124649_execute-P001.log
+?? docs/progress/logs/20260627-125155_gen-requirement-30.last.txt
+?? docs/progress/logs/20260627-125155_gen-requirement-30.log
+?? docs/progress/logs/20260627-125352_execute-P001.last.txt
+?? docs/progress/logs/20260627-125352_execute-P001.log
+?? docs/progress/logs/20260627-130629_gen-requirement-31.last.txt
+?? docs/progress/logs/20260627-130629_gen-requirement-31.log
+?? docs/progress/logs/20260627-130829_execute-P001.log
+?? docs/progress/logs/20260627-131242_gen-requirement-32.last.txt
+?? docs/progress/logs/20260627-131242_gen-requirement-32.log
+?? docs/progress/logs/20260627-131420_execute-P001.last.txt
+?? docs/progress/logs/20260627-131420_execute-P001.log
+?? docs/progress/logs/20260627-131553_gen-feedback-14.last.txt
+?? docs/progress/logs/20260627-131553_gen-feedback-14.log
+?? docs/progress/logs/20260627-131731_execute-P001.last.txt
+?? docs/progress/logs/20260627-131731_execute-P001.log
+?? docs/progress/logs/20260627-132045_gen-feedback-15.last.txt
+?? docs/progress/logs/20260627-132045_gen-feedback-15.log
+?? docs/progress/logs/20260627-132245_execute-P001.last.txt
+?? docs/progress/logs/20260627-132245_execute-P001.log
+?? docs/progress/logs/20260627-133130_gen-feedback-16.last.txt
+?? docs/progress/logs/20260627-133130_gen-feedback-16.log
+?? docs/progress/logs/20260627-133331_execute-P001.last.txt
+?? docs/progress/logs/20260627-133331_execute-P001.log
+?? docs/progress/logs/20260627-133901_gen-feedback-17.last.txt
+?? docs/progress/logs/20260627-133901_gen-feedback-17.log
+?? docs/progress/logs/20260627-134112_execute-P001.last.txt
+?? docs/progress/logs/20260627-134112_execute-P001.log
+?? docs/progress/logs/20260627-134350_gen-feedback-18.last.txt
+?? docs/progress/logs/20260627-134350_gen-feedback-18.log
+?? docs/progress/logs/20260627-134516_execute-P001.last.txt
+?? docs/progress/logs/20260627-134516_execute-P001.log
+?? docs/progress/logs/20260627-134658_gen-feedback-19.last.txt
+?? docs/progress/logs/20260627-134658_gen-feedback-19.log
+?? docs/progress/logs/20260627-134821_execute-P001.last.txt
+?? docs/progress/logs/20260627-134821_execute-P001.log
+?? docs/progress/logs/20260627-140008_execute-P003.last.txt
+?? docs/progress/logs/20260627-140008_execute-P003.log
+?? docs/progress/logs/20260627-140436_execute-P004.last.txt
+?? docs/progress/logs/20260627-140436_execute-P004.log
+?? docs/progress/logs/20260627-140759_execute-P002.last.txt
+?? docs/progress/logs/20260627-140759_execute-P002.log
+?? docs/progress/logs/20260627-144802_execute-P003.log
+?? docs/progress/logs/20260627-144809_execute-P003.last.txt
+?? docs/progress/logs/20260627-144809_execute-P003.log
+?? docs/progress/logs/20260627-145456_execute-P004.last.txt
+?? docs/progress/logs/20260627-145456_execute-P004.log
+?? docs/progress/logs/20260627-150046_execute-P005.last.txt
+?? docs/progress/logs/20260627-150046_execute-P005.log
+?? docs/progress/logs/20260627-150711_execute-P002.last.txt
+?? docs/progress/logs/20260627-150711_execute-P002.log
+?? docs/progress/logs/20260627-151624_execute-P003.last.txt
+?? docs/progress/logs/20260627-151624_execute-P003.log
+?? docs/progress/logs/20260627-152702_execute-P004.last.txt
+?? docs/progress/logs/20260627-152702_execute-P004.log
+?? docs/progress/logs/20260627-153942_execute-P005.last.txt
+?? docs/progress/logs/20260627-153942_execute-P005.log
+?? docs/progress/logs/20260627-154441_execute-P006.last.txt
+?? docs/progress/logs/20260627-154441_execute-P006.log
+?? docs/progress/logs/20260627-154915_execute-P007.last.txt
+?? docs/progress/logs/20260627-154915_execute-P007.log
+?? docs/progress/logs/20260627-155313_execute-P001.last.txt
+?? docs/progress/logs/20260627-155313_execute-P001.log
+?? docs/progress/logs/20260627-155530_execute-P002.last.txt
+?? docs/progress/logs/20260627-155530_execute-P002.log
+?? docs/progress/logs/20260627-170314_execute-P003.last.txt
+?? docs/progress/logs/20260627-170314_execute-P003.log
+?? docs/progress/logs/20260627-170803_execute-P004.last.txt
+?? docs/progress/logs/20260627-170803_execute-P004.log
+?? docs/progress/logs/20260627-171227_execute-P005.last.txt
+?? docs/progress/logs/20260627-171227_execute-P005.log
+?? docs/progress/logs/20260627-171742_execute-P002.last.txt
+?? docs/progress/logs/20260627-171742_execute-P002.log
+?? docs/progress/logs/20260627-171913_execute-P003.last.txt
+?? docs/progress/logs/20260627-171913_execute-P003.log
+?? docs/progress/logs/20260627-171949_execute-P004.last.txt
+?? docs/progress/logs/20260627-171949_execute-P004.log
+?? docs/progress/logs/20260627-172100_execute-P002.last.txt
+?? docs/progress/logs/20260627-172100_execute-P002.log
+?? docs/progress/logs/20260627-172614_execute-P003.last.txt
+?? docs/progress/logs/20260627-172614_execute-P003.log
+?? docs/progress/logs/20260627-173007_execute-P004.last.txt
+?? docs/progress/logs/20260627-173007_execute-P004.log
+?? docs/progress/logs/20260627-174331_execute-P005.last.txt
+?? docs/progress/logs/20260627-174331_execute-P005.log
+?? docs/progress/logs/20260627-174901_execute-P006.last.txt
+?? docs/progress/logs/20260627-174901_execute-P006.log
+?? docs/progress/logs/20260627-175139_execute-P002.last.txt
+?? docs/progress/logs/20260627-175139_execute-P002.log
+?? docs/progress/logs/20260627-175623_execute-P003.last.txt
+?? docs/progress/logs/20260627-175623_execute-P003.log
+?? docs/progress/logs/20260627-180047_execute-P004.last.txt
+?? docs/progress/logs/20260627-180047_execute-P004.log
+?? docs/progress/logs/20260627-180536_execute-P005.last.txt
+?? docs/progress/logs/20260627-180536_execute-P005.log
+?? docs/progress/logs/20260627-180944_execute-P002.last.txt
+?? docs/progress/logs/20260627-180944_execute-P002.log
+?? docs/progress/logs/20260627-181419_execute-P003.last.txt
+?? docs/progress/logs/20260627-181419_execute-P003.log
+?? docs/progress/logs/20260627-181717_execute-P004.last.txt
+?? docs/progress/logs/20260627-181717_execute-P004.log
+?? docs/progress/logs/20260627-182110_execute-P005.last.txt
+?? docs/progress/logs/20260627-182110_execute-P005.log
+?? docs/progress/logs/20260627-182650_execute-P006.last.txt
+?? docs/progress/logs/20260627-182650_execute-P006.log
+?? docs/progress/logs/20260627-182932_execute-P002.last.txt
+?? docs/progress/logs/20260627-182932_execute-P002.log
+?? docs/progress/logs/20260627-183133_gen-feedback-20.last.txt
+?? docs/progress/logs/20260627-183133_gen-feedback-20.log
+?? docs/progress/logs/20260627-183331_execute-P001.last.txt
+?? docs/progress/logs/20260627-183331_execute-P001.log
+?? docs/progress/logs/20260627-183440_execute-P003.last.txt
+?? docs/progress/logs/20260627-183440_execute-P003.log
+?? docs/progress/logs/20260627-183652_execute-P004.last.txt
+?? docs/progress/logs/20260627-183652_execute-P004.log
+?? docs/progress/logs/20260627-183859_execute-P002.last.txt
+?? docs/progress/logs/20260627-183859_execute-P002.log
+?? docs/progress/logs/20260627-184202_execute-P003.last.txt
+?? docs/progress/logs/20260627-184202_execute-P003.log
+?? docs/progress/logs/20260627-184348_execute-P004.last.txt
+?? docs/progress/logs/20260627-184348_execute-P004.log
+?? docs/progress/logs/20260627-184525_execute-P002.last.txt
+?? docs/progress/logs/20260627-184525_execute-P002.log
+?? docs/progress/logs/20260627-184843_execute-P003.last.txt
+?? docs/progress/logs/20260627-184843_execute-P003.log
+?? docs/progress/logs/20260627-185236_execute-P004.last.txt
+?? docs/progress/logs/20260627-185236_execute-P004.log
+?? docs/progress/logs/20260627-185528_execute-P005.last.txt
+?? docs/progress/logs/20260627-185528_execute-P005.log
+?? docs/progress/logs/20260627-185902_execute-P006.last.txt
+?? docs/progress/logs/20260627-185902_execute-P006.log
+?? docs/progress/logs/20260627-190154_execute-P002.last.txt
+?? docs/progress/logs/20260627-190154_execute-P002.log
+?? docs/progress/logs/20260627-190236_execute-P003.last.txt
+?? docs/progress/logs/20260627-190236_execute-P003.log
+?? docs/progress/logs/20260627-190337_execute-P004.last.txt
+?? docs/progress/logs/20260627-190337_execute-P004.log
+?? docs/progress/logs/20260627-194447_gen-requirement-33.log
+?? docs/progress/logs/20260627-194453_gen-requirement-33.log
+?? docs/progress/logs/20260627-194458_gen-requirement-33.log
+?? docs/progress/logs/20260627-194503_gen-requirement-33.log
+?? docs/progress/logs/20260627-194508_gen-requirement-33.log
+?? docs/progress/logs/20260627-194513_gen-requirement-33.log
+?? docs/progress/logs/20260627-194518_gen-requirement-33.log
+?? docs/progress/logs/20260627-194523_gen-requirement-33.log
+?? docs/progress/logs/20260627-194528_gen-requirement-33.log
+?? docs/progress/logs/20260627-194533_gen-requirement-33.log
+?? docs/progress/logs/20260627-194538_gen-requirement-33.log
+?? docs/progress/logs/20260627-194543_gen-requirement-33.log
+?? docs/progress/logs/20260627-194548_gen-requirement-33.log
+?? docs/progress/logs/20260627-194553_gen-requirement-33.log
+?? docs/progress/logs/20260627-194558_gen-requirement-33.log
+?? docs/progress/logs/20260627-194603_gen-requirement-33.log
+?? docs/progress/logs/20260627-194608_gen-requirement-33.log
+?? docs/progress/logs/20260627-194613_gen-requirement-33.log
+?? docs/progress/logs/20260627-194618_gen-requirement-33.log
+?? docs/progress/logs/20260627-194623_gen-requirement-33.log
+?? docs/progress/logs/20260627-194628_gen-requirement-33.log
+?? docs/progress/logs/20260627-194633_gen-requirement-33.log
+?? docs/progress/logs/20260627-194638_gen-requirement-33.log
+?? docs/progress/logs/20260627-194643_gen-requirement-33.log
+?? docs/progress/logs/20260627-194648_gen-requirement-33.log
+?? docs/progress/logs/20260627-194653_gen-requirement-33.log
+?? docs/progress/logs/20260627-194658_gen-requirement-33.log
+?? docs/progress/logs/20260627-194703_gen-requirement-33.log
+?? docs/progress/logs/20260627-194708_gen-requirement-33.log
+?? docs/progress/logs/20260627-194713_gen-requirement-33.log
+?? docs/progress/logs/20260627-194718_gen-requirement-33.log
+?? docs/progress/logs/20260627-194723_gen-requirement-33.log
+?? docs/progress/logs/20260627-194728_gen-requirement-33.log
+?? docs/progress/logs/20260627-194733_gen-requirement-33.log
+?? docs/progress/logs/20260627-194738_gen-requirement-33.log
+?? docs/progress/logs/20260627-194743_gen-requirement-33.log
+?? docs/progress/logs/20260627-194748_gen-requirement-33.log
+?? docs/progress/logs/20260627-194753_gen-requirement-33.log
+?? docs/progress/logs/20260627-194758_gen-requirement-33.log
+?? docs/progress/logs/20260627-194803_gen-requirement-33.log
+?? docs/progress/logs/20260627-194808_gen-requirement-33.log
+?? docs/progress/logs/20260627-194813_gen-requirement-33.log
+?? docs/progress/logs/20260627-194818_gen-requirement-33.log
+?? docs/progress/logs/20260627-194823_gen-requirement-33.log
+?? docs/progress/logs/20260627-194828_gen-requirement-33.log
+?? docs/progress/logs/20260627-194833_gen-requirement-33.log
+?? docs/progress/logs/20260627-194838_gen-requirement-33.log
+?? docs/progress/logs/20260627-194843_gen-requirement-33.log
+?? docs/progress/logs/20260627-194848_gen-requirement-33.log
+?? docs/progress/logs/20260627-194853_gen-requirement-33.log
+?? docs/progress/logs/20260627-194858_gen-requirement-33.log
+?? docs/progress/logs/20260627-194903_gen-requirement-33.log
+?? docs/progress/logs/20260627-194908_gen-requirement-33.log
+?? docs/progress/logs/20260627-194913_gen-requirement-33.log
+?? docs/progress/logs/20260627-194918_gen-requirement-33.log
+?? docs/progress/logs/20260627-194923_gen-requirement-33.log
+?? docs/progress/logs/20260627-194928_gen-requirement-33.log
+?? docs/progress/logs/20260627-194934_gen-requirement-33.log
+?? docs/progress/logs/20260627-194938_gen-requirement-33.log
+?? docs/progress/logs/20260627-194943_gen-requirement-33.log
+?? docs/progress/logs/20260627-194949_gen-requirement-33.log
+?? docs/progress/logs/20260627-194954_gen-requirement-33.log
+?? docs/progress/logs/20260627-194959_gen-requirement-33.log
+?? docs/progress/logs/20260627-195003_gen-requirement-33.log
+?? docs/progress/logs/20260627-195008_gen-requirement-33.log
+?? docs/progress/logs/20260627-195013_gen-requirement-33.log
+?? docs/progress/logs/20260627-195018_gen-requirement-33.log
+?? docs/progress/logs/20260627-195023_gen-requirement-33.log
+?? docs/progress/logs/20260627-195028_gen-requirement-33.log
+?? docs/progress/logs/20260627-195033_gen-requirement-33.log
+?? docs/progress/logs/20260627-195038_gen-requirement-33.log
+?? docs/progress/logs/20260627-195043_gen-requirement-33.log
+?? docs/progress/logs/20260627-195048_gen-requirement-33.log
+?? docs/progress/logs/20260627-195053_gen-requirement-33.log
+?? docs/progress/logs/20260627-195058_gen-requirement-33.log
+?? docs/progress/logs/20260627-195103_gen-requirement-33.log
+?? docs/progress/logs/20260627-195108_gen-requirement-33.log
+?? docs/progress/logs/20260627-195113_gen-requirement-33.log
+?? docs/progress/logs/20260627-195118_gen-requirement-33.log
+?? docs/progress/logs/20260627-195123_gen-requirement-33.log
+?? docs/progress/logs/20260627-195128_gen-requirement-33.log
+?? docs/progress/logs/20260627-195133_gen-requirement-33.log
+?? docs/progress/logs/20260627-195138_gen-requirement-33.log
+?? docs/progress/logs/20260627-195144_gen-requirement-33.log
+?? docs/progress/logs/20260627-195149_gen-requirement-33.log
+?? docs/progress/logs/20260627-195154_gen-requirement-33.log
+?? docs/progress/logs/20260627-195159_gen-requirement-33.log
+?? docs/progress/logs/20260627-195204_gen-requirement-33.log
+?? docs/progress/logs/20260627-195209_gen-requirement-33.log
+?? docs/progress/logs/20260627-195214_gen-requirement-33.log
+?? docs/progress/logs/20260627-195219_gen-requirement-33.log
+?? docs/progress/logs/20260627-195224_gen-requirement-33.log
+?? docs/progress/logs/20260627-195229_gen-requirement-33.log
+?? docs/progress/logs/20260627-195234_gen-requirement-33.log
+?? docs/progress/logs/20260627-195239_gen-requirement-33.log
+?? docs/progress/logs/20260627-195244_gen-requirement-33.log
+?? docs/progress/logs/20260627-195249_gen-requirement-33.log
+?? docs/progress/logs/20260627-195254_gen-requirement-33.log
+?? docs/progress/logs/20260627-195259_gen-requirement-33.log
+?? docs/progress/logs/20260627-195304_gen-requirement-33.log
+?? docs/progress/logs/20260627-195309_gen-requirement-33.log
+?? docs/progress/logs/20260627-195314_gen-requirement-33.log
+?? docs/progress/logs/20260627-195319_gen-requirement-33.log
+?? docs/progress/logs/20260627-195324_gen-requirement-33.log
+?? docs/progress/logs/20260627-195329_gen-requirement-33.log
+?? docs/progress/logs/20260627-195334_gen-requirement-33.log
+?? docs/progress/logs/20260627-195339_gen-requirement-33.log
+?? docs/progress/logs/20260627-195344_gen-requirement-33.log
+?? docs/progress/logs/20260627-195349_gen-requirement-33.log
+?? docs/progress/logs/20260627-195354_gen-requirement-33.log
+?? docs/progress/logs/20260627-195359_gen-requirement-33.log
+?? docs/progress/logs/20260627-195404_gen-requirement-33.log
+?? docs/progress/logs/20260627-195409_gen-requirement-33.log
+?? docs/progress/logs/20260627-195414_gen-requirement-33.log
+?? docs/progress/logs/20260627-195419_gen-requirement-33.log
+?? docs/progress/logs/20260627-195424_gen-requirement-33.log
+?? docs/progress/logs/20260627-195429_gen-requirement-33.log
+?? docs/progress/logs/20260627-195434_gen-requirement-33.log
+?? docs/progress/logs/20260627-195439_gen-requirement-33.log
+?? docs/progress/logs/20260627-195444_gen-requirement-33.log
+?? docs/progress/logs/20260627-195449_gen-requirement-33.log
+?? docs/progress/logs/20260627-195454_gen-requirement-33.log
+?? docs/progress/logs/20260627-195459_gen-requirement-33.log
+?? docs/progress/logs/20260627-195504_gen-requirement-33.log
+?? docs/progress/logs/20260627-195509_gen-requirement-33.log
+?? docs/progress/logs/20260627-195514_gen-requirement-33.log
+?? docs/progress/logs/20260627-195519_gen-requirement-33.log
+?? docs/progress/logs/20260627-195524_gen-requirement-33.log
+?? docs/progress/logs/20260627-195529_gen-requirement-33.log
+?? docs/progress/logs/20260627-195534_gen-requirement-33.log
+?? docs/progress/logs/20260627-195539_gen-requirement-33.log
+?? docs/progress/logs/20260627-195544_gen-requirement-33.log
+?? docs/progress/logs/20260627-195549_gen-requirement-33.log
+?? docs/progress/logs/20260627-195554_gen-requirement-33.log
+?? docs/progress/logs/20260627-195559_gen-requirement-33.log
+?? docs/progress/logs/20260627-195604_gen-requirement-33.log
+?? docs/progress/logs/20260627-195609_gen-requirement-33.log
+?? docs/progress/logs/20260627-195614_gen-requirement-33.log
+?? docs/progress/logs/20260627-195619_gen-requirement-33.log
+?? docs/progress/logs/20260627-195624_gen-requirement-33.log
+?? docs/progress/logs/20260627-195629_gen-requirement-33.log
+?? docs/progress/logs/20260627-195634_gen-requirement-33.log
+?? docs/progress/logs/20260627-195639_gen-requirement-33.log
+?? docs/progress/logs/20260627-195644_gen-requirement-33.log
+?? docs/progress/logs/20260627-195649_gen-requirement-33.log
+?? docs/progress/logs/20260627-195654_gen-requirement-33.log
+?? docs/progress/logs/20260627-195659_gen-requirement-33.log
+?? docs/progress/logs/20260627-195704_gen-requirement-33.log
+?? docs/progress/logs/20260627-195709_gen-requirement-33.log
+?? docs/progress/logs/20260627-195714_gen-requirement-33.log
+?? docs/progress/logs/20260627-195719_gen-requirement-33.log
+?? docs/progress/logs/20260627-195724_gen-requirement-33.log
+?? docs/progress/logs/20260627-195729_gen-requirement-33.log
+?? docs/progress/logs/20260627-195734_gen-requirement-33.log
+?? docs/progress/logs/20260627-195739_gen-requirement-33.log
+?? docs/progress/logs/20260627-195744_gen-requirement-33.log
+?? docs/progress/logs/20260627-195749_gen-requirement-33.log
+?? docs/progress/logs/20260627-195754_gen-requirement-33.log
+?? docs/progress/logs/20260627-195759_gen-requirement-33.log
+?? docs/progress/logs/20260627-195804_gen-requirement-33.log
+?? docs/progress/logs/20260627-195809_gen-requirement-33.log
+?? docs/progress/logs/20260627-195814_gen-requirement-33.log
+?? docs/progress/logs/20260627-195819_gen-requirement-33.log
+?? docs/progress/logs/20260627-195824_gen-requirement-33.log
+?? docs/progress/logs/20260627-195829_gen-requirement-33.log
+?? docs/progress/logs/20260627-195834_gen-requirement-33.log
+?? docs/progress/logs/20260627-195839_gen-requirement-33.log
+?? docs/progress/logs/20260627-195844_gen-requirement-33.log
+?? docs/progress/logs/20260627-195849_gen-requirement-33.log
+?? docs/progress/logs/20260627-195854_gen-requirement-33.log
+?? docs/progress/logs/20260627-195859_gen-requirement-33.log
+?? docs/progress/logs/20260627-195904_gen-requirement-33.log
+?? docs/progress/logs/20260627-195909_gen-requirement-33.log
+?? docs/progress/logs/20260627-195914_gen-requirement-33.log
+?? docs/progress/logs/20260627-195919_gen-requirement-33.log
+?? docs/progress/logs/20260627-195924_gen-requirement-33.log
+?? docs/progress/logs/20260627-195929_gen-requirement-33.log
+?? docs/progress/logs/20260627-195934_gen-requirement-33.log
+?? docs/progress/logs/20260627-195939_gen-requirement-33.log
+?? docs/progress/logs/20260627-195944_gen-requirement-33.log
+?? docs/progress/logs/20260627-195949_gen-requirement-33.log
+?? docs/progress/logs/20260627-195954_gen-requirement-33.log
+?? docs/progress/logs/20260627-195959_gen-requirement-33.log
+?? docs/progress/logs/20260627-200004_gen-requirement-33.log
+?? docs/progress/logs/20260627-200009_gen-requirement-33.log
+?? docs/progress/logs/20260627-200014_gen-requirement-33.log
+?? docs/progress/logs/20260627-200019_gen-requirement-33.log
+?? docs/progress/logs/20260627-200024_gen-requirement-33.log
+?? docs/progress/logs/20260627-200029_gen-requirement-33.log
+?? docs/progress/logs/20260627-200034_gen-requirement-33.log
+?? docs/progress/logs/20260627-200039_gen-requirement-33.log
+?? docs/progress/logs/20260627-200044_gen-requirement-33.log
+?? docs/progress/logs/20260627-200049_gen-requirement-33.log
+?? docs/progress/logs/20260627-200054_gen-requirement-33.log
+?? docs/progress/logs/20260627-200059_gen-requirement-33.log
+?? docs/progress/logs/20260627-200104_gen-requirement-33.log
+?? docs/progress/logs/20260627-200109_gen-requirement-33.log
+?? docs/progress/logs/20260627-200114_gen-requirement-33.log
+?? docs/progress/logs/20260627-200119_gen-requirement-33.log
+?? docs/progress/logs/20260627-200124_gen-requirement-33.log
+?? docs/progress/logs/20260627-200129_gen-requirement-33.log
+?? docs/progress/logs/20260627-200135_gen-requirement-33.log
+?? docs/progress/logs/20260627-200139_gen-requirement-33.log
+?? docs/progress/logs/20260627-200144_gen-requirement-33.log
+?? docs/progress/logs/20260627-200150_gen-requirement-33.log
+?? docs/progress/logs/20260627-200154_gen-requirement-33.log
+?? docs/progress/logs/20260627-200200_gen-requirement-33.log
+?? docs/progress/logs/20260627-200205_gen-requirement-33.log
+?? docs/progress/logs/20260627-200210_gen-requirement-33.log
+?? docs/progress/logs/20260627-200215_gen-requirement-33.log
+?? docs/progress/logs/20260627-200220_gen-requirement-33.log
+?? docs/progress/logs/20260627-200225_gen-requirement-33.log
+?? docs/progress/logs/20260627-200230_gen-requirement-33.log
+?? docs/progress/logs/20260627-200235_gen-requirement-33.log
+?? docs/progress/logs/20260627-200239_gen-requirement-33.log
+?? docs/progress/logs/20260627-200244_gen-requirement-33.log
+?? docs/progress/logs/20260627-200249_gen-requirement-33.log
+?? docs/progress/logs/20260627-200254_gen-requirement-33.log
+?? docs/progress/logs/20260627-200300_gen-requirement-33.log
+?? docs/progress/logs/20260627-200304_gen-requirement-33.log
+?? docs/progress/logs/20260627-200310_gen-requirement-33.log
+?? docs/progress/logs/20260627-200315_gen-requirement-33.log
+?? docs/progress/logs/20260627-200320_gen-requirement-33.log
+?? docs/progress/logs/20260627-200325_gen-requirement-33.log
+?? docs/progress/logs/20260627-200330_gen-requirement-33.log
+?? docs/progress/logs/20260627-200335_gen-requirement-33.log
+?? docs/progress/logs/20260627-200340_gen-requirement-33.log
+?? docs/progress/logs/20260627-200345_gen-requirement-33.log
+?? docs/progress/logs/20260627-200350_gen-requirement-33.log
+?? docs/progress/logs/20260627-200355_gen-requirement-33.log
+?? docs/progress/logs/20260627-200400_gen-requirement-33.log
+?? docs/progress/logs/20260627-200405_gen-requirement-33.log
+?? docs/progress/logs/20260627-200410_gen-requirement-33.log
+?? docs/progress/logs/20260627-200415_gen-requirement-33.log
+?? docs/progress/logs/20260627-200420_gen-requirement-33.log
+?? docs/progress/logs/20260627-200425_gen-requirement-33.log
+?? docs/progress/logs/20260627-200430_gen-requirement-33.log
+?? docs/progress/logs/20260627-200435_gen-requirement-33.log
+?? docs/progress/logs/20260627-200440_gen-requirement-33.log
+?? docs/progress/logs/20260627-200445_gen-requirement-33.log
+?? docs/progress/logs/20260627-200450_gen-requirement-33.log
+?? docs/progress/logs/20260627-200455_gen-requirement-33.log
+?? docs/progress/logs/20260627-200500_gen-requirement-33.log
+?? docs/progress/logs/20260627-200505_gen-requirement-33.log
+?? docs/progress/logs/20260627-200510_gen-requirement-33.log
+?? docs/progress/logs/20260627-200515_gen-requirement-33.log
+?? docs/progress/logs/20260627-200520_gen-requirement-33.log
+?? docs/progress/logs/20260627-200525_gen-requirement-33.log
+?? docs/progress/logs/20260627-200530_gen-requirement-33.log
+?? docs/progress/logs/20260627-200535_gen-requirement-33.log
+?? docs/progress/logs/20260627-200540_gen-requirement-33.log
+?? docs/progress/logs/20260627-200545_gen-requirement-33.log
+?? docs/progress/logs/20260627-200550_gen-requirement-33.log
+?? docs/progress/logs/20260627-200555_gen-requirement-33.log
+?? docs/progress/logs/20260627-200600_gen-requirement-33.log
+?? docs/progress/logs/20260627-200605_gen-requirement-33.log
+?? docs/progress/logs/20260627-200610_gen-requirement-33.log
+?? docs/progress/logs/20260627-200615_gen-requirement-33.log
+?? docs/progress/logs/20260627-200620_gen-requirement-33.log
+?? docs/progress/logs/20260627-200625_gen-requirement-33.log
+?? docs/progress/logs/20260627-200630_gen-requirement-33.log
+?? docs/progress/logs/20260627-200635_gen-requirement-33.log
+?? docs/progress/logs/20260627-200640_gen-requirement-33.log
+?? docs/progress/logs/20260627-200645_gen-requirement-33.log
+?? docs/progress/logs/20260627-200650_gen-requirement-33.log
+?? docs/progress/logs/20260627-200655_gen-requirement-33.log
+?? docs/progress/logs/20260627-200700_gen-requirement-33.log
+?? docs/progress/logs/20260627-200705_gen-requirement-33.log
+?? docs/progress/logs/20260627-200710_gen-requirement-33.log
+?? docs/progress/logs/20260627-200715_gen-requirement-33.log
+?? docs/progress/logs/20260627-200720_gen-requirement-33.log
+?? docs/progress/logs/20260627-200725_gen-requirement-33.log
+?? docs/progress/logs/20260627-200730_gen-requirement-33.log
+?? docs/progress/logs/20260627-200735_gen-requirement-33.log
+?? docs/progress/logs/20260627-200740_gen-requirement-33.log
+?? docs/progress/logs/20260627-200745_gen-requirement-33.log
+?? docs/progress/logs/20260627-200750_gen-requirement-33.log
+?? docs/progress/logs/20260627-200755_gen-requirement-33.log
+?? docs/progress/logs/20260627-200800_gen-requirement-33.log
+?? docs/progress/logs/20260627-200805_gen-requirement-33.log
+?? docs/progress/logs/20260627-200810_gen-requirement-33.log
+?? docs/progress/logs/20260627-200815_gen-requirement-33.log
+?? docs/progress/logs/20260627-200820_gen-requirement-33.log
+?? docs/progress/logs/20260627-200825_gen-requirement-33.log
+?? docs/progress/logs/20260627-200830_gen-requirement-33.log
+?? docs/progress/logs/20260627-212939_gen-requirement-36.log
+?? docs/progress/logs/20260627-220305_gen-requirement-36.last.txt
+?? docs/progress/logs/20260627-220305_gen-requirement-36.log
+?? docs/progress/logs/20260627-221620_gen-requirement-36.last.txt
+?? docs/progress/logs/20260627-221620_gen-requirement-36.log
+?? docs/progress/logs/20260627-223427_execute-P001.last.txt
+?? docs/progress/logs/20260627-223427_execute-P001.log
+?? docs/progress/logs/20260627-224128_execute-P002.last.txt
+?? docs/progress/logs/20260627-224128_execute-P002.log
+?? docs/progress/logs/20260627-224749_execute-P003.last.txt
+?? docs/progress/logs/20260627-224749_execute-P003.log
+?? docs/progress/logs/20260627-225309_gen-requirement-37.last.txt
+?? docs/progress/logs/20260627-225309_gen-requirement-37.log
+?? docs/progress/logs/20260627-225435_execute-P001.log
+?? release-preview-installer/
+?? release-preview/
+?? scripts/release_beta.py
+?? src/loop/scanWorker.js
+?? ui/settings.html
+?? ui/tasks.html
+
+codex
+已完成 P001 梳理，未执行 P002/P003/P004 的行为修改，也未运行测试命令。
+P001 是梳理与确认任务；按要求未修改 plan 文件，且未提前实施隐藏摘要或修复样式等后续 checkbox 内容。
+  ✓ 读取计划与相关代码
+  ✓ 定位阅读预览冲突
+  ✓ 实施限定范围修改
+  ✓ 检查改动范围
+codex
+已完成 P001 梳理，未修改 plan 文件，未勾选 checkbox，未运行测试/构建/lint。
+
+**确认结果**
+- `src/renderer/components/plans/PlanList.tsx:120`：计划阅读弹窗数据来自 `readerState`，解析任务来自 `planReadResult.tasks`，正文来自 `planReadResult.markdown`。
+- `src/renderer/components/plans/PlanList.tsx:403`：前文界面先展示 Plan 摘要，其中包含独立“任务拆解”统计。
+- `src/renderer/components/plans/PlanList.tsx:449`：Markdown 正文前还会展示独立“任务拆解解析结果”区块，这是后续 P002 的直接处理点。
+- `src/renderer/components/MarkdownReader.tsx:49`：当前会把 HTML 注释转换为可见 inline code，导致 `<!-- scope: ... -->` 不再按 Markdown/HTML 注释隐藏。
+- `src/renderer/components/MarkdownReader.tsx:91`：checkbox 已被渲染为 `readOnly` + `disabled`，但 scope 注释转换会影响标准任务行呈现。
+- `src/renderer/styles/components.css:303`：任务列表样式限定在 `.markdown-reader` 内，不会直接污染业务任务列表；但缩进与 checkbox 对齐仍是 P004 的处理边界。
+
+**改动边界**
+- 未修改任务解析器输出、计划文件格式、计划卡片任务统计。
+- 未提前执行 P002 的隐藏摘要、P003 的 Markdown 修复、P004 的样式隔离。
+tokens used
+80,035
+已完成 P001 梳理，未修改 plan 文件，未勾选 checkbox，未运行测试/构建/lint。
+
+**确认结果**
+- `src/renderer/components/plans/PlanList.tsx:120`：计划阅读弹窗数据来自 `readerState`，解析任务来自 `planReadResult.tasks`，正文来自 `planReadResult.markdown`。
+- `src/renderer/components/plans/PlanList.tsx:403`：前文界面先展示 Plan 摘要，其中包含独立“任务拆解”统计。
+- `src/renderer/components/plans/PlanList.tsx:449`：Markdown 正文前还会展示独立“任务拆解解析结果”区块，这是后续 P002 的直接处理点。
+- `src/renderer/components/MarkdownReader.tsx:49`：当前会把 HTML 注释转换为可见 inline code，导致 `<!-- scope: ... -->` 不再按 Markdown/HTML 注释隐藏。
+- `src/renderer/components/MarkdownReader.tsx:91`：checkbox 已被渲染为 `readOnly` + `disabled`，但 scope 注释转换会影响标准任务行呈现。
+- `src/renderer/styles/components.css:303`：任务列表样式限定在 `.markdown-reader` 内，不会直接污染业务任务列表；但缩进与 checkbox 对齐仍是 P004 的处理边界。
+
+**改动边界**
+- 未修改任务解析器输出、计划文件格式、计划卡片任务统计。
+- 未提前执行 P002 的隐藏摘要、P003 的 Markdown 修复、P004 的样式隔离。

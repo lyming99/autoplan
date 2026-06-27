@@ -1,0 +1,4479 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0787-c56a-7321-b5bf-b9effedf1460
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_15_20260627-132045.md
+指定任务：
+- [ ] P002: 增强 Plan 任务解析稳定性 <!-- scope: src/loopService.js -->
+任务 scope：src/loopservice.js
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会只改 `src/loopService.js` 的任务解析逻辑，不碰计划文件或其它 scope。
+  → 复查解析辅助函数
+  • 增强任务行解析
+  • 保护 scope 归一化
+  • 静态复查改动范围
+codex
+先读取解析相关函数的最小上下文，沿用前序定位结果。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 80 95; Write-Output '---'; Show src\\loopService.js 1387 1465; Write-Output '---'; Show src\\loopService.js 2300 2445; Write-Output '---'; rg -n \"function isAcceptanceTask|isAcceptanceTask\\(\" src\\loopService.js" in D:\project\GitHub\autoplan
+2026-06-27T09:52:06.302206Z ERROR codex_core::tools::router: error={"output":"   80:   TASK_EVENT_TYPES,\r\n   81:   normalizeDurationMs,\r\n   82:   taskEventMessage,\r\n   83:   taskEventMeta,\r\n   84:   taskRunDurationMs,\r\n   85:   withTaskDurationMeta,\r\n   86: } = require('./loop/taskEvents');\r\n   87: \r\n   88: const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;\r\n   89: const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';\r\n   90: \r\n   91: class LoopService extends EventEmitter {\r\n   92:   constructor(db) {\r\n   93:     super();\r\n   94:     this.db = db;\r\n   95:     this.runtimes = new Map();\r\n---\r\n---\r\n---\r\nrg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 319\r\n+ ... -'; Show src\\loopService.js 2300 2445; Write-Output '---'; rg -n \"fun ...\r\n+                                                                ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.3}}
+ exited 1 in 1348ms:
+   80:   TASK_EVENT_TYPES,
+   81:   normalizeDurationMs,
+   82:   taskEventMessage,
+   83:   taskEventMeta,
+   84:   taskRunDurationMs,
+   85:   withTaskDurationMeta,
+   86: } = require('./loop/taskEvents');
+   87: 
+   88: const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+   89: const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+   90: 
+   91: class LoopService extends EventEmitter {
+   92:   constructor(db) {
+   93:     super();
+   94:     this.db = db;
+   95:     this.runtimes = new Map();
+---
+---
+---
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 319
++ ... -'; Show src\loopService.js 2300 2445; Write-Output '---'; rg -n "fun ...
++                                                                ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+**Troubleshooting path issues**
+
+It looks like `rg` is unavailable now, even though it was earlier. Maybe it's a path issue with PowerShell or something related to the sandbox? I need to check if I can use `Select-String` instead. Also, the line numbers seem to have shifted, as it only shows 80-95 and nothing for 1387, which might mean the file is shorter than expected. Hmm, I should verify if the loop service has changed and count the lines.
+codex
+当前环境里 `rg` 不可用，我改用 PowerShell 原生命令继续；不运行测试。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src'"\\loopService.js; Write-Output \"lines="'$($lines.Count)"; Select-String -Path src'"\\loopService.js -Pattern \"syncPlanTasks|TASK_SCOPE|function isAcceptanceTask|isAcceptanceTask\\(\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}' in D:\project\GitHub\autoplan
+ succeeded in 472ms:
+lines=1234
+579:   /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
+798:   syncPlanTasks(planId, planFile) {
+799:     return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+
+**Reviewing code changes**
+
+I see the file has changed a lot, especially with the transition from P001 to P002, which might include some helper modules. The current scope is only for src/loopService.js, but there's a parser in src/loop/planParser. However, the scope appears to focus on loopService only. It delegates to planParser, so if modifications are needed there, they might be out of scope. I'll take a closer look at the relevant imports to clarify.
+codex
+解析器已被抽到子模块，但 P002 scope 只允许 `src/loopService.js`；我先确认委托接口。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 1 130; Write-Output '---'; Show src\\loopService.js 760 820; Write-Output '--- loop files'; Get-ChildItem -Path src\\loop -File | ForEach-Object {"'$_.FullName}' in D:\project\GitHub\autoplan
+ succeeded in 505ms:
+    1: const { EventEmitter } = require('node:events');
+    2: const fs = require('node:fs');
+    3: const path = require('node:path');
+    4: const { spawn } = require('node:child_process');
+    5: const { nowIso } = require('./database');
+    6: const { CodexActivityPrinter } = require('./codexActivity');
+    7: const {
+    8:   codexNewSessionArgs,
+    9:   codexResumeSessionArgs,
+   10:   runAgentCliAttempt,
+   11: } = require('./agentCli');
+   12: const {
+   13:   DEFAULT_AGENT_CLI_PROVIDER,
+   14:   LOOP_CONFIG_INPUT_KEYS,
+   15:   VALIDATION_COMMAND_INPUT_KEYS,
+   16:   agentCliContextFields,
+   17:   agentCliOperationFields,
+   18:   agentCliProviderDisplayName,
+   19:   agentCliStateUpdates,
+   20:   clearCodexSessionFields,
+   21:   codexSessionContextFields,
+   22:   effectiveAgentCliConfig,
+   23:   extractCodexSessionId,
+   24:   hasAgentCliOverride,
+   25:   hasAnyOwnProperty,
+   26:   hasCodexSessionOption,
+   27:   isCodexResumeFailure,
+   28:   nextAgentCliConfig,
+   29:   nextIntakeAgentCliConfig,
+   30:   normalizeAgentCliConfig,
+   31:   normalizeCodexSessionId,
+   32:   normalizeIntakeAgentCliConfig,
+   33:   operationCodexSessionId,
+   34:   planAgentCliColumnValues,
+   35:   readFirstOwnValue,
+   36:   shortCodexSessionId,
+   37: } = require('./loop/agentCliConfig');
+   38: const {
+   39:   archiveRuntimeOperation,
+   40:   ensureProjectRuntime,
+   41:   existingProjectRuntime,
+   42:   findActiveRuntimeProject,
+   43:   findRuntimeOperations,
+   44:   killChildProcess,
+   45:   normalizeRuntimeStatus,
+   46:   recordRuntimeError,
+   47:   registerRuntimeOperation,
+   48:   resetStoredRuntimeState,
+   49:   runtimeProjectSummary,
+   50:   scheduleProjectRuntime,
+   51:   setProjectPhase,
+   52:   stopProjectRuntime,
+   53:   stopRuntimeTask,
+   54:   waitForChild,
+   55: } = require('./loop/runtime');
+   56: const planGeneration = require('./loop/planGeneration');
+   57: const planParser = require('./loop/planParser');
+   58: const snapshots = require('./loop/snapshots');
+   59: const concurrency = require('./loop/concurrency');
+   60: const workspaceFiles = require('./loop/workspaceFiles');
+   61: const { parseEventMeta } = snapshots;
+   62: const { isAcceptanceTask } = concurrency;
+   63: const {
+   64:   hashFile,
+   65:   hashText,
+   66:   normalizeRelative,
+   67:   readSnippet,
+   68:   safePart,
+   69:   tailText,
+   70:   workspaceKey,
+   71:   workspaceToolEnv,
+   72: } = workspaceFiles;
+   73: const taskExecution = require('./loop/taskExecution');
+   74: const validationFlow = require('./loop/validation');
+   75: const {
+   76:   LEGACY_TASK_EVENT_TYPES,
+   77:   TASK_EVENT_COMPATIBILITY,
+   78:   TASK_EVENT_SEMANTICS,
+   79:   TASK_EVENT_STATUS,
+   80:   TASK_EVENT_TYPES,
+   81:   normalizeDurationMs,
+   82:   taskEventMessage,
+   83:   taskEventMeta,
+   84:   taskRunDurationMs,
+   85:   withTaskDurationMeta,
+   86: } = require('./loop/taskEvents');
+   87: 
+   88: const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+   89: const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+   90: 
+   91: class LoopService extends EventEmitter {
+   92:   constructor(db) {
+   93:     super();
+   94:     this.db = db;
+   95:     this.runtimes = new Map();
+   96:     this.resetRuntimeState();
+   97:   }
+   98: 
+   99:   runtime(projectId) {
+  100:     return ensureProjectRuntime(this.runtimes, projectId);
+  101:   }
+  102: 
+  103:   existingRuntime(projectId) {
+  104:     return existingProjectRuntime(this.runtimes, projectId);
+  105:   }
+  106: 
+  107:   projects() {
+  108:     return this.db
+  109:       .all('SELECT * FROM projects ORDER BY updated_at DESC, id DESC')
+  110:       .map((project) => this.withProjectRuntimeSummary(project));
+  111:   }
+  112: 
+  113:   withProjectRuntimeSummary(project) {
+  114:     const state =
+  115:       this.db.get(
+  116:         'SELECT * FROM project_states WHERE project_id = ?',
+  117:         [project.id],
+  118:       ) || {};
+  119:     const runtime = this.existingRuntime(project.id);
+  120:     const agentCliConfig = normalizeAgentCliConfig(state);
+  121:     return runtimeProjectSummary(project, state, runtime, agentCliConfig);
+  122:   }
+  123: 
+  124:   project(projectId) {
+  125:     if (!projectId) return null;
+  126:     return this.db.get('SELECT * FROM projects WHERE id = ?', [projectId]);
+  127:   }
+  128: 
+  129:   defaultProjectId() {
+  130:     return this.projects()[0]?.id || null;
+---
+  760:   }
+  761: 
+  762:   previousPlanCodexSessionId(planId, task) {
+  763:     return taskExecution.previousPlanCodexSessionId(this, loopFlowHelpers(), planId, task);
+  764:   }
+  765: 
+  766:   parallelTaskBatch(tasks) {
+  767:     return taskExecution.parallelTaskBatch(this, loopFlowHelpers(), tasks);
+  768:   }
+  769: 
+  770:   async executeTaskBatch(workspace, plan, tasks, options = {}) {
+  771:     return taskExecution.executeTaskBatch(this, loopFlowHelpers(), workspace, plan, tasks, options);
+  772:   }
+  773: 
+  774:   async executeTask(workspace, plan, task, options = {}) {
+  775:     return taskExecution.executeTask(this, loopFlowHelpers(), workspace, plan, task, options);
+  776:   }
+  777: 
+  778:   completeTask(workspace, plan, task, result) {
+  779:     return taskExecution.completeTask(this, loopFlowHelpers(), workspace, plan, task, result);
+  780:   }
+  781: 
+  782:   completeAcceptanceTask(workspace, plan, task, result) {
+  783:     return validationFlow.completeAcceptanceTask(this, loopFlowHelpers(), workspace, plan, task, result);
+  784:   }
+  785: 
+  786:   refreshPlanProgress(planId, planFile) {
+  787:     return taskExecution.refreshPlanProgress(this, loopFlowHelpers(), planId, planFile);
+  788:   }
+  789: 
+  790:   markTaskCompletedInPlan(workspace, planFile, task, result) {
+  791:     return taskExecution.markTaskCompletedInPlan(this, loopFlowHelpers(), workspace, planFile, task, result);
+  792:   }
+  793: 
+  794:   async validatePlan(workspace, plan, options = {}) {
+  795:     return validationFlow.validatePlan(this, loopFlowHelpers(), workspace, plan, options);
+  796:   }
+  797: 
+  798:   syncPlanTasks(planId, planFile) {
+  799:     return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+  800:   }
+  801: 
+  802:   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+  803:   archiveOperation(projectId, operationKey) {
+  804:     archiveRuntimeOperation(this.runtime(projectId), operationKey);
+  805:   }
+  806: 
+  807:   async runCodexWithPlanGuard(workspace, prompt, label, operation, planFile) {
+  808:     const before = planFile && fs.existsSync(planFile) ? fs.readFileSync(planFile, 'utf8') : null;
+  809:     const result = await this.runCodex(workspace, prompt, label, operation);
+  810:     if (before !== null) {
+  811:       const changed = !fs.existsSync(planFile) || fs.readFileSync(planFile, 'utf8') !== before;
+  812:       if (changed) {
+  813:         fs.writeFileSync(planFile, before, 'utf8');
+  814:         this.addEvent(operation.projectId, 'plan.guard.restored', `${agentCliProviderDisplayName(result.agentCliProvider)} 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+  815:           ...agentCliContextFields(result),
+  816:           planId: operation.planId || null,
+  817:           taskId: operation.taskId || null,
+  818:         });
+  819:       }
+  820:     }
+--- loop files
+D:\project\GitHub\autoplan\src\loop\agentCliConfig.js
+D:\project\GitHub\autoplan\src\loop\concurrency.js
+D:\project\GitHub\autoplan\src\loop\planGeneration.js
+D:\project\GitHub\autoplan\src\loop\planParser.js
+D:\project\GitHub\autoplan\src\loop\runtime.js
+D:\project\GitHub\autoplan\src\loop\snapshots.js
+D:\project\GitHub\autoplan\src\loop\taskEvents.js
+D:\project\GitHub\autoplan\src\loop\taskExecution.js
+D:\project\GitHub\autoplan\src\loop\validation.js
+D:\project\GitHub\autoplan\src\loop\workspaceFiles.js
+
+**Evaluating code scope**
+
+I’m considering the code structure here. It seems like I should focus on loopService, but the logic is also in planParser. Maybe I can modify planParser? The user specified that the scope is just src/loopservice.js, but there's a direct connection to the parser file. If I don’t modify planParser, I can’t enhance things. I wonder if I can pass custom helpers from loopService to include planParser? I’ll need to check both files for clarity.
+codex
+实际解析代码在 `src/loop/planParser.js`，但任务 scope 只列 `loopService.js`；我会尽量通过 `loopService.js` 注入增强解析，避免改其它文件。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 1160 1234; Write-Output '--- planParser'; Show src\\loop\\planParser.js 1 260; Write-Output '--- concurrency'; Show src\\loop\\concurrency.js 1 180" in D:\project\GitHub\autoplan
+ succeeded in 528ms:
+ 1160: 
+ 1161: function formatIntakeAttachmentEntry(entry) {
+ 1162:   const lines = [
+ 1163:     `- 附件 ${entry.number}: ${entry.name}`,
+ 1164:     `  - MIME: ${entry.mime}`,
+ 1165:     `  - 大小: ${formatAttachmentSize(entry.size)}`,
+ 1166:     `  - SHA256: ${entry.hash}`,
+ 1167:     `  - 持久化本地路径: ${entry.path || '（缺失）'}`,
+ 1168:     `  - 读取方式: 工具可以通过上述本地路径读取附件内容`,
+ 1169:     `  - 可读性: ${entry.readable ? '已确认可读' : `不可读：${entry.readError || '未知错误'}`}`,
+ 1170:   ];
+ 1171:   if (entry.actualSize != null && String(entry.actualSize) !== String(entry.size ?? '')) {
+ 1172:     lines.push(`  - 实际文件大小: ${entry.actualSize} bytes`);
+ 1173:   }
+ 1174:   return lines;
+ 1175: }
+ 1176: 
+ 1177: function attachmentField(attachment, keys) {
+ 1178:   for (const key of keys) {
+ 1179:     if (attachment?.[key] !== undefined && attachment[key] !== null && attachment[key] !== '') {
+ 1180:       return attachment[key];
+ 1181:     }
+ 1182:   }
+ 1183:   return '';
+ 1184: }
+ 1185: 
+ 1186: function resolveAttachmentPath(workspace, storedPath) {
+ 1187:   const value = String(storedPath || '').trim();
+ 1188:   if (!value) return '';
+ 1189:   return path.isAbsolute(value) ? value : path.resolve(workspace, value);
+ 1190: }
+ 1191: 
+ 1192: function formatAttachmentSize(size) {
+ 1193:   return size === undefined || size === null || size === '' ? 'unknown' : `${size} bytes`;
+ 1194: }
+ 1195: 
+ 1196: function escapeRegExp(value) {
+ 1197:   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ 1198: }
+ 1199: 
+ 1200: function timestampForPath() {
+ 1201:   const now = new Date();
+ 1202:   const pad = (n) => String(n).padStart(2, '0');
+ 1203:   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+ 1204:     now.getHours(),
+ 1205:   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ 1206: }
+ 1207: 
+ 1208: function loopFlowHelpers() {
+ 1209:   return {
+ 1210:     describeIntakeAttachment,
+ 1211:     escapeRegExp,
+ 1212:     formatIntakeAttachmentEntry,
+ 1213:     hashFile,
+ 1214:     hashText,
+ 1215:     intakeAttachmentOwnerTypes,
+ 1216:     isAcceptanceTask,
+ 1217:     normalizeRelative,
+ 1218:     readSnippet,
+ 1219:     tailText,
+ 1220:     timestampForPath,
+ 1221:   };
+ 1222: }
+ 1223: 
+ 1224: module.exports = {
+ 1225:   LoopService,
+ 1226:   LEGACY_TASK_EVENT_TYPES,
+ 1227:   normalizeIntakeAgentCliConfig,
+ 1228:   nextIntakeAgentCliConfig,
+ 1229:   TASK_EVENT_COMPATIBILITY,
+ 1230:   TASK_EVENT_SEMANTICS,
+ 1231:   TASK_EVENT_STATUS,
+ 1232:   TASK_EVENT_TYPES,
+ 1233: };
+ 1234: 
+--- planParser
+    1: const fs = require('node:fs');
+    2: const path = require('node:path');
+    3: const { nowIso } = require('../database');
+    4: const { syncedTaskStatus, taskEventMeta, TASK_EVENT_STATUS } = require('./taskEvents');
+    5: const { hashFile } = require('./workspaceFiles');
+    6: 
+    7: const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|\u5f71\u54cd\u8303\u56f4|\u5e76\u53d1\u952e)';
+    8: const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\s*[:=\uFF1A]\\s*([^>\\]\\n]+)`, 'i');
+    9: const TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${TASK_SCOPE_LABEL_RE}\\s*[:=\uFF1A]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+   10: const TASK_SCOPE_SPLIT_RE = /[,\uFF0C\u3001;\uFF1B]+/;
+   11: const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+   12: 
+   13: function appendTask(service, helpers, projectId, planId, title) {
+   14:     const project = service.project(projectId);
+   15:     const workspace = project?.workspace_path;
+   16:     const plan = service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+   17:     if (!plan) throw new Error('计划不存在');
+   18:     if (!workspace) throw new Error('请先设置项目工作区路径');
+   19: 
+   20:     const planFile = path.join(workspace, plan.file_path);
+   21:     if (!fs.existsSync(planFile)) throw new Error('plan 文件不存在，无法追加任务');
+   22: 
+   23:     const cleanTitle = String(title || '').trim();
+   24:     if (!cleanTitle) throw new Error('任务标题不能为空');
+   25: 
+   26:     // 计算下一个 task_key
+   27:     const existing = service.db.all('SELECT task_key FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order', [planId]);
+   28:     const maxNum = existing.reduce((max, row) => {
+   29:       const m = String(row.task_key || '').match(/P0*(\d+)/i);
+   30:       return m ? Math.max(max, Number(m[1])) : max;
+   31:     }, 0);
+   32:     const taskKey = `P${String(maxNum + 1).padStart(3, '0')}`;
+   33: 
+   34:     // 追加到 plan 文件的"## 任务计划"段末尾
+   35:     let content = fs.readFileSync(planFile, 'utf8');
+   36:     const line = ensureTaskScopeComment(`- [ ] ${taskKey}: ${cleanTitle}`);
+   37:     const taskSectionIdx = content.search(/##\s*任务计划/);
+   38:     const lastTask = service.db.get(
+   39:       'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+   40:       [planId],
+   41:     );
+   42:     if (taskSectionIdx === -1) {
+   43:   const { isAcceptanceTask } = helpers;
+   44:       content = `${content.trim()}\n\n## 任务计划\n${line}\n`;
+   45:     } else if (isAcceptanceTask(lastTask)) {
+   46:       content = insertTaskLineBeforeTask(content, lastTask, line);
+   47:     } else {
+   48:       content = `${content.trimEnd()}\n${line}\n`;
+   49:     }
+   50:     fs.writeFileSync(planFile, content, 'utf8');
+   51: 
+   52:     // 若 plan 被中断过，恢复为 pending 让新任务可执行
+   53:     if (plan.status === 'interrupted') {
+   54:       service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+   55:     }
+   56:     // 重新解析任务入库
+   57:     service.syncPlanTasks(planId, planFile);
+   58:     const task = service.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);
+   59:     service.addEvent(
+   60:       projectId,
+   61:       'task.appended',
+   62:       `追加 ${taskKey}: ${cleanTitle}`,
+   63:       taskEventMeta(task, {
+   64:         planId,
+   65:         taskKey,
+   66:         taskTitle: cleanTitle,
+   67:         status: TASK_EVENT_STATUS.PENDING,
+   68:       }),
+   69:     );
+   70:     service.emitUpdate(projectId);
+   71: 
+   72:     // 循环在运行则立即拾取
+   73:     if (service.status(projectId)?.running) {
+   74:       service.runOnce(projectId).catch((error) => service.recordError(projectId, error));
+   75:     }
+   76:     return taskKey;
+   77:   }
+   78: 
+   79: function syncPlanTasks(service, helpers, planId, planFile) {
+   80:     if (!fs.existsSync(planFile)) return;
+   81:     normalizePlanTaskScopes(planFile);
+   82:     const text = fs.readFileSync(planFile, 'utf8');
+   83:     const regex = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/gm;
+   84:     const tasks = [];
+   85:     let match;
+   86:     let index = 0;
+   87:     while ((match = regex.exec(text))) {
+   88:       index += 1;
+   89:       const rawTitle = match[2].trim();
+   90:       const titleWithoutScope = stripTaskScopeComment(rawTitle);
+   91:       const idMatch = titleWithoutScope.match(/^([A-Za-z]+[-_]?\d+|P\d+)[:：\s-]+(.+)$/);
+   92:       tasks.push({
+   93:         key: idMatch?.[1] || `P${String(index).padStart(3, '0')}`,
+   94:         title: idMatch?.[2]?.trim() || titleWithoutScope || rawTitle,
+   95:         rawLine: ensureTaskScopeComment(match[0]),
+   96:         scope: taskScopeText({ raw_line: match[0], title: rawTitle }),
+   97:         status: match[1].toLowerCase() === 'x' ? 'completed' : 'pending',
+   98:         sortOrder: index,
+   99:       });
+  100:     }
+  101: 
+  102:     const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+  103:     const existingByKey = new Map();
+  104:     for (const existing of existingTasks) {
+  105:       const matches = existingByKey.get(existing.task_key) || [];
+  106:       matches.push(existing);
+  107:       existingByKey.set(existing.task_key, matches);
+  108:     }
+  109: 
+  110:     const syncedStatuses = [];
+  111:     for (const task of tasks) {
+  112:       const existing = existingByKey.get(task.key)?.shift();
+  113:       const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
+  114:       syncedStatuses.push(status);
+  115:       if (existing) {
+  116:         service.db.run(
+  117:           `UPDATE plan_tasks
+  118:            SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
+  119:            WHERE id = ?`,
+  120:           [
+  121:             task.title,
+  122:             task.rawLine,
+  123:             task.scope,
+  124:             status,
+  125:             task.sortOrder,
+  126:             nowIso(),
+  127:             existing.id,
+  128:           ],
+  129:         );
+  130:       } else {
+  131:         service.db.run(
+  132:           `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+  133:            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  134:           [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+  135:         );
+  136:       }
+  137:     }
+  138: 
+  139:     for (const matches of existingByKey.values()) {
+  140:       for (const stale of matches) {
+  141:         service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+  142:       }
+  143:     }
+  144: 
+  145:     const completed = syncedStatuses.filter((status) => status === 'completed').length;
+  146:     const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+  147:     const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
+  148:       ? 'completed'
+  149:       : tasks.length > 0 && completed === tasks.length
+  150:         ? 'ready_for_validation'
+  151:         : 'running';
+  152:     service.db.run(
+  153:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+  154:       [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+  155:     );
+  156:   }
+  157: 
+  158: function taskScopeText(task) {
+  159:   const explicit = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+  160:   if (explicit.length) return explicit.join(', ');
+  161:   const inferred = taskDeclaredScopes(task, { keepUnknown: false });
+  162:   return inferred.join(', ') || 'unknown';
+  163: }
+  164: 
+  165: function taskDeclaredScopes(task, options = {}) {
+  166:   const { keepUnknown = false, includePathFallback = true } = options;
+  167:   const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+  168:   const scopes = new Set();
+  169: 
+  170:   addScopeParts(scopes, String(task.scope || '').split(TASK_SCOPE_SPLIT_RE), { keepUnknown });
+  171:   addScopeParts(scopes, explicitTaskScopeParts(raw), { keepUnknown });
+  172: 
+  173:   if (includePathFallback) {
+  174:     for (const match of raw.matchAll(TASK_PATH_RE)) {
+  175:       const scope = normalizeTaskScope(match[0], { keepUnknown });
+  176:       if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) {
+  177:         scopes.add(scope);
+  178:       }
+  179:     }
+  180:   }
+  181: 
+  182:   return Array.from(scopes);
+  183: }
+  184: 
+  185: function explicitTaskScopeParts(raw) {
+  186:   const explicit = String(raw || '').match(TASK_SCOPE_RE);
+  187:   return explicit?.[1] ? explicit[1].split(TASK_SCOPE_SPLIT_RE) : [];
+  188: }
+  189: 
+  190: function addScopeParts(scopes, parts, options = {}) {
+  191:   for (const part of parts) {
+  192:     const scope = normalizeTaskScope(part, options);
+  193:     if (scope) scopes.add(scope);
+  194:   }
+  195: }
+  196: 
+  197: function normalizeTaskScope(value, options = {}) {
+  198:   const scope = String(value || '')
+  199:     .trim()
+  200:     .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
+  201:     .replace(/\s*--$/, '')
+  202:     .replaceAll('\\', '/')
+  203:     .toLowerCase();
+  204:   if (!scope || scope === '-') return '';
+  205:   if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
+  206:   return scope;
+  207: }
+  208: 
+  209: function ensureTaskScopeComment(line, fallbackScope = 'unknown') {
+  210:   const text = String(line || '').trimEnd();
+  211:   return TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
+  212: }
+  213: 
+  214: function stripTaskScopeComment(value) {
+  215:   return String(value || '').replace(TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
+  216: }
+  217: 
+  218: function normalizePlanTaskScopes(planFile) {
+  219:   const content = fs.readFileSync(planFile, 'utf8');
+  220:   let changed = false;
+  221:   const next = content.replace(/^(\s*[-*]\s+\[[ xX]\]\s+.+)$/gm, (line) => {
+  222:     if (TASK_SCOPE_RE.test(line)) return line;
+  223:     changed = true;
+  224:     return ensureTaskScopeComment(line);
+  225:   });
+  226:   if (changed) fs.writeFileSync(planFile, next, 'utf8');
+  227: }
+  228: 
+  229: function insertTaskLineBeforeTask(content, task, line) {
+  230:   const key = escapeRegExp(String(task?.task_key || task?.key || ''));
+  231:   if (!key) return `${content.trimEnd()}\n${line}\n`;
+  232:   const taskLineRe = new RegExp(`(^\\s*[-*]\\s+\\[[ xX]\\]\\s+${key}(?:\\b|[:：\\s-]).*$)`, 'm');
+  233:   if (taskLineRe.test(content)) {
+  234:     return content.replace(taskLineRe, `${line}\n$1`);
+  235:   }
+  236:   return `${content.trimEnd()}\n${line}\n`;
+  237: }
+  238: 
+  239: function extractMarkdownTitle(markdown) {
+  240:   const lines = String(markdown || '').split(/\r?\n/);
+  241:   const h1 = lines.find((line) => /^\uFEFF?\s*#\s+\S/.test(line) && !/^\uFEFF?\s*#{2,}\s+/.test(line));
+  242:   if (h1) return cleanMarkdownHeadingTitle(h1.replace(/^\uFEFF?\s*#\s+/, ''));
+  243: 
+  244:   const heading = lines.find((line) => /^\uFEFF?\s*#{1,6}\s+\S/.test(line));
+  245:   return heading ? cleanMarkdownHeadingTitle(heading.replace(/^\uFEFF?\s*#{1,6}\s+/, '')) : '';
+  246: }
+  247: 
+  248: function cleanMarkdownHeadingTitle(value) {
+  249:   return String(value || '')
+  250:     .replace(/<!--[\s\S]*?-->/g, '')
+  251:     .replace(/\s+#+\s*$/g, '')
+  252:     .trim();
+  253: }
+  254: 
+  255: module.exports = {
+  256:   addScopeParts,
+  257:   appendTask,
+  258:   cleanMarkdownHeadingTitle,
+  259:   ensureTaskScopeComment,
+  260:   explicitTaskScopeParts,
+--- concurrency
+    1: const fs = require('node:fs');
+    2: const { TASK_EVENT_STATUS } = require('./taskEvents');
+    3: const { normalizeTaskScope, taskDeclaredScopes } = require('./planParser');
+    4: const { resolveWorkspaceChildPath } = require('./workspaceFiles');
+    5: 
+    6: const MAX_PARALLEL_TASKS = 2;
+    7: const SPECIAL_TASK_SCOPES = new Set(['unknown', 'validation']);
+    8: const ACCEPTANCE_TASK_RE = /(\u5b8c\u6574\u9a8c\u6536|\u6574\u4f53\u9a8c\u6536|\u603b\u4f53\u9a8c\u6536|\u6700\u7ec8\u9a8c\u6536|\u5b8c\u6574\u9a8c\u8bc1|\u6700\u7ec8\u9a8c\u8bc1|acceptance|validation)/i;
+    9: const PARALLEL_BLOCKING_TASK_RE = /(\u5168\u91cf|\u56de\u5f52|\u9a8c\u8bc1|\u9a8c\u6536|\u6d4b\u8bd5|\u8bb0\u5f55|\u6574\u7406|\u53d1\u5e03|\u90e8\u7f72|test|validate|regression|release|deploy)/i;
+   10: 
+   11: function validatedParallelTaskBatches(service, workspace, plan, confirmedBatches) {
+   12:   const batches = normalizeConfirmedTaskBatches(confirmedBatches);
+   13:   if (!batches.length) throw new Error('\u672a\u9009\u62e9\u5e76\u53d1\u4efb\u52a1\u6279\u6b21');
+   14:   const seenTaskIds = new Set();
+   15:   return batches.map((batchTaskIds, batchIndex) => {
+   16:     if (batchTaskIds.length < 2) throw new Error(`\u7b2c ${batchIndex + 1} \u6279\u81f3\u5c11\u9700\u8981 2 \u4e2a\u4efb\u52a1`);
+   17:     if (batchTaskIds.length > MAX_PARALLEL_TASKS) {
+   18:       throw new Error(`\u7b2c ${batchIndex + 1} \u6279\u8d85\u8fc7\u6700\u5927\u5e76\u53d1\u6570 ${MAX_PARALLEL_TASKS}`);
+   19:     }
+   20:     const scopeSet = new Set();
+   21:     return batchTaskIds.map((taskId) => {
+   22:       if (seenTaskIds.has(taskId)) throw new Error(`\u4efb\u52a1 #${taskId} \u88ab\u91cd\u590d\u9009\u62e9`);
+   23:       seenTaskIds.add(taskId);
+   24:       const task = service.taskForProject(plan.project_id, taskId);
+   25:       if (!task || Number(task.plan_id) !== Number(plan.id)) throw new Error(`\u4efb\u52a1 #${taskId} \u88ab\u91cd\u590d\u9009\u62e9??`);
+   26:       if (task.status !== TASK_EVENT_STATUS.PENDING) {
+   27:         throw new Error(`${task.task_key || `\u4efb\u52a1 #${task.id}`} \u4e0d\u662f\u5f85\u6267\u884c\u72b6\u6001`);
+   28:       }
+   29:       const scopes = taskParallelScopes(task);
+   30:       if (!scopes.length) throw new Error(`${task.task_key || `\u4efb\u52a1 #${task.id}`} \u7f3a\u5c11\u53ef\u5e76\u53d1 scope`);
+   31:       const analysis = taskConcurrencyAnalysis(workspace, task);
+   32:       if (!analysis.canRunInParallel) throw new Error(`${task.task_key || `\u4efb\u52a1 #${task.id}`} \u4e0d\u5efa\u8bae\u5e76\u53d1\uFF1A${analysis.reason}`);
+   33:       for (const scope of scopes) {
+   34:         if (scopeSet.has(scope)) throw new Error(`\u7b2c ${batchIndex + 1} \u6279\u5b58\u5728 scope \u51b2\u7a81\uFF1A${scope}`);
+   35:         scopeSet.add(scope);
+   36:       }
+   37:       return task;
+   38:     });
+   39:   });
+   40: }
+   41: 
+   42: function isAcceptanceTask(task) {
+   43:   if (!task) return false;
+   44:   const text = `${task.task_key || task.key || ''} ${task.title || ''} ${task.raw_line || task.rawLine || ''}`;
+   45:   return ACCEPTANCE_TASK_RE.test(text);
+   46: }
+   47: 
+   48: function taskScopeFileInfos(workspace, task) {
+   49:   const scopes = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+   50:   if (!scopes.length) return [taskScopeFileInfo(workspace, 'unknown')];
+   51:   return scopes.map((scope) => taskScopeFileInfo(workspace, scope));
+   52: }
+   53: 
+   54: function taskScopeFileInfo(workspace, scope) {
+   55:   const normalizedPath = normalizeTaskScope(scope, { keepUnknown: true });
+   56:   const special = SPECIAL_TASK_SCOPES.has(normalizedPath) ? normalizedPath : '';
+   57:   const result = {
+   58:     path: normalizedPath || 'unknown',
+   59:     exists: false,
+   60:     isDirectory: false,
+   61:     canOpen: false,
+   62:     isUnknown: special === 'unknown' || !normalizedPath,
+   63:     isValidation: special === 'validation',
+   64:     reason: '',
+   65:   };
+   66:   if (result.isUnknown) {
+   67:     result.reason = 'scope unknown，无法安全判断影响范围';
+   68:     return result;
+   69:   }
+   70:   if (result.isValidation) {
+   71:     result.reason = 'validation 任务需串行验收，不建议并发';
+   72:     return result;
+   73:   }
+   74:   const fullPath = resolveWorkspaceChildPath(workspace, normalizedPath);
+   75:   if (!fullPath) {
+   76:     result.reason = '路径不在工作区内，不能打开';
+   77:     return result;
+   78:   }
+   79:   try {
+   80:     const stat = fs.existsSync(fullPath) ? fs.statSync(fullPath) : null;
+   81:     result.exists = Boolean(stat);
+   82:     result.isDirectory = Boolean(stat?.isDirectory());
+   83:     result.canOpen = Boolean(stat?.isFile());
+   84:     result.reason = result.canOpen
+   85:       ? ''
+   86:       : result.isDirectory
+   87:         ? 'scope 指向目录，不能作为文件打开'
+   88:         : '文件不存在，后续任务可能会创建';
+   89:   } catch (error) {
+   90:     result.reason = error?.message || '无法读取文件状态';
+   91:   }
+   92:   return result;
+   93: }
+   94: 
+   95: function planConcurrencySuggestion(workspace, tasks) {
+   96:   const candidates = [];
+   97:   const serialTasks = [];
+   98:   for (const task of tasks) {
+   99:     if (task.status !== TASK_EVENT_STATUS.PENDING) continue;
+  100:     const analysis = taskConcurrencyAnalysis(workspace, task);
+  101:     if (analysis.canRunInParallel) {
+  102:       candidates.push({ task, analysis });
+  103:     } else {
+  104:       serialTasks.push(concurrencyTaskSummary(task, analysis.reason, analysis.scopes));
+  105:     }
+  106:   }
+  107: 
+  108:   const batches = [];
+  109:   for (const entry of candidates) {
+  110:     let placed = false;
+  111:     for (const batch of batches) {
+  112:       if (batch.tasks.length >= MAX_PARALLEL_TASKS) continue;
+  113:       if (entry.analysis.scopes.some((scope) => batch.scopeSet.has(scope))) continue;
+  114:       batch.tasks.push(concurrencyTaskSummary(entry.task, 'scope 无交集，可与本批任务并发', entry.analysis.scopes));
+  115:       for (const scope of entry.analysis.scopes) batch.scopeSet.add(scope);
+  116:       placed = true;
+  117:       break;
+  118:     }
+  119:     if (!placed) {
+  120:       batches.push({
+  121:         reason: '批次内任务 scope 互不重叠，可安全并发',
+  122:         scopeSet: new Set(entry.analysis.scopes),
+  123:         tasks: [concurrencyTaskSummary(entry.task, 'scope 无交集，可与本批任务并发', entry.analysis.scopes)],
+  124:       });
+  125:     }
+  126:   }
+  127: 
+  128:   const safeBatches = batches
+  129:     .filter((batch) => batch.tasks.length > 1)
+  130:     .map((batch, index) => ({
+  131:       batch: index + 1,
+  132:       reason: batch.reason,
+  133:       tasks: batch.tasks,
+  134:     }));
+  135:   const singleCandidateTasks = batches
+  136:     .filter((batch) => batch.tasks.length <= 1)
+  137:     .flatMap((batch) => batch.tasks)
+  138:     .map((task) => ({ ...task, reason: '没有可配对的无冲突任务，建议串行执行' }));
+  139: 
+  140:   return {
+  141:     hasSafeParallelBatches: safeBatches.length > 0,
+  142:     parallelTaskCount: safeBatches.reduce((sum, batch) => sum + batch.tasks.length, 0),
+  143:     batchCount: safeBatches.length,
+  144:     serialTaskCount: serialTasks.length + singleCandidateTasks.length,
+  145:     maxParallelTasks: MAX_PARALLEL_TASKS,
+  146:     batches: safeBatches,
+  147:     serialTasks: [...serialTasks, ...singleCandidateTasks],
+  148:   };
+  149: }
+  150: 
+  151: function taskConcurrencyAnalysis(workspace, task) {
+  152:   const scopeFiles = taskScopeFileInfos(workspace, task);
+  153:   const scopes = scopeFiles
+  154:     .filter((file) => !file.isUnknown && !file.isValidation)
+  155:     .map((file) => file.path);
+  156:   if (isAcceptanceTask(task) || scopeFiles.some((file) => file.isValidation)) {
+  157:     return { canRunInParallel: false, scopes, reason: 'validation/验收任务必须串行执行' };
+  158:   }
+  159:   if (scopeFiles.some((file) => file.isUnknown)) {
+  160:     return { canRunInParallel: false, scopes, reason: 'scope unknown，无法判断冲突' };
+  161:   }
+  162:   if (!scopes.length) {
+  163:     return { canRunInParallel: false, scopes, reason: 'scope 为空或无法解析，无法判断冲突' };
+  164:   }
+  165:   if (PARALLEL_BLOCKING_TASK_RE.test(`${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`)) {
+  166:     return { canRunInParallel: false, scopes, reason: '任务标题包含测试/验收/发布等串行关键词' };
+  167:   }
+  168:   return { canRunInParallel: true, scopes, reason: 'scope 明确且可用于冲突检测' };
+  169: }
+  170: 
+  171: function concurrencyTaskSummary(task, reason, scopes = []) {
+  172:   return {
+  173:     id: task.id,
+  174:     task_key: task.task_key,
+  175:     title: task.title,
+  176:     status: task.status,
+  177:     scopes: Array.from(new Set(scopes)),
+  178:     reason,
+  179:   };
+  180: }
+
+codex
+我需要看 `planParser` 的当前实现细节，但不会修改它，除非发现无法在 scope 内完成。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loop\\planParser.js 45 175; Write-Output '---'; Show src\\loop\\planParser.js 175 270; Write-Output '--- concurrency tail'; Show src\\loop\\concurrency.js 180 280" in D:\project\GitHub\autoplan
+ succeeded in 501ms:
+   45:     } else if (isAcceptanceTask(lastTask)) {
+   46:       content = insertTaskLineBeforeTask(content, lastTask, line);
+   47:     } else {
+   48:       content = `${content.trimEnd()}\n${line}\n`;
+   49:     }
+   50:     fs.writeFileSync(planFile, content, 'utf8');
+   51: 
+   52:     // 若 plan 被中断过，恢复为 pending 让新任务可执行
+   53:     if (plan.status === 'interrupted') {
+   54:       service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+   55:     }
+   56:     // 重新解析任务入库
+   57:     service.syncPlanTasks(planId, planFile);
+   58:     const task = service.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);
+   59:     service.addEvent(
+   60:       projectId,
+   61:       'task.appended',
+   62:       `追加 ${taskKey}: ${cleanTitle}`,
+   63:       taskEventMeta(task, {
+   64:         planId,
+   65:         taskKey,
+   66:         taskTitle: cleanTitle,
+   67:         status: TASK_EVENT_STATUS.PENDING,
+   68:       }),
+   69:     );
+   70:     service.emitUpdate(projectId);
+   71: 
+   72:     // 循环在运行则立即拾取
+   73:     if (service.status(projectId)?.running) {
+   74:       service.runOnce(projectId).catch((error) => service.recordError(projectId, error));
+   75:     }
+   76:     return taskKey;
+   77:   }
+   78: 
+   79: function syncPlanTasks(service, helpers, planId, planFile) {
+   80:     if (!fs.existsSync(planFile)) return;
+   81:     normalizePlanTaskScopes(planFile);
+   82:     const text = fs.readFileSync(planFile, 'utf8');
+   83:     const regex = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/gm;
+   84:     const tasks = [];
+   85:     let match;
+   86:     let index = 0;
+   87:     while ((match = regex.exec(text))) {
+   88:       index += 1;
+   89:       const rawTitle = match[2].trim();
+   90:       const titleWithoutScope = stripTaskScopeComment(rawTitle);
+   91:       const idMatch = titleWithoutScope.match(/^([A-Za-z]+[-_]?\d+|P\d+)[:：\s-]+(.+)$/);
+   92:       tasks.push({
+   93:         key: idMatch?.[1] || `P${String(index).padStart(3, '0')}`,
+   94:         title: idMatch?.[2]?.trim() || titleWithoutScope || rawTitle,
+   95:         rawLine: ensureTaskScopeComment(match[0]),
+   96:         scope: taskScopeText({ raw_line: match[0], title: rawTitle }),
+   97:         status: match[1].toLowerCase() === 'x' ? 'completed' : 'pending',
+   98:         sortOrder: index,
+   99:       });
+  100:     }
+  101: 
+  102:     const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+  103:     const existingByKey = new Map();
+  104:     for (const existing of existingTasks) {
+  105:       const matches = existingByKey.get(existing.task_key) || [];
+  106:       matches.push(existing);
+  107:       existingByKey.set(existing.task_key, matches);
+  108:     }
+  109: 
+  110:     const syncedStatuses = [];
+  111:     for (const task of tasks) {
+  112:       const existing = existingByKey.get(task.key)?.shift();
+  113:       const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
+  114:       syncedStatuses.push(status);
+  115:       if (existing) {
+  116:         service.db.run(
+  117:           `UPDATE plan_tasks
+  118:            SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
+  119:            WHERE id = ?`,
+  120:           [
+  121:             task.title,
+  122:             task.rawLine,
+  123:             task.scope,
+  124:             status,
+  125:             task.sortOrder,
+  126:             nowIso(),
+  127:             existing.id,
+  128:           ],
+  129:         );
+  130:       } else {
+  131:         service.db.run(
+  132:           `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+  133:            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  134:           [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+  135:         );
+  136:       }
+  137:     }
+  138: 
+  139:     for (const matches of existingByKey.values()) {
+  140:       for (const stale of matches) {
+  141:         service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+  142:       }
+  143:     }
+  144: 
+  145:     const completed = syncedStatuses.filter((status) => status === 'completed').length;
+  146:     const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+  147:     const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
+  148:       ? 'completed'
+  149:       : tasks.length > 0 && completed === tasks.length
+  150:         ? 'ready_for_validation'
+  151:         : 'running';
+  152:     service.db.run(
+  153:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+  154:       [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+  155:     );
+  156:   }
+  157: 
+  158: function taskScopeText(task) {
+  159:   const explicit = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+  160:   if (explicit.length) return explicit.join(', ');
+  161:   const inferred = taskDeclaredScopes(task, { keepUnknown: false });
+  162:   return inferred.join(', ') || 'unknown';
+  163: }
+  164: 
+  165: function taskDeclaredScopes(task, options = {}) {
+  166:   const { keepUnknown = false, includePathFallback = true } = options;
+  167:   const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+  168:   const scopes = new Set();
+  169: 
+  170:   addScopeParts(scopes, String(task.scope || '').split(TASK_SCOPE_SPLIT_RE), { keepUnknown });
+  171:   addScopeParts(scopes, explicitTaskScopeParts(raw), { keepUnknown });
+  172: 
+  173:   if (includePathFallback) {
+  174:     for (const match of raw.matchAll(TASK_PATH_RE)) {
+  175:       const scope = normalizeTaskScope(match[0], { keepUnknown });
+---
+  175:       const scope = normalizeTaskScope(match[0], { keepUnknown });
+  176:       if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) {
+  177:         scopes.add(scope);
+  178:       }
+  179:     }
+  180:   }
+  181: 
+  182:   return Array.from(scopes);
+  183: }
+  184: 
+  185: function explicitTaskScopeParts(raw) {
+  186:   const explicit = String(raw || '').match(TASK_SCOPE_RE);
+  187:   return explicit?.[1] ? explicit[1].split(TASK_SCOPE_SPLIT_RE) : [];
+  188: }
+  189: 
+  190: function addScopeParts(scopes, parts, options = {}) {
+  191:   for (const part of parts) {
+  192:     const scope = normalizeTaskScope(part, options);
+  193:     if (scope) scopes.add(scope);
+  194:   }
+  195: }
+  196: 
+  197: function normalizeTaskScope(value, options = {}) {
+  198:   const scope = String(value || '')
+  199:     .trim()
+  200:     .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
+  201:     .replace(/\s*--$/, '')
+  202:     .replaceAll('\\', '/')
+  203:     .toLowerCase();
+  204:   if (!scope || scope === '-') return '';
+  205:   if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
+  206:   return scope;
+  207: }
+  208: 
+  209: function ensureTaskScopeComment(line, fallbackScope = 'unknown') {
+  210:   const text = String(line || '').trimEnd();
+  211:   return TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
+  212: }
+  213: 
+  214: function stripTaskScopeComment(value) {
+  215:   return String(value || '').replace(TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
+  216: }
+  217: 
+  218: function normalizePlanTaskScopes(planFile) {
+  219:   const content = fs.readFileSync(planFile, 'utf8');
+  220:   let changed = false;
+  221:   const next = content.replace(/^(\s*[-*]\s+\[[ xX]\]\s+.+)$/gm, (line) => {
+  222:     if (TASK_SCOPE_RE.test(line)) return line;
+  223:     changed = true;
+  224:     return ensureTaskScopeComment(line);
+  225:   });
+  226:   if (changed) fs.writeFileSync(planFile, next, 'utf8');
+  227: }
+  228: 
+  229: function insertTaskLineBeforeTask(content, task, line) {
+  230:   const key = escapeRegExp(String(task?.task_key || task?.key || ''));
+  231:   if (!key) return `${content.trimEnd()}\n${line}\n`;
+  232:   const taskLineRe = new RegExp(`(^\\s*[-*]\\s+\\[[ xX]\\]\\s+${key}(?:\\b|[:：\\s-]).*$)`, 'm');
+  233:   if (taskLineRe.test(content)) {
+  234:     return content.replace(taskLineRe, `${line}\n$1`);
+  235:   }
+  236:   return `${content.trimEnd()}\n${line}\n`;
+  237: }
+  238: 
+  239: function extractMarkdownTitle(markdown) {
+  240:   const lines = String(markdown || '').split(/\r?\n/);
+  241:   const h1 = lines.find((line) => /^\uFEFF?\s*#\s+\S/.test(line) && !/^\uFEFF?\s*#{2,}\s+/.test(line));
+  242:   if (h1) return cleanMarkdownHeadingTitle(h1.replace(/^\uFEFF?\s*#\s+/, ''));
+  243: 
+  244:   const heading = lines.find((line) => /^\uFEFF?\s*#{1,6}\s+\S/.test(line));
+  245:   return heading ? cleanMarkdownHeadingTitle(heading.replace(/^\uFEFF?\s*#{1,6}\s+/, '')) : '';
+  246: }
+  247: 
+  248: function cleanMarkdownHeadingTitle(value) {
+  249:   return String(value || '')
+  250:     .replace(/<!--[\s\S]*?-->/g, '')
+  251:     .replace(/\s+#+\s*$/g, '')
+  252:     .trim();
+  253: }
+  254: 
+  255: module.exports = {
+  256:   addScopeParts,
+  257:   appendTask,
+  258:   cleanMarkdownHeadingTitle,
+  259:   ensureTaskScopeComment,
+  260:   explicitTaskScopeParts,
+  261:   extractMarkdownTitle,
+  262:   insertTaskLineBeforeTask,
+  263:   normalizePlanTaskScopes,
+  264:   normalizeTaskScope,
+  265:   stripTaskScopeComment,
+  266:   syncPlanTasks,
+  267:   taskDeclaredScopes,
+  268:   taskScopeText,
+  269: };
+--- concurrency tail
+  180: }
+  181: 
+  182: function emptyConcurrencySuggestion() {
+  183:   return {
+  184:     hasSafeParallelBatches: false,
+  185:     parallelTaskCount: 0,
+  186:     batchCount: 0,
+  187:     serialTaskCount: 0,
+  188:     maxParallelTasks: MAX_PARALLEL_TASKS,
+  189:     batches: [],
+  190:     serialTasks: [],
+  191:   };
+  192: }
+  193: 
+  194: function normalizeConfirmedTaskBatches(value) {
+  195:   if (!Array.isArray(value)) return [];
+  196:   const batches = [];
+  197:   for (const batch of value) {
+  198:     const rawTaskIds = Array.isArray(batch)
+  199:       ? batch
+  200:       : Array.isArray(batch?.taskIds)
+  201:         ? batch.taskIds
+  202:         : Array.isArray(batch?.tasks)
+  203:           ? batch.tasks.map((task) => task?.id ?? task)
+  204:           : [];
+  205:     const taskIds = Array.from(new Set(rawTaskIds.map((taskId) => Number(taskId)).filter(Boolean)));
+  206:     if (taskIds.length) batches.push(taskIds);
+  207:   }
+  208:   return batches;
+  209: }
+  210: 
+  211: function taskParallelScopes(task) {
+  212:   const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+  213:   if (PARALLEL_BLOCKING_TASK_RE.test(raw)) return [];
+  214:   return taskDeclaredScopes(task, { keepUnknown: false });
+  215: }
+  216: 
+  217: module.exports = {
+  218:   MAX_PARALLEL_TASKS,
+  219:   concurrencyTaskSummary,
+  220:   emptyConcurrencySuggestion,
+  221:   isAcceptanceTask,
+  222:   normalizeConfirmedTaskBatches,
+  223:   planConcurrencySuggestion,
+  224:   taskConcurrencyAnalysis,
+  225:   taskParallelScopes,
+  226:   taskScopeFileInfo,
+  227:   taskScopeFileInfos,
+  228:   validatedParallelTaskBatches,
+  229: };
+
+**Considering auto key parsing**
+
+I need to think about whether to keep the auto key feature and if it should be stable or maybe restricted. I want to maintain compatibility with existing parsed data, but I’m also concerned about how to avoid swallowing nested acceptance. The instructions say not to swallow acceptance, especially since those lines aren’t checkboxes. Maybe I could parse all checkbox lines from the documents to navigate this. I'm just trying to figure out the best approach!
+codex
+我会在 `loopService.js` 内接管 `syncPlanTasks`，保留其它模块委托不动。
+  ✓ 复查解析辅助函数
+  → 增强任务行解析
+  • 保护 scope 归一化
+  • 静态复查改动范围
+codex
+开始打补丁：新增本地解析器，并让 `syncPlanTasks` 调用它。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..9ca782e0003a0b34af2c4d4111aebc7db8af07b3
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..9ca782e0003a0b34af2c4d4111aebc7db8af07b3
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+
+codex
+常量已加入。接下来替换委托点并补本地同步函数。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..3d3bd510797ce6922244382f5ec1c95f7e1ee9fb
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..3d3bd510797ce6922244382f5ec1c95f7e1ee9fb
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+
+**Considering function placement**
+
+I'm thinking about where to add functions in the code, specifically near the bottom, before the loopFlowHelpers. I need to ensure there are no comments associated with it, as the developer specified no inline comments unless specifically requested. So, I'll focus on getting the function code written without any additional commentary. It's just about implementing the functions correctly while following the guidelines given.
+codex
+委托已切换。现在补解析、scope 与入库同步实现。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..027546838b636120e76e7fd159def755c9e5a598
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,161 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: (match[2] || '').trim() || text,
++    validationLike,
++  };
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..027546838b636120e76e7fd159def755c9e5a598
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,161 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: (match[2] || '').trim() || text,
++    validationLike,
++  };
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+**Updating functions and parsing plans**
+
+I’m thinking I could use Select-String and perhaps git diff to help with this. I’m feeling okay about it since I don’t need tests right now. However, there’s an issue: we added many functions to loopService, but I see that planParser is still imported. That’s something I need to address! Also, I know I should update the plan statuses. Let’s tackle this step by step!
+codex
+解析实现已写入。现在做静态检查：只看文件内容和 diff，不运行任何命令验收。
+  ✓ 复查解析辅助函数
+  ✓ 增强任务行解析
+  → 保护 scope 归一化
+  • 静态复查改动范围
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..027546838b636120e76e7fd159def755c9e5a598
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,161 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: (match[2] || '').trim() || text,
++    validationLike,
++  };
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+codex
+继续静态复查新函数和变更范围，确认只触及 `loopService.js`。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 70 105; Write-Output '---'; Show src\\loopService.js 790 805; Write-Output '---'; Show src\\loopService.js 1200 1375; Write-Output '--- status'; git status --short src\\loopService.js docs\\plan\\plan_feedback_15_20260627-132045.md" in D:\project\GitHub\autoplan
+ succeeded in 553ms:
+   70:   workspaceKey,
+   71:   workspaceToolEnv,
+   72: } = workspaceFiles;
+   73: const taskExecution = require('./loop/taskExecution');
+   74: const validationFlow = require('./loop/validation');
+   75: const {
+   76:   LEGACY_TASK_EVENT_TYPES,
+   77:   TASK_EVENT_COMPATIBILITY,
+   78:   TASK_EVENT_SEMANTICS,
+   79:   TASK_EVENT_STATUS,
+   80:   TASK_EVENT_TYPES,
+   81:   normalizeDurationMs,
+   82:   syncedTaskStatus,
+   83:   taskEventMessage,
+   84:   taskEventMeta,
+   85:   taskRunDurationMs,
+   86:   withTaskDurationMeta,
+   87: } = require('./loop/taskEvents');
+   88: 
+   89: const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+   90: const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+   91: const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
+   92: const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
+   93: const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
+   94: const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
+   95: const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+   96: const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+   97: const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+   98: 
+   99: class LoopService extends EventEmitter {
+  100:   constructor(db) {
+  101:     super();
+  102:     this.db = db;
+  103:     this.runtimes = new Map();
+  104:     this.resetRuntimeState();
+  105:   }
+---
+  790:   completeAcceptanceTask(workspace, plan, task, result) {
+  791:     return validationFlow.completeAcceptanceTask(this, loopFlowHelpers(), workspace, plan, task, result);
+  792:   }
+  793: 
+  794:   refreshPlanProgress(planId, planFile) {
+  795:     return taskExecution.refreshPlanProgress(this, loopFlowHelpers(), planId, planFile);
+  796:   }
+  797: 
+  798:   markTaskCompletedInPlan(workspace, planFile, task, result) {
+  799:     return taskExecution.markTaskCompletedInPlan(this, loopFlowHelpers(), workspace, planFile, task, result);
+  800:   }
+  801: 
+  802:   async validatePlan(workspace, plan, options = {}) {
+  803:     return validationFlow.validatePlan(this, loopFlowHelpers(), workspace, plan, options);
+  804:   }
+  805: 
+---
+ 1200: function formatAttachmentSize(size) {
+ 1201:   return size === undefined || size === null || size === '' ? 'unknown' : `${size} bytes`;
+ 1202: }
+ 1203: 
+ 1204: function escapeRegExp(value) {
+ 1205:   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ 1206: }
+ 1207: 
+ 1208: function timestampForPath() {
+ 1209:   const now = new Date();
+ 1210:   const pad = (n) => String(n).padStart(2, '0');
+ 1211:   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+ 1212:     now.getHours(),
+ 1213:   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ 1214: }
+ 1215: 
+ 1216: function syncPlanTasksFromMarkdown(service, planId, planFile) {
+ 1217:   if (!fs.existsSync(planFile)) return;
+ 1218:   const text = fs.readFileSync(planFile, 'utf8');
+ 1219:   const tasks = parsePlanTasksFromMarkdown(text);
+ 1220:   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+ 1221:   const existingByKey = new Map();
+ 1222:   for (const existing of existingTasks) {
+ 1223:     const matches = existingByKey.get(existing.task_key) || [];
+ 1224:     matches.push(existing);
+ 1225:     existingByKey.set(existing.task_key, matches);
+ 1226:   }
+ 1227: 
+ 1228:   const syncedStatuses = [];
+ 1229:   for (const task of tasks) {
+ 1230:     const existing = existingByKey.get(task.key)?.shift();
+ 1231:     const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
+ 1232:     syncedStatuses.push(status);
+ 1233:     if (existing) {
+ 1234:       service.db.run(
+ 1235:         `UPDATE plan_tasks
+ 1236:          SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
+ 1237:          WHERE id = ?`,
+ 1238:         [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
+ 1239:       );
+ 1240:     } else {
+ 1241:       service.db.run(
+ 1242:         `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+ 1243:          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+ 1244:         [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+ 1245:       );
+ 1246:     }
+ 1247:   }
+ 1248: 
+ 1249:   for (const matches of existingByKey.values()) {
+ 1250:     for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+ 1251:   }
+ 1252: 
+ 1253:   const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
+ 1254:   const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+ 1255:   const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
+ 1256:     ? 'completed'
+ 1257:     : tasks.length > 0 && completed === tasks.length
+ 1258:       ? 'ready_for_validation'
+ 1259:       : 'running';
+ 1260:   service.db.run(
+ 1261:     'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+ 1262:     [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+ 1263:   );
+ 1264: }
+ 1265: 
+ 1266: function parsePlanTasksFromMarkdown(markdown) {
+ 1267:   const tasks = [];
+ 1268:   const lines = String(markdown || '').split(/\r?\n/);
+ 1269:   for (const line of lines) {
+ 1270:     const match = line.match(PLAN_TASK_LINE_RE);
+ 1271:     if (!match) continue;
+ 1272:     const sortOrder = tasks.length + 1;
+ 1273:     const rawTitle = match[2].trim();
+ 1274:     const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
+ 1275:     const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
+ 1276:     const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
+ 1277:     tasks.push({
+ 1278:       key: parsedTitle.key,
+ 1279:       title: parsedTitle.title || titleWithoutScope || rawTitle,
+ 1280:       rawLine,
+ 1281:       scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
+ 1282:       status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
+ 1283:       sortOrder,
+ 1284:     });
+ 1285:   }
+ 1286:   return tasks;
+ 1287: }
+ 1288: 
+ 1289: function parsePlanTaskTitle(title, sortOrder) {
+ 1290:   const text = String(title || '').trim();
+ 1291:   const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
+ 1292:   const match = text.match(PLAN_TASK_KEY_RE);
+ 1293:   const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
+ 1294:   if (!match) return { key: keyFallback, title: text, validationLike };
+ 1295:   return {
+ 1296:     key: normalizePlanTaskKey(match[1]) || keyFallback,
+ 1297:     title: (match[2] || '').trim() || text,
+ 1298:     validationLike,
+ 1299:   };
+ 1300: }
+ 1301: 
+ 1302: function normalizePlanTaskKey(value) {
+ 1303:   return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
+ 1304: }
+ 1305: 
+ 1306: function planTaskScopeText(task, fallbackScope = 'unknown') {
+ 1307:   const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+ 1308:   if (explicit.length) return explicit.join(', ');
+ 1309:   const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
+ 1310:   if (fallback) return fallback;
+ 1311:   const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
+ 1312:   return inferred.join(', ') || 'unknown';
+ 1313: }
+ 1314: 
+ 1315: function planTaskDeclaredScopes(task, options = {}) {
+ 1316:   const { keepUnknown = false, includePathFallback = true } = options;
+ 1317:   const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+ 1318:   const scopes = new Set();
+ 1319:   addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
+ 1320:   addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
+ 1321:   if (includePathFallback) {
+ 1322:     for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
+ 1323:       const scope = normalizePlanTaskScope(match[0], { keepUnknown });
+ 1324:       if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
+ 1325:     }
+ 1326:   }
+ 1327:   return Array.from(scopes);
+ 1328: }
+ 1329: 
+ 1330: function explicitPlanTaskScopeParts(raw) {
+ 1331:   const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
+ 1332:   return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
+ 1333: }
+ 1334: 
+ 1335: function addPlanTaskScopeParts(scopes, parts, options = {}) {
+ 1336:   for (const part of parts) {
+ 1337:     const scope = normalizePlanTaskScope(part, options);
+ 1338:     if (scope) scopes.add(scope);
+ 1339:   }
+ 1340: }
+ 1341: 
+ 1342: function normalizePlanTaskScope(value, options = {}) {
+ 1343:   const scope = String(value || '')
+ 1344:     .trim()
+ 1345:     .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
+ 1346:     .replace(/\s*--$/, '')
+ 1347:     .replaceAll('\\', '/')
+ 1348:     .toLowerCase();
+ 1349:   if (!scope || scope === '-') return '';
+ 1350:   if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
+ 1351:   return scope;
+ 1352: }
+ 1353: 
+ 1354: function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
+ 1355:   const text = String(line || '').trimEnd();
+ 1356:   return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
+ 1357: }
+ 1358: 
+ 1359: function stripPlanTaskScopeComment(value) {
+ 1360:   return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
+ 1361: }
+ 1362: 
+ 1363: function loopFlowHelpers() {
+ 1364:   return {
+ 1365:     describeIntakeAttachment,
+ 1366:     escapeRegExp,
+ 1367:     formatIntakeAttachmentEntry,
+ 1368:     hashFile,
+ 1369:     hashText,
+ 1370:     intakeAttachmentOwnerTypes,
+ 1371:     isAcceptanceTask,
+ 1372:     normalizeRelative,
+ 1373:     readSnippet,
+ 1374:     tailText,
+ 1375:     timestampForPath,
+--- status
+ M src/loopService.js
+?? docs/plan/plan_feedback_15_20260627-132045.md
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..027546838b636120e76e7fd159def755c9e5a598
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|-|–|—|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,161 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: (match[2] || '').trim() || text,
++    validationLike,
++  };
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+codex
+静态复查发现连续破折号可再兜底一下；补一处正则清理。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+**Planning static inspection**
+
+I need a static inspect instead of just a syntax check. Maybe I'll use PowerShell to count braces, but that might not be necessary. I could apply `git diff` for loopService, though the existing differences might be substantial due to modifications. I think I need to include many prior changes, and since the file is premodified, the diff could be huge. It might be more effective to use `git diff --stat` or `git diff -U2 -- src/loopService.js | Select-String`. I'll plan the update accordingly!
+codex
+解析兜底已补完。现在仅做静态范围复查，不启动任何验证进程。
+  ✓ 复查解析辅助函数
+  ✓ 增强任务行解析
+  ✓ 保护 scope 归一化
+  → 静态复查改动范围
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+codex
+最后确认 `syncPlanTasks` 调用点和新增函数位置，确保 plan 文件未被修改。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 805 814; Write-Output '---'; Show src\\loopService.js 1250 1320; Write-Output '---'; Show src\\loopService.js 1320 1370; Write-Output '--- touched'; git status --short src\\loopService.js docs\\plan\\plan_feedback_15_20260627-132045.md" in D:\project\GitHub\autoplan
+ succeeded in 568ms:
+  805: 
+  806:   syncPlanTasks(planId, planFile) {
+  807:     return syncPlanTasksFromMarkdown(this, planId, planFile);
+  808:   }
+  809: 
+  810:   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+  811:   archiveOperation(projectId, operationKey) {
+  812:     archiveRuntimeOperation(this.runtime(projectId), operationKey);
+  813:   }
+  814: 
+---
+ 1250:     for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+ 1251:   }
+ 1252: 
+ 1253:   const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
+ 1254:   const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+ 1255:   const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
+ 1256:     ? 'completed'
+ 1257:     : tasks.length > 0 && completed === tasks.length
+ 1258:       ? 'ready_for_validation'
+ 1259:       : 'running';
+ 1260:   service.db.run(
+ 1261:     'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+ 1262:     [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+ 1263:   );
+ 1264: }
+ 1265: 
+ 1266: function parsePlanTasksFromMarkdown(markdown) {
+ 1267:   const tasks = [];
+ 1268:   const lines = String(markdown || '').split(/\r?\n/);
+ 1269:   for (const line of lines) {
+ 1270:     const match = line.match(PLAN_TASK_LINE_RE);
+ 1271:     if (!match) continue;
+ 1272:     const sortOrder = tasks.length + 1;
+ 1273:     const rawTitle = match[2].trim();
+ 1274:     const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
+ 1275:     const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
+ 1276:     const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
+ 1277:     tasks.push({
+ 1278:       key: parsedTitle.key,
+ 1279:       title: parsedTitle.title || titleWithoutScope || rawTitle,
+ 1280:       rawLine,
+ 1281:       scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
+ 1282:       status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
+ 1283:       sortOrder,
+ 1284:     });
+ 1285:   }
+ 1286:   return tasks;
+ 1287: }
+ 1288: 
+ 1289: function parsePlanTaskTitle(title, sortOrder) {
+ 1290:   const text = String(title || '').trim();
+ 1291:   const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
+ 1292:   const match = text.match(PLAN_TASK_KEY_RE);
+ 1293:   const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
+ 1294:   if (!match) return { key: keyFallback, title: text, validationLike };
+ 1295:   return {
+ 1296:     key: normalizePlanTaskKey(match[1]) || keyFallback,
+ 1297:     title: cleanPlanTaskTitle(match[2]) || text,
+ 1298:     validationLike,
+ 1299:   };
+ 1300: }
+ 1301: 
+ 1302: function cleanPlanTaskTitle(value) {
+ 1303:   return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
+ 1304: }
+ 1305: 
+ 1306: function normalizePlanTaskKey(value) {
+ 1307:   return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
+ 1308: }
+ 1309: 
+ 1310: function planTaskScopeText(task, fallbackScope = 'unknown') {
+ 1311:   const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+ 1312:   if (explicit.length) return explicit.join(', ');
+ 1313:   const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
+ 1314:   if (fallback) return fallback;
+ 1315:   const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
+ 1316:   return inferred.join(', ') || 'unknown';
+ 1317: }
+ 1318: 
+ 1319: function planTaskDeclaredScopes(task, options = {}) {
+ 1320:   const { keepUnknown = false, includePathFallback = true } = options;
+---
+ 1320:   const { keepUnknown = false, includePathFallback = true } = options;
+ 1321:   const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+ 1322:   const scopes = new Set();
+ 1323:   addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
+ 1324:   addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
+ 1325:   if (includePathFallback) {
+ 1326:     for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
+ 1327:       const scope = normalizePlanTaskScope(match[0], { keepUnknown });
+ 1328:       if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
+ 1329:     }
+ 1330:   }
+ 1331:   return Array.from(scopes);
+ 1332: }
+ 1333: 
+ 1334: function explicitPlanTaskScopeParts(raw) {
+ 1335:   const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
+ 1336:   return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
+ 1337: }
+ 1338: 
+ 1339: function addPlanTaskScopeParts(scopes, parts, options = {}) {
+ 1340:   for (const part of parts) {
+ 1341:     const scope = normalizePlanTaskScope(part, options);
+ 1342:     if (scope) scopes.add(scope);
+ 1343:   }
+ 1344: }
+ 1345: 
+ 1346: function normalizePlanTaskScope(value, options = {}) {
+ 1347:   const scope = String(value || '')
+ 1348:     .trim()
+ 1349:     .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
+ 1350:     .replace(/\s*--$/, '')
+ 1351:     .replaceAll('\\', '/')
+ 1352:     .toLowerCase();
+ 1353:   if (!scope || scope === '-') return '';
+ 1354:   if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
+ 1355:   return scope;
+ 1356: }
+ 1357: 
+ 1358: function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
+ 1359:   const text = String(line || '').trimEnd();
+ 1360:   return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
+ 1361: }
+ 1362: 
+ 1363: function stripPlanTaskScopeComment(value) {
+ 1364:   return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
+ 1365: }
+ 1366: 
+ 1367: function loopFlowHelpers() {
+ 1368:   return {
+ 1369:     describeIntakeAttachment,
+ 1370:     escapeRegExp,
+--- touched
+ M src/loopService.js
+?? docs/plan/plan_feedback_15_20260627-132045.md
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+**Checking code constants**
+
+I'm considering whether to check the top constants after using regex. It seems like I also need to verify if `syncedTaskStatus` is actually exported from taskEvents. While I don't need to run it right now, I can inspect the file statically. I think examining these aspects will help ensure everything is functioning correctly. I'm curious to see what I might find regarding the constants and the task status!
+codex
+还需确认 `syncedTaskStatus` 已由现有模块导出，避免引入未定义依赖。
+exec
+powershell.exe -Command "Select-String -Path src\\loop\\taskEvents.js -Pattern \"syncedTaskStatus|module\\.exports\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; Select-String -Path src'"\\loopService.js -Pattern \"PLAN_TASK_LINE_RE|syncPlanTasksFromMarkdown|normalizePlanTaskScopes\\(\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}' in D:\project\GitHub\autoplan
+ succeeded in 477ms:
+133: function syncedTaskStatus(parsedStatus, existingStatus) {
+172: module.exports = {
+181:   syncedTaskStatus,
+91: const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
+807:     return syncPlanTasksFromMarkdown(this, planId, planFile);
+1216: function syncPlanTasksFromMarkdown(service, planId, planFile) {
+1270:     const match = line.match(PLAN_TASK_LINE_RE);
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+codex
+静态检查发现正则显示为双反斜杠；我确认这是文件内容还是输出转义。
+exec
+powershell.exe -Command '$line=(Get-Content -Encoding UTF8 src'"\\loopService.js)[90]; "'$line; $chars=$line.ToCharArray(); for($i=0;$i -lt $chars.Length;$i++){ if($chars[$i] -eq '"'\\\\'){ Write-Output \"backslash at "'$i next=$($chars[$i+1])" } }' in D:\project\GitHub\autoplan
+ succeeded in 1023ms:
+const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+**Troubleshooting PowerShell**
+
+I’m facing a challenge where the loop isn’t producing output. It might be a character comparison issue in PowerShell. I need to check if the lack of a backslash is a factor. It printed `\\`, but I’m not seeing any output. Maybe the comparison is wrong due to string escaping. I wonder if using character codes could help clarify what's going wrong here. It seems like there's a lot to double-check!
+codex
+继续用字符码确认，避免误判正则。
+exec
+powershell.exe -Command '$line=(Get-Content -Encoding UTF8 src'"\\loopService.js)[90]; for("'$i=0;$i -lt $line.Length;$i++){ $code=[int][char]$line[$i]; if($code -eq 92){ Write-Output "backslash at $i nextCode=$([int][char]$line[$i+1]) next=$($line[$i+1])" } }' in D:\project\GitHub\autoplan
+ succeeded in 482ms:
+backslash at 28 nextCode=117 next=u
+backslash at 35 nextCode=115 next=s
+backslash at 43 nextCode=115 next=s
+backslash at 46 nextCode=91 next=[
+backslash at 55 nextCode=93 next=]
+backslash at 57 nextCode=115 next=s
+backslash at 65 nextCode=115 next=s
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+**Considering code modifications**
+
+I’m checking how backslashes are displayed, wondering if they show doubled in the terminal due to escaping. I think I’ll check line 807 for details. I’m also considering if we should look at the differences in our changes; using `git diff -- src/loopService.js` might bring up too much. We may not need to worry about that. It appears the `docs/plan...` remains untracked. I’ll wrap up everything once the plan is updated.
+codex
+范围复查完成：本轮只改了 `src/loopService.js`，未运行测试类命令。
+已完成 P002 代码修改；按要求未运行测试、构建、lint 或验收命令。
+  ✓ 复查解析辅助函数
+  ✓ 增强任务行解析
+  ✓ 保护 scope 归一化
+  ✓ 静态复查改动范围
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+codex
+**完成情况**
+- 已完成 P002，仅修改 `src/loopService.js:91`、`src/loopService.js:806`、`src/loopService.js:1216` 相关解析链路。
+- `syncPlanTasks` 现在使用本地增强解析器，支持缩进、`-/*/+` checkbox、全角冒号、破折号、顿号、点号等任务编号分隔符。
+- 缺少 scope 的任务会在入库 `raw_line/scope` 中补 `unknown`，不再依赖同步前改写 plan 文件。
+- “完整验收/validation” 类任务缺 scope 时兜底为 `validation`；显式 `scope: validation` 会保留为特殊 scope。
+- scope 注释支持中英文冒号、多空格、Windows/Unix 换行及 `,，、;；` 分隔。
+
+**未执行**
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark。
+- 未修改只读 plan 文件，未勾选 checkbox，未更新进度区。
+diff --git a/src/loopService.js b/src/loopService.js
+index 263644ad220bea4b87c3ce4a4ba98f525802e0e2..86ccfce82469d8662b1528b3876bf015bb5b9007
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -79,6 +79,7 @@
+   TASK_EVENT_STATUS,
+   TASK_EVENT_TYPES,
+   normalizeDurationMs,
++  syncedTaskStatus,
+   taskEventMessage,
+   taskEventMeta,
+   taskRunDurationMs,
+@@ -87,6 +88,13 @@
+ 
+ const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+ const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
++const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
++const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
++const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
++const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
++const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
++const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
++const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -796,8 +804,8 @@
+   }
+ 
+   syncPlanTasks(planId, planFile) {
+-    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+-  }
++    return syncPlanTasksFromMarkdown(this, planId, planFile);
++  }
+ 
+   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+   archiveOperation(projectId, operationKey) {
+@@ -1197,14 +1205,165 @@
+   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ }
+ 
+-function timestampForPath() {
+-  const now = new Date();
+-  const pad = (n) => String(n).padStart(2, '0');
+-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+-    now.getHours(),
+-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+-}
+-
++function timestampForPath() {
++  const now = new Date();
++  const pad = (n) => String(n).padStart(2, '0');
++  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
++    now.getHours(),
++  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
++}
++
++function syncPlanTasksFromMarkdown(service, planId, planFile) {
++  if (!fs.existsSync(planFile)) return;
++  const text = fs.readFileSync(planFile, 'utf8');
++  const tasks = parsePlanTasksFromMarkdown(text);
++  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
++  const existingByKey = new Map();
++  for (const existing of existingTasks) {
++    const matches = existingByKey.get(existing.task_key) || [];
++    matches.push(existing);
++    existingByKey.set(existing.task_key, matches);
++  }
++
++  const syncedStatuses = [];
++  for (const task of tasks) {
++    const existing = existingByKey.get(task.key)?.shift();
++    const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
++    syncedStatuses.push(status);
++    if (existing) {
++      service.db.run(
++        `UPDATE plan_tasks
++         SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
++         WHERE id = ?`,
++        [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
++      );
++    } else {
++      service.db.run(
++        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
++         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
++        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
++      );
++    }
++  }
++
++  for (const matches of existingByKey.values()) {
++    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
++  }
++
++  const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
++  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
++  const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
++    ? 'completed'
++    : tasks.length > 0 && completed === tasks.length
++      ? 'ready_for_validation'
++      : 'running';
++  service.db.run(
++    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
++    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
++  );
++}
++
++function parsePlanTasksFromMarkdown(markdown) {
++  const tasks = [];
++  const lines = String(markdown || '').split(/\r?\n/);
++  for (const line of lines) {
++    const match = line.match(PLAN_TASK_LINE_RE);
++    if (!match) continue;
++    const sortOrder = tasks.length + 1;
++    const rawTitle = match[2].trim();
++    const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
++    const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
++    const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
++    tasks.push({
++      key: parsedTitle.key,
++      title: parsedTitle.title || titleWithoutScope || rawTitle,
++      rawLine,
++      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
++      status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
++      sortOrder,
++    });
++  }
++  return tasks;
++}
++
++function parsePlanTaskTitle(title, sortOrder) {
++  const text = String(title || '').trim();
++  const keyFallback = `P${String(sortOrder).padStart(3, '0')}`;
++  const match = text.match(PLAN_TASK_KEY_RE);
++  const validationLike = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i.test(text);
++  if (!match) return { key: keyFallback, title: text, validationLike };
++  return {
++    key: normalizePlanTaskKey(match[1]) || keyFallback,
++    title: cleanPlanTaskTitle(match[2]) || text,
++    validationLike,
++  };
++}
++
++function cleanPlanTaskTitle(value) {
++  return String(value || '').replace(/^[-–—:：\s]+/, '').trim();
++}
++
++function normalizePlanTaskKey(value) {
++  return String(value || '').trim().replace(/^([a-z]+)([-_]?\d+)$/i, (_match, prefix, suffix) => `${prefix.toUpperCase()}${suffix}`);
++}
++
++function planTaskScopeText(task, fallbackScope = 'unknown') {
++  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
++  if (explicit.length) return explicit.join(', ');
++  const fallback = normalizePlanTaskScope(fallbackScope, { keepUnknown: true });
++  if (fallback) return fallback;
++  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
++  return inferred.join(', ') || 'unknown';
++}
++
++function planTaskDeclaredScopes(task, options = {}) {
++  const { keepUnknown = false, includePathFallback = true } = options;
++  const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
++  const scopes = new Set();
++  addPlanTaskScopeParts(scopes, String(task.scope || '').split(PLAN_TASK_SCOPE_SPLIT_RE), { keepUnknown });
++  addPlanTaskScopeParts(scopes, explicitPlanTaskScopeParts(raw), { keepUnknown });
++  if (includePathFallback) {
++    for (const match of raw.matchAll(PLAN_TASK_PATH_RE)) {
++      const scope = normalizePlanTaskScope(match[0], { keepUnknown });
++      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
++    }
++  }
++  return Array.from(scopes);
++}
++
++function explicitPlanTaskScopeParts(raw) {
++  const explicit = String(raw || '').match(PLAN_TASK_SCOPE_RE);
++  return explicit?.[1] ? explicit[1].split(PLAN_TASK_SCOPE_SPLIT_RE) : [];
++}
++
++function addPlanTaskScopeParts(scopes, parts, options = {}) {
++  for (const part of parts) {
++    const scope = normalizePlanTaskScope(part, options);
++    if (scope) scopes.add(scope);
++  }
++}
++
++function normalizePlanTaskScope(value, options = {}) {
++  const scope = String(value || '')
++    .trim()
++    .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
++    .replace(/\s*--$/, '')
++    .replaceAll('\\', '/')
++    .toLowerCase();
++  if (!scope || scope === '-') return '';
++  if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
++  return scope;
++}
++
++function ensurePlanTaskScopeComment(line, fallbackScope = 'unknown') {
++  const text = String(line || '').trimEnd();
++  return PLAN_TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
++}
++
++function stripPlanTaskScopeComment(value) {
++  return String(value || '').replace(PLAN_TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
++}
++
+ function loopFlowHelpers() {
+   return {
+     describeIntakeAttachment,
+
+tokens used
+223,104
+**完成情况**
+- 已完成 P002，仅修改 `src/loopService.js:91`、`src/loopService.js:806`、`src/loopService.js:1216` 相关解析链路。
+- `syncPlanTasks` 现在使用本地增强解析器，支持缩进、`-/*/+` checkbox、全角冒号、破折号、顿号、点号等任务编号分隔符。
+- 缺少 scope 的任务会在入库 `raw_line/scope` 中补 `unknown`，不再依赖同步前改写 plan 文件。
+- “完整验收/validation” 类任务缺 scope 时兜底为 `validation`；显式 `scope: validation` 会保留为特殊 scope。
+- scope 注释支持中英文冒号、多空格、Windows/Unix 换行及 `,，、;；` 分隔。
+
+**未执行**
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark。
+- 未修改只读 plan 文件，未勾选 checkbox，未更新进度区。

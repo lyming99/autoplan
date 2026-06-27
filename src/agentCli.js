@@ -142,6 +142,7 @@ async function runAgentCliAttempt(options) {
     const text = chunk.toString('utf8');
     output += text;
     if (source === 'stdout') stdoutOutput += text;
+    safeWriteStream(stream, text);
     if (!runtime.activeOperations.has(nextOperationKey)) return;
     appendOperationBuffer(activeOperation, text);
     if (typeof onChunk === 'function') onChunk(text, { operationKey: nextOperationKey, spawnSpec });
@@ -150,11 +151,9 @@ async function runAgentCliAttempt(options) {
 
   if (child.stdout) {
     child.stdout.on('data', (chunk) => handleChunk(chunk, 'stdout'));
-    child.stdout.pipe(stream, { end: false });
   }
   if (child.stderr) {
     child.stderr.on('data', (chunk) => handleChunk(chunk, 'stderr'));
-    child.stderr.pipe(stream, { end: false });
   }
   child.on('error', (error) => {
     spawnError = error;
@@ -167,7 +166,7 @@ async function runAgentCliAttempt(options) {
     });
     const text = `\n[AutoPlan] ${message}\n`;
     output += text;
-    if (stream && !stream.destroyed) stream.write(text);
+    safeWriteStream(stream, text);
     if (!runtime.activeOperations.has(nextOperationKey)) return;
     appendOperationBuffer(activeOperation, text);
     activeOperation.errorMessage = message;
@@ -186,7 +185,7 @@ async function runAgentCliAttempt(options) {
   if (timeoutMessage) {
     const text = `\n[AutoPlan] ${timeoutMessage}\n`;
     output += text;
-    if (stream && !stream.destroyed) stream.write(text);
+    safeWriteStream(stream, text);
     if (runtime.activeOperations.has(nextOperationKey)) {
       appendOperationBuffer(activeOperation, text);
       activeOperation.errorMessage = timeoutMessage;
@@ -206,7 +205,7 @@ async function runAgentCliAttempt(options) {
         error,
       })}\n`;
       output += text;
-      if (stream && !stream.destroyed) stream.write(text);
+      safeWriteStream(stream, text);
       if (runtime.activeOperations.has(nextOperationKey)) {
         appendOperationBuffer(activeOperation, text);
       }
@@ -246,6 +245,16 @@ async function runAgentCliAttempt(options) {
     timedOut,
     timeoutMs,
   };
+}
+
+function safeWriteStream(stream, text) {
+  if (!stream || stream.destroyed || stream.writableEnded || stream.writableFinished) return false;
+  try {
+    stream.write(text);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function bindRuntimeOperation({ runtime, child, activeOperation, operationKey, registerRuntimeOperation }) {

@@ -1,0 +1,995 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f079c-5f82-72f3-84e6-a4cca86cfe4b
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_18_20260627-134350.md
+指定任务：
+- [ ] P003: 保持搜索命中反馈一致 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/SearchResults.tsx -->
+任务 scope：src/renderer/pages/workspacepage.tsx, src/renderer/components/searchresults.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Checking search functionality**
+
+I need to consider the development task thoroughly. It seems like P003 might involve verification, but it’s likely I'm required to ensure that the SearchResults behavior opens correctly. I’ll need to inspect the current code which shows SearchResults in a popover, specifically with `open={searchPopupOpen}`. I should also check how the handling of `searchPopupOpen` works when `searchQuery` changes. So, I’ll take a closer look at the page.
+codex
+我会沿用前序改动，重点检查搜索命中反馈、清空与结果概览状态，不动 plan。
+  → 检查命中反馈链路
+  • 补齐一致性行为
+  • 文本级范围自查
+codex
+先查看当前页面与结果组件的相关逻辑，避免重复梳理无关区域。
+exec
+powershell.exe -Command '$targets=@(@('"'src\\renderer\\pages\\WorkspacePage.tsx',1,115),@('src\\renderer\\pages\\WorkspacePage.tsx',115,205),@('src\\renderer\\pages\\WorkspacePage.tsx',205,260),@('src\\renderer\\components\\SearchResults.tsx',1,150)); foreach("'$t in $targets){ $p=$t[0]; if(Test-Path $p){ $lines=Get-Content -Encoding UTF8 $p; $s=[int]$t[1]; $e=[int]$t[2]; Write-Host ("--- {0}:{1}-{2} ---" -f $p,$s,$e); for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 536ms:
+--- src\renderer\pages\WorkspacePage.tsx:1-115 ---
+    1: import { useEffect, useRef, useState } from 'react';
+    2: import type {
+    3:   AppSnapshot,
+    4:   Plan,
+    5:   Project,
+    6:   WorkspaceSearchResult,
+    7:   WorkspaceTab,
+    8: } from '../types';
+    9: import { useWorkspaceController } from '../hooks/useWorkspaceController';
+   10: import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
+   11: import { IntakePanel } from '../components/IntakePanel';
+   12: import { EventList, PlanList, TaskList } from '../components/PlanLists';
+   13: import { SearchResults } from '../components/SearchResults';
+   14: import { Icon } from '../components/icons';
+   15: import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+   16: import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+   17: import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+   18: import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+   19: 
+   20: export function WorkspacePage() {
+   21:   const {
+   22:     activeTab,
+   23:     addPendingFiles,
+   24:     appendIntakeTask,
+   25:     closePlanReader,
+   26:     composerCliSelection,
+   27:     createFeedback,
+   28:     createRequirement,
+   29:     deleteFeedback,
+   30:     deleteRequirement,
+   31:     displayTasks,
+   32:     error,
+   33:     filteredEmptyText,
+   34:     filteredItems,
+   35:     interruptIntake,
+   36:     latestReadingPlan,
+   37:     loopForm,
+   38:     navigate,
+   39:     openPlanReader,
+   40:     openTaskPlanReader,
+   41:     pendingAttachments,
+   42:     planReadState,
+   43:     project,
+   44:     projectId,
+   45:     projects,
+   46:     refreshPlanReader,
+   47:     removePendingAttachment,
+   48:     resumeIntake,
+   49:     runLoopAction,
+   50:     scopeFileOpenSettings,
+   51:     searchHitCount,
+   52:     searchQuery,
+   53:     selectSearchResult,
+   54:     selectTab,
+   55:     setScopeFileOpenSettings,
+   56:     setSearchQuery,
+   57:     snapshot,
+   58:     state,
+   59:     submitLoopConfig,
+   60:     switchProject,
+   61:     updateFeedback,
+   62:     updateLoopForm,
+   63:     updateRequirement,
+   64:     workspaceSearch,
+   65:   } = useWorkspaceController();
+   66:   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   67:   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   68:   const [searchLocateNotice, setSearchLocateNotice] = useState('');
+   69:   const searchPopupRef = useRef<HTMLDivElement>(null);
+   70:   const hasSearchQuery = !workspaceSearch.query.isEmpty;
+   71: 
+   72:   useEffect(() => {
+   73:     setSearchPopupOpen(hasSearchQuery);
+   74:   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+   75: 
+   76:   useEffect(() => {
+   77:     if (!searchPopupOpen) return undefined;
+   78: 
+   79:     function handlePointerDown(event: MouseEvent) {
+   80:       if (!searchPopupRef.current || !(event.target instanceof Node)) return;
+   81:       if (!searchPopupRef.current.contains(event.target)) {
+   82:         setSearchPopupOpen(false);
+   83:       }
+   84:     }
+   85: 
+   86:     function handleKeyDown(event: KeyboardEvent) {
+   87:       if (event.key === 'Escape') {
+   88:         setSearchPopupOpen(false);
+   89:       }
+   90:     }
+   91: 
+   92:     document.addEventListener('mousedown', handlePointerDown, true);
+   93:     document.addEventListener('keydown', handleKeyDown, true);
+   94:     return () => {
+   95:       document.removeEventListener('mousedown', handlePointerDown, true);
+   96:       document.removeEventListener('keydown', handleKeyDown, true);
+   97:     };
+   98:   }, [searchPopupOpen]);
+   99: 
+  100:   useEffect(() => {
+  101:     if (!pendingSearchTarget || activeTab !== pendingSearchTarget.targetTab) return undefined;
+  102: 
+  103:     const timer = window.setTimeout(() => {
+  104:       const located = locateWorkspaceSearchResult(pendingSearchTarget);
+  105:       setPendingSearchTarget(null);
+  106:       setSearchLocateNotice(located ? '' : formatSearchLocateFallback(pendingSearchTarget));
+  107:     }, 120);
+  108: 
+  109:     return () => window.clearTimeout(timer);
+  110:   }, [activeTab, pendingSearchTarget]);
+  111: 
+  112:   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+  113:     setSearchLocateNotice('');
+  114:     setPendingSearchTarget(result);
+  115:     selectSearchResult(result);
+--- src\renderer\pages\WorkspacePage.tsx:115-205 ---
+  115:     selectSearchResult(result);
+  116:   }
+  117: 
+  118:   const createRequirementFromComposer = (payload: string | ComposerSubmitPayload) =>
+  119:     createRequirement(payload as unknown as string);
+  120:   const createFeedbackFromComposer = (payload: string | ComposerSubmitPayload) =>
+  121:     createFeedback(payload as unknown as string);
+  122:   const reorderPlansFromList = (orderedPlans: Plan[]) =>
+  123:     runLoopAction(() => {
+  124:       if (!snapshot) throw new Error('工作区快照尚未加载');
+  125:       const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
+  126:       const orderedQueue = [...orderedPlans];
+  127:       const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
+  128:       return (window.autoplan as typeof window.autoplan & {
+  129:         reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
+  130:       }).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
+  131:     });
+  132: 
+  133:   if (!snapshot) {
+  134:     return (
+  135:       <div className="workspace-shell">
+  136:         <WorkspaceSidebar
+  137:           activeTab={activeTab}
+  138:           onTab={selectTab}
+  139:           onBack={() => navigate('/projects')}
+  140:           projectId={projectId}
+  141:           projects={projects}
+  142:           currentProject={project}
+  143:           state={null}
+  144:           onSwitchProject={switchProject}
+  145:         />
+  146:         <div className="workspace-main">
+  147:           <div className="empty">加载中...</div>
+  148:         </div>
+  149:       </div>
+  150:     );
+  151:   }
+  152: 
+  153:   return (
+  154:     <div className="workspace-shell">
+  155:       <WorkspaceSidebar
+  156:         activeTab={activeTab}
+  157:         onTab={selectTab}
+  158:         onBack={() => navigate('/projects')}
+  159:         projectId={projectId}
+  160:         projects={projects}
+  161:         currentProject={project}
+  162:         state={state}
+  163:         onSwitchProject={switchProject}
+  164:       />
+  165:       <div className="workspace-main">
+  166:         <header className="topbar">
+  167:           <div className="topbar-title">
+  168:             <h1>{tabTitle(activeTab)}</h1>
+  169:             <p>{tabSubtitle(activeTab, project)}</p>
+  170:           </div>
+  171:           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+  172:             <WorkspaceSearchBox
+  173:               hitCount={searchHitCount}
+  174:               onQueryChange={setSearchQuery}
+  175:               query={searchQuery}
+  176:             />
+  177:             <SearchResults
+  178:               onClear={() => setSearchQuery('')}
+  179:               onClose={() => setSearchPopupOpen(false)}
+  180:               onSelectGroup={selectTab}
+  181:               onSelectResult={handleSelectSearchResult}
+  182:               open={searchPopupOpen}
+  183:               searchState={workspaceSearch}
+  184:             />
+  185:           </div>
+  186:           <div className="topbar-actions">
+  187:             <span className="pill">
+  188:               <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+  189:               {state ? `${state.running ? 'running' : 'stopped'} · ${state.phase || 'idle'}` : 'idle'}
+  190:             </span>
+  191:             <button
+  192:               type="button"
+  193:               className={`btn btn-sm ${state?.running ? 'btn-danger' : 'btn-primary'}`}
+  194:               onClick={() =>
+  195:                 runLoopAction(() =>
+  196:                   state?.running
+  197:                     ? window.autoplan.stopLoop({ projectId, manual: true })
+  198:                     : window.autoplan.startLoop({ projectId, manual: true }),
+  199:                 )
+  200:               }
+  201:             >
+  202:               <Icon name={state?.running ? 'stop' : 'run'} size={14} aria-hidden />
+  203:               {state?.running ? '停止' : '启动'}
+  204:             </button>
+  205:           </div>
+--- src\renderer\pages\WorkspacePage.tsx:205-260 ---
+  205:           </div>
+  206:         </header>
+  207: 
+  208:         {searchLocateNotice ? (
+  209:           <div className="search-locate-notice" role="status">
+  210:             <span>{searchLocateNotice}</span>
+  211:             <button type="button" className="btn-link" onClick={() => setSearchLocateNotice('')}>关闭</button>
+  212:           </div>
+  213:         ) : null}
+  214: 
+  215:         <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+  216:           {activeTab === 'overview' ? (
+  217:             <>
+  218:               {error ? <div className="error-banner">{error}</div> : null}
+  219:               <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+  220:             </>
+  221:           ) : null}
+  222:         </section>
+  223: 
+  224:         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+  225:           {activeTab === 'requirement' ? (
+  226:             <ComposerCliSelectionProvider value={composerCliSelection}>
+  227:               <IntakePanel
+  228:                 emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
+  229:                 heading="需求记录"
+  230:                 items={filteredItems.requirements}
+  231:                 pendingAttachments={pendingAttachments.requirement}
+  232:                 placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+  233:                 submitLabel="发送需求"
+  234:                 subtitle="循环开启后自动扫描并生成计划"
+  235:                 type="requirement"
+  236:                 attachments={snapshot.attachments}
+  237:                 onAddFiles={addPendingFiles}
+  238:                 onDelete={deleteRequirement}
+  239:                 onRemoveAttachment={removePendingAttachment}
+  240:                 onSubmit={createRequirementFromComposer}
+  241:                 onUpdate={updateRequirement}
+  242:                 onInterrupt={interruptIntake}
+  243:                 onResume={resumeIntake}
+  244:                 onAppendTask={appendIntakeTask}
+  245:               />
+  246:             </ComposerCliSelectionProvider>
+  247:           ) : null}
+  248:         </section>
+  249: 
+  250:         <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
+  251:           {activeTab === 'feedback' ? (
+  252:             <ComposerCliSelectionProvider value={composerCliSelection}>
+  253:               <IntakePanel
+  254:                 emptyText={filteredEmptyText || '暂无反馈。'}
+  255:                 heading="反馈记录"
+  256:                 items={filteredItems.feedback}
+  257:                 pendingAttachments={pendingAttachments.feedback}
+  258:                 placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+  259:                 submitLabel="发送反馈"
+  260:                 subtitle="循环开启后自动扫描并生成计划"
+--- src\renderer\components\SearchResults.tsx:1-150 ---
+    1: import type { KeyboardEvent } from 'react';
+    2: import type {
+    3:   WorkspaceSearchGroup,
+    4:   WorkspaceSearchResult,
+    5:   WorkspaceSearchSourceType,
+    6:   WorkspaceSearchState,
+    7:   WorkspaceTab,
+    8: } from '../types';
+    9: import { formatChinaDateTime } from '../utils/time';
+   10: import { Icon, type IconName } from './icons';
+   11: 
+   12: const GROUP_RESULT_LIMIT = 4;
+   13: 
+   14: const sourceIconNames: Record<WorkspaceSearchSourceType, IconName> = {
+   15:   requirement: 'requirement',
+   16:   feedback: 'feedback',
+   17:   plan: 'plan',
+   18:   task: 'tasks',
+   19:   event: 'events',
+   20: };
+   21: 
+   22: const searchTargetLabels: Record<WorkspaceSearchSourceType, string> = {
+   23:   requirement: '需求记录',
+   24:   feedback: '反馈记录',
+   25:   plan: 'Plan',
+   26:   task: '任务',
+   27:   event: '事件',
+   28: };
+   29: 
+   30: interface SearchResultsProps {
+   31:   onClear: () => void;
+   32:   onClose: () => void;
+   33:   onSelectGroup: (targetTab: WorkspaceTab) => void;
+   34:   onSelectResult: (result: WorkspaceSearchResult) => void;
+   35:   open: boolean;
+   36:   searchState: WorkspaceSearchState;
+   37: }
+   38: 
+   39: export function SearchResults({ onClear, onClose, onSelectGroup, onSelectResult, open, searchState }: SearchResultsProps) {
+   40:   if (searchState.query.isEmpty || !open) return null;
+   41: 
+   42:   const queryLabel = searchState.query.raw.trim().replace(/\s+/g, ' ') || searchState.query.normalized;
+   43: 
+   44:   function handleClear() {
+   45:     onClear();
+   46:     onClose();
+   47:   }
+   48: 
+   49:   function handleSelectGroup(targetTab: WorkspaceTab) {
+   50:     onSelectGroup(targetTab);
+   51:     onClose();
+   52:   }
+   53: 
+   54:   function handleSelectResult(result: WorkspaceSearchResult) {
+   55:     onSelectResult(result);
+   56:     onClose();
+   57:   }
+   58: 
+   59:   function handleKeyDown(event: KeyboardEvent<HTMLElement>) {
+   60:     if (event.key !== 'Escape') return;
+   61:     event.stopPropagation();
+   62:     onClose();
+   63:   }
+   64: 
+   65:   return (
+   66:     <section
+   67:       className="search-results search-results-popup card"
+   68:       aria-label="统一搜索结果"
+   69:       aria-live="polite"
+   70:       onKeyDown={handleKeyDown}
+   71:       role="dialog"
+   72:     >
+   73:       <div className="search-results-head">
+   74:         <div>
+   75:           <h2>搜索结果概览</h2>
+   76:           <p>
+   77:             “{queryLabel}” 命中 <b>{searchState.total}</b> 条结果
+   78:           </p>
+   79:         </div>
+   80:         <button type="button" className="search-results-clear" onClick={handleClear}>
+   81:           清空搜索
+   82:         </button>
+   83:       </div>
+   84: 
+   85:       <div className="search-source-strip" aria-label="按来源统计的命中数量">
+   86:         {searchState.groups.map((group) => (
+   87:           <button
+   88:             type="button"
+   89:             className={`search-source-chip${group.count ? '' : ' is-empty'}`}
+   90:             disabled={group.count === 0}
+   91:             key={group.source}
+   92:             onClick={() => handleSelectGroup(group.targetTab)}
+   93:           >
+   94:             <Icon name={sourceIconNames[group.source]} size={14} aria-hidden="true" />
+   95:             <span>{group.label}</span>
+   96:             <b>{group.count}</b>
+   97:           </button>
+   98:         ))}
+   99:       </div>
+  100: 
+  101:       {searchState.total === 0 ? (
+  102:         <div className="search-results-empty">
+  103:           <div>没有找到与“{queryLabel}”匹配的记录。</div>
+  104:           <button type="button" className="btn btn-sm" onClick={handleClear}>
+  105:             清空搜索，恢复全部列表
+  106:           </button>
+  107:         </div>
+  108:       ) : (
+  109:         <div className="search-results-body">
+  110:           <div className="search-result-groups" role="listbox" aria-label="搜索结果列表">
+  111:             {searchState.groups.map((group) => (
+  112:               <SearchResultGroup
+  113:                 group={group}
+  114:                 key={group.source}
+  115:                 onSelectGroup={handleSelectGroup}
+  116:                 onSelectResult={handleSelectResult}
+  117:               />
+  118:             ))}
+  119:           </div>
+  120:         </div>
+  121:       )}
+  122:     </section>
+  123:   );
+  124: }
+  125: 
+  126: function SearchResultGroup({
+  127:   group,
+  128:   onSelectGroup,
+  129:   onSelectResult,
+  130: }: {
+  131:   group: WorkspaceSearchGroup;
+  132:   onSelectGroup: (targetTab: WorkspaceTab) => void;
+  133:   onSelectResult: (result: WorkspaceSearchResult) => void;
+  134: }) {
+  135:   const visibleResults = group.results.slice(0, GROUP_RESULT_LIMIT);
+  136:   const hiddenCount = Math.max(0, group.count - visibleResults.length);
+  137: 
+  138:   return (
+  139:     <section className={`search-result-group${group.count ? '' : ' is-empty'}`} role="group" aria-label={group.label}>
+  140:       <div className="search-result-group-head">
+  141:         <div className="search-result-group-title">
+  142:           <Icon name={sourceIconNames[group.source]} size={16} aria-hidden="true" />
+  143:           <span>{group.label}</span>
+  144:         </div>
+  145:         <span className="search-result-group-count">{group.count} 条</span>
+  146:       </div>
+  147: 
+  148:       {visibleResults.length ? (
+  149:         <div className="search-result-items">
+  150:           {visibleResults.map((result) => (
+
+codex
+我需要补看页面清空/选中处理的未截断片段。
+exec
+powershell.exe -Command '$p='"'src\\renderer\\pages\\WorkspacePage.tsx'; "'$lines=Get-Content -Encoding UTF8 $p; foreach($range in @(@(112,132),@(160,190),@(250,330))){ $s=$range[0]; $e=$range[1]; Write-Host ("--- {0}:{1}-{2} ---" -f $p,$s,$e); for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 485ms:
+--- src\renderer\pages\WorkspacePage.tsx:112-132 ---
+  112:   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+  113:     setSearchLocateNotice('');
+  114:     setPendingSearchTarget(result);
+  115:     selectSearchResult(result);
+  116:   }
+  117: 
+  118:   const createRequirementFromComposer = (payload: string | ComposerSubmitPayload) =>
+  119:     createRequirement(payload as unknown as string);
+  120:   const createFeedbackFromComposer = (payload: string | ComposerSubmitPayload) =>
+  121:     createFeedback(payload as unknown as string);
+  122:   const reorderPlansFromList = (orderedPlans: Plan[]) =>
+  123:     runLoopAction(() => {
+  124:       if (!snapshot) throw new Error('工作区快照尚未加载');
+  125:       const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
+  126:       const orderedQueue = [...orderedPlans];
+  127:       const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
+  128:       return (window.autoplan as typeof window.autoplan & {
+  129:         reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
+  130:       }).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
+  131:     });
+  132: 
+--- src\renderer\pages\WorkspacePage.tsx:160-190 ---
+  160:         projects={projects}
+  161:         currentProject={project}
+  162:         state={state}
+  163:         onSwitchProject={switchProject}
+  164:       />
+  165:       <div className="workspace-main">
+  166:         <header className="topbar">
+  167:           <div className="topbar-title">
+  168:             <h1>{tabTitle(activeTab)}</h1>
+  169:             <p>{tabSubtitle(activeTab, project)}</p>
+  170:           </div>
+  171:           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+  172:             <WorkspaceSearchBox
+  173:               hitCount={searchHitCount}
+  174:               onQueryChange={setSearchQuery}
+  175:               query={searchQuery}
+  176:             />
+  177:             <SearchResults
+  178:               onClear={() => setSearchQuery('')}
+  179:               onClose={() => setSearchPopupOpen(false)}
+  180:               onSelectGroup={selectTab}
+  181:               onSelectResult={handleSelectSearchResult}
+  182:               open={searchPopupOpen}
+  183:               searchState={workspaceSearch}
+  184:             />
+  185:           </div>
+  186:           <div className="topbar-actions">
+  187:             <span className="pill">
+  188:               <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+  189:               {state ? `${state.running ? 'running' : 'stopped'} · ${state.phase || 'idle'}` : 'idle'}
+  190:             </span>
+--- src\renderer\pages\WorkspacePage.tsx:250-330 ---
+  250:         <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
+  251:           {activeTab === 'feedback' ? (
+  252:             <ComposerCliSelectionProvider value={composerCliSelection}>
+  253:               <IntakePanel
+  254:                 emptyText={filteredEmptyText || '暂无反馈。'}
+  255:                 heading="反馈记录"
+  256:                 items={filteredItems.feedback}
+  257:                 pendingAttachments={pendingAttachments.feedback}
+  258:                 placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+  259:                 submitLabel="发送反馈"
+  260:                 subtitle="循环开启后自动扫描并生成计划"
+  261:                 type="feedback"
+  262:                 attachments={snapshot.attachments}
+  263:                 onAddFiles={addPendingFiles}
+  264:                 onDelete={deleteFeedback}
+  265:                 onRemoveAttachment={removePendingAttachment}
+  266:                 onSubmit={createFeedbackFromComposer}
+  267:                 onUpdate={updateFeedback}
+  268:                 onInterrupt={interruptIntake}
+  269:                 onResume={resumeIntake}
+  270:                 onAppendTask={appendIntakeTask}
+  271:               />
+  272:             </ComposerCliSelectionProvider>
+  273:           ) : null}
+  274:         </section>
+  275: 
+  276:         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+  277:           {activeTab === 'tasks' ? (
+  278:             <div className="task-main">
+  279:               <div className="task-status-grid">
+  280:                 <section className="card">
+  281:                   <div className="card-head">
+  282:                     <h2>Plan</h2>
+  283:                   </div>
+  284:                   <PlanList
+  285:                     emptyText={filteredEmptyText}
+  286:                     latestReadingPlan={latestReadingPlan}
+  287:                     onCloseReader={closePlanReader}
+  288:                     onOpenReader={openPlanReader}
+  289:                     onRunParallel={({ plan, batches }) =>
+  290:                       runLoopAction(() =>
+  291:                         (window.autoplan as typeof window.autoplan & {
+  292:                           runTaskBatches: (input: {
+  293:                             projectId: number;
+  294:                             planId: number;
+  295:                             batches: Array<{ taskIds: number[] }>;
+  296:                             manual: true;
+  297:                           }) => Promise<AppSnapshot>;
+  298:                         }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+  299:                       )
+  300:                     }
+  301:                     onRefreshReader={refreshPlanReader}
+  302:                     onReorderPlans={reorderPlansFromList}
+  303:                     plans={filteredItems.plans}
+  304:                     readerState={planReadState}
+  305:                     tasks={snapshot.tasks}
+  306:                     totalPlanCount={snapshot.plans.length}
+  307:                   />
+  308:                 </section>
+  309:                 <section className="card">
+  310:                   <div className="card-head">
+  311:                     <h2>任务</h2>
+  312:                   </div>
+  313:                   <TaskList
+  314:                     emptyText={filteredEmptyText}
+  315:                     locateTarget={pendingSearchTarget}
+  316:                     tasks={displayTasks}
+  317:                     onOpenPlan={openTaskPlanReader}
+  318:                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+  319:                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+  320:                   />
+  321:                 </section>
+  322:               </div>
+  323:             </div>
+  324:           ) : null}
+  325:         </section>
+  326: 
+  327:         <section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>
+  328:           {activeTab === 'settings' ? (
+  329:             <WorkspaceSettingsView
+  330:               loopForm={loopForm}
+
+**Evaluating search query behavior**
+
+I think I need to look into the actual issue with P003. After closing the popup by clicking outside, I'm wondering if the search query stays normalized. It seems like useEffect opens when either hasSearchQuery or normalized changes occur. If the popup closes while the query remains the same, it won’t reopen on focus or typing. Interestingly, the search box hit count is still visible and SearchResults are stable. I might need to inspect the bottom of SearchResults for group counts.
+codex
+命中数量与空态已有基础反馈；我检查是否有清空后残留定位状态会影响一致性。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\pages\\WorkspacePage.tsx,src\\renderer\\components\\SearchResults.tsx -Pattern 'setSearchQuery\\(''','setPendingSearchTarget','pendingSearchTarget','searchLocateNotice','handleClear','onClear','onClose','searchState.total|group.count|hiddenCount|onSelectResult|onSelectGroup' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 463ms:
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:67: const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:68: const [searchLocateNotice, setSearchLocateNotice] = useState('');
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:101: if (!pendingSearchTarget || activeTab !== pendingSearchTarget.targetTab) return undefined;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:104: const located = locateWorkspaceSearchResult(pendingSearchTarget);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:105: setPendingSearchTarget(null);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:106: setSearchLocateNotice(located ? '' : formatSearchLocateFallback(pendingSearchTarget));
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:110: }, [activeTab, pendingSearchTarget]);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:113: setSearchLocateNotice('');
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:114: setPendingSearchTarget(result);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:178: onClear={() => setSearchQuery('')}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:179: onClose={() => setSearchPopupOpen(false)}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:180: onSelectGroup={selectTab}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:181: onSelectResult={handleSelectSearchResult}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:208: {searchLocateNotice ? (
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:210: <span>{searchLocateNotice}</span>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:211: <button type="button" className="btn-link" onClick={() => setSearchLocateNotice('')}>关闭</button>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:287: onCloseReader={closePlanReader}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:315: locateTarget={pendingSearchTarget}
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:31: onClear: () => void;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:32: onClose: () => void;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:33: onSelectGroup: (targetTab: WorkspaceTab) => void;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:34: onSelectResult: (result: WorkspaceSearchResult) => void;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:39: export function SearchResults({ onClear, onClose, onSelectGroup, onSelectResult, open, searchState }: SearchResultsProps) {
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:44: function handleClear() {
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:45: onClear();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:46: onClose();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:50: onSelectGroup(targetTab);
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:51: onClose();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:55: onSelectResult(result);
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:56: onClose();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:62: onClose();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:77: “{queryLabel}” 命中 <b>{searchState.total}</b> 条结果
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:80: <button type="button" className="search-results-clear" onClick={handleClear}>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:89: className={`search-source-chip${group.count ? '' : ' is-empty'}`}
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:90: disabled={group.count === 0}
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:96: <b>{group.count}</b>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:101: {searchState.total === 0 ? (
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:104: <button type="button" className="btn btn-sm" onClick={handleClear}>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:115: onSelectGroup={handleSelectGroup}
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:116: onSelectResult={handleSelectResult}
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:128: onSelectGroup,
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:129: onSelectResult,
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:132: onSelectGroup: (targetTab: WorkspaceTab) => void;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:133: onSelectResult: (result: WorkspaceSearchResult) => void;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:136: const hiddenCount = Math.max(0, group.count - visibleResults.length);
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:139: <section className={`search-result-group${group.count ? '' : ' is-empty'}`} role="group" aria-label={group.label}>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:145: <span className="search-result-group-count">{group.count} 条</span>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:151: <SearchResultItem key={result.id} result={result} onSelect={onSelectResult} />
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:153: {hiddenCount ? (
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:154: <button type="button" className="search-result-more" onClick={() => onSelectGroup(group.targetTab)}>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:155: 在{group.label}中查看其余 {hiddenCount} 条
+
+codex
+我会补一个统一的清空处理，避免清空后残留定位/提示状态。
+  ✓ 检查命中反馈链路
+  → 补齐一致性行为
+  • 文本级范围自查
+codex
+开始补丁：搜索框清空和结果概览清空统一走同一处理函数。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 890a7011a256286b6e4117265153c23dcb8dea61..ceef44953c609d1399b42bbe7a774090208edc8f
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -109,6 +109,15 @@
+     return () => window.clearTimeout(timer);
+   }, [activeTab, pendingSearchTarget]);
+ 
++  function handleSearchQueryChange(nextQuery: string) {
++    setSearchQuery(nextQuery);
++    if (nextQuery.trim()) return;
++
++    setPendingSearchTarget(null);
++    setSearchLocateNotice('');
++    setSearchPopupOpen(false);
++  }
++
+   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+     setSearchLocateNotice('');
+     setPendingSearchTarget(result);
+@@ -171,11 +180,11 @@
+           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+             <WorkspaceSearchBox
+               hitCount={searchHitCount}
+-              onQueryChange={setSearchQuery}
++              onQueryChange={handleSearchQueryChange}
+               query={searchQuery}
+             />
+             <SearchResults
+-              onClear={() => setSearchQuery('')}
++              onClear={() => handleSearchQueryChange('')}
+               onClose={() => setSearchPopupOpen(false)}
+               onSelectGroup={selectTab}
+               onSelectResult={handleSelectSearchResult}
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 890a7011a256286b6e4117265153c23dcb8dea61..ceef44953c609d1399b42bbe7a774090208edc8f
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -109,6 +109,15 @@
+     return () => window.clearTimeout(timer);
+   }, [activeTab, pendingSearchTarget]);
+ 
++  function handleSearchQueryChange(nextQuery: string) {
++    setSearchQuery(nextQuery);
++    if (nextQuery.trim()) return;
++
++    setPendingSearchTarget(null);
++    setSearchLocateNotice('');
++    setSearchPopupOpen(false);
++  }
++
+   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+     setSearchLocateNotice('');
+     setPendingSearchTarget(result);
+@@ -171,11 +180,11 @@
+           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+             <WorkspaceSearchBox
+               hitCount={searchHitCount}
+-              onQueryChange={setSearchQuery}
++              onQueryChange={handleSearchQueryChange}
+               query={searchQuery}
+             />
+             <SearchResults
+-              onClear={() => setSearchQuery('')}
++              onClear={() => handleSearchQueryChange('')}
+               onClose={() => setSearchPopupOpen(false)}
+               onSelectGroup={selectTab}
+               onSelectResult={handleSelectSearchResult}
+
+codex
+补丁完成；现在做文本级检查，确认没有触发额外命令。
+  ✓ 检查命中反馈链路
+  ✓ 补齐一致性行为
+  → 文本级范围自查
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 890a7011a256286b6e4117265153c23dcb8dea61..ceef44953c609d1399b42bbe7a774090208edc8f
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -109,6 +109,15 @@
+     return () => window.clearTimeout(timer);
+   }, [activeTab, pendingSearchTarget]);
+ 
++  function handleSearchQueryChange(nextQuery: string) {
++    setSearchQuery(nextQuery);
++    if (nextQuery.trim()) return;
++
++    setPendingSearchTarget(null);
++    setSearchLocateNotice('');
++    setSearchPopupOpen(false);
++  }
++
+   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+     setSearchLocateNotice('');
+     setPendingSearchTarget(result);
+@@ -171,11 +180,11 @@
+           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+             <WorkspaceSearchBox
+               hitCount={searchHitCount}
+-              onQueryChange={setSearchQuery}
++              onQueryChange={handleSearchQueryChange}
+               query={searchQuery}
+             />
+             <SearchResults
+-              onClear={() => setSearchQuery('')}
++              onClear={() => handleSearchQueryChange('')}
+               onClose={() => setSearchPopupOpen(false)}
+               onSelectGroup={selectTab}
+               onSelectResult={handleSelectSearchResult}
+
+exec
+powershell.exe -Command '$p='"'src\\renderer\\pages\\WorkspacePage.tsx'; "'$lines=Get-Content -Encoding UTF8 $p; foreach($range in @(@(96,128),@(170,184))){ $s=$range[0]; $e=$range[1]; Write-Host ("--- {0}:{1}-{2} ---" -f $p,$s,$e); for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] } }; Write-Host '"'--- search state calls ---'; Select-String -Path src\\renderer\\pages\\WorkspacePage.tsx,src\\renderer\\components\\SearchResults.tsx -Pattern 'handleSearchQueryChange|setSearchQuery\\(''','onClear|onClose|命中|没有找到|search-source-chip|search-result-group-count' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- status relevant ---'; git status --short -- docs\\plan\\plan_feedback_18_20260627-134350.md src\\renderer\\pages\\WorkspacePage.tsx src\\renderer\\components\\SearchResults.tsx" in D:\project\GitHub\autoplan
+ succeeded in 523ms:
+--- src\renderer\pages\WorkspacePage.tsx:96-128 ---
+   96:       document.removeEventListener('keydown', handleKeyDown, true);
+   97:     };
+   98:   }, [searchPopupOpen]);
+   99: 
+  100:   useEffect(() => {
+  101:     if (!pendingSearchTarget || activeTab !== pendingSearchTarget.targetTab) return undefined;
+  102: 
+  103:     const timer = window.setTimeout(() => {
+  104:       const located = locateWorkspaceSearchResult(pendingSearchTarget);
+  105:       setPendingSearchTarget(null);
+  106:       setSearchLocateNotice(located ? '' : formatSearchLocateFallback(pendingSearchTarget));
+  107:     }, 120);
+  108: 
+  109:     return () => window.clearTimeout(timer);
+  110:   }, [activeTab, pendingSearchTarget]);
+  111: 
+  112:   function handleSearchQueryChange(nextQuery: string) {
+  113:     setSearchQuery(nextQuery);
+  114:     if (nextQuery.trim()) return;
+  115: 
+  116:     setPendingSearchTarget(null);
+  117:     setSearchLocateNotice('');
+  118:     setSearchPopupOpen(false);
+  119:   }
+  120: 
+  121:   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+  122:     setSearchLocateNotice('');
+  123:     setPendingSearchTarget(result);
+  124:     selectSearchResult(result);
+  125:   }
+  126: 
+  127:   const createRequirementFromComposer = (payload: string | ComposerSubmitPayload) =>
+  128:     createRequirement(payload as unknown as string);
+--- src\renderer\pages\WorkspacePage.tsx:170-184 ---
+  170:         currentProject={project}
+  171:         state={state}
+  172:         onSwitchProject={switchProject}
+  173:       />
+  174:       <div className="workspace-main">
+  175:         <header className="topbar">
+  176:           <div className="topbar-title">
+  177:             <h1>{tabTitle(activeTab)}</h1>
+  178:             <p>{tabSubtitle(activeTab, project)}</p>
+  179:           </div>
+  180:           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+  181:             <WorkspaceSearchBox
+  182:               hitCount={searchHitCount}
+  183:               onQueryChange={handleSearchQueryChange}
+  184:               query={searchQuery}
+--- search state calls ---
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:112: function handleSearchQueryChange(nextQuery: string) {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:183: onQueryChange={handleSearchQueryChange}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:187: onClear={() => handleSearchQueryChange('')}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:188: onClose={() => setSearchPopupOpen(false)}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:296: onCloseReader={closePlanReader}
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:31: onClear: () => void;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:32: onClose: () => void;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:39: export function SearchResults({ onClear, onClose, onSelectGroup, onSelectResult, open, searchState }: SearchResultsProps) {
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:45: onClear();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:46: onClose();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:51: onClose();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:56: onClose();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:62: onClose();
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:77: “{queryLabel}” 命中 <b>{searchState.total}</b> 条结果
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:85: <div className="search-source-strip" aria-label="按来源统计的命中数量">
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:89: className={`search-source-chip${group.count ? '' : ' is-empty'}`}
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:103: <div>没有找到与“{queryLabel}”匹配的记录。</div>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:145: <span className="search-result-group-count">{group.count} 条</span>
+--- status relevant ---
+ M src/renderer/components/SearchResults.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+?? docs/plan/plan_feedback_18_20260627-134350.md
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 890a7011a256286b6e4117265153c23dcb8dea61..ceef44953c609d1399b42bbe7a774090208edc8f
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -109,6 +109,15 @@
+     return () => window.clearTimeout(timer);
+   }, [activeTab, pendingSearchTarget]);
+ 
++  function handleSearchQueryChange(nextQuery: string) {
++    setSearchQuery(nextQuery);
++    if (nextQuery.trim()) return;
++
++    setPendingSearchTarget(null);
++    setSearchLocateNotice('');
++    setSearchPopupOpen(false);
++  }
++
+   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+     setSearchLocateNotice('');
+     setPendingSearchTarget(result);
+@@ -171,11 +180,11 @@
+           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+             <WorkspaceSearchBox
+               hitCount={searchHitCount}
+-              onQueryChange={setSearchQuery}
++              onQueryChange={handleSearchQueryChange}
+               query={searchQuery}
+             />
+             <SearchResults
+-              onClear={() => setSearchQuery('')}
++              onClear={() => handleSearchQueryChange('')}
+               onClose={() => setSearchPopupOpen(false)}
+               onSelectGroup={selectTab}
+               onSelectResult={handleSelectSearchResult}
+
+codex
+P003 补丁与静态自查完成，未运行任何验收命令。
+  ✓ 检查命中反馈链路
+  ✓ 补齐一致性行为
+  ✓ 文本级范围自查
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 890a7011a256286b6e4117265153c23dcb8dea61..ceef44953c609d1399b42bbe7a774090208edc8f
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -109,6 +109,15 @@
+     return () => window.clearTimeout(timer);
+   }, [activeTab, pendingSearchTarget]);
+ 
++  function handleSearchQueryChange(nextQuery: string) {
++    setSearchQuery(nextQuery);
++    if (nextQuery.trim()) return;
++
++    setPendingSearchTarget(null);
++    setSearchLocateNotice('');
++    setSearchPopupOpen(false);
++  }
++
+   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+     setSearchLocateNotice('');
+     setPendingSearchTarget(result);
+@@ -171,11 +180,11 @@
+           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+             <WorkspaceSearchBox
+               hitCount={searchHitCount}
+-              onQueryChange={setSearchQuery}
++              onQueryChange={handleSearchQueryChange}
+               query={searchQuery}
+             />
+             <SearchResults
+-              onClear={() => setSearchQuery('')}
++              onClear={() => handleSearchQueryChange('')}
+               onClose={() => setSearchPopupOpen(false)}
+               onSelectGroup={selectTab}
+               onSelectResult={handleSelectSearchResult}
+
+codex
+已完成 P003；未修改 plan 文件，未运行测试/构建/lint。
+
+**修改内容**
+- 新增统一搜索输入处理，清空搜索时同步清理待定位目标、定位提示和结果弹层状态：`src/renderer/pages/WorkspacePage.tsx:112`
+- 搜索框输入与结果概览清空按钮统一走该处理，避免清空后残留高亮/提示状态：`src/renderer/pages/WorkspacePage.tsx:181`
+- 保持 `SearchResults` 的命中总数、来源 chip 数量、分组数量与无结果空态不变：`src/renderer/components/SearchResults.tsx:77`
+
+**自查**
+- 输入关键字后仍由搜索框命中数与结果概览共同反馈命中状态。
+- 清空搜索后会恢复完整列表、关闭结果概览，并且不会重新出现 `可搜索 N 条`。
+- 按要求未执行最终验收命令，留给 AutoPlan 统一验收。
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 890a7011a256286b6e4117265153c23dcb8dea61..ceef44953c609d1399b42bbe7a774090208edc8f
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -109,6 +109,15 @@
+     return () => window.clearTimeout(timer);
+   }, [activeTab, pendingSearchTarget]);
+ 
++  function handleSearchQueryChange(nextQuery: string) {
++    setSearchQuery(nextQuery);
++    if (nextQuery.trim()) return;
++
++    setPendingSearchTarget(null);
++    setSearchLocateNotice('');
++    setSearchPopupOpen(false);
++  }
++
+   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+     setSearchLocateNotice('');
+     setPendingSearchTarget(result);
+@@ -171,11 +180,11 @@
+           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+             <WorkspaceSearchBox
+               hitCount={searchHitCount}
+-              onQueryChange={setSearchQuery}
++              onQueryChange={handleSearchQueryChange}
+               query={searchQuery}
+             />
+             <SearchResults
+-              onClear={() => setSearchQuery('')}
++              onClear={() => handleSearchQueryChange('')}
+               onClose={() => setSearchPopupOpen(false)}
+               onSelectGroup={selectTab}
+               onSelectResult={handleSelectSearchResult}
+
+tokens used
+82,981
+已完成 P003；未修改 plan 文件，未运行测试/构建/lint。
+
+**修改内容**
+- 新增统一搜索输入处理，清空搜索时同步清理待定位目标、定位提示和结果弹层状态：`src/renderer/pages/WorkspacePage.tsx:112`
+- 搜索框输入与结果概览清空按钮统一走该处理，避免清空后残留高亮/提示状态：`src/renderer/pages/WorkspacePage.tsx:181`
+- 保持 `SearchResults` 的命中总数、来源 chip 数量、分组数量与无结果空态不变：`src/renderer/components/SearchResults.tsx:77`
+
+**自查**
+- 输入关键字后仍由搜索框命中数与结果概览共同反馈命中状态。
+- 清空搜索后会恢复完整列表、关闭结果概览，并且不会重新出现 `可搜索 N 条`。
+- 按要求未执行最终验收命令，留给 AutoPlan 统一验收。

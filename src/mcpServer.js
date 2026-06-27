@@ -1,4 +1,5 @@
 const http = require('node:http');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const { registerMcpTools } = require('./mcpTools');
 
@@ -8,6 +9,7 @@ const DEFAULT_MCP_CONFIG = Object.freeze({
   host: '127.0.0.1',
   port: 43847,
   path: '/mcp',
+  authToken: '',
   name: 'autoplan',
   version: '0.2.0',
 });
@@ -126,6 +128,12 @@ class AutoPlanMcpServer {
 
   async handleHttpRequest(request, response) {
     const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
+    if (!isAuthorizedRequest(request, this.config.authToken)) {
+      writeJson(response, 401, { error: 'Unauthorized', message: '缺少或无效的 Authorization Bearer 密钥' }, {
+        'WWW-Authenticate': 'Bearer realm="AutoPlan MCP"',
+      });
+      return;
+    }
     if (request.method === 'GET' && requestUrl.pathname === '/health') {
       writeJson(response, 200, this.status());
       return;
@@ -183,6 +191,7 @@ function normalizeMcpConfig(input = {}, env = process.env) {
     host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
     port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
     path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
+    authToken: normalizeAuthToken(input.authToken || env.AUTOPLAN_MCP_AUTH_TOKEN || DEFAULT_MCP_CONFIG.authToken),
     allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
   };
 }
@@ -222,6 +231,23 @@ function normalizeHttpPath(value) {
   const trimmed = String(value || '').trim();
   if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
+
+function normalizeAuthToken(value) {
+  return String(value || '').trim();
+}
+
+function isAuthorizedRequest(request, authToken) {
+  if (!authToken) return true;
+  const authorization = String(request.headers.authorization || '').trim();
+  const match = authorization.match(/^Bearer\s+(.+)$/i);
+  return match ? timingSafeEqualString(match[1].trim(), authToken) : false;
+}
+
+function timingSafeEqualString(left, right) {
+  const leftBuffer = Buffer.from(String(left || ''));
+  const rightBuffer = Buffer.from(String(right || ''));
+  return leftBuffer.length === rightBuffer.length && crypto.timingSafeEqual(leftBuffer, rightBuffer);
 }
 
 function readJsonBody(request) {

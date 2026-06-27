@@ -4,7 +4,7 @@ import {
   readPlanTaskAssociationPlanId,
 } from '../types';
 import type { Plan, PlanTask } from '../types';
-import { formatChinaDateTime, formatDuration, getRunningDurationMs } from './time';
+import { formatDuration, getRunningDurationMs } from './time';
 
 
 export type TimedPlanTask = Omit<PlanTask, 'file_path' | 'plan_id'> & {
@@ -26,6 +26,7 @@ type TaskPlanGroupIdentity = {
 type TaskPlanGroupStats = {
   total: number;
   running: number;
+  queued: number;
   completed: number;
 };
 
@@ -106,31 +107,12 @@ function latestTaskTime(tasks: TimedPlanTask[]) {
   return null;
 }
 
-function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
-  let latestValue = '';
-  let latestTime: number | null = null;
-  tasks.forEach((task) => {
-    const value = task[field];
-    const time = readTaskTime(value);
-    if (time === null) return;
-    if (latestTime === null || time > latestTime) {
-      latestTime = time;
-      latestValue = value || '';
-    }
-  });
-  return latestValue;
+export function isTaskPlanGroupCompleted(group: TaskPlanGroup) {
+  return group.stats.total > 0 && group.stats.completed >= group.stats.total;
 }
 
-export function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
-  const timedTasks = group.tasks as TimedPlanTask[];
-  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
-  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
-  const timeSummary = latestFinishedAt
-    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
-    : latestUpdatedAt
-      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
-      : '暂无时间记录';
-  return `${group.tasks.length} 个任务 · ${timeSummary}`;
+export function formatTaskPlanGroupProgress(group: TaskPlanGroup) {
+  return `进度：${group.stats.completed}/${group.stats.total}`;
 }
 
 function taskPlanGroupTitle(task: TimedPlanTask) {
@@ -152,9 +134,10 @@ function getTaskPlanGroupStats(tasks: PlanTask[]): TaskPlanGroupStats {
     (stats, task) => ({
       total: stats.total + 1,
       running: stats.running + (matchesTaskStatusFilter(task, 'running') ? 1 : 0),
+      queued: stats.queued + (matchesTaskStatusFilter(task, 'queued') ? 1 : 0),
       completed: stats.completed + (matchesTaskStatusFilter(task, 'completed') ? 1 : 0),
     }),
-    { total: 0, running: 0, completed: 0 },
+    { total: 0, running: 0, queued: 0, completed: 0 },
   );
 }
 
@@ -179,7 +162,7 @@ export function groupTasksByPlan(tasks: PlanTask[]): TaskPlanGroup[] {
       tasks: [task],
       firstIndex: index,
       sortTime: null,
-      stats: { total: 0, running: 0, completed: 0 },
+      stats: { total: 0, running: 0, queued: 0, completed: 0 },
       hasRunningTask: false,
     });
   });
@@ -206,6 +189,7 @@ export function groupTasksByPlan(tasks: PlanTask[]): TaskPlanGroup[] {
       };
     })
     .sort((left, right) => {
+      if (left.hasRunningTask !== right.hasRunningTask) return left.hasRunningTask ? -1 : 1;
       if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
         return right.sortTime - left.sortTime;
       }
@@ -250,4 +234,11 @@ export function scopeFileStatus(file: PlanTask['scope_files'][number]) {
   if (file.isValidation) return '完整验收任务';
   if (file.canOpen) return '可打开';
   return file.reason || (file.exists ? '不可打开' : '文件不存在');
+}
+
+export function scopeFileClassName(file: PlanTask['scope_files'][number]) {
+  if (file.isUnknown) return 'unknown special';
+  if (file.isValidation) return 'validation';
+  if (file.canOpen) return 'openable';
+  return '';
 }

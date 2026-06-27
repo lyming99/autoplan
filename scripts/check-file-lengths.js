@@ -7,9 +7,10 @@ const checkedExtensions = new Set(['.css', '.js', '.ts', '.tsx']);
 const defaultMaxLines = 600;
 
 const fileLimits = new Map([
-  ['scripts/smoke-test.js', 2300],
+  ['scripts/smoke-test.js', 2500],
   ['src/loopService.js', 1300],
   ['src/main.js', 650],
+  ['src/mcpTools.js', 900],
   ['src/renderer/types.ts', 800],
   ['src/renderer/utils/search.ts', 650],
 ]);

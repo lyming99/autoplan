@@ -1,0 +1,3362 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0782-f8b8-7a51-bc95-f420c8f2068d
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_14_20260627-131553.md
+指定任务：
+- [ ] P002: 完善 macOS 签名与公证配置 <!-- scope: package.json,build/entitlements.mac.plist,build/entitlements.mac.inherit.plist,scripts/notarize-mac.js -->
+任务 scope：package.json, build/entitlements.mac.plist, build/entitlements.mac.inherit.plist, scripts/notarize-mac.js
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用 P001 结论，直接检查 P002 scope 内现有签名/公证配置。
+  → 检查签名配置现状
+  • 补齐 entitlements 文件
+  • 新增公证脚本
+  • 更新 package 打包配置
+  • 汇总未验证项
+exec
+powershell.exe -Command "Write-Host '--- package scripts/build ---'; "'$pkg = Get-Content -LiteralPath '"'package.json' -Raw -Encoding UTF8 | ConvertFrom-Json; "'$pkg.scripts | Format-List | Out-String -Width 200; $pkg.build | ConvertTo-Json -Depth 20; Write-Host '"'--- scoped paths ---'; foreach ("'$p in @('"'build/entitlements.mac.plist','build/entitlements.mac.inherit.plist','scripts/notarize-mac.js')) { if (Test-Path -LiteralPath "'$p) { Write-Host "### $p"; Get-Content -LiteralPath $p -Encoding UTF8 } else { Write-Host "### missing $p" } }' in D:\project\GitHub\autoplan
+ succeeded in 550ms:
+--- package scripts/build ---
+
+
+start         : npm run dev
+dev           : node scripts/dev.js
+build         : tsc --noEmit && vite build
+package:win   : npm run build && electron-builder --win nsis --x64
+package:mac   : npm run build && electron-builder --mac dmg zip --x64 --arm64
+package:linux : npm run build && electron-builder --linux AppImage deb --x64
+package:all   : npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64
+check         : tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node -
+                -check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths
+check:lengths : node scripts/check-file-lengths.js
+mcp:http      : node src/mcpServer.js --http
+mcp:stdio     : node src/mcpServer.js --stdio
+smoke         : node scripts/smoke-test.js
+
+
+
+
+{
+    "appId":  "com.autoplan.desktop",
+    "productName":  "AutoPlan",
+    "directories":  {
+                        "output":  "release"
+                    },
+    "files":  [
+                  "assets/**/*",
+                  "dist/**/*",
+                  "src/**/*",
+                  "package.json"
+              ],
+    "asarUnpack":  [
+                       "node_modules/sql.js/dist/*.wasm"
+                   ],
+    "toolsets":  {
+                     "appimage":  "1.0.3"
+                 },
+    "win":  {
+                "icon":  "assets/icon.ico",
+                "target":  [
+                               {
+                                   "target":  "nsis",
+                                   "arch":  [
+                                                "x64"
+                                            ]
+                               }
+                           ],
+                "artifactName":  "${productName}-${version}-win-${arch}-Setup.${ext}"
+            },
+    "mac":  {
+                "target":  [
+                               {
+                                   "target":  "dmg",
+                                   "arch":  [
+                                                "x64",
+                                                "arm64"
+                                            ]
+                               },
+                               {
+                                   "target":  "zip",
+                                   "arch":  [
+                                                "x64",
+                                                "arm64"
+                                            ]
+                               }
+                           ],
+                "artifactName":  "${productName}-${version}-mac-${arch}.${ext}"
+            },
+    "linux":  {
+                  "icon":  "assets/icon.png",
+                  "target":  [
+                                 {
+                                     "target":  "AppImage",
+                                     "arch":  [
+                                                  "x64"
+                                              ]
+                                 },
+                                 {
+                                     "target":  "deb",
+                                     "arch":  [
+                                                  "x64"
+                                              ]
+                                 }
+                             ],
+                  "category":  "Utility",
+                  "artifactName":  "${productName}-${version}-linux-${arch}.${ext}"
+              },
+    "nsis":  {
+                 "oneClick":  false,
+                 "perMachine":  false,
+                 "allowToChangeInstallationDirectory":  true
+             }
+}
+--- scoped paths ---
+### missing build/entitlements.mac.plist
+### missing build/entitlements.mac.inherit.plist
+### missing scripts/notarize-mac.js
+
+**Considering package dependencies**
+
+I need to implement something, which involves checking the package dependencies. Should I look into the type or module details? It seems like inspecting the full `package.json` might be important. I’m also wondering if I need to follow a specific script style, like CommonJS. Maybe I should take a closer look at `scripts/dev.js` to better understand what I have to do. It's all a bit tangled, but I’ll figure it out!
+codex
+scope 内缺少 entitlements 和公证脚本；下一步按现有 CommonJS 风格补文件。
+exec
+powershell.exe -Command "Write-Host '--- package top deps ---'; Get-Content -LiteralPath 'package.json' -Encoding UTF8 | Select-Object -First 130; Write-Host '--- script style ---'; Get-Content -LiteralPath 'scripts/dev.js' -Encoding UTF8 -TotalCount 80" in D:\project\GitHub\autoplan
+ succeeded in 495ms:
+--- package top deps ---
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths",
+    "check:lengths": "node scripts/check-file-lengths.js",
+    "mcp:http": "node src/mcpServer.js --http",
+    "mcp:stdio": "node src/mcpServer.js --stdio",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+--- script style ---
+const http = require('node:http');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+
+const root = path.join(__dirname, '..');
+const isWindows = process.platform === 'win32';
+const rendererUrl = process.env.ELECTRON_RENDERER_URL || 'http://127.0.0.1:5173';
+const children = new Set();
+let shuttingDown = false;
+let electronProcess = null;
+
+function bin(name) {
+  return path.join(root, 'node_modules', '.bin', `${name}${isWindows ? '.cmd' : ''}`);
+}
+
+function spawnChild(command, args, options = {}) {
+  const child = spawn(isWindows ? 'cmd.exe' : command, isWindows ? ['/d', '/c', 'call', command, ...args] : args, {
+    cwd: root,
+    stdio: 'inherit',
+    env: { ...process.env, ...options.env },
+  });
+
+  children.add(child);
+  child.on('exit', (code) => {
+    children.delete(child);
+    if (!shuttingDown && child === electronProcess) {
+      shutdown(code ?? 0);
+    }
+  });
+  return child;
+}
+
+async function main() {
+  spawnChild(bin('vite'), ['--host', '127.0.0.1']);
+  await waitFor(rendererUrl, 30000);
+  electronProcess = spawnChild(bin('electron'), ['.'], {
+    env: { ELECTRON_RENDERER_URL: rendererUrl },
+  });
+}
+
+function waitFor(url, timeoutMs) {
+  const startedAt = Date.now();
+
+  return new Promise((resolve, reject) => {
+    const check = () => {
+      const request = http.get(url, (response) => {
+        response.resume();
+        resolve();
+      });
+
+      request.on('error', () => {
+        if (Date.now() - startedAt > timeoutMs) {
+          reject(new Error(`Timed out waiting for ${url}`));
+          return;
+        }
+        setTimeout(check, 250);
+      });
+    };
+
+    check();
+  });
+}
+
+function shutdown(code) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const child of children) {
+    child.kill();
+  }
+  setTimeout(() => process.exit(code), 150).unref();
+}
+
+process.on('SIGINT', () => shutdown(130));
+process.on('SIGTERM', () => shutdown(143));
+
+main().catch((error) => {
+  console.error(error);
+  shutdown(1);
+});
+
+**Evaluating notarization dependencies**
+
+I'm trying to figure out the notarize devDependency in my project. The scope includes package.json, but I'm unsure about the package-lock, which should generally remain unchanged. If package.json updates, the lock file should reflect that, but it seems the P002 scope doesn't include it. Perhaps I shouldn't add this dependency to avoid modulating the package-lock. Also, I need to ensure my script for electron-builder correctly handles context and only runs on macOS. It's all a bit complex!
+**Exploring notarization options**
+
+I need to determine the notarization options for @electron/notarize v2. I see that I can use it with either the appBundleId, appPath, appleId, and appleIdPassword or, for App Store Connect, with appleApiKey, appleApiIssuer, and appleApiKeyId. I’m wondering about the default notarization tool, which might now be notarytool. Should I include the option tool: 'notarytool' in my function? I’ll need to check the installed package to confirm this!
+codex
+我会确认本地 `@electron/notarize` API 形状，避免脚本参数写错；不执行构建或测试。
+exec
+powershell.exe -Command "if (Test-Path -LiteralPath 'node_modules/@electron/notarize') { Get-ChildItem -LiteralPath 'node_modules/@electron/notarize' -Force | Select-Object Name; Write-Host '--- readme snippets ---'; Select-String -Path 'node_modules/@electron/notarize/README.md' -Pattern 'notarize\\(|appleId|appleApiKey|teamId|notarytool' -Context 1,2 | Select-Object -First 80 | ForEach-Object { "'$_.Context.PreContext; $_.Line; $_.Context.PostContext; '"'---' } } else { Write-Host 'node_modules/@electron/notarize missing' }" in D:\project\GitHub\autoplan
+ succeeded in 526ms:
+
+--- readme snippets ---
+Name        
+----        
+lib         
+node_modules
+LICENSE     
+package.json
+README.md   
+
+To achieve this, you can copy notarytool binary from a newer macOS version and provide its path as `notarytoolPath` option.
+
+## API
+---
+* `appPath` — the absolute path to your codesigned and packaged Electron application.
+* `notarytoolPath` - String (optional) - Path of the notarytool binary ([more details](#notarization-on-older-macos-versions)) 
+* additional options required for authenticating your Apple ID (see below)
+
+---
+
+await notarize({
+  appPath,
+  appleId, // Login name of your Apple Developer account
+---
+  appPath,
+  appleId, // Login name of your Apple Developer account
+  appleIdPassword, // App-specific password
+  teamId, // Team ID for your developer team
+---
+  appleId, // Login name of your Apple Developer account
+  appleIdPassword, // App-specific password
+  teamId, // Team ID for your developer team
+});
+---
+  appleIdPassword, // App-specific password
+  teamId, // Team ID for your developer team
+});
+```
+---
+Note down the Issuer ID (UUID format) and Key ID (10-character alphanumeric string),
+and download the `.p8` API key file (`AuthKey_<appleApiKeyId>.p8`).
+For security purposes, the private key can only be downloaded once.
+
+---
+
+Provide the absolute path to your API key as the `appleApiKey` argument.
+
+```javascript
+---
+
+await notarize({
+  appPath,
+  appleApiKey, // Absolute path to API key (e.g. `/path/to/AuthKey_X0X0X0X0X0.p8`)
+---
+  appPath,
+  appleApiKey, // Absolute path to API key (e.g. `/path/to/AuthKey_X0X0X0X0X0.p8`)
+  appleApiIssuer, // Issuer ID (e.g. `d5631714-a680-4b4b-8156-b4ed624c0845`)
+});
+---
+credentials (for both API key and app-specific password strategies) in the macOS Keychain
+via the `xcrun notarytool` command-line utility.
+
+This method has the advantage of validating your notarization credentials before submitting
+---
+# App-specific password strategy
+xcrun notarytool store-credentials "my-app-password-profile"
+  --apple-id "<AppleID>"
+  --team-id <DeveloperTeamID>
+---
+xcrun notarytool store-credentials "my-app-password-profile"
+  --apple-id "<AppleID>"
+  --team-id <DeveloperTeamID>
+  --password <app_specific_password>
+---
+  --apple-id "<AppleID>"
+  --team-id <DeveloperTeamID>
+  --password <app_specific_password>
+```
+---
+# App Store Connect API key strategy
+xcrun notarytool store-credentials "my-api-key-profile"
+  --key "<PathToAPIKey>"
+  --key-id <KeyID>
+---
+
+await notarize({
+  appPath,
+  keychainProfile,
+---
+Error: HTTP status code: 401. Invalid credentials. Username or password is incorrect.
+Use the app-specific password generated at appleid.apple.com. Ensure that all authentication arguments are correct.
+```
+
+---
+
+
+
+**Checking appBundleId relevance**
+
+I think I need to determine if the appBundleId is still necessary. To do that, it seems like I should read the API documentation more thoroughly. There might be updates or changes that clarify whether this information is still required. It’s important to ensure I’m working with the most accurate and current details to avoid any confusion or errors. Let’s dive into that documentation to clarify things!
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'node_modules/@electron/notarize/README.md' -Encoding UTF8 | Select-Object -Skip 70 -First 130" in D:\project\GitHub\autoplan
+ succeeded in 481ms:
+```javascript
+import { notarize } from '@electron/notarize';
+
+await notarize({
+  appPath,
+  appleId, // Login name of your Apple Developer account
+  appleIdPassword, // App-specific password
+  teamId, // Team ID for your developer team
+});
+```
+
+> [!IMPORTANT]
+> **Never hard code your app-specific password into your packaging scripts.** Use an environment
+> variable at a minimum.
+
+### Usage with App Store Connect API key
+
+Alternatively, you can also authenticate via JSON Web Token (JWT) with App Store Connect.
+
+You can obtain an API key from [App Store Connect](https://appstoreconnect.apple.com/access/integrations/api).
+Create a **Team Key** (not an _Individual Key_) with **App Manager** access.
+
+Note down the Issuer ID (UUID format) and Key ID (10-character alphanumeric string),
+and download the `.p8` API key file (`AuthKey_<appleApiKeyId>.p8`).
+For security purposes, the private key can only be downloaded once.
+
+Provide the absolute path to your API key as the `appleApiKey` argument.
+
+```javascript
+import { notarize } from '@electron/notarize';
+
+await notarize({
+  appPath,
+  appleApiKey, // Absolute path to API key (e.g. `/path/to/AuthKey_X0X0X0X0X0.p8`)
+  appleApiIssuer, // Issuer ID (e.g. `d5631714-a680-4b4b-8156-b4ed624c0845`)
+});
+```
+
+### Usage with Keychain credentials
+
+As an alternative to passing authentication options, you can also store your authentication
+credentials (for both API key and app-specific password strategies) in the macOS Keychain
+via the `xcrun notarytool` command-line utility.
+
+This method has the advantage of validating your notarization credentials before submitting
+your application for notarization.
+
+For example:
+
+```sh
+# App-specific password strategy
+xcrun notarytool store-credentials "my-app-password-profile"
+  --apple-id "<AppleID>"
+  --team-id <DeveloperTeamID>
+  --password <app_specific_password>
+```
+
+```sh
+# App Store Connect API key strategy
+xcrun notarytool store-credentials "my-api-key-profile"
+  --key "<PathToAPIKey>"
+  --key-id <KeyID>
+  --issuer <IssuerID>
+```
+
+Successful storage of your credentials will look like this:
+
+```
+This process stores your credentials securely in the Keychain. You reference these credentials later using a profile name.
+
+Validating your credentials...
+Success. Credentials validated.
+Credentials saved to Keychain.
+To use them, specify `--keychain-profile "my-api-key-profile"`
+```
+
+After successfully storing your credentials, pass the keychain profile name into
+the `keychainProfile` parameter.
+
+```javascript
+import { notarize } from '@electron/notarize';
+
+await notarize({
+  appPath,
+  keychainProfile,
+});
+```
+## Troubleshooting
+
+### Debug logging
+
+[`debug`](https://www.npmjs.com/package/debug) is used to display logs and messages.
+Run your notarization scripts with the `DEBUG=electron-notarize*` environment variable to log additional
+debug information from this module.
+
+### Validating credentials
+
+When notarizing your application, you may run into issues with validating your notarization
+credentials.
+
+```
+Error: HTTP status code: 401. Invalid credentials. Username or password is incorrect.
+Use the app-specific password generated at appleid.apple.com. Ensure that all authentication arguments are correct.
+```
+
+[Storing your credentials in Keychain](#usage-with-keychain-credentials) will validate your credentials before
+even GitHub.
+
+### Validating app notarization
+
+To validate that notarization worked, you can use the `stapler` command-line utility:
+
+```sh
+stapler validate path/to/notarized.app
+```
+
+### Apple documentation
+
+Apple also provides additional debugging documentation on
+[Resolving common notarization issues](https://developer.apple.com/documentation/security/notarizing_macos_software_before_distribution/resolving_common_notarization_issues).
+
+exec
+powershell.exe -Command "Get-ChildItem -LiteralPath 'node_modules/@electron/notarize/lib' -Recurse -File | Select-Object -First 10 -ExpandProperty FullName; Select-String -Path 'node_modules/@electron/notarize/lib/**/*.d.ts','node_modules/@electron/notarize/lib/**/*.js' -Pattern 'appleApiKeyId|appBundleId|interface|type' -Context 0,2 | Select-Object -First 80 | ForEach-Object { \"{0}:{1}: {2}\" -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 484ms:
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\check-signature.d.ts
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\check-signature.js
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\check-signature.js.map
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\helpers.d.ts
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\helpers.js
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\helpers.js.map
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\index.d.ts
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\index.js
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\index.js.map
+D:\project\GitHub\autoplan\node_modules\@electron\notarize\lib\legacy.d.ts
+
+codex
+README 确认 v2 使用 `notarize({ appPath, ...credentials })`；我再看类型定义确认 API key 字段。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'node_modules/@electron/notarize/lib/types.d.ts' -Encoding UTF8; Write-Host '--- index ---'; Get-Content -LiteralPath 'node_modules/@electron/notarize/lib/index.d.ts' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 530ms:
+/**
+ * @deprecated This interface was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+export interface LegacyNotarizePasswordCredentials {
+    appleId: string;
+    appleIdPassword: string;
+}
+/**
+ * You can generate an [app-specific password](https://support.apple.com/en-us/102654) for your Apple ID
+ * to notarize your Electron applications.
+ *
+ * This method also requires you to specify the [Team ID](https://developer.apple.com/help/account/manage-your-team/locate-your-team-id/)
+ * of the Developer Team you want to notarize under. An Apple ID may be part of multiple Teams.
+ *
+ * @category Credential Strategies
+ */
+export interface NotaryToolPasswordCredentials {
+    /**
+     * The login username of your Apple Developer account.
+     */
+    appleId: string;
+    /**
+     * An [app-specific password](https://support.apple.com/en-us/102654) for your
+     * Apple ID (**not** your Apple ID password).
+     *
+     * Do **not** hard code this password into your packaging scripts.
+     */
+    appleIdPassword: string;
+    /**
+     * The [Team ID](https://developer.apple.com/help/account/manage-your-team/locate-your-team-id/)
+     * for the Developer Team you want to notarize under. Your Apple ID may be a member of multiple
+     * teams.
+     */
+    teamId: string;
+}
+/**
+ * @deprecated This interface was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+export interface LegacyNotarizeApiKeyCredentials {
+    appleApiKey: string;
+    appleApiIssuer: string;
+}
+/**
+ * Credentials required for JSON Web Token (JWT) notarization using App Store Connect API keys.
+ *
+ * @category Credential Strategies
+ */
+export interface NotaryToolApiKeyCredentials {
+    /**
+     * File system path to the `.p8` private key of your App Store Connect API key.
+     */
+    appleApiKey: string;
+    /**
+     * App Store Connect API Key ID (e.g. `T9GPZ92M7K`).
+     *
+     */
+    appleApiKeyId: string;
+    /**
+     * App Store Connect API Issuer ID. The issuer ID is a UUID format string
+     * (e.g. `c055ca8c-e5a8-4836-b61d-aa5794eeb3f4`).
+     */
+    appleApiIssuer: string;
+}
+/**
+ * Options required for authenticating notarytool by storing
+ * credentials inside the system Keychain item.
+ *
+ * You can store {@link NotaryToolPasswordCredentials} or
+ * {@link NotaryToolApiKeyCredentials} into the Keychain
+ * using `xcrun notarytool store-credentials` and access the
+ * stored secrets when signing your code.
+ *
+ * @category Credential Strategies
+ */
+export interface NotaryToolKeychainCredentials {
+    /**
+     * The name of the profile you provided when storing notarization credentials.
+     */
+    keychainProfile: string;
+    /**
+     * The name of the keychain or path to the keychain you stored notarization credentials in.
+     * @defaultValue If omitted, the system default `login` keychain will be used.
+     */
+    keychain?: string;
+}
+/**
+ * @deprecated This interface was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+export type LegacyNotarizeCredentials = LegacyNotarizePasswordCredentials | LegacyNotarizeApiKeyCredentials;
+/**
+ * Credential options for authenticating `notarytool`. There are three valid stategies available:
+ *
+ * - {@link NotaryToolPasswordCredentials} — Using an Apple ID and app-specific password
+ * - {@link NotaryToolApiKeyCredentials} — Using an App Store Connect API key
+ * - {@link NotaryToolKeychainCredentials} — Using one of the two above credential sets stored within the macOS Keychain
+ * @category Credential Strategies
+ */
+export type NotaryToolCredentials = NotaryToolPasswordCredentials | NotaryToolApiKeyCredentials | NotaryToolKeychainCredentials;
+/**
+ * @deprecated This interface was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+export interface LegacyNotarizeAppOptions {
+    appPath: string;
+    appBundleId: string;
+}
+/**
+ * Non-credential options for notarizing your application with `notarytool`.
+ * @category Core
+ */
+export interface NotaryToolNotarizeAppOptions {
+    /**
+     * Absolute path to your packaged and codesigned Electron application.
+     */
+    appPath: string;
+    notarytoolPath?: string;
+}
+/**
+ * @deprecated This interface was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+interface TransporterOptions {
+    ascProvider?: string;
+}
+/**
+ * @deprecated This interface was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+interface NotarizeResult {
+    uuid: string;
+}
+/**
+ * @deprecated This type was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+export type LegacyNotarizeStartOptions = LegacyNotarizeAppOptions & LegacyNotarizeCredentials & TransporterOptions;
+/**
+ * @deprecated This type was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+export type LegacyNotarizeWaitOptions = NotarizeResult & LegacyNotarizeCredentials;
+/**
+ * @deprecated This type was used for Apple's `altool`, which was sunset in 2023 and no longer works.
+ * @category Legacy
+ */
+export type NotarizeOptionsLegacy = {
+    tool: 'legacy';
+} & LegacyNotarizeStartOptions;
+/**
+ * Options for notarizing your Electron app with `notarytool`.
+ * @category Core
+ */
+export type NotaryToolStartOptions = NotaryToolNotarizeAppOptions & NotaryToolCredentials;
+/**
+ * Helper type that specifies that `@electron/notarize` is using the `notarytool` strategy.
+ * @category Utility Types
+ */
+export type NotarizeOptionsNotaryTool = {
+    tool?: 'notarytool';
+} & NotaryToolStartOptions;
+/**
+ * Options accepted by the `notarize` method.
+ * @internal
+ */
+export type NotarizeOptions = NotarizeOptionsLegacy | NotarizeOptionsNotaryTool;
+export {};
+--- index ---
+import { NotarizeOptions, NotarizeOptionsLegacy, NotarizeOptionsNotaryTool } from './types';
+export { NotarizeOptions };
+export { validateNotaryToolAuthorizationArgs as validateAuthorizationArgs } from './validate-args';
+/**
+ * Sends your app to Apple for notarization with `notarytool` and staples a successful
+ * notarization result to the app bundle. This includes your {@link NotaryToolNotarizeAppOptions.appPath | appPath}
+ * as well as one of three valid credential authentication strategies.
+ *
+ * See {@link NotaryToolCredentials} for authentication options.
+ *
+ * @category Core
+ * @param args Options for notarization
+ * @returns The Promise resolves once notarization is complete. Note that this may take a few minutes.
+ */
+declare function notarize(args: NotarizeOptionsNotaryTool): Promise<void>;
+/**
+ * @deprecated
+ */
+declare function notarize(args: NotarizeOptionsLegacy): Promise<void>;
+export { notarize };
+
+**Exploring packaging scripts**
+
+I’m considering if afterSign always runs, even without a signature, but I think our script bypasses missing credentials. If the credentials are there but the app isn't signed, notarization fails, which seems good to me. 
+
+I’m looking at packaging the script with "npm run build" and "electron-builder." I need to ensure the build happens right after afterSign. Using node to modify package JSON while keeping it intact might require applying a patch. I’ll also need to set up a build folder and insert the afterSign setting properly in the config.
+codex
+我会添加最小 Electron hardened runtime entitlements、公证脚本，并把它接入 electron-builder。
+  ✓ 检查签名配置现状
+  → 补齐 entitlements 文件
+  • 新增公证脚本
+  • 更新 package 打包配置
+  • 汇总未验证项
+exec
+powershell.exe -Command "New-Item -ItemType Directory -Force -Path 'build' | Out-Null" in D:\project\GitHub\autoplan
+ succeeded in 432ms:
+codex
+`build/` 已准备好；现在写入两个 entitlements plist。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\build\entitlements.mac.plist
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\build\entitlements.mac.inherit.plist
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+
+codex
+entitlements 已补齐；接下来新增公证脚本，支持 Apple ID、ASC API key 和 Keychain profile。
+  ✓ 检查签名配置现状
+  ✓ 补齐 entitlements 文件
+  → 新增公证脚本
+  • 更新 package 打包配置
+  • 汇总未验证项
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\scripts\notarize-mac.js
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5c4df6404fba35f4feee2b09517361ce60be340
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,130 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  if (process.platform !== 'darwin' || context.electronPlatformName !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5c4df6404fba35f4feee2b09517361ce60be340
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,130 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  if (process.platform !== 'darwin' || context.electronPlatformName !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+**Handling package updates**
+
+I need to update the package. I think I can apply the patch manually. My plan is to insert it after the directories and for mac users. This approach should help ensure that everything goes smoothly during the update process. I’m just thinking through the steps to make sure I don’t miss anything important! It's essential to be careful and methodical here to prevent any issues. Let's get started!
+codex
+公证脚本已创建；现在把 hardened runtime、entitlements 和 `afterSign` 接入 `package.json`。
+  ✓ 检查签名配置现状
+  ✓ 补齐 entitlements 文件
+  ✓ 新增公证脚本
+  → 更新 package 打包配置
+  • 汇总未验证项
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5c4df6404fba35f4feee2b09517361ce60be340
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,130 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  if (process.platform !== 'darwin' || context.electronPlatformName !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\package.json
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/package.json b/package.json
+index 062bbe8cb9916652774647e9cf3a4995bca6f848..ae5d6d64c4b24ee187047093e779e1c347b99112
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -50,6 +51,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5c4df6404fba35f4feee2b09517361ce60be340
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,130 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  if (process.platform !== 'darwin' || context.electronPlatformName !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/package.json b/package.json
+index 062bbe8cb9916652774647e9cf3a4995bca6f848..ae5d6d64c4b24ee187047093e779e1c347b99112
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -50,6 +51,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..b5c4df6404fba35f4feee2b09517361ce60be340
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,130 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  if (process.platform !== 'darwin' || context.electronPlatformName !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+**Deciding on code signing options**
+
+I'm considering whether to include "forceCodeSigning": false or "signIgnore" in the code. However, I’m thinking that it might not be necessary to incorporate either of those options right now. It seems like neither would add significant value, and skipping them could simplify things a bit. Keeping things straightforward is usually a good approach, so I’m leaning towards not including them.
+codex
+我发现脚本对缺省 `electronPlatformName` 不够稳，顺手在当前 scope 内修正这个判断。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\scripts\notarize-mac.js
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/package.json b/package.json
+index 062bbe8cb9916652774647e9cf3a4995bca6f848..ae5d6d64c4b24ee187047093e779e1c347b99112
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -50,6 +51,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..181c129c9af7276684fb2146c3552db7652a9f9c
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,131 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  const packagePlatform = context.electronPlatformName || process.platform;
++  if (process.platform !== 'darwin' || packagePlatform !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/package.json b/package.json
+index 062bbe8cb9916652774647e9cf3a4995bca6f848..ae5d6d64c4b24ee187047093e779e1c347b99112
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -50,6 +51,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..181c129c9af7276684fb2146c3552db7652a9f9c
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,131 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  const packagePlatform = context.electronPlatformName || process.platform;
++  if (process.platform !== 'darwin' || packagePlatform !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+**Inspecting git status**
+
+I need to check the line numbers and status in my project. There aren't any tests to run at this moment. I can use `git status` to see what's going on, including the selected content's line numbers. It's important to note whether there's a previous ignored document that's not related. Since the full status shows untracked documents and ignored files, I should carefully scope my inspection to avoid confusion.
+codex
+配置已接入；我只查看 scope 文件状态和关键行号，不运行任何测试或构建。
+  ✓ 检查签名配置现状
+  ✓ 补齐 entitlements 文件
+  ✓ 新增公证脚本
+  ✓ 更新 package 打包配置
+  → 汇总未验证项
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/package.json b/package.json
+index 062bbe8cb9916652774647e9cf3a4995bca6f848..ae5d6d64c4b24ee187047093e779e1c347b99112
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -50,6 +51,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..181c129c9af7276684fb2146c3552db7652a9f9c
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,131 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  const packagePlatform = context.electronPlatformName || process.platform;
++  if (process.platform !== 'darwin' || packagePlatform !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+exec
+powershell.exe -Command "git status --short -- package.json build/entitlements.mac.plist build/entitlements.mac.inherit.plist scripts/notarize-mac.js docs/plan/plan_feedback_14_20260627-131553.md; Write-Host '--- package relevant lines ---'; "'$i=1; Get-Content -LiteralPath '"'package.json' -Encoding UTF8 | ForEach-Object { if ("'$i -ge 24 -and $i -le 75) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- notarize lines ---'; "'$i=1; Get-Content -LiteralPath '"'scripts/notarize-mac.js' -Encoding UTF8 | ForEach-Object { if ("'$i -le 170) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- plist heads ---'; foreach ("'$p in @('"'build/entitlements.mac.plist','build/entitlements.mac.inherit.plist')) { Write-Host \"### "'$p"; $i=1; Get-Content -LiteralPath $p -Encoding UTF8 | ForEach-Object { '"'{0,4}: {1}' -f "'$i++, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 590ms:
+ M package.json
+?? build/entitlements.mac.inherit.plist
+?? build/entitlements.mac.plist
+?? docs/plan/plan_feedback_14_20260627-131553.md
+?? scripts/notarize-mac.js
+--- package relevant lines ---
+  24:     "productName": "AutoPlan",
+  25:     "directories": {
+  26:       "output": "release"
+  27:     },
+  28:     "afterSign": "scripts/notarize-mac.js",
+  29:     "files": [
+  30:       "assets/**/*",
+  31:       "dist/**/*",
+  32:       "src/**/*",
+  33:       "package.json"
+  34:     ],
+  35:     "asarUnpack": [
+  36:       "node_modules/sql.js/dist/*.wasm"
+  37:     ],
+  38:     "toolsets": {
+  39:       "appimage": "1.0.3"
+  40:     },
+  41:     "win": {
+  42:       "icon": "assets/icon.ico",
+  43:       "target": [
+  44:         {
+  45:           "target": "nsis",
+  46:           "arch": [
+  47:             "x64"
+  48:           ]
+  49:         }
+  50:       ],
+  51:       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+  52:     },
+  53:     "mac": {
+  54:       "category": "public.app-category.productivity",
+  55:       "hardenedRuntime": true,
+  56:       "gatekeeperAssess": false,
+  57:       "entitlements": "build/entitlements.mac.plist",
+  58:       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+  59:       "target": [
+  60:         {
+  61:           "target": "dmg",
+  62:           "arch": [
+  63:             "x64",
+  64:             "arm64"
+  65:           ]
+  66:         },
+  67:         {
+  68:           "target": "zip",
+  69:           "arch": [
+  70:             "x64",
+  71:             "arm64"
+  72:           ]
+  73:         }
+  74:       ],
+  75:       "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+--- notarize lines ---
+   1: const fs = require('node:fs');
+   2: const os = require('node:os');
+   3: const path = require('node:path');
+   4: const { notarize } = require('@electron/notarize');
+   5: 
+   6: function env(...names) {
+   7:   for (const name of names) {
+   8:     const value = process.env[name];
+   9:     if (typeof value === 'string' && value.trim()) return value.trim();
+  10:   }
+  11:   return null;
+  12: }
+  13: 
+  14: function isEnabled(...names) {
+  15:   const value = env(...names);
+  16:   return value === '1' || value === 'true' || value === 'yes';
+  17: }
+  18: 
+  19: function buildAppPath(context) {
+  20:   const appName = context.packager.appInfo.productFilename;
+  21:   return path.join(context.appOutDir, `${appName}.app`);
+  22: }
+  23: 
+  24: function writeApiKey(contents, sourceName, isBase64) {
+  25:   const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
+  26:   fs.mkdirSync(directory, { recursive: true });
+  27:   const keyPath = path.join(directory, `${sourceName}.p8`);
+  28:   const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
+  29:   fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
+  30:   return keyPath;
+  31: }
+  32: 
+  33: function resolveApiKeyPath() {
+  34:   const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
+  35:   if (keyPath) return keyPath;
+  36: 
+  37:   const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
+  38:   if (keyContents) {
+  39:     if (fs.existsSync(keyContents)) return keyContents;
+  40:     return writeApiKey(keyContents, 'AuthKey', false);
+  41:   }
+  42: 
+  43:   const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
+  44:   if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
+  45: 
+  46:   return null;
+  47: }
+  48: 
+  49: function resolveCredentials() {
+  50:   const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
+  51:   if (keychainProfile) {
+  52:     const credentials = { keychainProfile };
+  53:     const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
+  54:     if (keychain) credentials.keychain = keychain;
+  55:     return { credentials, strategy: 'Keychain profile' };
+  56:   }
+  57: 
+  58:   const appleApiKey = resolveApiKeyPath();
+  59:   const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
+  60:   const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
+  61:   if (appleApiKey || appleApiKeyId || appleApiIssuer) {
+  62:     const missing = [];
+  63:     if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
+  64:     if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
+  65:     if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
+  66:     if (missing.length) return { missing, strategy: 'App Store Connect API key' };
+  67:     return {
+  68:       credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
+  69:       strategy: 'App Store Connect API key',
+  70:     };
+  71:   }
+  72: 
+  73:   const appleId = env('APPLE_ID', 'APPLEID');
+  74:   const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
+  75:   const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
+  76:   if (appleId || appleIdPassword || teamId) {
+  77:     const missing = [];
+  78:     if (!appleId) missing.push('APPLE_ID');
+  79:     if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
+  80:     if (!teamId) missing.push('APPLE_TEAM_ID');
+  81:     if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
+  82:     return {
+  83:       credentials: { appleId, appleIdPassword, teamId },
+  84:       strategy: 'Apple ID app-specific password',
+  85:     };
+  86:   }
+  87: 
+  88:   return {
+  89:     missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
+  90:     strategy: 'notarization credentials',
+  91:   };
+  92: }
+  93: 
+  94: async function notarizeMac(context) {
+  95:   const packagePlatform = context.electronPlatformName || process.platform;
+  96:   if (process.platform !== 'darwin' || packagePlatform !== 'darwin') {
+  97:     console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
+  98:     return;
+  99:   }
+ 100: 
+ 101:   if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
+ 102:     console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
+ 103:     return;
+ 104:   }
+ 105: 
+ 106:   const appPath = buildAppPath(context);
+ 107:   if (!fs.existsSync(appPath)) {
+ 108:     throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
+ 109:   }
+ 110: 
+ 111:   const resolved = resolveCredentials();
+ 112:   if (!resolved.credentials) {
+ 113:     const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
+ 114:     if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
+ 115:       throw new Error(message);
+ 116:     }
+ 117:     console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
+ 118:     return;
+ 119:   }
+ 120: 
+ 121:   const options = { appPath, ...resolved.credentials };
+ 122:   const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
+ 123:   if (notarytoolPath) options.notarytoolPath = notarytoolPath;
+ 124: 
+ 125:   console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
+ 126:   await notarize(options);
+ 127:   console.log('[notarize] macOS notarization completed.');
+ 128: }
+ 129: 
+ 130: module.exports = notarizeMac;
+ 131: module.exports.default = notarizeMac;
+--- plist heads ---
+### build/entitlements.mac.plist
+   1: <?xml version="1.0" encoding="UTF-8"?>
+   2: <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   3: <plist version="1.0">
+   4: <dict>
+   5:   <key>com.apple.security.cs.allow-jit</key>
+   6:   <true/>
+   7:   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+   8:   <true/>
+   9:   <key>com.apple.security.cs.disable-library-validation</key>
+  10:   <true/>
+  11: </dict>
+  12: </plist>
+### build/entitlements.mac.inherit.plist
+   1: <?xml version="1.0" encoding="UTF-8"?>
+   2: <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
+   3: <plist version="1.0">
+   4: <dict>
+   5:   <key>com.apple.security.cs.allow-jit</key>
+   6:   <true/>
+   7:   <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+   8:   <true/>
+   9:   <key>com.apple.security.cs.disable-library-validation</key>
+  10:   <true/>
+  11: </dict>
+  12: </plist>
+
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/package.json b/package.json
+index 062bbe8cb9916652774647e9cf3a4995bca6f848..ae5d6d64c4b24ee187047093e779e1c347b99112
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -50,6 +51,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..181c129c9af7276684fb2146c3552db7652a9f9c
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,131 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  const packagePlatform = context.electronPlatformName || process.platform;
++  if (process.platform !== 'darwin' || packagePlatform !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+**Separating path and contents**
+
+I think it might be helpful to separate the path from the contents in this case. If environment names include APPLE_API_KEY, that could indicate a path linked to the notarize API. But we do support contents too. The challenge is figuring out how to distinguish what’s the path versus what’s the content. For instance, if something includes "BEGIN PRIVATE KEY," I should treat it as contents.
+**Analyzing package dependencies**
+
+When there's a difference between package.json and the lock file, `npm ci` fails, so I need to be careful with that! I want to check that package-lock has @electron/notarize version 2.5.0 because it's currently installed as a transitive dependency. However, relying on transitive can be risky! If npm dedupe changes and electron-builder includes it, I might need to consider implementing a dynamic requiring script. This could help avoid dependency issues, especially if future updates stop hoisting. Let's ensure everything is updated correctly!
+codex
+P002 scope 内修改已完成；按要求没有启动测试、构建或 lint。
+  ✓ 检查签名配置现状
+  ✓ 补齐 entitlements 文件
+  ✓ 新增公证脚本
+  ✓ 更新 package 打包配置
+  ✓ 汇总未验证项
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/package.json b/package.json
+index 062bbe8cb9916652774647e9cf3a4995bca6f848..ae5d6d64c4b24ee187047093e779e1c347b99112
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -50,6 +51,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..181c129c9af7276684fb2146c3552db7652a9f9c
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,131 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  const packagePlatform = context.electronPlatformName || process.platform;
++  if (process.platform !== 'darwin' || packagePlatform !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+codex
+已完成 P002，未修改 plan/checkbox/进度区，也未处理 P003 的 workflow 配置。
+
+**变更**
+- `package.json:28` 接入 `afterSign` 公证脚本；`package.json:53` 补齐 macOS `category`、`hardenedRuntime`、`gatekeeperAssess`、`entitlements`、`entitlementsInherit`。
+- `build/entitlements.mac.plist:1` 新增主 app hardened runtime entitlements。
+- `build/entitlements.mac.inherit.plist:1` 新增 helper/子进程继承 entitlements。
+- `scripts/notarize-mac.js:1` 新增公证脚本，支持 Keychain profile、Apple ID app-specific password、App Store Connect API key/path/base64，并在凭据缺失时明确跳过或通过 `MAC_NOTARIZE_REQUIRED=true` 失败。
+
+**验证**
+- 按任务要求未运行测试、构建、lint、analyze 或验收命令。
+- 后续 P003 仍需在 CI 中注入签名/公证 secrets，并处理当前 `CSC_IDENTITY_AUTO_DISCOVERY=false` 对正式签名的阻断。
+已完成 P002，未修改 plan/checkbox/进度区，也未处理 P003 的 workflow 配置。
+
+**变更**
+- `package.json:28` 接入 `afterSign` 公证脚本；`package.json:53` 补齐 macOS `category`、`hardenedRuntime`、`gatekeeperAssess`、`entitlements`、`entitlementsInherit`。
+- `build/entitlements.mac.plist:1` 新增主 app hardened runtime entitlements。
+- `build/entitlements.mac.inherit.plist:1` 新增 helper/子进程继承 entitlements。
+- `scripts/notarize-mac.js:1` 新增公证脚本，支持 Keychain profile、Apple ID app-specific password、App Store Connect API key/path/base64，并在凭据缺失时明确跳过或通过 `MAC_NOTARIZE_REQUIRED=true` 失败。
+
+**验证**
+- 按任务要求未运行测试、构建、lint、analyze 或验收命令。
+- 后续 P003 仍需在 CI 中注入签名/公证 secrets，并处理当前 `CSC_IDENTITY_AUTO_DISCOVERY=false` 对正式签名的阻断。
+diff --git a/build/entitlements.mac.inherit.plist b/build/entitlements.mac.inherit.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.inherit.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/build/entitlements.mac.plist b/build/entitlements.mac.plist
+new file mode 100644
+index 0000000000000000000000000000000000000000..05d489e9b088ff1432ea17220c665f3088c66a7f
+--- /dev/null
++++ b/build/entitlements.mac.plist
+@@ -0,0 +1,12 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "https://www.apple.com/DTDs/PropertyList-1.0.dtd">
++<plist version="1.0">
++<dict>
++  <key>com.apple.security.cs.allow-jit</key>
++  <true/>
++  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
++  <true/>
++  <key>com.apple.security.cs.disable-library-validation</key>
++  <true/>
++</dict>
++</plist>
+diff --git a/package.json b/package.json
+index 062bbe8cb9916652774647e9cf3a4995bca6f848..ae5d6d64c4b24ee187047093e779e1c347b99112
+--- a/package.json
++++ b/package.json
+@@ -25,6 +25,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -50,6 +51,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+diff --git a/scripts/notarize-mac.js b/scripts/notarize-mac.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..181c129c9af7276684fb2146c3552db7652a9f9c
+--- /dev/null
++++ b/scripts/notarize-mac.js
+@@ -0,0 +1,131 @@
++const fs = require('node:fs');
++const os = require('node:os');
++const path = require('node:path');
++const { notarize } = require('@electron/notarize');
++
++function env(...names) {
++  for (const name of names) {
++    const value = process.env[name];
++    if (typeof value === 'string' && value.trim()) return value.trim();
++  }
++  return null;
++}
++
++function isEnabled(...names) {
++  const value = env(...names);
++  return value === '1' || value === 'true' || value === 'yes';
++}
++
++function buildAppPath(context) {
++  const appName = context.packager.appInfo.productFilename;
++  return path.join(context.appOutDir, `${appName}.app`);
++}
++
++function writeApiKey(contents, sourceName, isBase64) {
++  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
++  fs.mkdirSync(directory, { recursive: true });
++  const keyPath = path.join(directory, `${sourceName}.p8`);
++  const buffer = isBase64 ? Buffer.from(contents, 'base64') : Buffer.from(contents);
++  fs.writeFileSync(keyPath, buffer, { mode: 0o600 });
++  return keyPath;
++}
++
++function resolveApiKeyPath() {
++  const keyPath = env('APPLE_API_KEY_PATH', 'APP_STORE_CONNECT_API_KEY_PATH', 'ASC_API_KEY_PATH');
++  if (keyPath) return keyPath;
++
++  const keyContents = env('APPLE_API_KEY', 'APP_STORE_CONNECT_API_KEY', 'ASC_API_KEY');
++  if (keyContents) {
++    if (fs.existsSync(keyContents)) return keyContents;
++    return writeApiKey(keyContents, 'AuthKey', false);
++  }
++
++  const base64Contents = env('APPLE_API_KEY_BASE64', 'APP_STORE_CONNECT_API_KEY_BASE64', 'ASC_API_KEY_BASE64');
++  if (base64Contents) return writeApiKey(base64Contents, 'AuthKey', true);
++
++  return null;
++}
++
++function resolveCredentials() {
++  const keychainProfile = env('APPLE_KEYCHAIN_PROFILE', 'NOTARYTOOL_KEYCHAIN_PROFILE');
++  if (keychainProfile) {
++    const credentials = { keychainProfile };
++    const keychain = env('APPLE_KEYCHAIN', 'NOTARYTOOL_KEYCHAIN');
++    if (keychain) credentials.keychain = keychain;
++    return { credentials, strategy: 'Keychain profile' };
++  }
++
++  const appleApiKey = resolveApiKeyPath();
++  const appleApiKeyId = env('APPLE_API_KEY_ID', 'APP_STORE_CONNECT_API_KEY_ID', 'ASC_API_KEY_ID');
++  const appleApiIssuer = env('APPLE_API_ISSUER', 'APP_STORE_CONNECT_API_ISSUER', 'ASC_API_ISSUER');
++  if (appleApiKey || appleApiKeyId || appleApiIssuer) {
++    const missing = [];
++    if (!appleApiKey) missing.push('APPLE_API_KEY_PATH or APPLE_API_KEY');
++    if (!appleApiKeyId) missing.push('APPLE_API_KEY_ID');
++    if (!appleApiIssuer) missing.push('APPLE_API_ISSUER');
++    if (missing.length) return { missing, strategy: 'App Store Connect API key' };
++    return {
++      credentials: { appleApiKey, appleApiKeyId, appleApiIssuer },
++      strategy: 'App Store Connect API key',
++    };
++  }
++
++  const appleId = env('APPLE_ID', 'APPLEID');
++  const appleIdPassword = env('APPLE_APP_SPECIFIC_PASSWORD', 'APPLE_ID_PASSWORD', 'APPLE_PASSWORD');
++  const teamId = env('APPLE_TEAM_ID', 'APPLE_TEAMID');
++  if (appleId || appleIdPassword || teamId) {
++    const missing = [];
++    if (!appleId) missing.push('APPLE_ID');
++    if (!appleIdPassword) missing.push('APPLE_APP_SPECIFIC_PASSWORD');
++    if (!teamId) missing.push('APPLE_TEAM_ID');
++    if (missing.length) return { missing, strategy: 'Apple ID app-specific password' };
++    return {
++      credentials: { appleId, appleIdPassword, teamId },
++      strategy: 'Apple ID app-specific password',
++    };
++  }
++
++  return {
++    missing: ['APPLE_KEYCHAIN_PROFILE or APPLE_API_KEY_PATH/APPLE_API_KEY or APPLE_ID'],
++    strategy: 'notarization credentials',
++  };
++}
++
++async function notarizeMac(context) {
++  const packagePlatform = context.electronPlatformName || process.platform;
++  if (process.platform !== 'darwin' || packagePlatform !== 'darwin') {
++    console.log('[notarize] Skipping macOS notarization outside a darwin package build.');
++    return;
++  }
++
++  if (isEnabled('SKIP_NOTARIZE', 'MAC_NOTARIZE_SKIP')) {
++    console.log('[notarize] Skipping macOS notarization because SKIP_NOTARIZE is enabled.');
++    return;
++  }
++
++  const appPath = buildAppPath(context);
++  if (!fs.existsSync(appPath)) {
++    throw new Error(`[notarize] Cannot find app bundle at ${appPath}.`);
++  }
++
++  const resolved = resolveCredentials();
++  if (!resolved.credentials) {
++    const message = `[notarize] Skipping macOS notarization: missing ${resolved.strategy}: ${resolved.missing.join(', ')}.`;
++    if (isEnabled('MAC_NOTARIZE_REQUIRED', 'APPLE_NOTARIZE_REQUIRED', 'NOTARIZE_REQUIRED')) {
++      throw new Error(message);
++    }
++    console.warn(`${message} Set MAC_NOTARIZE_REQUIRED=true to fail instead of skip.`);
++    return;
++  }
++
++  const options = { appPath, ...resolved.credentials };
++  const notarytoolPath = env('APPLE_NOTARYTOOL_PATH', 'NOTARYTOOL_PATH');
++  if (notarytoolPath) options.notarytoolPath = notarytoolPath;
++
++  console.log(`[notarize] Submitting ${appPath} using ${resolved.strategy}.`);
++  await notarize(options);
++  console.log('[notarize] macOS notarization completed.');
++}
++
++module.exports = notarizeMac;
++module.exports.default = notarizeMac;
+
+tokens used
+148,670

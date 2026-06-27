@@ -1,0 +1,852 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0780-0dee-7220-911d-fe9db60a1aeb
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_32_20260627-131242.md
+指定任务：
+- [ ] P004: 同步静态工作区原型默认展示 <!-- scope: ui/workspace.html -->
+任务 scope：ui/workspace.html
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Planning HTML Inspection**
+
+I need to focus on just the UI file, which is workspace.html. It’s important to inspect the relevant HTML without running tests. I’m considering using a preamble for context -- maybe that could help with clarity. I should plan, but keep it simple. Perhaps I can search using Select-String to pinpoint what I need. It seems like a straightforward approach! Let's make sure to stick to that.
+codex
+我会沿用前面默认需求页结论，只调整静态原型 `ui/workspace.html` 的初始态。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Select-String -Path '"'ui\\workspace.html' -Pattern 'data-tab|view-overview|view-requirement|active|概览|需求|topbar|subtitle|title|setActive|default' -Context 2,3" in D:\project\GitHub\autoplan
+ succeeded in 620ms:
+
+  ui\workspace.html:4:    <meta charset="UTF-8" />
+  ui\workspace.html:5:    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+> ui\workspace.html:6:    <title>AutoPlan · 工作区</title>
+  ui\workspace.html:7:    <style>
+  ui\workspace.html:8:      /* ============================================================
+  ui\workspace.html:9:         设计系统 · Design Tokens
+  ui\workspace.html:193:      }
+  ui\workspace.html:194:      .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+> ui\workspace.html:195:      .nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600
+; }
+> ui\workspace.html:196:      .nav-item.active .nav-ico { color: var(--brand-600); }
+  ui\workspace.html:197:      .nav-ico { width: 20px; height: 20px; flex: 0 0 auto; color: var(--text-3); display: grid
+; place-items: center; }
+  ui\workspace.html:198:      .nav-ico .icon { width: 18px; height: 18px; }
+  ui\workspace.html:199:      .nav-badge {
+  ui\workspace.html:202:        font-size: 11px; font-weight: 700; display: grid; place-items: center;
+  ui\workspace.html:203:      }
+> ui\workspace.html:204:      .nav-item.active .nav-badge { background: var(--brand-600); color: #fff; }
+  ui\workspace.html:205:
+  ui\workspace.html:206:      .sidebar-footer {
+  ui\workspace.html:207:        margin-top: auto; padding: 12px; border-radius: var(--r-md);
+  ui\workspace.html:216:      /* 主区 */
+  ui\workspace.html:217:      .main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hid
+den; }
+> ui\workspace.html:218:      .topbar {
+  ui\workspace.html:219:        display: flex; align-items: center; gap: 16px; padding: 16px 28px;
+  ui\workspace.html:220:        background: var(--bg-elevated); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+  ui\workspace.html:221:      }
+> ui\workspace.html:222:      .topbar-title h1 { font-size: 18px; font-weight: 700; }
+> ui\workspace.html:223:      .topbar-title p { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+> ui\workspace.html:224:      .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+  ui\workspace.html:225:      .pill {
+  ui\workspace.html:226:        display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px;
+  ui\workspace.html:227:        border-radius: 999px; font-size: 12px; font-weight: 600;
+  ui\workspace.html:231:
+  ui\workspace.html:232:      .view { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 24px 28px 32px; display: 
+none; }
+> ui\workspace.html:233:      .view.active { display: block; }
+  ui\workspace.html:234:
+  ui\workspace.html:235:      /* 通用组件 */
+  ui\workspace.html:236:      .btn {
+  ui\workspace.html:241:      }
+  ui\workspace.html:242:      .btn:hover { background: var(--bg-hover); }
+> ui\workspace.html:243:      .btn:active { transform: translateY(1px); }
+  ui\workspace.html:244:      .btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff;
+ }
+  ui\workspace.html:245:      .btn-primary:hover { background: var(--brand-700); }
+  ui\workspace.html:246:      .btn-sm { padding: 6px 12px; font-size: 12px; }
+  ui\workspace.html:267:      .chip-accepted { color: var(--success); background: var(--success-bg); }
+  ui\workspace.html:268:
+> ui\workspace.html:269:      /* 概览 */
+  ui\workspace.html:270:      .stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 16px; m
+argin-bottom: 20px; }
+  ui\workspace.html:271:      .stat {
+  ui\workspace.html:272:        position: relative; padding: 18px 20px; background: var(--bg-elevated);
+  ui\workspace.html:298:      .pipe-node { width:40px; height:40px; margin:0 auto; border-radius:50%; display:grid; pla
+ce-items:center; background:var(--bg-elevated); border:2px solid var(--line); color:var(--text-3); font-weight:700; fon
+t-size:14px; position:relative; z-index:1; }
+  ui\workspace.html:299:      .pipe-step.done .pipe-node { background:var(--success); border-color:var(--success); colo
+r:#fff; }
+> ui\workspace.html:300:      .pipe-step.active .pipe-node { background:var(--brand-600); border-color:var(--brand-600)
+; color:#fff; box-shadow:0 0 0 5px var(--brand-50); }
+  ui\workspace.html:301:      .pipe-node .icon { width: 18px; height: 18px; }
+  ui\workspace.html:302:      .pipe-step::before { content:""; position:absolute; top:20px; left:-50%; right:50%; heigh
+t:2px; background:var(--line); z-index:0; }
+  ui\workspace.html:303:      .pipe-step:first-child::before { display:none; }
+> ui\workspace.html:304:      .pipe-step.done::before, .pipe-step.active::before { background:var(--success); }
+  ui\workspace.html:305:      .pipe-label { font-size:12px; font-weight:600; margin-top:10px; color:var(--text-2); }
+> ui\workspace.html:306:      .pipe-step.active .pipe-label { color:var(--brand-600); }
+  ui\workspace.html:307:      .pipe-sub { font-size:11px; color:var(--text-4); margin-top:2px; }
+  ui\workspace.html:308:
+  ui\workspace.html:309:      .feed-list { display:flex; flex-direction:column; }
+  ui\workspace.html:372:      .plan-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+  ui\workspace.html:373:      .plan-tab { border:1px solid var(--line); border-radius:999px; background:var(--bg-soft);
+ padding:5px 10px; font-size:12px; font-weight:700; color:var(--text-2); }
+> ui\workspace.html:374:      .plan-tab.active { background:var(--brand-50); border-color:#cdd8ea; color:var(--brand-70
+0); }
+  ui\workspace.html:375:      .plan-order-actions { margin-left:auto; display:inline-flex; gap:4px; }
+  ui\workspace.html:376:      .plan-order-actions button { border:0; background:transparent; color:var(--brand-600); fo
+nt-size:12px; font-weight:700; }
+> ui\workspace.html:377:      .task-item .task-title { font-size:13px; font-weight:600; color:var(--text-1); }
+  ui\workspace.html:378:      .task-item .task-key { font-family:var(--font-mono); font-size:11px; color:var(--brand-60
+0); background:var(--brand-50); padding:1px 6px; border-radius:4px; }
+  ui\workspace.html:379:
+  ui\workspace.html:380:      /* 事件流 */
+  ui\workspace.html:418:          <div>
+  ui\workspace.html:419:            <div class="brand-name">AutoPlan</div>
+> ui\workspace.html:420:            <div class="brand-sub">需求 · 计划 · 执行 · 验收</div>
+  ui\workspace.html:421:          </div>
+  ui\workspace.html:422:        </div>
+  ui\workspace.html:423:
+  ui\workspace.html:426:          <div class="project-label">
+  ui\workspace.html:427:            当前项目
+> ui\workspace.html:428:            <button class="new-project" id="quickToggle" title="快速创建项目"><svg class="icon" aria-
+hidden="true" focusable="false"><use href="#icon-plus"></use></svg>新建</button>
+  ui\workspace.html:429:          </div>
+  ui\workspace.html:430:          <div class="project-select">
+  ui\workspace.html:431:            <button class="project-select-trigger" id="projectTrigger" type="button">
+  ui\workspace.html:485:
+  ui\workspace.html:486:        <div class="nav-group-label">工作区</div>
+> ui\workspace.html:487:        <button class="nav-item active" data-view="overview">
+> ui\workspace.html:488:          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use hre
+f="#icon-overview"></use></svg></span> 概览
+  ui\workspace.html:489:        </button>
+  ui\workspace.html:490:        <button class="nav-item" data-view="requirement">
+> ui\workspace.html:491:          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use hre
+f="#icon-target"></use></svg></span> 需求
+  ui\workspace.html:492:          <span class="nav-badge">4</span>
+  ui\workspace.html:493:        </button>
+  ui\workspace.html:494:        <button class="nav-item" data-view="feedback">
+  ui\workspace.html:519:      <!-- ===================== 主区 ===================== -->
+  ui\workspace.html:520:      <div class="main">
+> ui\workspace.html:521:        <header class="topbar">
+> ui\workspace.html:522:          <div class="topbar-title">
+> ui\workspace.html:523:            <h1 id="viewTitle">概览</h1>
+> ui\workspace.html:524:            <p id="viewSubtitle">循环状态、阶段流水线与各模块一览</p>
+  ui\workspace.html:525:          </div>
+> ui\workspace.html:526:          <div class="topbar-actions">
+  ui\workspace.html:527:            <span class="pill"><span class="led running"></span> running · execute-task</span>
+  ui\workspace.html:528:            <button class="btn btn-sm">单轮执行</button>
+  ui\workspace.html:529:            <button class="btn btn-sm btn-primary"><svg class="icon" aria-hidden="true" focusab
+le="false"><use href="#icon-play"></use></svg>启动</button>
+  ui\workspace.html:531:        </header>
+  ui\workspace.html:532:
+> ui\workspace.html:533:        <!-- ============ 概览 ============ -->
+> ui\workspace.html:534:        <section class="view active" id="view-overview">
+  ui\workspace.html:535:          <div class="stat-grid">
+  ui\workspace.html:536:            <div class="stat" style="--stat-accent:var(--brand-50);--stat-color:var(--brand-600
+)">
+  ui\workspace.html:537:              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use
+ href="#icon-target"></use></svg></div><div class="stat-value">4</div>
+> ui\workspace.html:538:              <div class="stat-label">待处理需求</div><div class="stat-delta">+2 今日</div>
+  ui\workspace.html:539:            </div>
+  ui\workspace.html:540:            <div class="stat" style="--stat-accent:var(--info-bg);--stat-color:var(--info)">
+  ui\workspace.html:541:              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use
+ href="#icon-panels"></use></svg></div><div class="stat-value">1</div>
+  ui\workspace.html:569:                    <div class="pipe-step done"><div class="pipe-node"><svg class="icon" aria-h
+idden="true" focusable="false"><use href="#icon-check"></use></svg></div><div class="pipe-label">扫描</div><div class="pi
+pe-sub">3 issues · 2 plans</div></div>
+  ui\workspace.html:570:                    <div class="pipe-step done"><div class="pipe-node"><svg class="icon" aria-h
+idden="true" focusable="false"><use href="#icon-check"></use></svg></div><div class="pipe-label">生成计划</div><div class="
+pipe-sub">plan_20260624</div></div>
+> ui\workspace.html:571:                    <div class="pipe-step active"><div class="pipe-node"><svg class="icon" aria
+-hidden="true" focusable="false"><use href="#icon-play"></use></svg></div><div class="pipe-label">执行任务</div><div class=
+"pipe-sub">3 / 7</div></div>
+  ui\workspace.html:572:                    <div class="pipe-step"><div class="pipe-node">4</div><div class="pipe-label
+">验收</div><div class="pipe-sub">flutter analyze</div></div>
+  ui\workspace.html:573:                    <div class="pipe-step"><div class="pipe-node">5</div><div class="pipe-label
+">完成</div><div class="pipe-sub">—</div></div>
+  ui\workspace.html:574:                  </div>
+  ui\workspace.html:592:        </section>
+  ui\workspace.html:593:
+> ui\workspace.html:594:        <!-- ============ 需求 ============ -->
+> ui\workspace.html:595:        <section class="view" id="view-requirement">
+  ui\workspace.html:596:          <div class="intake-layout">
+  ui\workspace.html:597:            <div class="stream-list">
+  ui\workspace.html:598:              <div class="stream-card">
+> ui\workspace.html:599:                <div class="stream-card-top"><span class="stream-id">需求 #6</span><span class="c
+hip chip-pending">pending</span><span class="stream-time">10:51 · 2 分钟前</span></div>
+  ui\workspace.html:600:                <div class="stream-body">富文本编辑器需要支持图片粘贴，粘贴后自动上传到 OSS 并插入图片节点。要能区分截图粘贴和文件粘贴。</di
+v>
+  ui\workspace.html:601:                <div class="stream-attach"><div class="attach-thumb">IMG</div><a class="attach-
+file"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-paperclip"></use></svg>paste-demo.png · 1
+28 KB</a></div>
+  ui\workspace.html:602:              </div>
+  ui\workspace.html:603:              <div class="stream-card">
+> ui\workspace.html:604:                <div class="stream-card-top"><span class="stream-id">需求 #5</span><span class="c
+hip chip-running">processing</span><span class="stream-time">10:32 · 21 分钟前</span></div>
+  ui\workspace.html:605:                <div class="stream-body">工具栏样式与飞书文档对齐：图标 20px、悬浮态浅灰底、分组之间加竖线分隔。</div>
+  ui\workspace.html:606:              </div>
+  ui\workspace.html:607:              <div class="stream-card">
+> ui\workspace.html:608:                <div class="stream-card-top"><span class="stream-id">需求 #4</span><span class="c
+hip chip-completed">done</span><span class="stream-time">09:18 · 2 小时前</span></div>
+  ui\workspace.html:609:                <div class="stream-body">段落支持标题 H1/H2/H3、正文、引用、代码块四种基础样式，快捷键 Ctrl+1/2/3 切换标题。</
+div>
+  ui\workspace.html:610:              </div>
+  ui\workspace.html:611:            </div>
+  ui\workspace.html:612:            <form class="composer" onsubmit="return false">
+> ui\workspace.html:613:              <textarea placeholder="输入需求，Enter 发送，Shift+Enter 换行。也可把需求文件放到工作区 docs/issues。"></
+textarea>
+  ui\workspace.html:614:              <div class="composer-bottom">
+  ui\workspace.html:615:                <div class="composer-tools">
+> ui\workspace.html:616:                  <button type="button" class="icon-btn" title="添加附件"><svg class="icon" aria-hi
+dden="true" focusable="false"><use href="#icon-plus"></use></svg></button>
+  ui\workspace.html:617:                  <span class="attach-file" style="padding:4px 10px">截图1.png <svg class="icon r
+emove-icon" aria-hidden="true" focusable="false"><use href="#icon-x"></use></svg></span>
+  ui\workspace.html:618:                </div>
+  ui\workspace.html:619:                <span class="composer-hint">Enter 发送 · 拖拽添加附件</span>
+  ui\workspace.html:629:            <div class="stream-list">
+  ui\workspace.html:630:              <div class="stream-card">
+> ui\workspace.html:631:                <div class="stream-card-top"><span class="stream-id">反馈 #3</span><span class="s
+tream-id" style="background:var(--info-bg);color:var(--info)">关联 需求 #5</span><span class="stream-time">10:48</span></di
+v>
+  ui\workspace.html:632:                <div class="stream-body">工具栏分组竖线太粗了，建议改成 1px、颜色 #E5E7EB，跟正文区拉开距离。</div>
+  ui\workspace.html:633:              </div>
+  ui\workspace.html:634:              <div class="stream-card">
+  ui\workspace.html:641:              <textarea placeholder="输入反馈，Enter 发送，Shift+Enter 换行。"></textarea>
+  ui\workspace.html:642:              <div class="composer-bottom">
+> ui\workspace.html:643:                <div class="composer-tools"><button type="button" class="icon-btn" title="添加附件"
+><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plus"></use></svg></button></div>
+  ui\workspace.html:644:                <span class="composer-hint">Enter 发送</span>
+  ui\workspace.html:645:                <button type="submit" class="send-btn"><svg class="icon" aria-hidden="true" foc
+usable="false"><use href="#icon-arrow-right"></use></svg></button>
+  ui\workspace.html:646:              </div>
+  ui\workspace.html:679:            <div class="task-main">
+  ui\workspace.html:680:              <div class="card" style="display:flex;flex-direction:column;min-height:0;">
+> ui\workspace.html:681:                <div class="card-head"><h2>计划草稿</h2><span class="hint">发送需求/反馈后自动生成，可编辑后加入任务系统<
+/span></div>
+  ui\workspace.html:682:                <div class="card-body scroll-list">
+  ui\workspace.html:683:                  <div class="draft-card">
+> ui\workspace.html:684:                    <div class="draft-top"><span class="stream-id">草稿 #5</span><span style="fon
+t-size:12px;color:var(--text-3)">来自 需求 #6</span><span class="chip chip-pending" style="margin-left:auto">draft</span></
+div>
+  ui\workspace.html:685:                    <textarea class="draft-area"># 富文本图片粘贴
+  ui\workspace.html:686:
+  ui\workspace.html:687:## 任务清单
+  ui\workspace.html:706:                  <div class="card-body scroll-list">
+  ui\workspace.html:707:                    <div class="plan-tabs" aria-label="计划状态筛选">
+> ui\workspace.html:708:                      <button class="plan-tab active" type="button">全部 3</button>
+  ui\workspace.html:709:                      <button class="plan-tab" type="button">执行中 1</button>
+  ui\workspace.html:710:                      <button class="plan-tab" type="button">已完成 1</button>
+  ui\workspace.html:711:                      <button class="plan-tab" type="button">草稿 1</button>
+  ui\workspace.html:731:                  <div class="card-head"><h2>任务</h2></div>
+  ui\workspace.html:732:                  <div class="card-body scroll-list">
+> ui\workspace.html:733:                    <div class="task-item"><div class="plan-top"><span class="task-key">P004</s
+pan><span class="task-title">富文本选区处理</span><span class="chip chip-pending" style="margin-left:auto">pending</span></div
+></div>
+> ui\workspace.html:734:                    <div class="task-item"><div class="plan-top"><span class="task-key">P003</s
+pan><span class="task-title">段落样式</span><span class="chip chip-completed" style="margin-left:auto">done</span></div></d
+iv>
+> ui\workspace.html:735:                    <div class="task-item"><div class="plan-top"><span class="task-key">P002</s
+pan><span class="task-title">工具栏</span><span class="chip chip-completed" style="margin-left:auto">done</span></div></di
+v>
+  ui\workspace.html:736:                  </div>
+  ui\workspace.html:737:                </div>
+  ui\workspace.html:738:              </div>
+  ui\workspace.html:765:
+  ui\workspace.html:766:    <script>
+> ui\workspace.html:767:      const titles = {
+> ui\workspace.html:768:        overview:   ['概览',       '循环状态、阶段流水线与各模块一览'],
+> ui\workspace.html:769:        requirement:['需求模块',   '收集需求，发送后自动生成计划草稿'],
+> ui\workspace.html:770:        feedback:   ['反馈模块',   '收集反馈，关联需求并生成计划草稿'],
+  ui\workspace.html:771:        tasks:      ['任务与计划', '循环控制、计划草稿、Plan 与任务进度'],
+  ui\workspace.html:772:        events:     ['事件流',     '循环运行日志与任务执行记录'],
+  ui\workspace.html:773:      };
+  ui\workspace.html:775:        btn.addEventListener('click', () => {
+  ui\workspace.html:776:          const v = btn.dataset.view;
+> ui\workspace.html:777:          document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b 
+=== btn));
+> ui\workspace.html:778:          document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id =
+== 'view-' + v));
+> ui\workspace.html:779:          const [t, s] = titles[v] || ['', ''];
+> ui\workspace.html:780:          document.getElementById('viewTitle').textContent = t;
+> ui\workspace.html:781:          document.getElementById('viewSubtitle').textContent = s;
+  ui\workspace.html:782:        });
+  ui\workspace.html:783:      });
+  ui\workspace.html:784:      document.querySelectorAll('.composer textarea').forEach((ta) => {
+
+
+
+**Inspecting webpage elements**
+
+I need to take a closer look at the relevant HTML surrounding the navigation and top bar, as well as the views. It seems like a good idea to check how everything is structured — making sure that the layout is set up properly. Understanding this will help me figure out what adjustments might be needed, ensuring everything works together seamlessly on the page. Let’s see what I can find!
+codex
+我找到静态原型仍以概览为默认；接下来只改初始 active 和标题文案。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); (Get-Content -Encoding UTF8 '"'ui\\workspace.html') | Select-Object -Skip 490 -First 115; Write-Output '---SCRIPT---'; (Get-Content -Encoding UTF8 'ui\\workspace.html') | Select-Object -Skip 760 -First 28" in D:\project\GitHub\autoplan
+ succeeded in 511ms:
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
+          <span class="nav-badge">4</span>
+        </button>
+        <button class="nav-item" data-view="feedback">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-pencil"></use></svg></span> 反馈
+          <span class="nav-badge">2</span>
+        </button>
+
+        <div class="nav-group-label">执行</div>
+        <button class="nav-item" data-view="tasks">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check-square"></use></svg></span> 任务与计划
+          <span class="nav-badge">1</span>
+        </button>
+        <button class="nav-item" data-view="events">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-list"></use></svg></span> 事件流
+        </button>
+
+        <div class="sidebar-footer">
+          <div class="loop-mini">
+            <span class="led running"></span>
+            <span>循环 <b>运行中</b></span>
+          </div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:6px;font-family:var(--font-mono);">
+            间隔 5s · flutter analyze
+          </div>
+        </div>
+      </aside>
+
+      <!-- ===================== 主区 ===================== -->
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-title">
+            <h1 id="viewTitle">概览</h1>
+            <p id="viewSubtitle">循环状态、阶段流水线与各模块一览</p>
+          </div>
+          <div class="topbar-actions">
+            <span class="pill"><span class="led running"></span> running · execute-task</span>
+            <button class="btn btn-sm">单轮执行</button>
+            <button class="btn btn-sm btn-primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg>启动</button>
+          </div>
+        </header>
+
+        <!-- ============ 概览 ============ -->
+        <section class="view active" id="view-overview">
+          <div class="stat-grid">
+            <div class="stat" style="--stat-accent:var(--brand-50);--stat-color:var(--brand-600)">
+              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></div><div class="stat-value">4</div>
+              <div class="stat-label">待处理需求</div><div class="stat-delta">+2 今日</div>
+            </div>
+            <div class="stat" style="--stat-accent:var(--info-bg);--stat-color:var(--info)">
+              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-panels"></use></svg></div><div class="stat-value">1</div>
+              <div class="stat-label">进行中计划</div><div class="stat-delta">3/7 任务</div>
+            </div>
+            <div class="stat" style="--stat-accent:var(--success-bg);--stat-color:var(--success)">
+              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check-square"></use></svg></div><div class="stat-value">12</div>
+              <div class="stat-label">已完成任务</div><div class="stat-delta">+5 本轮</div>
+            </div>
+            <div class="stat" style="--stat-accent:var(--warning-bg);--stat-color:var(--warning)">
+              <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-refresh"></use></svg></div><div class="stat-value">5s</div>
+              <div class="stat-label">循环间隔</div><div class="stat-delta">已运行 38 分钟</div>
+            </div>
+          </div>
+
+          <div class="overview-grid">
+            <div>
+              <div class="loop-card">
+                <div class="lc-top"><span class="lc-led"></span><span class="lc-status">循环运行中</span></div>
+                <div class="lc-phase">当前阶段 · execute-task</div>
+                <div class="lc-meta">
+                  <div>工作区<b>wenz_richtext</b></div>
+                  <div>当前 Plan<b>plan_20260624-1032</b></div>
+                  <div>下一任务<b>P004 · 富文本选区</b></div>
+                </div>
+              </div>
+              <div class="card" style="margin-top:16px;">
+                <div class="card-head"><h2>循环阶段流水线</h2><span class="hint">scan / generate-plan / execute-task / validate / completed</span></div>
+                <div class="card-body">
+                  <div class="pipeline">
+                    <div class="pipe-step done"><div class="pipe-node"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></div><div class="pipe-label">扫描</div><div class="pipe-sub">3 issues · 2 plans</div></div>
+                    <div class="pipe-step done"><div class="pipe-node"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></div><div class="pipe-label">生成计划</div><div class="pipe-sub">plan_20260624</div></div>
+                    <div class="pipe-step active"><div class="pipe-node"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg></div><div class="pipe-label">执行任务</div><div class="pipe-sub">3 / 7</div></div>
+                    <div class="pipe-step"><div class="pipe-node">4</div><div class="pipe-label">验收</div><div class="pipe-sub">flutter analyze</div></div>
+                    <div class="pipe-step"><div class="pipe-node">5</div><div class="pipe-label">完成</div><div class="pipe-sub">—</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="card">
+              <div class="card-head"><h2>近期事件</h2><span class="spacer"><a href="#">查看全部 <svg class="icon icon-sm" aria-hidden="true" focusable="false"><use href="#icon-arrow-right"></use></svg></a></span></div>
+              <div class="card-body">
+                <div class="feed-list">
+                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text">任务 <b>P003 · 段落样式</b> 执行完成</span><span class="feed-time">10:42</span></div>
+                  <div class="feed-item info"><span class="feed-dot"></span><span class="feed-text">扫描完成 <b>issues=3, plans=2</b></span><span class="feed-time">10:42</span></div>
+                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text">任务 <b>P002 · 工具栏</b> 执行完成</span><span class="feed-time">10:35</span></div>
+                  <div class="feed-item warn"><span class="feed-dot"></span><span class="feed-text">计划草稿 <b>#5</b> 待确认</span><span class="feed-time">10:21</span></div>
+                  <div class="feed-item info"><span class="feed-dot"></span><span class="feed-text">新计划生成 <b>plan_20260624-1032</b></span><span class="feed-time">10:32</span></div>
+                  <div class="feed-item success"><span class="feed-dot"></span><span class="feed-text">循环已启动</span><span class="feed-time">10:04</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ 需求 ============ -->
+        <section class="view" id="view-requirement">
+          <div class="intake-layout">
+            <div class="stream-list">
+              <div class="stream-card">
+                <div class="stream-card-top"><span class="stream-id">需求 #6</span><span class="chip chip-pending">pending</span><span class="stream-time">10:51 · 2 分钟前</span></div>
+                <div class="stream-body">富文本编辑器需要支持图片粘贴，粘贴后自动上传到 OSS 并插入图片节点。要能区分截图粘贴和文件粘贴。</div>
+                <div class="stream-attach"><div class="attach-thumb">IMG</div><a class="attach-file"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-paperclip"></use></svg>paste-demo.png · 128 KB</a></div>
+              </div>
+              <div class="stream-card">
+                <div class="stream-card-top"><span class="stream-id">需求 #5</span><span class="chip chip-running">processing</span><span class="stream-time">10:32 · 21 分钟前</span></div>
+                <div class="stream-body">工具栏样式与飞书文档对齐：图标 20px、悬浮态浅灰底、分组之间加竖线分隔。</div>
+---SCRIPT---
+      </div>
+    </div>
+
+    <div class="watermark">AutoPlan · 工作区设计稿</div>
+
+    <script>
+      const titles = {
+        overview:   ['概览',       '循环状态、阶段流水线与各模块一览'],
+        requirement:['需求模块',   '收集需求，发送后自动生成计划草稿'],
+        feedback:   ['反馈模块',   '收集反馈，关联需求并生成计划草稿'],
+        tasks:      ['任务与计划', '循环控制、计划草稿、Plan 与任务进度'],
+        events:     ['事件流',     '循环运行日志与任务执行记录'],
+      };
+      document.querySelectorAll('.nav-item').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const v = btn.dataset.view;
+          document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b === btn));
+          document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
+          const [t, s] = titles[v] || ['', ''];
+          document.getElementById('viewTitle').textContent = t;
+          document.getElementById('viewSubtitle').textContent = s;
+        });
+      });
+      document.querySelectorAll('.composer textarea').forEach((ta) => {
+        const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
+        ta.addEventListener('input', grow); grow();
+      });
+
+
+codex
+还需要确认导航按钮初始 active 位置，然后一起打补丁。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); (Get-Content -Encoding UTF8 '"'ui\\workspace.html') | Select-Object -Skip 465 -First 35" in D:\project\GitHub\autoplan
+ succeeded in 507ms:
+              <button class="project-menu-create" id="menuCreateProject" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plus"></use></svg>创建新项目</button>
+            </div>
+            <!-- 快速创建弹层 -->
+            <div class="quick-create" id="quickCreate">
+              <div class="field">
+                <label style="font-size:11px;color:var(--text-3);font-weight:600;">项目名称</label>
+                <input type="text" id="qc-name" placeholder="例如 my-project" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);font:inherit;font-size:13px;" />
+              </div>
+              <div class="field">
+                <label style="font-size:11px;color:var(--text-3);font-weight:600;">工作区路径</label>
+                <input type="text" id="qc-path" class="mono" placeholder="D:\project\xxx" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:var(--r-sm);font:inherit;font-size:12px;font-family:var(--font-mono);" />
+              </div>
+              <div class="qc-actions">
+                <button class="btn btn-sm" id="qcCancel" type="button">取消</button>
+                <button class="btn btn-sm btn-primary" id="qcSave" type="button">创建</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="nav-group-label">工作区</div>
+        <button class="nav-item active" data-view="overview">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-overview"></use></svg></span> 概览
+        </button>
+        <button class="nav-item" data-view="requirement">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
+          <span class="nav-badge">4</span>
+        </button>
+        <button class="nav-item" data-view="feedback">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-pencil"></use></svg></span> 反馈
+          <span class="nav-badge">2</span>
+        </button>
+
+        <div class="nav-group-label">执行</div>
+        <button class="nav-item" data-view="tasks">
+
+codex
+我会同步静态初始标记，并让演示脚本用同一个默认 view 初始化。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\ui\workspace.html
+diff --git a/ui/workspace.html b/ui/workspace.html
+index 897d3eaeb4864efaa37eb95b2e05164dfeff9c8e..70d896c864115aecddb2930be8ab5d93c9513a79
+--- a/ui/workspace.html
++++ b/ui/workspace.html
+@@ -484,10 +484,10 @@
+         </div>
+ 
+         <div class="nav-group-label">工作区</div>
+-        <button class="nav-item active" data-view="overview">
++        <button class="nav-item" data-view="overview">
+           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-overview"></use></svg></span> 概览
+         </button>
+-        <button class="nav-item" data-view="requirement">
++        <button class="nav-item active" data-view="requirement">
+           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
+           <span class="nav-badge">4</span>
+         </button>
+@@ -520,8 +520,8 @@
+       <div class="main">
+         <header class="topbar">
+           <div class="topbar-title">
+-            <h1 id="viewTitle">概览</h1>
+-            <p id="viewSubtitle">循环状态、阶段流水线与各模块一览</p>
++            <h1 id="viewTitle">需求模块</h1>
++            <p id="viewSubtitle">收集需求，发送后自动生成计划草稿</p>
+           </div>
+           <div class="topbar-actions">
+             <span class="pill"><span class="led running"></span> running · execute-task</span>
+@@ -531,7 +531,7 @@
+         </header>
+ 
+         <!-- ============ 概览 ============ -->
+-        <section class="view active" id="view-overview">
++        <section class="view" id="view-overview">
+           <div class="stat-grid">
+             <div class="stat" style="--stat-accent:var(--brand-50);--stat-color:var(--brand-600)">
+               <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></div><div class="stat-value">4</div>
+@@ -592,7 +592,7 @@
+         </section>
+ 
+         <!-- ============ 需求 ============ -->
+-        <section class="view" id="view-requirement">
++        <section class="view active" id="view-requirement">
+           <div class="intake-layout">
+             <div class="stream-list">
+               <div class="stream-card">
+@@ -771,16 +771,20 @@
+         tasks:      ['任务与计划', '循环控制、计划草稿、Plan 与任务进度'],
+         events:     ['事件流',     '循环运行日志与任务执行记录'],
+       };
++      const defaultView = 'requirement';
++      const activateView = (view) => {
++        document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
++        document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + view));
++        const [t, s] = titles[view] || ['', ''];
++        document.getElementById('viewTitle').textContent = t;
++        document.getElementById('viewSubtitle').textContent = s;
++      };
+       document.querySelectorAll('.nav-item').forEach((btn) => {
+         btn.addEventListener('click', () => {
+-          const v = btn.dataset.view;
+-          document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b === btn));
+-          document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
+-          const [t, s] = titles[v] || ['', ''];
+-          document.getElementById('viewTitle').textContent = t;
+-          document.getElementById('viewSubtitle').textContent = s;
++          activateView(btn.dataset.view);
+         });
+       });
++      activateView(defaultView);
+       document.querySelectorAll('.composer textarea').forEach((ta) => {
+         const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
+         ta.addEventListener('input', grow); grow();
+
+diff --git a/ui/workspace.html b/ui/workspace.html
+index 897d3eaeb4864efaa37eb95b2e05164dfeff9c8e..70d896c864115aecddb2930be8ab5d93c9513a79
+--- a/ui/workspace.html
++++ b/ui/workspace.html
+@@ -484,10 +484,10 @@
+         </div>
+ 
+         <div class="nav-group-label">工作区</div>
+-        <button class="nav-item active" data-view="overview">
++        <button class="nav-item" data-view="overview">
+           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-overview"></use></svg></span> 概览
+         </button>
+-        <button class="nav-item" data-view="requirement">
++        <button class="nav-item active" data-view="requirement">
+           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
+           <span class="nav-badge">4</span>
+         </button>
+@@ -520,8 +520,8 @@
+       <div class="main">
+         <header class="topbar">
+           <div class="topbar-title">
+-            <h1 id="viewTitle">概览</h1>
+-            <p id="viewSubtitle">循环状态、阶段流水线与各模块一览</p>
++            <h1 id="viewTitle">需求模块</h1>
++            <p id="viewSubtitle">收集需求，发送后自动生成计划草稿</p>
+           </div>
+           <div class="topbar-actions">
+             <span class="pill"><span class="led running"></span> running · execute-task</span>
+@@ -531,7 +531,7 @@
+         </header>
+ 
+         <!-- ============ 概览 ============ -->
+-        <section class="view active" id="view-overview">
++        <section class="view" id="view-overview">
+           <div class="stat-grid">
+             <div class="stat" style="--stat-accent:var(--brand-50);--stat-color:var(--brand-600)">
+               <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></div><div class="stat-value">4</div>
+@@ -592,7 +592,7 @@
+         </section>
+ 
+         <!-- ============ 需求 ============ -->
+-        <section class="view" id="view-requirement">
++        <section class="view active" id="view-requirement">
+           <div class="intake-layout">
+             <div class="stream-list">
+               <div class="stream-card">
+@@ -771,16 +771,20 @@
+         tasks:      ['任务与计划', '循环控制、计划草稿、Plan 与任务进度'],
+         events:     ['事件流',     '循环运行日志与任务执行记录'],
+       };
++      const defaultView = 'requirement';
++      const activateView = (view) => {
++        document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
++        document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + view));
++        const [t, s] = titles[view] || ['', ''];
++        document.getElementById('viewTitle').textContent = t;
++        document.getElementById('viewSubtitle').textContent = s;
++      };
+       document.querySelectorAll('.nav-item').forEach((btn) => {
+         btn.addEventListener('click', () => {
+-          const v = btn.dataset.view;
+-          document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b === btn));
+-          document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
+-          const [t, s] = titles[v] || ['', ''];
+-          document.getElementById('viewTitle').textContent = t;
+-          document.getElementById('viewSubtitle').textContent = s;
++          activateView(btn.dataset.view);
+         });
+       });
++      activateView(defaultView);
+       document.querySelectorAll('.composer textarea').forEach((ta) => {
+         const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
+         ta.addEventListener('input', grow); grow();
+
+**Checking snippets**
+
+I need to check some snippets, but I’m wondering if I really need any tests. Maybe I can just use Select-String to help filter through them. It seems like a straightforward option, but I want to ensure it produces the right results without going down unnecessary paths. I’ll take it step by step, so I’m not overwhelmed and can focus on what’s really important for this task!
+codex
+静态默认态已改完；我会快速检查相关标记和脚本片段，不运行验证命令。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Select-String -Path '"'ui\\workspace.html' -Pattern 'nav-item active|viewTitle|viewSubtitle|view-overview|view-requirement|defaultView|activateView' -Context 0,1" in D:\project\GitHub\autoplan
+ succeeded in 517ms:
+
+> ui\workspace.html:490:        <button class="nav-item active" data-view="requirement">
+  ui\workspace.html:491:          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use hre
+f="#icon-target"></use></svg></span> 需求
+> ui\workspace.html:523:            <h1 id="viewTitle">需求模块</h1>
+> ui\workspace.html:524:            <p id="viewSubtitle">收集需求，发送后自动生成计划草稿</p>
+  ui\workspace.html:525:          </div>
+> ui\workspace.html:534:        <section class="view" id="view-overview">
+  ui\workspace.html:535:          <div class="stat-grid">
+> ui\workspace.html:595:        <section class="view active" id="view-requirement">
+  ui\workspace.html:596:          <div class="intake-layout">
+> ui\workspace.html:774:      const defaultView = 'requirement';
+> ui\workspace.html:775:      const activateView = (view) => {
+  ui\workspace.html:776:        document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.da
+taset.view === view));
+> ui\workspace.html:779:        document.getElementById('viewTitle').textContent = t;
+> ui\workspace.html:780:        document.getElementById('viewSubtitle').textContent = s;
+  ui\workspace.html:781:      };
+> ui\workspace.html:784:          activateView(btn.dataset.view);
+  ui\workspace.html:785:        });
+> ui\workspace.html:787:      activateView(defaultView);
+  ui\workspace.html:788:      document.querySelectorAll('.composer textarea').forEach((ta) => {
+
+
+
+diff --git a/ui/workspace.html b/ui/workspace.html
+index 897d3eaeb4864efaa37eb95b2e05164dfeff9c8e..70d896c864115aecddb2930be8ab5d93c9513a79
+--- a/ui/workspace.html
++++ b/ui/workspace.html
+@@ -484,10 +484,10 @@
+         </div>
+ 
+         <div class="nav-group-label">工作区</div>
+-        <button class="nav-item active" data-view="overview">
++        <button class="nav-item" data-view="overview">
+           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-overview"></use></svg></span> 概览
+         </button>
+-        <button class="nav-item" data-view="requirement">
++        <button class="nav-item active" data-view="requirement">
+           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
+           <span class="nav-badge">4</span>
+         </button>
+@@ -520,8 +520,8 @@
+       <div class="main">
+         <header class="topbar">
+           <div class="topbar-title">
+-            <h1 id="viewTitle">概览</h1>
+-            <p id="viewSubtitle">循环状态、阶段流水线与各模块一览</p>
++            <h1 id="viewTitle">需求模块</h1>
++            <p id="viewSubtitle">收集需求，发送后自动生成计划草稿</p>
+           </div>
+           <div class="topbar-actions">
+             <span class="pill"><span class="led running"></span> running · execute-task</span>
+@@ -531,7 +531,7 @@
+         </header>
+ 
+         <!-- ============ 概览 ============ -->
+-        <section class="view active" id="view-overview">
++        <section class="view" id="view-overview">
+           <div class="stat-grid">
+             <div class="stat" style="--stat-accent:var(--brand-50);--stat-color:var(--brand-600)">
+               <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></div><div class="stat-value">4</div>
+@@ -592,7 +592,7 @@
+         </section>
+ 
+         <!-- ============ 需求 ============ -->
+-        <section class="view" id="view-requirement">
++        <section class="view active" id="view-requirement">
+           <div class="intake-layout">
+             <div class="stream-list">
+               <div class="stream-card">
+@@ -771,16 +771,20 @@
+         tasks:      ['任务与计划', '循环控制、计划草稿、Plan 与任务进度'],
+         events:     ['事件流',     '循环运行日志与任务执行记录'],
+       };
++      const defaultView = 'requirement';
++      const activateView = (view) => {
++        document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
++        document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + view));
++        const [t, s] = titles[view] || ['', ''];
++        document.getElementById('viewTitle').textContent = t;
++        document.getElementById('viewSubtitle').textContent = s;
++      };
+       document.querySelectorAll('.nav-item').forEach((btn) => {
+         btn.addEventListener('click', () => {
+-          const v = btn.dataset.view;
+-          document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b === btn));
+-          document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
+-          const [t, s] = titles[v] || ['', ''];
+-          document.getElementById('viewTitle').textContent = t;
+-          document.getElementById('viewSubtitle').textContent = s;
++          activateView(btn.dataset.view);
+         });
+       });
++      activateView(defaultView);
+       document.querySelectorAll('.composer textarea').forEach((ta) => {
+         const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
+         ta.addEventListener('input', grow); grow();
+
+**Reviewing code status**
+
+I need to check if line 487 in the overview navigation isn’t active. It’s possible I should include final details regarding this. I’m wondering if I need to include the git status, though untracked files might not be relevant in this context. I want to keep everything concise, especially since no tests are needed. I'll also make a note that the plan remains untouched for clarity.
+codex
+已完成 P004，仅修改 `ui/workspace.html`。
+
+- `ui/workspace.html:490` 默认高亮改为“需求”导航项。
+- `ui/workspace.html:523` 和 `ui/workspace.html:524` 顶部标题/说明改为需求模块文案。
+- `ui/workspace.html:534` 概览视图默认不再 active。
+- `ui/workspace.html:595` 需求视图默认 active。
+- `ui/workspace.html:774` 起新增 `defaultView = 'requirement'` 和统一 `activateView` 初始化，点击其它导航仍沿用原切换行为。
+
+未修改 plan 文件，未勾选 checkbox，未运行测试/构建/lint。
+已完成 P004，仅修改 `ui/workspace.html`。
+
+- `ui/workspace.html:490` 默认高亮改为“需求”导航项。
+- `ui/workspace.html:523` 和 `ui/workspace.html:524` 顶部标题/说明改为需求模块文案。
+- `ui/workspace.html:534` 概览视图默认不再 active。
+- `ui/workspace.html:595` 需求视图默认 active。
+- `ui/workspace.html:774` 起新增 `defaultView = 'requirement'` 和统一 `activateView` 初始化，点击其它导航仍沿用原切换行为。
+
+未修改 plan 文件，未勾选 checkbox，未运行测试/构建/lint。
+diff --git a/ui/workspace.html b/ui/workspace.html
+index 897d3eaeb4864efaa37eb95b2e05164dfeff9c8e..70d896c864115aecddb2930be8ab5d93c9513a79
+--- a/ui/workspace.html
++++ b/ui/workspace.html
+@@ -484,10 +484,10 @@
+         </div>
+ 
+         <div class="nav-group-label">工作区</div>
+-        <button class="nav-item active" data-view="overview">
++        <button class="nav-item" data-view="overview">
+           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-overview"></use></svg></span> 概览
+         </button>
+-        <button class="nav-item" data-view="requirement">
++        <button class="nav-item active" data-view="requirement">
+           <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
+           <span class="nav-badge">4</span>
+         </button>
+@@ -520,8 +520,8 @@
+       <div class="main">
+         <header class="topbar">
+           <div class="topbar-title">
+-            <h1 id="viewTitle">概览</h1>
+-            <p id="viewSubtitle">循环状态、阶段流水线与各模块一览</p>
++            <h1 id="viewTitle">需求模块</h1>
++            <p id="viewSubtitle">收集需求，发送后自动生成计划草稿</p>
+           </div>
+           <div class="topbar-actions">
+             <span class="pill"><span class="led running"></span> running · execute-task</span>
+@@ -531,7 +531,7 @@
+         </header>
+ 
+         <!-- ============ 概览 ============ -->
+-        <section class="view active" id="view-overview">
++        <section class="view" id="view-overview">
+           <div class="stat-grid">
+             <div class="stat" style="--stat-accent:var(--brand-50);--stat-color:var(--brand-600)">
+               <div class="stat-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></div><div class="stat-value">4</div>
+@@ -592,7 +592,7 @@
+         </section>
+ 
+         <!-- ============ 需求 ============ -->
+-        <section class="view" id="view-requirement">
++        <section class="view active" id="view-requirement">
+           <div class="intake-layout">
+             <div class="stream-list">
+               <div class="stream-card">
+@@ -771,16 +771,20 @@
+         tasks:      ['任务与计划', '循环控制、计划草稿、Plan 与任务进度'],
+         events:     ['事件流',     '循环运行日志与任务执行记录'],
+       };
++      const defaultView = 'requirement';
++      const activateView = (view) => {
++        document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
++        document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + view));
++        const [t, s] = titles[view] || ['', ''];
++        document.getElementById('viewTitle').textContent = t;
++        document.getElementById('viewSubtitle').textContent = s;
++      };
+       document.querySelectorAll('.nav-item').forEach((btn) => {
+         btn.addEventListener('click', () => {
+-          const v = btn.dataset.view;
+-          document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b === btn));
+-          document.querySelectorAll('.view').forEach((s) => s.classList.toggle('active', s.id === 'view-' + v));
+-          const [t, s] = titles[v] || ['', ''];
+-          document.getElementById('viewTitle').textContent = t;
+-          document.getElementById('viewSubtitle').textContent = s;
++          activateView(btn.dataset.view);
+         });
+       });
++      activateView(defaultView);
+       document.querySelectorAll('.composer textarea').forEach((ta) => {
+         const grow = () => { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 180) + 'px'; };
+         ta.addEventListener('input', grow); grow();
+
+tokens used
+173,980

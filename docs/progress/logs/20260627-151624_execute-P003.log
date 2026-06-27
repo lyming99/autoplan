@@ -1,0 +1,2586 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f076d-511c-7ce2-919b-652c2692c336
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_30_20260627-125155.md
+指定任务：
+- [ ] P003: 拆分计划解析、快照与并发分析工具 <!-- scope: src/loopService.js,src/loop/planParser.js,src/loop/snapshots.js,src/loop/concurrency.js,src/loop/workspaceFiles.js -->
+任务 scope：src/loopservice.js, src/loop/planparser.js, src/loop/snapshots.js, src/loop/concurrency.js, src/loop/workspacefiles.js
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用前两步拆分方式，继续只处理 P003 的解析/快照/并发/文件工具范围。
+  → 定位 P003 函数边界
+  • 抽出计划解析模块
+  • 抽出快照映射模块
+  • 抽出并发与文件工具
+  • 确认范围不验收
+codex
+先做只读符号扫描，复用现有上下文不重新梳理全仓。
+exec
+powershell.exe -Command '$patterns='"'appendTask\\(|syncPlanTasks\\(|snapshot\\(|emptySnapshot|eventSnapshotRow|parseEventMeta|planSnapshotRow|groupPlanTasksByPlanId|readPlanMarkdownTitle|resolveWorkspaceChildPath|taskSnapshotRow|ensureWorkspaceDirs|scanDirectory|saveScan|workspaceToolEnv|hashFile|hashText|normalizeRelative|workspaceKey|planConcurrencySuggestion|taskConcurrencyAnalysis|normalizeConfirmedTaskBatches|taskParallelScopes|ensureTaskScopeComment|normalizePlanTaskScopes|insertTaskLineBeforeTask'; Select-String -Path src/loopService.js -Pattern "'$patterns | ForEach-Object { '"'{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 468ms:
+D:\project\GitHub\autoplan\src\loopService.js:234: return findActiveRuntimeProject(this.runtimes, workspace, projectId, (id) => this.project(id), workspaceKey);
+D:\project\GitHub\autoplan\src\loopService.js:291: this.ensureWorkspaceDirs(workspace);
+D:\project\GitHub\autoplan\src\loopService.js:322: const planScan = this.scanDirectory(path.join(workspace, 'docs', 'plan'), workspace, ['.md']);
+D:\project\GitHub\autoplan\src\loopService.js:323: this.saveScan(projectId, 'plan', planScan);
+D:\project\GitHub\autoplan\src\loopService.js:434: const batches = normalizeConfirmedTaskBatches(confirmedBatches);
+D:\project\GitHub\autoplan\src\loopService.js:454: const analysis = taskConcurrencyAnalysis(workspace, task);
+D:\project\GitHub\autoplan\src\loopService.js:616: appendTask(projectId, planId, title) {
+D:\project\GitHub\autoplan\src\loopService.js:639: const line = ensureTaskScopeComment(`- [ ] ${taskKey}: ${cleanTitle}`);
+D:\project\GitHub\autoplan\src\loopService.js:648: content = insertTaskLineBeforeTask(content, lastTask, line);
+D:\project\GitHub\autoplan\src\loopService.js:659: this.syncPlanTasks(planId, planFile);
+D:\project\GitHub\autoplan\src\loopService.js:681: ensureWorkspaceDirs(workspace) {
+D:\project\GitHub\autoplan\src\loopService.js:687: scanDirectory(root, workspace, extensions) {
+D:\project\GitHub\autoplan\src\loopService.js:688: if (!fs.existsSync(root)) return { root, aggregateHash: hashText(''), files: [] };
+D:\project\GitHub\autoplan\src\loopService.js:698: path: normalizeRelative(workspace, full),
+D:\project\GitHub\autoplan\src\loopService.js:699: hash: hashFile(full),
+D:\project\GitHub\autoplan\src\loopService.js:710: aggregateHash: hashText(files.map((file) => `${file.path}|${file.hash}|${file.size}`).join('\n')),
+D:\project\GitHub\autoplan\src\loopService.js:715: saveScan(projectId, type, scan) {
+D:\project\GitHub\autoplan\src\loopService.js:780: const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+D:\project\GitHub\autoplan\src\loopService.js:781: const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+D:\project\GitHub\autoplan\src\loopService.js:793: planAgentCliEventSnapshot(projectId, planId) {
+D:\project\GitHub\autoplan\src\loopService.js:802: const meta = parseEventMeta(row.meta);
+D:\project\GitHub\autoplan\src\loopService.js:809: planSourceAgentCliSnapshot(projectId, planId) {
+D:\project\GitHub\autoplan\src\loopService.js:881: syncPlanTasks(planId, planFile) {
+D:\project\GitHub\autoplan\src\loopService.js:883: normalizePlanTaskScopes(planFile);
+D:\project\GitHub\autoplan\src\loopService.js:897: rawLine: ensureTaskScopeComment(match[0]),
+D:\project\GitHub\autoplan\src\loopService.js:956: [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+D:\project\GitHub\autoplan\src\loopService.js:972: this.addEvent(operation.projectId, 'plan.guard.restored', `${agentCliProviderDisplayName(result.agentCliProvider)} 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+D:\project\GitHub\autoplan\src\loopService.js:1094: env: workspaceToolEnv(workspace),
+D:\project\GitHub\autoplan\src\loopService.js:1184: env: workspaceToolEnv(workspace),
+D:\project\GitHub\autoplan\src\loopService.js:1260: this.emit('update', this.snapshot(projectId));
+D:\project\GitHub\autoplan\src\loopService.js:1263: snapshot(projectId = null) {
+D:\project\GitHub\autoplan\src\loopService.js:1265: const mcp = mcpStatusSnapshot(this.db);
+D:\project\GitHub\autoplan\src\loopService.js:1266: if (!projectId) return emptySnapshot(projects, mcp);
+D:\project\GitHub\autoplan\src\loopService.js:1269: if (!activeProject) return emptySnapshot(projects, mcp);
+D:\project\GitHub\autoplan\src\loopService.js:1288: const tasksByPlanId = groupPlanTasksByPlanId(taskRows);
+D:\project\GitHub\autoplan\src\loopService.js:1292: planConcurrencySuggestion(activeProject.workspace_path, tasksByPlanId.get(Number(plan.id)) || []),
+D:\project\GitHub\autoplan\src\loopService.js:1295: const planSnapshots = planRows.map((plan) => planSnapshotRow(
+D:\project\GitHub\autoplan\src\loopService.js:1333: .map((task) => taskSnapshotRow(
+D:\project\GitHub\autoplan\src\loopService.js:1343: .map((event) => eventSnapshotRow(event)),
+D:\project\GitHub\autoplan\src\loopService.js:1365: function taskSnapshotRow(workspace, task, operationContext = null) {
+D:\project\GitHub\autoplan\src\loopService.js:1394: function mcpStatusSnapshot(db) {
+D:\project\GitHub\autoplan\src\loopService.js:1409: const eventMeta = parseEventMeta(latestEvent?.meta);
+D:\project\GitHub\autoplan\src\loopService.js:1476: function emptySnapshot(projects, mcp = null) {
+D:\project\GitHub\autoplan\src\loopService.js:1481: mcp: mcp || mcpStatusSnapshot(null),
+D:\project\GitHub\autoplan\src\loopService.js:1496: function eventSnapshotRow(event) {
+D:\project\GitHub\autoplan\src\loopService.js:1500: meta: parseEventMeta(event.meta),
+D:\project\GitHub\autoplan\src\loopService.js:1504: function parseEventMeta(meta) {
+D:\project\GitHub\autoplan\src\loopService.js:1517: function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
+D:\project\GitHub\autoplan\src\loopService.js:1529: title: readPlanMarkdownTitle(workspace, plan.file_path),
+D:\project\GitHub\autoplan\src\loopService.js:1539: function groupPlanTasksByPlanId(tasks) {
+D:\project\GitHub\autoplan\src\loopService.js:1551: function readPlanMarkdownTitle(workspace, filePath) {
+D:\project\GitHub\autoplan\src\loopService.js:1552: const planPath = resolveWorkspaceChildPath(workspace, filePath);
+D:\project\GitHub\autoplan\src\loopService.js:1563: function resolveWorkspaceChildPath(workspace, filePath) {
+D:\project\GitHub\autoplan\src\loopService.js:1593: function workspaceToolEnv(workspace, baseEnv = process.env) {
+D:\project\GitHub\autoplan\src\loopService.js:1620: function hashFile(filePath) {
+D:\project\GitHub\autoplan\src\loopService.js:1624: function hashText(text) {
+D:\project\GitHub\autoplan\src\loopService.js:1746: const fullPath = resolveWorkspaceChildPath(workspace, normalizedPath);
+D:\project\GitHub\autoplan\src\loopService.js:1767: function planConcurrencySuggestion(workspace, tasks) {
+D:\project\GitHub\autoplan\src\loopService.js:1772: const analysis = taskConcurrencyAnalysis(workspace, task);
+D:\project\GitHub\autoplan\src\loopService.js:1823: function taskConcurrencyAnalysis(workspace, task) {
+D:\project\GitHub\autoplan\src\loopService.js:1866: function normalizeConfirmedTaskBatches(value) {
+D:\project\GitHub\autoplan\src\loopService.js:1883: function taskParallelScopes(task) {
+D:\project\GitHub\autoplan\src\loopService.js:1940: function ensureTaskScopeComment(line, fallbackScope = 'unknown') {
+D:\project\GitHub\autoplan\src\loopService.js:1949: function normalizePlanTaskScopes(planFile) {
+D:\project\GitHub\autoplan\src\loopService.js:1955: return ensureTaskScopeComment(line);
+D:\project\GitHub\autoplan\src\loopService.js:1960: function insertTaskLineBeforeTask(content, task, line) {
+D:\project\GitHub\autoplan\src\loopService.js:1970: function normalizeRelative(root, fullPath) {
+D:\project\GitHub\autoplan\src\loopService.js:1978: function workspaceKey(workspace) {
+D:\project\GitHub\autoplan\src\loopService.js:2011: hashFile,
+D:\project\GitHub\autoplan\src\loopService.js:2012: hashText,
+D:\project\GitHub\autoplan\src\loopService.js:2015: normalizeRelative,
+
+codex
+定位到 P003 方法；接下来查看底部纯工具函数以便搬迁。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; function Show($a,$b){'"'--- '+"'$a+'"'-'+"'$b+'"' ---'; for("'$i=$a-1;$i -lt $b -and $i -lt $lines.Count;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }}; Show 616 730; Show 1263 1576; Show 1593 1645; Show 1700 1977;' in D:\project\GitHub\autoplan
+ succeeded in 466ms:
+--- 616-730 ---
+  616:   appendTask(projectId, planId, title) {
+  617:     const project = this.project(projectId);
+  618:     const workspace = project?.workspace_path;
+  619:     const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+  620:     if (!plan) throw new Error('计划不存在');
+  621:     if (!workspace) throw new Error('请先设置项目工作区路径');
+  622: 
+  623:     const planFile = path.join(workspace, plan.file_path);
+  624:     if (!fs.existsSync(planFile)) throw new Error('plan 文件不存在，无法追加任务');
+  625: 
+  626:     const cleanTitle = String(title || '').trim();
+  627:     if (!cleanTitle) throw new Error('任务标题不能为空');
+  628: 
+  629:     // 计算下一个 task_key
+  630:     const existing = this.db.all('SELECT task_key FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order', [planId]);
+  631:     const maxNum = existing.reduce((max, row) => {
+  632:       const m = String(row.task_key || '').match(/P0*(\d+)/i);
+  633:       return m ? Math.max(max, Number(m[1])) : max;
+  634:     }, 0);
+  635:     const taskKey = `P${String(maxNum + 1).padStart(3, '0')}`;
+  636: 
+  637:     // 追加到 plan 文件的"## 任务计划"段末尾
+  638:     let content = fs.readFileSync(planFile, 'utf8');
+  639:     const line = ensureTaskScopeComment(`- [ ] ${taskKey}: ${cleanTitle}`);
+  640:     const taskSectionIdx = content.search(/##\s*任务计划/);
+  641:     const lastTask = this.db.get(
+  642:       'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+  643:       [planId],
+  644:     );
+  645:     if (taskSectionIdx === -1) {
+  646:       content = `${content.trim()}\n\n## 任务计划\n${line}\n`;
+  647:     } else if (isAcceptanceTask(lastTask)) {
+  648:       content = insertTaskLineBeforeTask(content, lastTask, line);
+  649:     } else {
+  650:       content = `${content.trimEnd()}\n${line}\n`;
+  651:     }
+  652:     fs.writeFileSync(planFile, content, 'utf8');
+  653: 
+  654:     // 若 plan 被中断过，恢复为 pending 让新任务可执行
+  655:     if (plan.status === 'interrupted') {
+  656:       this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+  657:     }
+  658:     // 重新解析任务入库
+  659:     this.syncPlanTasks(planId, planFile);
+  660:     const task = this.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);
+  661:     this.addEvent(
+  662:       projectId,
+  663:       'task.appended',
+  664:       `追加 ${taskKey}: ${cleanTitle}`,
+  665:       taskEventMeta(task, {
+  666:         planId,
+  667:         taskKey,
+  668:         taskTitle: cleanTitle,
+  669:         status: TASK_EVENT_STATUS.PENDING,
+  670:       }),
+  671:     );
+  672:     this.emitUpdate(projectId);
+  673: 
+  674:     // 循环在运行则立即拾取
+  675:     if (this.status(projectId)?.running) {
+  676:       this.runOnce(projectId).catch((error) => this.recordError(projectId, error));
+  677:     }
+  678:     return taskKey;
+  679:   }
+  680: 
+  681:   ensureWorkspaceDirs(workspace) {
+  682:     for (const dir of ['docs/issues', 'docs/plan', 'docs/progress', 'docs/progress/logs']) {
+  683:       fs.mkdirSync(path.join(workspace, dir), { recursive: true });
+  684:     }
+  685:   }
+  686: 
+  687:   scanDirectory(root, workspace, extensions) {
+  688:     if (!fs.existsSync(root)) return { root, aggregateHash: hashText(''), files: [] };
+  689:     const files = [];
+  690:     const visit = (dir) => {
+  691:       for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+  692:         const full = path.join(dir, entry.name);
+  693:         if (entry.isDirectory()) {
+  694:           visit(full);
+  695:         } else if (entry.isFile() && extensions.includes(path.extname(entry.name).toLowerCase())) {
+  696:           const stat = fs.statSync(full);
+  697:           files.push({
+  698:             path: normalizeRelative(workspace, full),
+  699:             hash: hashFile(full),
+  700:             size: stat.size,
+  701:             modifiedAt: stat.mtime.toISOString(),
+  702:           });
+  703:         }
+  704:       }
+  705:     };
+  706:     visit(root);
+  707:     files.sort((a, b) => a.path.localeCompare(b.path));
+  708:     return {
+  709:       root,
+  710:       aggregateHash: hashText(files.map((file) => `${file.path}|${file.hash}|${file.size}`).join('\n')),
+  711:       files,
+  712:     };
+  713:   }
+  714: 
+  715:   saveScan(projectId, type, scan) {
+  716:     const scannedAt = nowIso();
+  717:     this.db.run('DELETE FROM scan_files WHERE project_id = ? AND scan_type = ?', [projectId, type]);
+  718:     for (const file of scan.files) {
+  719:       this.db.run(
+  720:         `INSERT OR REPLACE INTO scan_files
+  721:          (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+  722:          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  723:         [projectId, type, file.path, file.hash, file.size, file.modifiedAt, scannedAt],
+  724:       );
+  725:     }
+  726:   }
+  727: 
+  728:   hasPlanForIssueHash(projectId, issueHash) {
+  729:     return Boolean(
+  730:       this.db.get('SELECT id FROM plans WHERE project_id = ? AND issue_hash = ? LIMIT 1', [projectId, issueHash]),
+--- 1263-1576 ---
+ 1263:   snapshot(projectId = null) {
+ 1264:     const projects = this.projects();
+ 1265:     const mcp = mcpStatusSnapshot(this.db);
+ 1266:     if (!projectId) return emptySnapshot(projects, mcp);
+ 1267: 
+ 1268:     const activeProject = this.project(projectId);
+ 1269:     if (!activeProject) return emptySnapshot(projects, mcp);
+ 1270: 
+ 1271:     const state = {
+ 1272:       ...(this.status(projectId) || {}),
+ 1273:       workspace_path: activeProject.workspace_path || '',
+ 1274:     };
+ 1275:     const runtime = this.existingRuntime(projectId);
+ 1276:     const taskOperationContexts = runtimeOperationContextByTask(runtime, projectId);
+ 1277:     const planRows = this.db.all(
+ 1278:       'SELECT * FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
+ 1279:       [projectId],
+ 1280:     );
+ 1281:     const taskRows = this.db.all(
+ 1282:       `SELECT plan_tasks.*, plans.file_path
+ 1283:        FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+ 1284:        WHERE plans.project_id = ?
+ 1285:        ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC, plan_tasks.sort_order ASC, plan_tasks.id ASC`,
+ 1286:       [projectId],
+ 1287:     );
+ 1288:     const tasksByPlanId = groupPlanTasksByPlanId(taskRows);
+ 1289:     const concurrencySuggestionByPlanId = new Map(
+ 1290:       planRows.map((plan) => [
+ 1291:         Number(plan.id),
+ 1292:         planConcurrencySuggestion(activeProject.workspace_path, tasksByPlanId.get(Number(plan.id)) || []),
+ 1293:       ]),
+ 1294:     );
+ 1295:     const planSnapshots = planRows.map((plan) => planSnapshotRow(
+ 1296:       activeProject.workspace_path,
+ 1297:       plan,
+ 1298:       concurrencySuggestionByPlanId.get(Number(plan.id)),
+ 1299:       this.planSnapshotAgentCliConfig(plan),
+ 1300:     ));
+ 1301:     const planTitleById = new Map(planSnapshots.map((plan) => [Number(plan.id), plan.title || '']));
+ 1302: 
+ 1303:     return {
+ 1304:       activeProjectId: projectId,
+ 1305:       activeProject,
+ 1306:       projects,
+ 1307:       mcp,
+ 1308:       state,
+ 1309:       requirements: this.db.all(
+ 1310:         `SELECT requirements.*, plans.status AS plan_status,
+ 1311:                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+ 1312:          FROM requirements
+ 1313:          LEFT JOIN plans ON plans.id = requirements.linked_plan_id
+ 1314:          WHERE requirements.project_id = ?
+ 1315:           ORDER BY requirements.updated_at DESC`,
+ 1316:         [projectId],
+ 1317:       ).map((row) => intakeSnapshotRow(row)),
+ 1318:       feedback: this.db.all(
+ 1319:         `SELECT feedback.*, plans.status AS plan_status,
+ 1320:                 plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+ 1321:          FROM feedback
+ 1322:          LEFT JOIN plans ON plans.id = feedback.linked_plan_id
+ 1323:          WHERE feedback.project_id = ?
+ 1324:           ORDER BY feedback.updated_at DESC`,
+ 1325:         [projectId],
+ 1326:       ).map((row) => intakeSnapshotRow(row)),
+ 1327:       attachments: this.db.all(
+ 1328:         'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
+ 1329:         [projectId],
+ 1330:       ),
+ 1331:       plans: planSnapshots,
+ 1332:       tasks: taskRows
+ 1333:         .map((task) => taskSnapshotRow(
+ 1334:           activeProject.workspace_path,
+ 1335:           {
+ 1336:             ...task,
+ 1337:             plan_title: planTitleById.get(Number(task.plan_id)) || '',
+ 1338:           },
+ 1339:           taskOperationContexts.get(Number(task.id)),
+ 1340:         )),
+ 1341:       events: this.db
+ 1342:         .all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId])
+ 1343:         .map((event) => eventSnapshotRow(event)),
+ 1344:       scans: this.db.all(
+ 1345:         'SELECT * FROM scan_files WHERE project_id = ? ORDER BY scanned_at DESC, file_path ASC',
+ 1346:         [projectId],
+ 1347:       ),
+ 1348:       activeOperation:
+ 1349:         runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
+ 1350:           ? operationSnapshotRow(runtime.activeOperation)
+ 1351:           : null,
+ 1352:       activeOperations: runtime?.activeOperations
+ 1353:         ? Array.from(runtime.activeOperations.values())
+ 1354:             .filter((operation) => Number(operation.projectId) === Number(projectId))
+ 1355:             .map((operation) => operationSnapshotRow(operation))
+ 1356:         : [],
+ 1357:       lastOperation:
+ 1358:         runtime?.lastOperation && Number(runtime.lastOperation.projectId) === Number(projectId)
+ 1359:           ? runtime.lastOperation
+ 1360:           : null,
+ 1361:     };
+ 1362:   }
+ 1363: }
+ 1364: 
+ 1365: function taskSnapshotRow(workspace, task, operationContext = null) {
+ 1366:   if (!task) return task;
+ 1367:   const startedAt = normalizeOptionalString(task.started_at) || null;
+ 1368:   const finishedAt = normalizeOptionalString(task.finished_at) || null;
+ 1369:   const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+ 1370:   const runDurationMs = isRunning ? taskRunDurationMs(startedAt, nowIso()) : undefined;
+ 1371:   const agentContext = agentCliContextFields(operationContext || {}, { defaultProvider: false });
+ 1372:   const providerForSession = agentContext.agentCliProvider || (task.codex_session_id ? DEFAULT_AGENT_CLI_PROVIDER : undefined);
+ 1373:   const sessionContext = providerForSession !== DEFAULT_AGENT_CLI_PROVIDER
+ 1374:     ? {}
+ 1375:     : codexSessionContextFields({
+ 1376:         codexSessionId: operationContext?.codexSessionId ?? task.codex_session_id,
+ 1377:         codexSessionRequestedId: operationContext?.codexSessionRequestedId,
+ 1378:         codexSessionMode: operationContext?.codexSessionMode,
+ 1379:         codexSessionState: operationContext?.codexSessionState,
+ 1380:         codexSessionFallback: operationContext?.codexSessionFallback,
+ 1381:       });
+ 1382:   return {
+ 1383:     ...task,
+ 1384:     scope_files: taskScopeFileInfos(workspace, task),
+ 1385:     started_at: startedAt,
+ 1386:     finished_at: finishedAt,
+ 1387:     duration_ms: normalizeDurationMs(task.duration_ms),
+ 1388:     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+ 1389:     ...agentContext,
+ 1390:     ...sessionContext,
+ 1391:   };
+ 1392: }
+ 1393: 
+ 1394: function mcpStatusSnapshot(db) {
+ 1395:   const settings = db?.getSettings ? db.getSettings('mcp.') : {};
+ 1396:   const enabled = normalizeMcpBoolean(process.env.AUTOPLAN_MCP_ENABLED ?? settings['mcp.enabled'], MCP_DEFAULT_CONFIG.enabled);
+ 1397:   const transport = normalizeMcpTransport(process.env.AUTOPLAN_MCP_TRANSPORT ?? settings['mcp.transport']);
+ 1398:   const host = normalizeMcpHost(process.env.AUTOPLAN_MCP_HOST ?? settings['mcp.host']);
+ 1399:   const port = normalizeMcpPort(process.env.AUTOPLAN_MCP_PORT ?? settings['mcp.port']);
+ 1400:   const mcpPath = normalizeMcpPath(process.env.AUTOPLAN_MCP_PATH ?? settings['mcp.path']);
+ 1401:   const latestEvent = db?.get
+ 1402:     ? db.get(
+ 1403:         `SELECT type, message, meta, created_at
+ 1404:          FROM events
+ 1405:          WHERE type IN ('mcp.started', 'mcp.start.failed')
+ 1406:          ORDER BY id DESC LIMIT 1`,
+ 1407:       )
+ 1408:     : null;
+ 1409:   const eventMeta = parseEventMeta(latestEvent?.meta);
+ 1410:   const eventMcp = eventMeta && typeof eventMeta === 'object' ? eventMeta.mcp : null;
+ 1411:   const url = transport === 'http' ? `http://${host}:${port}${mcpPath}` : null;
+ 1412:   const running = Boolean(enabled && latestEvent?.type === 'mcp.started');
+ 1413:   const lastError = latestEvent?.type === 'mcp.start.failed'
+ 1414:     ? eventMeta?.error || latestEvent.message || eventMcp?.lastError || 'MCP 服务启动失败'
+ 1415:     : null;
+ 1416: 
+ 1417:   return {
+ 1418:     enabled,
+ 1419:     running,
+ 1420:     status: mcpStatusLabel({ enabled, running, lastError }),
+ 1421:     transport,
+ 1422:     host: transport === 'http' ? host : null,
+ 1423:     port: transport === 'http' ? port : null,
+ 1424:     path: transport === 'http' ? mcpPath : null,
+ 1425:     url,
+ 1426:     localOnly: transport !== 'http' || LOCAL_MCP_HOSTS.has(String(host).toLowerCase()),
+ 1427:     tools: MCP_TOOL_NAMES,
+ 1428:     connectionExample: transport === 'http'
+ 1429:       ? `http://${host}:${port}${mcpPath}`
+ 1430:       : 'npm run mcp:stdio',
+ 1431:     note: transport === 'http'
+ 1432:       ? '默认仅监听本机地址，供本机 MCP 客户端连接。'
+ 1433:       : 'stdio 模式由 MCP 客户端启动 AutoPlan MCP 进程。',
+ 1434:     lastEvent: latestEvent ? {
+ 1435:       type: latestEvent.type,
+ 1436:       message: latestEvent.message,
+ 1437:       createdAt: latestEvent.created_at,
+ 1438:     } : null,
+ 1439:     lastError,
+ 1440:   };
+ 1441: }
+ 1442: 
+ 1443: function mcpStatusLabel({ enabled, running, lastError }) {
+ 1444:   if (!enabled) return 'disabled';
+ 1445:   if (lastError) return 'error';
+ 1446:   return running ? 'running' : 'configured';
+ 1447: }
+ 1448: 
+ 1449: function normalizeMcpBoolean(value, fallback) {
+ 1450:   if (value === undefined || value === null || value === '') return Boolean(fallback);
+ 1451:   const normalized = String(value).trim().toLowerCase();
+ 1452:   if (['0', 'false', 'off', 'disabled'].includes(normalized)) return false;
+ 1453:   if (['1', 'true', 'on', 'enabled'].includes(normalized)) return true;
+ 1454:   return Boolean(fallback);
+ 1455: }
+ 1456: 
+ 1457: function normalizeMcpTransport(value) {
+ 1458:   return String(value || MCP_DEFAULT_CONFIG.transport).trim().toLowerCase() === 'stdio' ? 'stdio' : 'http';
+ 1459: }
+ 1460: 
+ 1461: function normalizeMcpHost(value) {
+ 1462:   return String(value || MCP_DEFAULT_CONFIG.host).trim() || MCP_DEFAULT_CONFIG.host;
+ 1463: }
+ 1464: 
+ 1465: function normalizeMcpPort(value) {
+ 1466:   const port = Number(value || MCP_DEFAULT_CONFIG.port);
+ 1467:   return Number.isInteger(port) && port > 0 && port <= 65535 ? port : MCP_DEFAULT_CONFIG.port;
+ 1468: }
+ 1469: 
+ 1470: function normalizeMcpPath(value) {
+ 1471:   const trimmed = String(value || MCP_DEFAULT_CONFIG.path).trim();
+ 1472:   if (!trimmed || trimmed === '/') return MCP_DEFAULT_CONFIG.path;
+ 1473:   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+ 1474: }
+ 1475: 
+ 1476: function emptySnapshot(projects, mcp = null) {
+ 1477:   return {
+ 1478:     activeProjectId: null,
+ 1479:     activeProject: null,
+ 1480:     projects,
+ 1481:     mcp: mcp || mcpStatusSnapshot(null),
+ 1482:     state: null,
+ 1483:     requirements: [],
+ 1484:     feedback: [],
+ 1485:     attachments: [],
+ 1486:     plans: [],
+ 1487:     tasks: [],
+ 1488:     events: [],
+ 1489:     scans: [],
+ 1490:     activeOperation: null,
+ 1491:     activeOperations: [],
+ 1492:     lastOperation: null,
+ 1493:   };
+ 1494: }
+ 1495: 
+ 1496: function eventSnapshotRow(event) {
+ 1497:   if (!event) return event;
+ 1498:   return {
+ 1499:     ...event,
+ 1500:     meta: parseEventMeta(event.meta),
+ 1501:   };
+ 1502: }
+ 1503: 
+ 1504: function parseEventMeta(meta) {
+ 1505:   if (!meta) return null;
+ 1506:   if (typeof meta !== 'string') return meta;
+ 1507:   try {
+ 1508:     const parsed = JSON.parse(meta);
+ 1509:     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+ 1510:     if (typeof parsed === 'string') return parsed;
+ 1511:   } catch {
+ 1512:     return meta;
+ 1513:   }
+ 1514:   return meta;
+ 1515: }
+ 1516: 
+ 1517: function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
+ 1518:   if (!plan) return plan;
+ 1519:   const planAgentCliConfig = agentCliConfig || effectiveAgentCliConfig({}, plan);
+ 1520:   const status = String(plan.status || 'pending');
+ 1521:   return {
+ 1522:     ...plan,
+ 1523:     status,
+ 1524:     sort_order: normalizePlanSortOrder(plan.sort_order),
+ 1525:     is_draft: status === 'draft',
+ 1526:     agent_cli_provider: planAgentCliConfig.provider,
+ 1527:     agent_cli_command: planAgentCliConfig.command,
+ 1528:     codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
+ 1529:     title: readPlanMarkdownTitle(workspace, plan.file_path),
+ 1530:     concurrency_suggestion: concurrencySuggestion || emptyConcurrencySuggestion(),
+ 1531:   };
+ 1532: }
+ 1533: 
+ 1534: function normalizePlanSortOrder(value) {
+ 1535:   const order = Number(value);
+ 1536:   return Number.isFinite(order) ? order : 0;
+ 1537: }
+ 1538: 
+ 1539: function groupPlanTasksByPlanId(tasks) {
+ 1540:   const grouped = new Map();
+ 1541:   for (const task of tasks) {
+ 1542:     const planId = Number(task?.plan_id);
+ 1543:     if (!Number.isFinite(planId)) continue;
+ 1544:     const planTasks = grouped.get(planId) || [];
+ 1545:     planTasks.push(task);
+ 1546:     grouped.set(planId, planTasks);
+ 1547:   }
+ 1548:   return grouped;
+ 1549: }
+ 1550: 
+ 1551: function readPlanMarkdownTitle(workspace, filePath) {
+ 1552:   const planPath = resolveWorkspaceChildPath(workspace, filePath);
+ 1553:   if (!planPath) return '';
+ 1554: 
+ 1555:   try {
+ 1556:     const markdown = readSnippet(planPath, 64 * 1024);
+ 1557:     return extractMarkdownTitle(markdown);
+ 1558:   } catch {
+ 1559:     return '';
+ 1560:   }
+ 1561: }
+ 1562: 
+ 1563: function resolveWorkspaceChildPath(workspace, filePath) {
+ 1564:   const workspaceValue = String(workspace || '').trim();
+ 1565:   const filePathValue = String(filePath || '').trim();
+ 1566:   if (!workspaceValue || !filePathValue) return '';
+ 1567: 
+ 1568:   const workspaceRoot = path.resolve(workspaceValue);
+ 1569:   const requestedPath = path.resolve(workspaceRoot, filePathValue);
+ 1570:   const relativePath = path.relative(workspaceRoot, requestedPath);
+ 1571:   if (relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath))) {
+ 1572:     return requestedPath;
+ 1573:   }
+ 1574:   return '';
+ 1575: }
+ 1576: 
+--- 1593-1645 ---
+ 1593: function workspaceToolEnv(workspace, baseEnv = process.env) {
+ 1594:   const root = path.join(path.resolve(workspace), WORKSPACE_RUNTIME_DIR);
+ 1595:   const dirs = {
+ 1596:     pubCache: path.join(root, 'pub-cache'),
+ 1597:     gradleHome: path.join(root, 'gradle'),
+ 1598:     xdgCache: path.join(root, 'xdg-cache'),
+ 1599:     xdgConfig: path.join(root, 'xdg-config'),
+ 1600:     appData: path.join(root, 'appdata'),
+ 1601:     localAppData: path.join(root, 'localappdata'),
+ 1602:   };
+ 1603:   for (const dir of Object.values(dirs)) fs.mkdirSync(dir, { recursive: true });
+ 1604: 
+ 1605:   const env = {
+ 1606:     ...baseEnv,
+ 1607:     AUTOPLAN_RUNTIME_ROOT: root,
+ 1608:     PUB_CACHE: dirs.pubCache,
+ 1609:     FLUTTER_SUPPRESS_ANALYTICS: 'true',
+ 1610:     CI: baseEnv.CI || 'true',
+ 1611:     GRADLE_USER_HOME: baseEnv.GRADLE_USER_HOME || dirs.gradleHome,
+ 1612:     XDG_CACHE_HOME: baseEnv.XDG_CACHE_HOME || dirs.xdgCache,
+ 1613:     XDG_CONFIG_HOME: baseEnv.XDG_CONFIG_HOME || dirs.xdgConfig,
+ 1614:   };
+ 1615:   if (!env.APPDATA) env.APPDATA = dirs.appData;
+ 1616:   if (!env.LOCALAPPDATA) env.LOCALAPPDATA = dirs.localAppData;
+ 1617:   return env;
+ 1618: }
+ 1619: 
+ 1620: function hashFile(filePath) {
+ 1621:   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+ 1622: }
+ 1623: 
+ 1624: function hashText(text) {
+ 1625:   return crypto.createHash('sha256').update(text).digest('hex');
+ 1626: }
+ 1627: 
+ 1628: function intakeAttachmentOwnerTypes(intakeType) {
+ 1629:   return intakeType === 'feedback' ? ['feedback'] : ['requirement', 'requirements'];
+ 1630: }
+ 1631: 
+ 1632: function describeIntakeAttachment(workspace, attachment, index) {
+ 1633:   const name = attachmentField(attachment, ['original_name', 'originalName', 'name', 'filename', 'file_name']) || `附件 ${index + 1}`;
+ 1634:   const mime = attachmentField(attachment, ['mime', 'mime_type', 'mimeType', 'content_type', 'contentType']) || 'unknown';
+ 1635:   const declaredSize = attachmentField(attachment, ['size', 'file_size', 'fileSize']);
+ 1636:   const hash = attachmentField(attachment, ['sha256', 'hash', 'file_hash', 'fileHash']) || 'unknown';
+ 1637:   const storedPath = attachmentField(attachment, [
+ 1638:     'stored_path',
+ 1639:     'storedPath',
+ 1640:     'persistent_path',
+ 1641:     'persistentPath',
+ 1642:     'file_path',
+ 1643:     'filePath',
+ 1644:     'path',
+ 1645:   ]);
+--- 1700-1977 ---
+ 1700:   }
+ 1701:   return '';
+ 1702: }
+ 1703: 
+ 1704: function resolveAttachmentPath(workspace, storedPath) {
+ 1705:   const value = String(storedPath || '').trim();
+ 1706:   if (!value) return '';
+ 1707:   return path.isAbsolute(value) ? value : path.resolve(workspace, value);
+ 1708: }
+ 1709: 
+ 1710: function formatAttachmentSize(size) {
+ 1711:   return size === undefined || size === null || size === '' ? 'unknown' : `${size} bytes`;
+ 1712: }
+ 1713: 
+ 1714: function isAcceptanceTask(task) {
+ 1715:   if (!task) return false;
+ 1716:   const text = `${task.task_key || task.key || ''} ${task.title || ''} ${task.raw_line || task.rawLine || ''}`;
+ 1717:   return ACCEPTANCE_TASK_RE.test(text);
+ 1718: }
+ 1719: 
+ 1720: function taskScopeFileInfos(workspace, task) {
+ 1721:   const scopes = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+ 1722:   if (!scopes.length) return [taskScopeFileInfo(workspace, 'unknown')];
+ 1723:   return scopes.map((scope) => taskScopeFileInfo(workspace, scope));
+ 1724: }
+ 1725: 
+ 1726: function taskScopeFileInfo(workspace, scope) {
+ 1727:   const normalizedPath = normalizeTaskScope(scope, { keepUnknown: true });
+ 1728:   const special = SPECIAL_TASK_SCOPES.has(normalizedPath) ? normalizedPath : '';
+ 1729:   const result = {
+ 1730:     path: normalizedPath || 'unknown',
+ 1731:     exists: false,
+ 1732:     isDirectory: false,
+ 1733:     canOpen: false,
+ 1734:     isUnknown: special === 'unknown' || !normalizedPath,
+ 1735:     isValidation: special === 'validation',
+ 1736:     reason: '',
+ 1737:   };
+ 1738:   if (result.isUnknown) {
+ 1739:     result.reason = 'scope unknown，无法安全判断影响范围';
+ 1740:     return result;
+ 1741:   }
+ 1742:   if (result.isValidation) {
+ 1743:     result.reason = 'validation 任务需串行验收，不建议并发';
+ 1744:     return result;
+ 1745:   }
+ 1746:   const fullPath = resolveWorkspaceChildPath(workspace, normalizedPath);
+ 1747:   if (!fullPath) {
+ 1748:     result.reason = '路径不在工作区内，不能打开';
+ 1749:     return result;
+ 1750:   }
+ 1751:   try {
+ 1752:     const stat = fs.existsSync(fullPath) ? fs.statSync(fullPath) : null;
+ 1753:     result.exists = Boolean(stat);
+ 1754:     result.isDirectory = Boolean(stat?.isDirectory());
+ 1755:     result.canOpen = Boolean(stat?.isFile());
+ 1756:     result.reason = result.canOpen
+ 1757:       ? ''
+ 1758:       : result.isDirectory
+ 1759:         ? 'scope 指向目录，不能作为文件打开'
+ 1760:         : '文件不存在，后续任务可能会创建';
+ 1761:   } catch (error) {
+ 1762:     result.reason = error?.message || '无法读取文件状态';
+ 1763:   }
+ 1764:   return result;
+ 1765: }
+ 1766: 
+ 1767: function planConcurrencySuggestion(workspace, tasks) {
+ 1768:   const candidates = [];
+ 1769:   const serialTasks = [];
+ 1770:   for (const task of tasks) {
+ 1771:     if (task.status !== TASK_EVENT_STATUS.PENDING) continue;
+ 1772:     const analysis = taskConcurrencyAnalysis(workspace, task);
+ 1773:     if (analysis.canRunInParallel) {
+ 1774:       candidates.push({ task, analysis });
+ 1775:     } else {
+ 1776:       serialTasks.push(concurrencyTaskSummary(task, analysis.reason, analysis.scopes));
+ 1777:     }
+ 1778:   }
+ 1779: 
+ 1780:   const batches = [];
+ 1781:   for (const entry of candidates) {
+ 1782:     let placed = false;
+ 1783:     for (const batch of batches) {
+ 1784:       if (batch.tasks.length >= MAX_PARALLEL_TASKS) continue;
+ 1785:       if (entry.analysis.scopes.some((scope) => batch.scopeSet.has(scope))) continue;
+ 1786:       batch.tasks.push(concurrencyTaskSummary(entry.task, 'scope 无交集，可与本批任务并发', entry.analysis.scopes));
+ 1787:       for (const scope of entry.analysis.scopes) batch.scopeSet.add(scope);
+ 1788:       placed = true;
+ 1789:       break;
+ 1790:     }
+ 1791:     if (!placed) {
+ 1792:       batches.push({
+ 1793:         reason: '批次内任务 scope 互不重叠，可安全并发',
+ 1794:         scopeSet: new Set(entry.analysis.scopes),
+ 1795:         tasks: [concurrencyTaskSummary(entry.task, 'scope 无交集，可与本批任务并发', entry.analysis.scopes)],
+ 1796:       });
+ 1797:     }
+ 1798:   }
+ 1799: 
+ 1800:   const safeBatches = batches
+ 1801:     .filter((batch) => batch.tasks.length > 1)
+ 1802:     .map((batch, index) => ({
+ 1803:       batch: index + 1,
+ 1804:       reason: batch.reason,
+ 1805:       tasks: batch.tasks,
+ 1806:     }));
+ 1807:   const singleCandidateTasks = batches
+ 1808:     .filter((batch) => batch.tasks.length <= 1)
+ 1809:     .flatMap((batch) => batch.tasks)
+ 1810:     .map((task) => ({ ...task, reason: '没有可配对的无冲突任务，建议串行执行' }));
+ 1811: 
+ 1812:   return {
+ 1813:     hasSafeParallelBatches: safeBatches.length > 0,
+ 1814:     parallelTaskCount: safeBatches.reduce((sum, batch) => sum + batch.tasks.length, 0),
+ 1815:     batchCount: safeBatches.length,
+ 1816:     serialTaskCount: serialTasks.length + singleCandidateTasks.length,
+ 1817:     maxParallelTasks: MAX_PARALLEL_TASKS,
+ 1818:     batches: safeBatches,
+ 1819:     serialTasks: [...serialTasks, ...singleCandidateTasks],
+ 1820:   };
+ 1821: }
+ 1822: 
+ 1823: function taskConcurrencyAnalysis(workspace, task) {
+ 1824:   const scopeFiles = taskScopeFileInfos(workspace, task);
+ 1825:   const scopes = scopeFiles
+ 1826:     .filter((file) => !file.isUnknown && !file.isValidation)
+ 1827:     .map((file) => file.path);
+ 1828:   if (isAcceptanceTask(task) || scopeFiles.some((file) => file.isValidation)) {
+ 1829:     return { canRunInParallel: false, scopes, reason: 'validation/验收任务必须串行执行' };
+ 1830:   }
+ 1831:   if (scopeFiles.some((file) => file.isUnknown)) {
+ 1832:     return { canRunInParallel: false, scopes, reason: 'scope unknown，无法判断冲突' };
+ 1833:   }
+ 1834:   if (!scopes.length) {
+ 1835:     return { canRunInParallel: false, scopes, reason: 'scope 为空或无法解析，无法判断冲突' };
+ 1836:   }
+ 1837:   if (PARALLEL_BLOCKING_TASK_RE.test(`${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`)) {
+ 1838:     return { canRunInParallel: false, scopes, reason: '任务标题包含测试/验收/发布等串行关键词' };
+ 1839:   }
+ 1840:   return { canRunInParallel: true, scopes, reason: 'scope 明确且可用于冲突检测' };
+ 1841: }
+ 1842: 
+ 1843: function concurrencyTaskSummary(task, reason, scopes = []) {
+ 1844:   return {
+ 1845:     id: task.id,
+ 1846:     task_key: task.task_key,
+ 1847:     title: task.title,
+ 1848:     status: task.status,
+ 1849:     scopes: Array.from(new Set(scopes)),
+ 1850:     reason,
+ 1851:   };
+ 1852: }
+ 1853: 
+ 1854: function emptyConcurrencySuggestion() {
+ 1855:   return {
+ 1856:     hasSafeParallelBatches: false,
+ 1857:     parallelTaskCount: 0,
+ 1858:     batchCount: 0,
+ 1859:     serialTaskCount: 0,
+ 1860:     maxParallelTasks: MAX_PARALLEL_TASKS,
+ 1861:     batches: [],
+ 1862:     serialTasks: [],
+ 1863:   };
+ 1864: }
+ 1865: 
+ 1866: function normalizeConfirmedTaskBatches(value) {
+ 1867:   if (!Array.isArray(value)) return [];
+ 1868:   const batches = [];
+ 1869:   for (const batch of value) {
+ 1870:     const rawTaskIds = Array.isArray(batch)
+ 1871:       ? batch
+ 1872:       : Array.isArray(batch?.taskIds)
+ 1873:         ? batch.taskIds
+ 1874:         : Array.isArray(batch?.tasks)
+ 1875:           ? batch.tasks.map((task) => task?.id ?? task)
+ 1876:           : [];
+ 1877:     const taskIds = Array.from(new Set(rawTaskIds.map((taskId) => Number(taskId)).filter(Boolean)));
+ 1878:     if (taskIds.length) batches.push(taskIds);
+ 1879:   }
+ 1880:   return batches;
+ 1881: }
+ 1882: 
+ 1883: function taskParallelScopes(task) {
+ 1884:   const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+ 1885:   if (PARALLEL_BLOCKING_TASK_RE.test(raw)) return [];
+ 1886:   return taskDeclaredScopes(task, { keepUnknown: false });
+ 1887: }
+ 1888: 
+ 1889: function taskScopeText(task) {
+ 1890:   const explicit = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+ 1891:   if (explicit.length) return explicit.join(', ');
+ 1892:   const inferred = taskDeclaredScopes(task, { keepUnknown: false });
+ 1893:   return inferred.join(', ') || 'unknown';
+ 1894: }
+ 1895: 
+ 1896: function taskDeclaredScopes(task, options = {}) {
+ 1897:   const { keepUnknown = false, includePathFallback = true } = options;
+ 1898:   const raw = `${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`;
+ 1899:   const scopes = new Set();
+ 1900: 
+ 1901:   addScopeParts(scopes, String(task.scope || '').split(TASK_SCOPE_SPLIT_RE), { keepUnknown });
+ 1902:   addScopeParts(scopes, explicitTaskScopeParts(raw), { keepUnknown });
+ 1903: 
+ 1904:   if (includePathFallback) {
+ 1905:     for (const match of raw.matchAll(TASK_PATH_RE)) {
+ 1906:       const scope = normalizeTaskScope(match[0], { keepUnknown });
+ 1907:       if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) {
+ 1908:         scopes.add(scope);
+ 1909:       }
+ 1910:     }
+ 1911:   }
+ 1912: 
+ 1913:   return Array.from(scopes);
+ 1914: }
+ 1915: 
+ 1916: function explicitTaskScopeParts(raw) {
+ 1917:   const explicit = String(raw || '').match(TASK_SCOPE_RE);
+ 1918:   return explicit?.[1] ? explicit[1].split(TASK_SCOPE_SPLIT_RE) : [];
+ 1919: }
+ 1920: 
+ 1921: function addScopeParts(scopes, parts, options = {}) {
+ 1922:   for (const part of parts) {
+ 1923:     const scope = normalizeTaskScope(part, options);
+ 1924:     if (scope) scopes.add(scope);
+ 1925:   }
+ 1926: }
+ 1927: 
+ 1928: function normalizeTaskScope(value, options = {}) {
+ 1929:   const scope = String(value || '')
+ 1930:     .trim()
+ 1931:     .replace(/^["'`[{(]+|["'`\]})]+$/g, '')
+ 1932:     .replace(/\s*--$/, '')
+ 1933:     .replaceAll('\\', '/')
+ 1934:     .toLowerCase();
+ 1935:   if (!scope || scope === '-') return '';
+ 1936:   if (scope === 'unknown') return options.keepUnknown ? 'unknown' : '';
+ 1937:   return scope;
+ 1938: }
+ 1939: 
+ 1940: function ensureTaskScopeComment(line, fallbackScope = 'unknown') {
+ 1941:   const text = String(line || '').trimEnd();
+ 1942:   return TASK_SCOPE_RE.test(text) ? text : `${text} <!-- scope: ${fallbackScope} -->`;
+ 1943: }
+ 1944: 
+ 1945: function stripTaskScopeComment(value) {
+ 1946:   return String(value || '').replace(TASK_SCOPE_COMMENT_RE, ' ').replace(/\s+/g, ' ').trim();
+ 1947: }
+ 1948: 
+ 1949: function normalizePlanTaskScopes(planFile) {
+ 1950:   const content = fs.readFileSync(planFile, 'utf8');
+ 1951:   let changed = false;
+ 1952:   const next = content.replace(/^(\s*[-*]\s+\[[ xX]\]\s+.+)$/gm, (line) => {
+ 1953:     if (TASK_SCOPE_RE.test(line)) return line;
+ 1954:     changed = true;
+ 1955:     return ensureTaskScopeComment(line);
+ 1956:   });
+ 1957:   if (changed) fs.writeFileSync(planFile, next, 'utf8');
+ 1958: }
+ 1959: 
+ 1960: function insertTaskLineBeforeTask(content, task, line) {
+ 1961:   const key = escapeRegExp(String(task?.task_key || task?.key || ''));
+ 1962:   if (!key) return `${content.trimEnd()}\n${line}\n`;
+ 1963:   const taskLineRe = new RegExp(`(^\\s*[-*]\\s+\\[[ xX]\\]\\s+${key}(?:\\b|[:：\\s-]).*$)`, 'm');
+ 1964:   if (taskLineRe.test(content)) {
+ 1965:     return content.replace(taskLineRe, `${line}\n$1`);
+ 1966:   }
+ 1967:   return `${content.trimEnd()}\n${line}\n`;
+ 1968: }
+ 1969: 
+ 1970: function normalizeRelative(root, fullPath) {
+ 1971:   return path.relative(root, fullPath).replaceAll(path.sep, '/');
+ 1972: }
+ 1973: 
+ 1974: function escapeRegExp(value) {
+ 1975:   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+ 1976: }
+ 1977: 
+
+codex
+我会用自动抽取脚本生成 P003 模块，并让 `LoopService` 变成委托入口。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; for($i=1645;$i -lt 1766;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 441ms:
+ 1646:   const resolvedPath = resolveAttachmentPath(workspace, storedPath);
+ 1647:   let readable = false;
+ 1648:   let readError = '';
+ 1649:   let actualSize = null;
+ 1650: 
+ 1651:   if (!resolvedPath) {
+ 1652:     readError = '缺少持久化本地路径';
+ 1653:   } else {
+ 1654:     try {
+ 1655:       fs.accessSync(resolvedPath, fs.constants.R_OK);
+ 1656:       const stat = fs.statSync(resolvedPath);
+ 1657:       readable = stat.isFile();
+ 1658:       actualSize = stat.size;
+ 1659:       if (!readable) readError = '路径不是文件';
+ 1660:     } catch (error) {
+ 1661:       readError = error?.message || String(error);
+ 1662:     }
+ 1663:   }
+ 1664: 
+ 1665:   return {
+ 1666:     id: attachment.id,
+ 1667:     number: index + 1,
+ 1668:     name,
+ 1669:     mime,
+ 1670:     size: declaredSize ?? actualSize,
+ 1671:     actualSize,
+ 1672:     hash,
+ 1673:     path: resolvedPath || storedPath || '',
+ 1674:     readable,
+ 1675:     readError,
+ 1676:   };
+ 1677: }
+ 1678: 
+ 1679: function formatIntakeAttachmentEntry(entry) {
+ 1680:   const lines = [
+ 1681:     `- 附件 ${entry.number}: ${entry.name}`,
+ 1682:     `  - MIME: ${entry.mime}`,
+ 1683:     `  - 大小: ${formatAttachmentSize(entry.size)}`,
+ 1684:     `  - SHA256: ${entry.hash}`,
+ 1685:     `  - 持久化本地路径: ${entry.path || '（缺失）'}`,
+ 1686:     `  - 读取方式: 工具可以通过上述本地路径读取附件内容`,
+ 1687:     `  - 可读性: ${entry.readable ? '已确认可读' : `不可读：${entry.readError || '未知错误'}`}`,
+ 1688:   ];
+ 1689:   if (entry.actualSize != null && String(entry.actualSize) !== String(entry.size ?? '')) {
+ 1690:     lines.push(`  - 实际文件大小: ${entry.actualSize} bytes`);
+ 1691:   }
+ 1692:   return lines;
+ 1693: }
+ 1694: 
+ 1695: function attachmentField(attachment, keys) {
+ 1696:   for (const key of keys) {
+ 1697:     if (attachment?.[key] !== undefined && attachment[key] !== null && attachment[key] !== '') {
+ 1698:       return attachment[key];
+ 1699:     }
+ 1700:   }
+ 1701:   return '';
+ 1702: }
+ 1703: 
+ 1704: function resolveAttachmentPath(workspace, storedPath) {
+ 1705:   const value = String(storedPath || '').trim();
+ 1706:   if (!value) return '';
+ 1707:   return path.isAbsolute(value) ? value : path.resolve(workspace, value);
+ 1708: }
+ 1709: 
+ 1710: function formatAttachmentSize(size) {
+ 1711:   return size === undefined || size === null || size === '' ? 'unknown' : `${size} bytes`;
+ 1712: }
+ 1713: 
+ 1714: function isAcceptanceTask(task) {
+ 1715:   if (!task) return false;
+ 1716:   const text = `${task.task_key || task.key || ''} ${task.title || ''} ${task.raw_line || task.rawLine || ''}`;
+ 1717:   return ACCEPTANCE_TASK_RE.test(text);
+ 1718: }
+ 1719: 
+ 1720: function taskScopeFileInfos(workspace, task) {
+ 1721:   const scopes = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+ 1722:   if (!scopes.length) return [taskScopeFileInfo(workspace, 'unknown')];
+ 1723:   return scopes.map((scope) => taskScopeFileInfo(workspace, scope));
+ 1724: }
+ 1725: 
+ 1726: function taskScopeFileInfo(workspace, scope) {
+ 1727:   const normalizedPath = normalizeTaskScope(scope, { keepUnknown: true });
+ 1728:   const special = SPECIAL_TASK_SCOPES.has(normalizedPath) ? normalizedPath : '';
+ 1729:   const result = {
+ 1730:     path: normalizedPath || 'unknown',
+ 1731:     exists: false,
+ 1732:     isDirectory: false,
+ 1733:     canOpen: false,
+ 1734:     isUnknown: special === 'unknown' || !normalizedPath,
+ 1735:     isValidation: special === 'validation',
+ 1736:     reason: '',
+ 1737:   };
+ 1738:   if (result.isUnknown) {
+ 1739:     result.reason = 'scope unknown，无法安全判断影响范围';
+ 1740:     return result;
+ 1741:   }
+ 1742:   if (result.isValidation) {
+ 1743:     result.reason = 'validation 任务需串行验收，不建议并发';
+ 1744:     return result;
+ 1745:   }
+ 1746:   const fullPath = resolveWorkspaceChildPath(workspace, normalizedPath);
+ 1747:   if (!fullPath) {
+ 1748:     result.reason = '路径不在工作区内，不能打开';
+ 1749:     return result;
+ 1750:   }
+ 1751:   try {
+ 1752:     const stat = fs.existsSync(fullPath) ? fs.statSync(fullPath) : null;
+ 1753:     result.exists = Boolean(stat);
+ 1754:     result.isDirectory = Boolean(stat?.isDirectory());
+ 1755:     result.canOpen = Boolean(stat?.isFile());
+ 1756:     result.reason = result.canOpen
+ 1757:       ? ''
+ 1758:       : result.isDirectory
+ 1759:         ? 'scope 指向目录，不能作为文件打开'
+ 1760:         : '文件不存在，后续任务可能会创建';
+ 1761:   } catch (error) {
+ 1762:     result.reason = error?.message || '无法读取文件状态';
+ 1763:   }
+ 1764:   return result;
+ 1765: }
+ 1766: 
+
+codex
+我会把 scope 文件状态放在快照模块，避免文件工具和并发模块互相耦合。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; for($i=1766;$i -lt 1865;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 441ms:
+ 1767: function planConcurrencySuggestion(workspace, tasks) {
+ 1768:   const candidates = [];
+ 1769:   const serialTasks = [];
+ 1770:   for (const task of tasks) {
+ 1771:     if (task.status !== TASK_EVENT_STATUS.PENDING) continue;
+ 1772:     const analysis = taskConcurrencyAnalysis(workspace, task);
+ 1773:     if (analysis.canRunInParallel) {
+ 1774:       candidates.push({ task, analysis });
+ 1775:     } else {
+ 1776:       serialTasks.push(concurrencyTaskSummary(task, analysis.reason, analysis.scopes));
+ 1777:     }
+ 1778:   }
+ 1779: 
+ 1780:   const batches = [];
+ 1781:   for (const entry of candidates) {
+ 1782:     let placed = false;
+ 1783:     for (const batch of batches) {
+ 1784:       if (batch.tasks.length >= MAX_PARALLEL_TASKS) continue;
+ 1785:       if (entry.analysis.scopes.some((scope) => batch.scopeSet.has(scope))) continue;
+ 1786:       batch.tasks.push(concurrencyTaskSummary(entry.task, 'scope 无交集，可与本批任务并发', entry.analysis.scopes));
+ 1787:       for (const scope of entry.analysis.scopes) batch.scopeSet.add(scope);
+ 1788:       placed = true;
+ 1789:       break;
+ 1790:     }
+ 1791:     if (!placed) {
+ 1792:       batches.push({
+ 1793:         reason: '批次内任务 scope 互不重叠，可安全并发',
+ 1794:         scopeSet: new Set(entry.analysis.scopes),
+ 1795:         tasks: [concurrencyTaskSummary(entry.task, 'scope 无交集，可与本批任务并发', entry.analysis.scopes)],
+ 1796:       });
+ 1797:     }
+ 1798:   }
+ 1799: 
+ 1800:   const safeBatches = batches
+ 1801:     .filter((batch) => batch.tasks.length > 1)
+ 1802:     .map((batch, index) => ({
+ 1803:       batch: index + 1,
+ 1804:       reason: batch.reason,
+ 1805:       tasks: batch.tasks,
+ 1806:     }));
+ 1807:   const singleCandidateTasks = batches
+ 1808:     .filter((batch) => batch.tasks.length <= 1)
+ 1809:     .flatMap((batch) => batch.tasks)
+ 1810:     .map((task) => ({ ...task, reason: '没有可配对的无冲突任务，建议串行执行' }));
+ 1811: 
+ 1812:   return {
+ 1813:     hasSafeParallelBatches: safeBatches.length > 0,
+ 1814:     parallelTaskCount: safeBatches.reduce((sum, batch) => sum + batch.tasks.length, 0),
+ 1815:     batchCount: safeBatches.length,
+ 1816:     serialTaskCount: serialTasks.length + singleCandidateTasks.length,
+ 1817:     maxParallelTasks: MAX_PARALLEL_TASKS,
+ 1818:     batches: safeBatches,
+ 1819:     serialTasks: [...serialTasks, ...singleCandidateTasks],
+ 1820:   };
+ 1821: }
+ 1822: 
+ 1823: function taskConcurrencyAnalysis(workspace, task) {
+ 1824:   const scopeFiles = taskScopeFileInfos(workspace, task);
+ 1825:   const scopes = scopeFiles
+ 1826:     .filter((file) => !file.isUnknown && !file.isValidation)
+ 1827:     .map((file) => file.path);
+ 1828:   if (isAcceptanceTask(task) || scopeFiles.some((file) => file.isValidation)) {
+ 1829:     return { canRunInParallel: false, scopes, reason: 'validation/验收任务必须串行执行' };
+ 1830:   }
+ 1831:   if (scopeFiles.some((file) => file.isUnknown)) {
+ 1832:     return { canRunInParallel: false, scopes, reason: 'scope unknown，无法判断冲突' };
+ 1833:   }
+ 1834:   if (!scopes.length) {
+ 1835:     return { canRunInParallel: false, scopes, reason: 'scope 为空或无法解析，无法判断冲突' };
+ 1836:   }
+ 1837:   if (PARALLEL_BLOCKING_TASK_RE.test(`${task.task_key || ''} ${task.title || ''} ${task.raw_line || ''}`)) {
+ 1838:     return { canRunInParallel: false, scopes, reason: '任务标题包含测试/验收/发布等串行关键词' };
+ 1839:   }
+ 1840:   return { canRunInParallel: true, scopes, reason: 'scope 明确且可用于冲突检测' };
+ 1841: }
+ 1842: 
+ 1843: function concurrencyTaskSummary(task, reason, scopes = []) {
+ 1844:   return {
+ 1845:     id: task.id,
+ 1846:     task_key: task.task_key,
+ 1847:     title: task.title,
+ 1848:     status: task.status,
+ 1849:     scopes: Array.from(new Set(scopes)),
+ 1850:     reason,
+ 1851:   };
+ 1852: }
+ 1853: 
+ 1854: function emptyConcurrencySuggestion() {
+ 1855:   return {
+ 1856:     hasSafeParallelBatches: false,
+ 1857:     parallelTaskCount: 0,
+ 1858:     batchCount: 0,
+ 1859:     serialTaskCount: 0,
+ 1860:     maxParallelTasks: MAX_PARALLEL_TASKS,
+ 1861:     batches: [],
+ 1862:     serialTasks: [],
+ 1863:   };
+ 1864: }
+ 1865: 
+
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; for($i=881;$i -lt 960;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 447ms:
+  882:     if (!fs.existsSync(planFile)) return;
+  883:     normalizePlanTaskScopes(planFile);
+  884:     const text = fs.readFileSync(planFile, 'utf8');
+  885:     const regex = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/gm;
+  886:     const tasks = [];
+  887:     let match;
+  888:     let index = 0;
+  889:     while ((match = regex.exec(text))) {
+  890:       index += 1;
+  891:       const rawTitle = match[2].trim();
+  892:       const titleWithoutScope = stripTaskScopeComment(rawTitle);
+  893:       const idMatch = titleWithoutScope.match(/^([A-Za-z]+[-_]?\d+|P\d+)[:：\s-]+(.+)$/);
+  894:       tasks.push({
+  895:         key: idMatch?.[1] || `P${String(index).padStart(3, '0')}`,
+  896:         title: idMatch?.[2]?.trim() || titleWithoutScope || rawTitle,
+  897:         rawLine: ensureTaskScopeComment(match[0]),
+  898:         scope: taskScopeText({ raw_line: match[0], title: rawTitle }),
+  899:         status: match[1].toLowerCase() === 'x' ? 'completed' : 'pending',
+  900:         sortOrder: index,
+  901:       });
+  902:     }
+  903: 
+  904:     const existingTasks = this.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+  905:     const existingByKey = new Map();
+  906:     for (const existing of existingTasks) {
+  907:       const matches = existingByKey.get(existing.task_key) || [];
+  908:       matches.push(existing);
+  909:       existingByKey.set(existing.task_key, matches);
+  910:     }
+  911: 
+  912:     const syncedStatuses = [];
+  913:     for (const task of tasks) {
+  914:       const existing = existingByKey.get(task.key)?.shift();
+  915:       const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
+  916:       syncedStatuses.push(status);
+  917:       if (existing) {
+  918:         this.db.run(
+  919:           `UPDATE plan_tasks
+  920:            SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
+  921:            WHERE id = ?`,
+  922:           [
+  923:             task.title,
+  924:             task.rawLine,
+  925:             task.scope,
+  926:             status,
+  927:             task.sortOrder,
+  928:             nowIso(),
+  929:             existing.id,
+  930:           ],
+  931:         );
+  932:       } else {
+  933:         this.db.run(
+  934:           `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+  935:            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  936:           [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+  937:         );
+  938:       }
+  939:     }
+  940: 
+  941:     for (const matches of existingByKey.values()) {
+  942:       for (const stale of matches) {
+  943:         this.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+  944:       }
+  945:     }
+  946: 
+  947:     const completed = syncedStatuses.filter((status) => status === 'completed').length;
+  948:     const currentPlan = this.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+  949:     const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
+  950:       ? 'completed'
+  951:       : tasks.length > 0 && completed === tasks.length
+  952:         ? 'ready_for_validation'
+  953:         : 'running';
+  954:     this.db.run(
+  955:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+  956:       [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+  957:     );
+  958:   }
+  959: 
+  960:   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
+
+**Transforming methods and codes**
+
+I need to convert several methods for my project. First, I'll change `appendTask` and `syncPlanTasks` to `planParser`, with `appendTask` using certain paths and local helpers. Next, I’ll adjust workspace methods like `ensure`, `scan`, and `save`, importing necessary local modules. 
+
+For the snapshot method, I'll incorporate various elements and ensure proper imports for runtime functions and local helpers. The `validationFlow` isn't needed. Finally, I'll validate and move specific function uses to `planParser`. Time to run the generation script!
+codex
+开始生成四个 P003 模块并保留 `LoopService` 兼容方法名。
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+let source = fs.readFileSync('src/loopService.js', 'utf8');
+function escapeRegExp(value) { return value.replace(/[.*+?"'^${}()|['"\\]\\\\]/g, '\\\\"'$&'"'); }
+function blockFrom(text, signatureIndex, bodyStart) {
+  let brace = 0, inString = '', escape = false;
+  for (let pos = bodyStart; pos < text.length; pos += 1) {
+    const ch = text[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) inString = '';
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace === 0) return { start: signatureIndex, end: pos + 1, block: text.slice(signatureIndex, pos + 1) };
+    }
+  }
+  throw new Error('block end not found');
+}
+function getMethod(name) {
+  const re = new RegExp("'`''^  (?:async )?${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`method not found: ${name}`);
+  return blockFrom(source, match.index, match.index + match[0].lastIndexOf('"'{')).block;
+}
+function getFunction(name) {
+  const re = new RegExp("'`''^function ${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`function not found: ${name}`);
+  return blockFrom(source, match.index, match.index + match[0].lastIndexOf('"'{')).block;
+}
+function convertMethod(block, name, helpers = '') {
+  const escaped = escapeRegExp(name);
+  let converted = block
+    .replace(new RegExp("'`''^  async ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`async function ${name}(service, helpers, $1) {`)
+    .replace(new RegExp(`''^  ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`function ${name}(service, helpers, $1) {`)
+    .replace(/this'"\\./g, 'service.');
+  if (helpers) converted = converted.replace('{\\n', "'`{'"\\n  const { "'${helpers} } = helpers;'"\\n"'`);
+  return converted;
+}
+function write(path, text) { fs.writeFileSync(path, text, '"'utf8'); }
+const planParserFunctions = [
+  convertMethod(getMethod('appendTask'), 'appendTask', 'isAcceptanceTask'),
+  convertMethod(getMethod('syncPlanTasks'), 'syncPlanTasks'),
+  getFunction('taskScopeText'),
+  getFunction('taskDeclaredScopes'),
+  getFunction('explicitTaskScopeParts'),
+  getFunction('addScopeParts'),
+  getFunction('normalizeTaskScope'),
+  getFunction('ensureTaskScopeComment'),
+  getFunction('stripTaskScopeComment'),
+  getFunction('normalizePlanTaskScopes'),
+  getFunction('insertTaskLineBeforeTask'),
+  getFunction('extractMarkdownTitle'),
+  getFunction('cleanMarkdownHeadingTitle'),
+].join('\\n\\n');
+write('src/loop/planParser.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const { syncedTaskStatus, taskEventMeta, TASK_EVENT_STATUS } = require('./taskEvents');
+const { hashFile } = require('./workspaceFiles');
+
+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
+const TASK_SCOPE_RE = new RegExp("'`${'"'"'${TASK_SCOPE_LABEL_RE}'"'}\\\\\\\\s*[:=：]\\\\\\\\s*(["'^>'"\\\\\\\\]\\\\\\\\n]+)"'`, '"'i');
+const TASK_SCOPE_COMMENT_RE = new RegExp("'`'"\\\\\\\\s*<"'!--'"\\\\\\\\s*"'${'"'"'${TASK_SCOPE_LABEL_RE}'"'}\\\\\\\\s*[:=：]\\\\\\\\s*(["'^>]*?)'"\\\\\\\\s*-->\\\\\\\\s*"'`, '"'i');
+const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+const TASK_PATH_RE = /[\\\\w./\\\\\\\\-]+\\\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+
+"'${planParserFunctions}
+
+module.exports = {
+  addScopeParts,
+  appendTask,
+  cleanMarkdownHeadingTitle,
+  ensureTaskScopeComment,
+  explicitTaskScopeParts,
+  extractMarkdownTitle,
+  insertTaskLineBeforeTask,
+  normalizePlanTaskScopes,
+  normalizeTaskScope,
+  stripTaskScopeComment,
+  syncPlanTasks,
+  taskDeclaredScopes,
+  taskScopeText,
+};
+`);
+const workspaceFunctions = [
+  convertMethod(getMethod('"'ensureWorkspaceDirs'), 'ensureWorkspaceDirs'),
+  convertMethod(getMethod('scanDirectory'), 'scanDirectory'),
+  convertMethod(getMethod('saveScan'), 'saveScan'),
+  getFunction('workspaceToolEnv'),
+  getFunction('hashFile'),
+  getFunction('hashText'),
+  getFunction('resolveWorkspaceChildPath'),
+  getFunction('normalizeRelative'),
+  getFunction('workspaceKey'),
+  getFunction('readSnippet'),
+  getFunction('tailText'),
+  getFunction('safePart'),
+].join('\\n\\n');
+write('src/loop/workspaceFiles.js', "'`const crypto = require('"'node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+
+"'${workspaceFunctions}
+
+module.exports = {
+  ensureWorkspaceDirs,
+  hashFile,
+  hashText,
+  normalizeRelative,
+  readSnippet,
+  resolveWorkspaceChildPath,
+  safePart,
+  saveScan,
+  scanDirectory,
+  tailText,
+  workspaceKey,
+  workspaceToolEnv,
+};
+`);
+const concurrencyFunctions = [
+  getFunction('"'isAcceptanceTask'),
+  getFunction('taskScopeFileInfos'),
+  getFunction('taskScopeFileInfo'),
+  getFunction('planConcurrencySuggestion'),
+  getFunction('taskConcurrencyAnalysis'),
+  getFunction('concurrencyTaskSummary'),
+  getFunction('emptyConcurrencySuggestion'),
+  getFunction('normalizeConfirmedTaskBatches'),
+  getFunction('taskParallelScopes'),
+].join('\\n\\n');
+write('src/loop/concurrency.js', "'`const fs = require('"'node:fs');
+const { TASK_EVENT_STATUS } = require('./taskEvents');
+const { normalizeTaskScope, taskDeclaredScopes } = require('./planParser');
+const { resolveWorkspaceChildPath } = require('./workspaceFiles');
+
+const MAX_PARALLEL_TASKS = 2;
+const SPECIAL_TASK_SCOPES = new Set(['unknown', 'validation']);
+const ACCEPTANCE_TASK_RE = /(完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation)/i;
+const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;
+
+function validatedParallelTaskBatches(service, workspace, plan, confirmedBatches) {
+  const batches = normalizeConfirmedTaskBatches(confirmedBatches);
+  if ("'!batches.length) throw new Error('"'未选择并发任务批次');
+  const seenTaskIds = new Set();
+  return batches.map((batchTaskIds, batchIndex) => {
+    if (batchTaskIds.length < 2) throw new Error("'`第 ${batchIndex + 1} 批至少需要 2 个任务`);
+    if (batchTaskIds.length > MAX_PARALLEL_TASKS) {
+      throw new Error(`第 ${batchIndex + 1} 批超过最大并发数 ${MAX_PARALLEL_TASKS}`);
+    }
+    const scopeSet = new Set();
+    return batchTaskIds.map((taskId) => {
+      if (seenTaskIds.has(taskId)) throw new Error(`任务 #${taskId} 被重复选择`);
+      seenTaskIds.add(taskId);
+      const task = service.taskForProject(plan.project_id, taskId);
+      if (!task || Number(task.plan_id) !== Number(plan.id)) throw new Error(`任务 #${taskId} 不属于当前计划`);
+      if (task.status !== TASK_EVENT_STATUS.PENDING) {
+        throw new Error(`${task.task_key || `任务 #${task.id}`} 不是待执行状态`);
+      }
+      const scopes = taskParallelScopes(task);
+      if (!scopes.length) throw new Error(`${task.task_key || `任务 #${task.id}`} 缺少可并发 scope`);
+      const analysis = taskConcurrencyAnalysis(workspace, task);
+      if (!analysis.canRunInParallel) throw new Error(`${task.task_key || `任务 #${task.id}`} 不建议并发：${analysis.reason}`);
+      for (const scope of scopes) {
+        if (scopeSet.has(scope)) throw new Error(`第 ${batchIndex + 1} 批存在 scope 冲突：${scope}`);
+        scopeSet.add(scope);
+      }
+      return task;
+    });
+  });
+}
+
+${concurrencyFunctions}
+
+module.exports = {
+  MAX_PARALLEL_TASKS,
+  concurrencyTaskSummary,
+  emptyConcurrencySuggestion,
+  isAcceptanceTask,
+  normalizeConfirmedTaskBatches,
+  planConcurrencySuggestion,
+  taskConcurrencyAnalysis,
+  taskParallelScopes,
+  taskScopeFileInfo,
+  taskScopeFileInfos,
+  validatedParallelTaskBatches,
+};
+`);
+const snapshotFunctions = [
+  convertMethod(getMethod('"'snapshot'), 'snapshot'),
+  getFunction('taskSnapshotRow'),
+  getFunction('mcpStatusSnapshot'),
+  getFunction('mcpStatusLabel'),
+  getFunction('normalizeMcpBoolean'),
+  getFunction('normalizeMcpTransport'),
+  getFunction('normalizeMcpHost'),
+  getFunction('normalizeMcpPort'),
+  getFunction('normalizeMcpPath'),
+  getFunction('emptySnapshot'),
+  getFunction('eventSnapshotRow'),
+  getFunction('parseEventMeta'),
+  getFunction('planSnapshotRow'),
+  getFunction('normalizePlanSortOrder'),
+  getFunction('groupPlanTasksByPlanId'),
+  getFunction('readPlanMarkdownTitle'),
+].join('\\n\\n');
+write('src/loop/snapshots.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const { DEFAULT_AGENT_CLI_PROVIDER, agentCliContextFields, codexSessionContextFields, effectiveAgentCliConfig, normalizeOptionalString } = require('./agentCliConfig');
+const { TASK_EVENT_STATUS, normalizeDurationMs, taskRunDurationMs } = require('./taskEvents');
+const { operationSnapshotRow, runtimeOperationContextByTask } = require('./runtime');
+const { intakeSnapshotRow } = require('./agentCliConfig');
+const { planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');
+const { extractMarkdownTitle } = require('./planParser');
+const { resolveWorkspaceChildPath } = require('./workspaceFiles');
+
+const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 19690, path: '/mcp' });
+
+"'${snapshotFunctions}
+
+module.exports = {
+  emptySnapshot,
+  eventSnapshotRow,
+  groupPlanTasksByPlanId,
+  mcpStatusSnapshot,
+  parseEventMeta,
+  planSnapshotRow,
+  readPlanMarkdownTitle,
+  snapshot,
+  taskSnapshotRow,
+};
+`);
+'"'@ | node -" in D:\project\GitHub\autoplan
+2026-06-27T07:19:38.447567Z ERROR codex_core::tools::router: error={"output":"[stdin]:60\r\nwrite('src/loop/planParser.js', `const fs = require('node:fs');\r\n\r\nExpected ',', got '$'\r\nSyntaxError: missing ) after argument list\r\n    at makeContextifyScript (node:internal/vm:194:14)\r\n    at compileScript (node:internal/process/execution:388:10)\r\n    at evalTypeScript (node:internal/process/execution:260:22)\r\n    at node:internal/main/eval_stdin:51:5\r\n    at Socket.<anonymous> (node:internal/process/execution:205:5)\r\n    at Socket.emit (node:events:520:35)\r\n    at endReadableNT (node:internal/streams/readable:1701:12)\r\n    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)\r\n\r\nNode.js v24.13.0\r\n","metadata":{"exit_code":1,"duration_seconds":0.5}}
+ exited 1 in 500ms:
+[stdin]:60
+write('src/loop/planParser.js', `const fs = require('node:fs');
+
+Expected ',', got '$'
+SyntaxError: missing ) after argument list
+    at makeContextifyScript (node:internal/vm:194:14)
+    at compileScript (node:internal/process/execution:388:10)
+    at evalTypeScript (node:internal/process/execution:260:22)
+    at node:internal/main/eval_stdin:51:5
+    at Socket.<anonymous> (node:internal/process/execution:205:5)
+    at Socket.emit (node:events:520:35)
+    at endReadableNT (node:internal/streams/readable:1701:12)
+    at process.processTicksAndRejections (node:internal/process/task_queues:89:21)
+
+Node.js v24.13.0
+
+codex
+生成脚本被模板字符串嵌套卡住；我会改成普通字符串拼接。
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+let source = fs.readFileSync('src/loopService.js', 'utf8');
+function escapeRegExp(value) { return value.replace(/[.*+?"'^${}()|['"\\]\\\\]/g, '\\\\"'$&'"'); }
+function blockFrom(text, signatureIndex, bodyStart) {
+  let brace = 0, inString = '', escape = false;
+  for (let pos = bodyStart; pos < text.length; pos += 1) {
+    const ch = text[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) inString = '';
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace === 0) return { start: signatureIndex, end: pos + 1, block: text.slice(signatureIndex, pos + 1) };
+    }
+  }
+  throw new Error('block end not found');
+}
+function getMethod(name) {
+  const re = new RegExp("'`''^  (?:async )?${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`method not found: ${name}`);
+  return blockFrom(source, match.index, match.index + match[0].lastIndexOf('"'{')).block;
+}
+function getFunction(name) {
+  const re = new RegExp("'`''^function ${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`function not found: ${name}`);
+  return blockFrom(source, match.index, match.index + match[0].lastIndexOf('"'{')).block;
+}
+function convertMethod(block, name, helpers = '') {
+  const escaped = escapeRegExp(name);
+  let converted = block
+    .replace(new RegExp("'`''^  async ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`async function ${name}(service, helpers, $1) {`)
+    .replace(new RegExp(`''^  ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`function ${name}(service, helpers, $1) {`)
+    .replace(/this'"\\./g, 'service.');
+  if (helpers) converted = converted.replace('{\\n', "'`{'"\\n  const { "'${helpers} } = helpers;'"\\n"'`);
+  return converted;
+}
+function write(path, text) { fs.writeFileSync(path, text, '"'utf8'); }
+const planParserFunctions = [
+  convertMethod(getMethod('appendTask'), 'appendTask', 'isAcceptanceTask'),
+  convertMethod(getMethod('syncPlanTasks'), 'syncPlanTasks'),
+  getFunction('taskScopeText'),
+  getFunction('taskDeclaredScopes'),
+  getFunction('explicitTaskScopeParts'),
+  getFunction('addScopeParts'),
+  getFunction('normalizeTaskScope'),
+  getFunction('ensureTaskScopeComment'),
+  getFunction('stripTaskScopeComment'),
+  getFunction('normalizePlanTaskScopes'),
+  getFunction('insertTaskLineBeforeTask'),
+  getFunction('extractMarkdownTitle'),
+  getFunction('cleanMarkdownHeadingTitle'),
+].join('\\n\\n');
+const planParserHeader = \"const fs = require('node:fs');\\n\" +
+\"const path = require('node:path');\\n\" +
+\"const { nowIso } = require('../database');\\n\" +
+\"const { syncedTaskStatus, taskEventMeta, TASK_EVENT_STATUS } = require('./taskEvents');\\n\" +
+\"const { hashFile } = require('./workspaceFiles');\\n\\n\" +
+\"const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';\\n\" +
+\"const TASK_SCOPE_RE = new RegExp("'`${TASK_SCOPE_LABEL_RE}'"\\\\\\\\s*[:=：]\\\\\\\\s*(["'^>'"\\\\\\\\]\\\\\\\\n]+)"'`, '"'i');\\n\" +
+\"const TASK_SCOPE_COMMENT_RE = new RegExp("'`'"\\\\\\\\s*<"'!--'"\\\\\\\\s*"'${TASK_SCOPE_LABEL_RE}'"\\\\\\\\s*[:=：]\\\\\\\\s*(["'^>]*?)'"\\\\\\\\s*-->\\\\\\\\s*"'`, '"'i');\\n\" +
+\"const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;\\n\" +
+\"const TASK_PATH_RE = /[\\\\\\\\w./\\\\\\\\\\\\\\\\-]+\\\\\\\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;\\n\\n\";
+const planParserFooter = \"\\n\\nmodule.exports = {\\n  addScopeParts,\\n  appendTask,\\n  cleanMarkdownHeadingTitle,\\n  ensureTaskScopeComment,\\n  explicitTaskScopeParts,\\n  extractMarkdownTitle,\\n  insertTaskLineBeforeTask,\\n  normalizePlanTaskScopes,\\n  normalizeTaskScope,\\n  stripTaskScopeComment,\\n  syncPlanTasks,\\n  taskDeclaredScopes,\\n  taskScopeText,\\n};\\n\";
+write('src/loop/planParser.js', planParserHeader + planParserFunctions + planParserFooter);
+const workspaceFunctions = [
+  convertMethod(getMethod('ensureWorkspaceDirs'), 'ensureWorkspaceDirs'),
+  convertMethod(getMethod('scanDirectory'), 'scanDirectory'),
+  convertMethod(getMethod('saveScan'), 'saveScan'),
+  getFunction('workspaceToolEnv'),
+  getFunction('hashFile'),
+  getFunction('hashText'),
+  getFunction('resolveWorkspaceChildPath'),
+  getFunction('normalizeRelative'),
+  getFunction('workspaceKey'),
+  getFunction('readSnippet'),
+  getFunction('tailText'),
+  getFunction('safePart'),
+].join('\\n\\n');
+write('src/loop/workspaceFiles.js', \"const crypto = require('node:crypto');\\nconst fs = require('node:fs');\\nconst path = require('node:path');\\nconst { nowIso } = require('../database');\\n\\n\" + workspaceFunctions + \"\\n\\nmodule.exports = {\\n  ensureWorkspaceDirs,\\n  hashFile,\\n  hashText,\\n  normalizeRelative,\\n  readSnippet,\\n  resolveWorkspaceChildPath,\\n  safePart,\\n  saveScan,\\n  scanDirectory,\\n  tailText,\\n  workspaceKey,\\n  workspaceToolEnv,\\n};\\n\");
+const concurrencyFunctions = [
+  getFunction('isAcceptanceTask'),
+  getFunction('taskScopeFileInfos'),
+  getFunction('taskScopeFileInfo'),
+  getFunction('planConcurrencySuggestion'),
+  getFunction('taskConcurrencyAnalysis'),
+  getFunction('concurrencyTaskSummary'),
+  getFunction('emptyConcurrencySuggestion'),
+  getFunction('normalizeConfirmedTaskBatches'),
+  getFunction('taskParallelScopes'),
+].join('\\n\\n');
+const concurrencyHeader = \"const fs = require('node:fs');\\n\" +
+\"const { TASK_EVENT_STATUS } = require('./taskEvents');\\n\" +
+\"const { normalizeTaskScope, taskDeclaredScopes } = require('./planParser');\\n\" +
+\"const { resolveWorkspaceChildPath } = require('./workspaceFiles');\\n\\n\" +
+\"const MAX_PARALLEL_TASKS = 2;\\n\" +
+\"const SPECIAL_TASK_SCOPES = new Set(['unknown', 'validation']);\\n\" +
+\"const ACCEPTANCE_TASK_RE = /(完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation)/i;\\n\" +
+\"const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;\\n\\n\" +
+\"function validatedParallelTaskBatches(service, workspace, plan, confirmedBatches) {\\n\" +
+\"  const batches = normalizeConfirmedTaskBatches(confirmedBatches);\\n\" +
+\"  if ("'!batches.length) throw new Error('"'未选择并发任务批次');\\n\" +
+\"  const seenTaskIds = new Set();\\n\" +
+\"  return batches.map((batchTaskIds, batchIndex) => {\\n\" +
+\"    if (batchTaskIds.length < 2) throw new Error("'`第 ${batchIndex + 1} 批至少需要 2 个任务`);'"\\n\" +
+\"    if (batchTaskIds.length > MAX_PARALLEL_TASKS) {\\n\" +
+\"      throw new Error("'`第 ${batchIndex + 1} 批超过最大并发数 ${MAX_PARALLEL_TASKS}`);'"\\n\" +
+\"    }\\n\" +
+\"    const scopeSet = new Set();\\n\" +
+\"    return batchTaskIds.map((taskId) => {\\n\" +
+\"      if (seenTaskIds.has(taskId)) throw new Error("'`任务 #${taskId} 被重复选择`);'"\\n\" +
+\"      seenTaskIds.add(taskId);\\n\" +
+\"      const task = service.taskForProject(plan.project_id, taskId);\\n\" +
+\"      if ("'!task || Number(task.plan_id) !== Number(plan.id)) throw new Error(`任务 #${taskId} 不属于当前计划`);'"\\n\" +
+\"      if (task.status "'!== TASK_EVENT_STATUS.PENDING) {'"\\n\" +
+\"        throw new Error("'`${task.task_key || `任务 #${task.id}`} 不是待执行状态`);'"\\n\" +
+\"      }\\n\" +
+\"      const scopes = taskParallelScopes(task);\\n\" +
+\"      if ("'!scopes.length) throw new Error(`${task.task_key || `任务 #${task.id}`} 缺少可并发 scope`);'"\\n\" +
+\"      const analysis = taskConcurrencyAnalysis(workspace, task);\\n\" +
+\"      if ("'!analysis.canRunInParallel) throw new Error(`${task.task_key || `任务 #${task.id}`} 不建议并发：${analysis.reason}`);'"\\n\" +
+\"      for (const scope of scopes) {\\n\" +
+\"        if (scopeSet.has(scope)) throw new Error("'`第 ${batchIndex + 1} 批存在 scope 冲突：${scope}`);'"\\n\" +
+\"        scopeSet.add(scope);\\n\" +
+\"      }\\n\" +
+\"      return task;\\n\" +
+\"    });\\n\" +
+\"  });\\n\" +
+\"}\\n\\n\";
+write('src/loop/concurrency.js', concurrencyHeader + concurrencyFunctions + \"\\n\\nmodule.exports = {\\n  MAX_PARALLEL_TASKS,\\n  concurrencyTaskSummary,\\n  emptyConcurrencySuggestion,\\n  isAcceptanceTask,\\n  normalizeConfirmedTaskBatches,\\n  planConcurrencySuggestion,\\n  taskConcurrencyAnalysis,\\n  taskParallelScopes,\\n  taskScopeFileInfo,\\n  taskScopeFileInfos,\\n  validatedParallelTaskBatches,\\n};\\n\");
+const snapshotFunctions = [
+  convertMethod(getMethod('snapshot'), 'snapshot'),
+  getFunction('taskSnapshotRow'),
+  getFunction('mcpStatusSnapshot'),
+  getFunction('mcpStatusLabel'),
+  getFunction('normalizeMcpBoolean'),
+  getFunction('normalizeMcpTransport'),
+  getFunction('normalizeMcpHost'),
+  getFunction('normalizeMcpPort'),
+  getFunction('normalizeMcpPath'),
+  getFunction('emptySnapshot'),
+  getFunction('eventSnapshotRow'),
+  getFunction('parseEventMeta'),
+  getFunction('planSnapshotRow'),
+  getFunction('normalizePlanSortOrder'),
+  getFunction('groupPlanTasksByPlanId'),
+  getFunction('readPlanMarkdownTitle'),
+].join('\\n\\n');
+const snapshotHeader = \"const fs = require('node:fs');\\n\" +
+\"const path = require('node:path');\\n\" +
+\"const { nowIso } = require('../database');\\n\" +
+\"const { DEFAULT_AGENT_CLI_PROVIDER, agentCliContextFields, codexSessionContextFields, effectiveAgentCliConfig, intakeSnapshotRow, normalizeOptionalString } = require('./agentCliConfig');\\n\" +
+\"const { TASK_EVENT_STATUS, normalizeDurationMs, taskRunDurationMs } = require('./taskEvents');\\n\" +
+\"const { operationSnapshotRow, runtimeOperationContextByTask } = require('./runtime');\\n\" +
+\"const { planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');\\n\" +
+\"const { extractMarkdownTitle } = require('./planParser');\\n\" +
+\"const { resolveWorkspaceChildPath } = require('./workspaceFiles');\\n\\n\" +
+\"const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 19690, path: '/mcp' });\\n\\n\";
+write('src/loop/snapshots.js', snapshotHeader + snapshotFunctions + \"\\n\\nmodule.exports = {\\n  emptySnapshot,\\n  eventSnapshotRow,\\n  groupPlanTasksByPlanId,\\n  mcpStatusSnapshot,\\n  parseEventMeta,\\n  planSnapshotRow,\\n  readPlanMarkdownTitle,\\n  snapshot,\\n  taskSnapshotRow,\\n};\\n\");
+'@ | node -" in D:\project\GitHub\autoplan
+2026-06-27T07:20:49.820963Z ERROR codex_core::tools::router: error={"output":"[stdin]:21\r\n  throw new Error('block end not found');\r\n  ^\r\n\r\nError: block end not found\r\n    at blockFrom ([stdin]:21:9)\r\n    at getFunction ([stdin]:33:10)\r\n    at [stdin]:52:3\r\n    at runScriptInThisContext (node:internal/vm:219:10)\r\n    at node:internal/process/execution:451:12\r\n    at [stdin]-wrapper:6:24\r\n    at runScriptInContext (node:internal/process/execution:449:60)\r\n    at evalFunction (node:internal/process/execution:283:30)\r\n    at evalTypeScript (node:internal/process/execution:295:3)\r\n    at node:internal/main/eval_stdin:51:5\r\n\r\nNode.js v24.13.0\r\n","metadata":{"exit_code":1,"duration_seconds":0.5}}
+ exited 1 in 456ms:
+[stdin]:21
+  throw new Error('block end not found');
+  ^
+
+Error: block end not found
+    at blockFrom ([stdin]:21:9)
+    at getFunction ([stdin]:33:10)
+    at [stdin]:52:3
+    at runScriptInThisContext (node:internal/vm:219:10)
+    at node:internal/process/execution:451:12
+    at [stdin]-wrapper:6:24
+    at runScriptInContext (node:internal/process/execution:449:60)
+    at evalFunction (node:internal/process/execution:283:30)
+    at evalTypeScript (node:internal/process/execution:295:3)
+    at node:internal/main/eval_stdin:51:5
+
+Node.js v24.13.0
+
+codex
+脚本对正则字面量里的花括号太敏感；我会用顶层函数边界重新抽取纯函数。
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+let source = fs.readFileSync('src/loopService.js', 'utf8');
+function escapeRegExp(value) { return value.replace(/[.*+?"'^${}()|['"\\]\\\\]/g, '\\\\"'$&'"'); }
+function blockFrom(text, signatureIndex, bodyStart) {
+  let brace = 0, inString = '', escape = false;
+  for (let pos = bodyStart; pos < text.length; pos += 1) {
+    const ch = text[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) inString = '';
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace === 0) return { start: signatureIndex, end: pos + 1, block: text.slice(signatureIndex, pos + 1) };
+    }
+  }
+  throw new Error('block end not found');
+}
+function getMethod(name) {
+  const re = new RegExp("'`''^  (?:async )?${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`method not found: ${name}`);
+  return blockFrom(source, match.index, match.index + match[0].lastIndexOf('"'{')).block;
+}
+function getFunction(name) {
+  const re = new RegExp("'`''^function ${escapeRegExp(name)}'"\\\\("'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`function not found: ${name}`);
+  const next = source.indexOf('"'\\nfunction ', match.index + 1);
+  const end = next === -1 ? source.indexOf('\\nmodule.exports', match.index) : next;
+  return source.slice(match.index, end).trimEnd();
+}
+function convertMethod(block, name, helpers = '') {
+  const escaped = escapeRegExp(name);
+  let converted = block
+    .replace(new RegExp("'`''^  async ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`async function ${name}(service, helpers, $1) {`)
+    .replace(new RegExp(`''^  ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`function ${name}(service, helpers, $1) {`)
+    .replace(/this'"\\./g, 'service.');
+  if (helpers) converted = converted.replace('{\\n', "'`{'"\\n  const { "'${helpers} } = helpers;'"\\n"'`);
+  return converted;
+}
+function write(path, text) { fs.writeFileSync(path, text, '"'utf8'); }
+const planParserFunctions = [
+  convertMethod(getMethod('appendTask'), 'appendTask', 'isAcceptanceTask'),
+  convertMethod(getMethod('syncPlanTasks'), 'syncPlanTasks'),
+  getFunction('taskScopeText'), getFunction('taskDeclaredScopes'), getFunction('explicitTaskScopeParts'), getFunction('addScopeParts'), getFunction('normalizeTaskScope'), getFunction('ensureTaskScopeComment'), getFunction('stripTaskScopeComment'), getFunction('normalizePlanTaskScopes'), getFunction('insertTaskLineBeforeTask'), getFunction('extractMarkdownTitle'), getFunction('cleanMarkdownHeadingTitle'),
+].join('\\n\\n');
+const planParserHeader = \"const fs = require('node:fs');\\nconst path = require('node:path');\\nconst { nowIso } = require('../database');\\nconst { syncedTaskStatus, taskEventMeta, TASK_EVENT_STATUS } = require('./taskEvents');\\nconst { hashFile } = require('./workspaceFiles');\\n\\nconst TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';\\nconst TASK_SCOPE_RE = new RegExp("'`${TASK_SCOPE_LABEL_RE}'"\\\\\\\\s*[:=：]\\\\\\\\s*(["'^>'"\\\\\\\\]\\\\\\\\n]+)"'`, '"'i');\\nconst TASK_SCOPE_COMMENT_RE = new RegExp("'`'"\\\\\\\\s*<"'!--'"\\\\\\\\s*"'${TASK_SCOPE_LABEL_RE}'"\\\\\\\\s*[:=：]\\\\\\\\s*(["'^>]*?)'"\\\\\\\\s*-->\\\\\\\\s*"'`, '"'i');\\nconst TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;\\nconst TASK_PATH_RE = /[\\\\\\\\w./\\\\\\\\\\\\\\\\-]+\\\\\\\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;\\n\\n\";
+const planParserFooter = \"\\n\\nmodule.exports = {\\n  addScopeParts,\\n  appendTask,\\n  cleanMarkdownHeadingTitle,\\n  ensureTaskScopeComment,\\n  explicitTaskScopeParts,\\n  extractMarkdownTitle,\\n  insertTaskLineBeforeTask,\\n  normalizePlanTaskScopes,\\n  normalizeTaskScope,\\n  stripTaskScopeComment,\\n  syncPlanTasks,\\n  taskDeclaredScopes,\\n  taskScopeText,\\n};\\n\";
+write('src/loop/planParser.js', planParserHeader + planParserFunctions + planParserFooter);
+const workspaceFunctions = [convertMethod(getMethod('ensureWorkspaceDirs'), 'ensureWorkspaceDirs'), convertMethod(getMethod('scanDirectory'), 'scanDirectory'), convertMethod(getMethod('saveScan'), 'saveScan'), getFunction('workspaceToolEnv'), getFunction('hashFile'), getFunction('hashText'), getFunction('resolveWorkspaceChildPath'), getFunction('normalizeRelative'), getFunction('workspaceKey'), getFunction('readSnippet'), getFunction('tailText'), getFunction('safePart')].join('\\n\\n');
+write('src/loop/workspaceFiles.js', \"const crypto = require('node:crypto');\\nconst fs = require('node:fs');\\nconst path = require('node:path');\\nconst { nowIso } = require('../database');\\n\\n\" + workspaceFunctions + \"\\n\\nmodule.exports = {\\n  ensureWorkspaceDirs,\\n  hashFile,\\n  hashText,\\n  normalizeRelative,\\n  readSnippet,\\n  resolveWorkspaceChildPath,\\n  safePart,\\n  saveScan,\\n  scanDirectory,\\n  tailText,\\n  workspaceKey,\\n  workspaceToolEnv,\\n};\\n\");
+const concurrencyFunctions = [getFunction('isAcceptanceTask'), getFunction('taskScopeFileInfos'), getFunction('taskScopeFileInfo'), getFunction('planConcurrencySuggestion'), getFunction('taskConcurrencyAnalysis'), getFunction('concurrencyTaskSummary'), getFunction('emptyConcurrencySuggestion'), getFunction('normalizeConfirmedTaskBatches'), getFunction('taskParallelScopes')].join('\\n\\n');
+const concurrencyHeader = \"const fs = require('node:fs');\\nconst { TASK_EVENT_STATUS } = require('./taskEvents');\\nconst { normalizeTaskScope, taskDeclaredScopes } = require('./planParser');\\nconst { resolveWorkspaceChildPath } = require('./workspaceFiles');\\n\\nconst MAX_PARALLEL_TASKS = 2;\\nconst SPECIAL_TASK_SCOPES = new Set(['unknown', 'validation']);\\nconst ACCEPTANCE_TASK_RE = /(完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation)/i;\\nconst PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;\\n\\nfunction validatedParallelTaskBatches(service, workspace, plan, confirmedBatches) {\\n  const batches = normalizeConfirmedTaskBatches(confirmedBatches);\\n  if ("'!batches.length) throw new Error('"'未选择并发任务批次');\\n  const seenTaskIds = new Set();\\n  return batches.map((batchTaskIds, batchIndex) => {\\n    if (batchTaskIds.length < 2) throw new Error("'`第 ${batchIndex + 1} 批至少需要 2 个任务`);'"\\n    if (batchTaskIds.length > MAX_PARALLEL_TASKS) {\\n      throw new Error("'`第 ${batchIndex + 1} 批超过最大并发数 ${MAX_PARALLEL_TASKS}`);'"\\n    }\\n    const scopeSet = new Set();\\n    return batchTaskIds.map((taskId) => {\\n      if (seenTaskIds.has(taskId)) throw new Error("'`任务 #${taskId} 被重复选择`);'"\\n      seenTaskIds.add(taskId);\\n      const task = service.taskForProject(plan.project_id, taskId);\\n      if ("'!task || Number(task.plan_id) !== Number(plan.id)) throw new Error(`任务 #${taskId} 不属于当前计划`);'"\\n      if (task.status "'!== TASK_EVENT_STATUS.PENDING) {'"\\n        throw new Error("'`${task.task_key || `任务 #${task.id}`} 不是待执行状态`);'"\\n      }\\n      const scopes = taskParallelScopes(task);\\n      if ("'!scopes.length) throw new Error(`${task.task_key || `任务 #${task.id}`} 缺少可并发 scope`);'"\\n      const analysis = taskConcurrencyAnalysis(workspace, task);\\n      if ("'!analysis.canRunInParallel) throw new Error(`${task.task_key || `任务 #${task.id}`} 不建议并发：${analysis.reason}`);'"\\n      for (const scope of scopes) {\\n        if (scopeSet.has(scope)) throw new Error("'`第 ${batchIndex + 1} 批存在 scope 冲突：${scope}`);'"\\n        scopeSet.add(scope);\\n      }\\n      return task;\\n    });\\n  });\\n}\\n\\n\";
+write('src/loop/concurrency.js', concurrencyHeader + concurrencyFunctions + \"\\n\\nmodule.exports = {\\n  MAX_PARALLEL_TASKS,\\n  concurrencyTaskSummary,\\n  emptyConcurrencySuggestion,\\n  isAcceptanceTask,\\n  normalizeConfirmedTaskBatches,\\n  planConcurrencySuggestion,\\n  taskConcurrencyAnalysis,\\n  taskParallelScopes,\\n  taskScopeFileInfo,\\n  taskScopeFileInfos,\\n  validatedParallelTaskBatches,\\n};\\n\");
+const snapshotFunctions = [convertMethod(getMethod('snapshot'), 'snapshot'), getFunction('taskSnapshotRow'), getFunction('mcpStatusSnapshot'), getFunction('mcpStatusLabel'), getFunction('normalizeMcpBoolean'), getFunction('normalizeMcpTransport'), getFunction('normalizeMcpHost'), getFunction('normalizeMcpPort'), getFunction('normalizeMcpPath'), getFunction('emptySnapshot'), getFunction('eventSnapshotRow'), getFunction('parseEventMeta'), getFunction('planSnapshotRow'), getFunction('normalizePlanSortOrder'), getFunction('groupPlanTasksByPlanId'), getFunction('readPlanMarkdownTitle')].join('\\n\\n');
+const snapshotHeader = \"const fs = require('node:fs');\\nconst path = require('node:path');\\nconst { nowIso } = require('../database');\\nconst { DEFAULT_AGENT_CLI_PROVIDER, agentCliContextFields, codexSessionContextFields, effectiveAgentCliConfig, intakeSnapshotRow, normalizeOptionalString } = require('./agentCliConfig');\\nconst { TASK_EVENT_STATUS, normalizeDurationMs, taskRunDurationMs } = require('./taskEvents');\\nconst { operationSnapshotRow, runtimeOperationContextByTask } = require('./runtime');\\nconst { planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');\\nconst { extractMarkdownTitle } = require('./planParser');\\nconst { resolveWorkspaceChildPath } = require('./workspaceFiles');\\n\\nconst MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 19690, path: '/mcp' });\\n\\n\";
+write('src/loop/snapshots.js', snapshotHeader + snapshotFunctions + \"\\n\\nmodule.exports = {\\n  emptySnapshot,\\n  eventSnapshotRow,\\n  groupPlanTasksByPlanId,\\n  mcpStatusSnapshot,\\n  parseEventMeta,\\n  planSnapshotRow,\\n  readPlanMarkdownTitle,\\n  snapshot,\\n  taskSnapshotRow,\\n};\\n\");
+'@ | node -" in D:\project\GitHub\autoplan
+ succeeded in 465ms:
+codex
+模块已生成；现在切换 `LoopService` 到 P003 模块并删除旧副本。
+ERROR: Reconnecting... 1/5
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+const path = 'src/loopService.js';
+let source = fs.readFileSync(path, 'utf8');
+function escapeRegExp(value) { return value.replace(/[.*+?"'^${}()|['"\\]\\\\]/g, '\\\\"'$&'"'); }
+function blockFrom(text, signatureIndex, bodyStart) {
+  let brace = 0, inString = '', escape = false;
+  for (let pos = bodyStart; pos < text.length; pos += 1) {
+    const ch = text[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) inString = '';
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace === 0) return { start: signatureIndex, end: pos + 1 };
+    }
+  }
+  throw new Error('block end not found');
+}
+function findMethod(name) {
+  const re = new RegExp("'`''^  (?:async )?${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`method not found: ${name}`);
+  return blockFrom(source, match.index, match.index + match[0].lastIndexOf('"'{'));
+}
+function replaceMethod(name, wrapper) {
+  const range = findMethod(name);
+  source = source.slice(0, range.start) + wrapper + source.slice(range.end);
+}
+const wrappers = {
+  appendTask: "'`  appendTask(projectId, planId, title) {'"\\n    return planParser.appendTask(this, loopFlowHelpers(), projectId, planId, title);\\n  }"'`,
+  ensureWorkspaceDirs: `  ensureWorkspaceDirs(workspace) {'"\\n    return workspaceFiles.ensureWorkspaceDirs(this, loopFlowHelpers(), workspace);\\n  }"'`,
+  scanDirectory: `  scanDirectory(root, workspace, extensions) {'"\\n    return workspaceFiles.scanDirectory(this, loopFlowHelpers(), root, workspace, extensions);\\n  }"'`,
+  saveScan: `  saveScan(projectId, type, scan) {'"\\n    return workspaceFiles.saveScan(this, loopFlowHelpers(), projectId, type, scan);\\n  }"'`,
+  validatedParallelTaskBatches: `  validatedParallelTaskBatches(workspace, plan, confirmedBatches) {'"\\n    return concurrency.validatedParallelTaskBatches(this, workspace, plan, confirmedBatches);\\n  }"'`,
+  syncPlanTasks: `  syncPlanTasks(planId, planFile) {'"\\n    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);\\n  }"'`,
+  snapshot: `  snapshot(projectId = null) {'"\\n    return snapshots.snapshot(this, loopFlowHelpers(), projectId);\\n  }"'`,
+};
+for (const [name, wrapper] of Object.entries(wrappers)) replaceMethod(name, wrapper);
+source = source.replace("const planGeneration = require('"'./loop/planGeneration');\", \"const planGeneration = require('./loop/planGeneration');\\nconst planParser = require('./loop/planParser');\\nconst snapshots = require('./loop/snapshots');\\nconst concurrency = require('./loop/concurrency');\\nconst workspaceFiles = require('./loop/workspaceFiles');\\nconst { parseEventMeta } = snapshots;\\nconst { isAcceptanceTask } = concurrency;\\nconst {\\n  hashFile,\\n  hashText,\\n  normalizeRelative,\\n  readSnippet,\\n  safePart,\\n  tailText,\\n  workspaceKey,\\n  workspaceToolEnv,\\n} = workspaceFiles;\");
+function removeFunction(name) {
+  const re = new RegExp("'`''^function ${escapeRegExp(name)}'"\\\\("'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) return;
+  const next = source.indexOf('"'\\nfunction ', match.index + 1);
+  const moduleIndex = source.indexOf('\\nmodule.exports', match.index + 1);
+  const end = next === -1 ? moduleIndex : next;
+  if (end === -1) throw new Error("'`end not found for ${name}`);
+  source = source.slice(0, match.index) + source.slice(end + 1);
+}
+for (const name of [
+  '"'taskSnapshotRow', 'mcpStatusSnapshot', 'mcpStatusLabel', 'normalizeMcpBoolean', 'normalizeMcpTransport', 'normalizeMcpHost', 'normalizeMcpPort', 'normalizeMcpPath', 'emptySnapshot', 'eventSnapshotRow', 'planSnapshotRow', 'normalizePlanSortOrder', 'groupPlanTasksByPlanId', 'readPlanMarkdownTitle', 'resolveWorkspaceChildPath', 'extractMarkdownTitle', 'cleanMarkdownHeadingTitle', 'workspaceToolEnv', 'hashFile', 'hashText', 'isAcceptanceTask', 'taskScopeFileInfos', 'taskScopeFileInfo', 'planConcurrencySuggestion', 'taskConcurrencyAnalysis', 'concurrencyTaskSummary', 'emptyConcurrencySuggestion', 'normalizeConfirmedTaskBatches', 'taskParallelScopes', 'taskScopeText', 'taskDeclaredScopes', 'explicitTaskScopeParts', 'addScopeParts', 'normalizeTaskScope', 'ensureTaskScopeComment', 'stripTaskScopeComment', 'normalizePlanTaskScopes', 'insertTaskLineBeforeTask', 'normalizeRelative', 'workspaceKey', 'readSnippet', 'tailText', 'safePart'
+]) removeFunction(name);
+fs.writeFileSync(path, source, 'utf8');
+'@ | node -" in D:\project\GitHub\autoplan
+ succeeded in 447ms:
+**Inspecting imports**
+
+I’m considering that I need to inspect the imports. It’s important to understand what’s included and how they function within the given context. I should check if there are any redundancies or unnecessary imports that can be removed. Plus, I want to ensure everything aligns with the objectives of my task. This will help streamline the process and possibly enhance efficiency moving forward! Let's see what I can uncover.
+codex
+主服务已切到新模块；接下来文本级检查导入和关键签名。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src/loopService.js -TotalCount 115; Select-String -Path src/loopService.js,src/loop/planParser.js,src/loop/snapshots.js,src/loop/concurrency.js,src/loop/workspaceFiles.js -Pattern '"'^function (taskScopeText|taskSnapshotRow|planConcurrencySuggestion|workspaceToolEnv|hashFile|parseEventMeta)|appendTask'"\\(|syncPlanTasks\\(|snapshot\\(|validatedParallelTaskBatches\\(' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 572ms:
+const crypto = require('node:crypto');
+const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { nowIso } = require('./database');
+const { CodexActivityPrinter } = require('./codexActivity');
+const {
+  codexNewSessionArgs,
+  codexResumeSessionArgs,
+  runAgentCliAttempt,
+} = require('./agentCli');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  LOOP_CONFIG_INPUT_KEYS,
+  VALIDATION_COMMAND_INPUT_KEYS,
+  agentCliContextFields,
+  agentCliOperationFields,
+  agentCliProviderDisplayName,
+  agentCliStateUpdates,
+  clearCodexSessionFields,
+  codexSessionContextFields,
+  effectiveAgentCliConfig,
+  extractCodexSessionId,
+  hasAgentCliOverride,
+  hasAnyOwnProperty,
+  hasCodexSessionOption,
+  intakeSnapshotRow,
+  isCodexResumeFailure,
+  nextAgentCliConfig,
+  nextIntakeAgentCliConfig,
+  normalizeAgentCliConfig,
+  normalizeCodexSessionId,
+  normalizeIntakeAgentCliConfig,
+  normalizeOptionalNumber,
+  normalizeOptionalString,
+  operationCodexSessionId,
+  planAgentCliColumnValues,
+  readFirstOwnValue,
+  shortCodexSessionId,
+} = require('./loop/agentCliConfig');
+const {
+  archiveRuntimeOperation,
+  ensureProjectRuntime,
+  existingProjectRuntime,
+  findActiveRuntimeProject,
+  findRuntimeOperations,
+  killChildProcess,
+  normalizeRuntimeStatus,
+  operationSnapshotRow,
+  recordRuntimeError,
+  registerRuntimeOperation,
+  resetStoredRuntimeState,
+  runtimeOperationContextByTask,
+  runtimeProjectSummary,
+  scheduleProjectRuntime,
+  setProjectPhase,
+  stopProjectRuntime,
+  stopRuntimeTask,
+  waitForChild,
+} = require('./loop/runtime');
+const planGeneration = require('./loop/planGeneration');
+const planParser = require('./loop/planParser');
+const snapshots = require('./loop/snapshots');
+const concurrency = require('./loop/concurrency');
+const workspaceFiles = require('./loop/workspaceFiles');
+const { parseEventMeta } = snapshots;
+const { isAcceptanceTask } = concurrency;
+const {
+  hashFile,
+  hashText,
+  normalizeRelative,
+  readSnippet,
+  safePart,
+  tailText,
+  workspaceKey,
+  workspaceToolEnv,
+} = workspaceFiles;
+const taskExecution = require('./loop/taskExecution');
+const validationFlow = require('./loop/validation');
+const {
+  LEGACY_TASK_EVENT_TYPES,
+  TASK_EVENT_COMPATIBILITY,
+  TASK_EVENT_SEMANTICS,
+  TASK_EVENT_STATUS,
+  TASK_EVENT_TYPES,
+  compactEventMeta,
+  normalizeDurationMs,
+  syncedTaskStatus,
+  taskEventMessage,
+  taskEventMeta,
+  taskRunDurationMs,
+  withTaskDurationMeta,
+} = require('./loop/taskEvents');
+
+const MAX_PARALLEL_TASKS = 2;
+const MCP_DEFAULT_CONFIG = Object.freeze({
+  enabled: true,
+  transport: 'http',
+  host: '127.0.0.1',
+  port: 43847,
+  path: '/mcp',
+});
+const MCP_TOOL_NAMES = Object.freeze(['create_project', 'create_requirement', 'create_feedback']);
+const LOCAL_MCP_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+const SPECIAL_TASK_SCOPES = new Set(['unknown', 'validation']);
+const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+const ACCEPTANCE_TASK_RE = /(完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation)/i;
+const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;
+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
+const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
+const TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+const TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+D:\project\GitHub\autoplan\src\loopService.js:415: const batches = this.validatedParallelTaskBatches(workspace, plan, confirmedBatches);
+D:\project\GitHub\autoplan\src\loopService.js:449: validatedParallelTaskBatches(workspace, plan, confirmedBatches) {
+D:\project\GitHub\autoplan\src\loopService.js:450: return concurrency.validatedParallelTaskBatches(this, workspace, plan, confirmedBatches);
+D:\project\GitHub\autoplan\src\loopService.js:601: appendTask(projectId, planId, title) {
+D:\project\GitHub\autoplan\src\loopService.js:602: return planParser.appendTask(this, loopFlowHelpers(), projectId, planId, title);
+D:\project\GitHub\autoplan\src\loopService.js:669: const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+D:\project\GitHub\autoplan\src\loopService.js:670: const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+D:\project\GitHub\autoplan\src\loopService.js:682: planAgentCliEventSnapshot(projectId, planId) {
+D:\project\GitHub\autoplan\src\loopService.js:698: planSourceAgentCliSnapshot(projectId, planId) {
+D:\project\GitHub\autoplan\src\loopService.js:770: syncPlanTasks(planId, planFile) {
+D:\project\GitHub\autoplan\src\loopService.js:771: return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+D:\project\GitHub\autoplan\src\loopService.js:1074: this.emit('update', this.snapshot(projectId));
+D:\project\GitHub\autoplan\src\loopService.js:1077: snapshot(projectId = null) {
+D:\project\GitHub\autoplan\src\loopService.js:1078: return snapshots.snapshot(this, loopFlowHelpers(), projectId);
+D:\project\GitHub\autoplan\src\loopService.js:1082: function parseEventMeta(meta) {
+D:\project\GitHub\autoplan\src\loop\planParser.js:13: function appendTask(service, helpers, projectId, planId, title) {
+D:\project\GitHub\autoplan\src\loop\planParser.js:57: service.syncPlanTasks(planId, planFile);
+D:\project\GitHub\autoplan\src\loop\planParser.js:79: function syncPlanTasks(service, helpers, planId, planFile) {
+D:\project\GitHub\autoplan\src\loop\planParser.js:158: function taskScopeText(task) {
+D:\project\GitHub\autoplan\src\loop\snapshots.js:13: function snapshot(service, helpers, projectId = null) {
+D:\project\GitHub\autoplan\src\loop\snapshots.js:15: const mcp = mcpStatusSnapshot(service.db);
+D:\project\GitHub\autoplan\src\loop\snapshots.js:16: if (!projectId) return emptySnapshot(projects, mcp);
+D:\project\GitHub\autoplan\src\loop\snapshots.js:19: if (!activeProject) return emptySnapshot(projects, mcp);
+D:\project\GitHub\autoplan\src\loop\snapshots.js:114: function taskSnapshotRow(workspace, task, operationContext = null) {
+D:\project\GitHub\autoplan\src\loop\snapshots.js:143: function mcpStatusSnapshot(db) {
+D:\project\GitHub\autoplan\src\loop\snapshots.js:225: function emptySnapshot(projects, mcp = null) {
+D:\project\GitHub\autoplan\src\loop\snapshots.js:230: mcp: mcp || mcpStatusSnapshot(null),
+D:\project\GitHub\autoplan\src\loop\snapshots.js:253: function parseEventMeta(meta) {
+D:\project\GitHub\autoplan\src\loop\concurrency.js:11: function validatedParallelTaskBatches(service, workspace, plan, confirmedBatches) {
+D:\project\GitHub\autoplan\src\loop\concurrency.js:95: function planConcurrencySuggestion(workspace, tasks) {
+D:\project\GitHub\autoplan\src\loop\workspaceFiles.js:53: function workspaceToolEnv(workspace, baseEnv = process.env) {
+D:\project\GitHub\autoplan\src\loop\workspaceFiles.js:80: function hashFile(filePath) {
+
+codex
+发现 `parseEventMeta` 旧副本残留并会冲突，我会清掉并复查常量使用。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern 'MAX_PARALLEL_TASKS|MCP_DEFAULT_CONFIG|SPECIAL_TASK_SCOPES|ACCEPTANCE_TASK_RE|PARALLEL_BLOCKING_TASK_RE|TASK_SCOPE_' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; $lines=Get-Content -Encoding UTF8 src/loopService.js; for($i=1076;$i -lt 1098;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 477ms:
+D:\project\GitHub\autoplan\src\loopService.js:96: const MAX_PARALLEL_TASKS = 2;
+D:\project\GitHub\autoplan\src\loopService.js:97: const MCP_DEFAULT_CONFIG = Object.freeze({
+D:\project\GitHub\autoplan\src\loopService.js:106: const SPECIAL_TASK_SCOPES = new Set(['unknown', 'validation']);
+D:\project\GitHub\autoplan\src\loopService.js:109: const ACCEPTANCE_TASK_RE = /(完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation)/i;
+D:\project\GitHub\autoplan\src\loopService.js:110: const PARALLEL_BLOCKING_TASK_RE = /(全量|回归|验证|验收|测试|记录|整理|发布|部署|test|validate|regression|release|deploy)/i;
+D:\project\GitHub\autoplan\src\loopService.js:111: const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
+D:\project\GitHub\autoplan\src\loopService.js:112: const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
+D:\project\GitHub\autoplan\src\loopService.js:113: const TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+D:\project\GitHub\autoplan\src\loopService.js:114: const TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ 1077:   snapshot(projectId = null) {
+ 1078:     return snapshots.snapshot(this, loopFlowHelpers(), projectId);
+ 1079:   }
+ 1080: }
+ 1081: 
+ 1082: function parseEventMeta(meta) {
+ 1083:   if (!meta) return null;
+ 1084:   if (typeof meta !== 'string') return meta;
+ 1085:   try {
+ 1086:     const parsed = JSON.parse(meta);
+ 1087:     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
+ 1088:     if (typeof parsed === 'string') return parsed;
+ 1089:   } catch {
+ 1090:     return meta;
+ 1091:   }
+ 1092:   return meta;
+ 1093: }
+ 1094: 
+ 1095: function intakeAttachmentOwnerTypes(intakeType) {
+ 1096:   return intakeType === 'feedback' ? ['feedback'] : ['requirement', 'requirements'];
+ 1097: }
+ 1098: 
+
+**Evaluating constants and functions**
+
+I'm thinking about whether to keep constants that aren't being used at all. Perhaps I should select only those declarations that are necessary. I'm wondering if MCP is relevant here; maybe I shouldn't include it. There's also the need to remove any unused constants for clarity. I should look into the parse function and check if MCP_TOOL_NAMES and LOCAL are being utilized. Let's search for that!
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern 'MCP_TOOL_NAMES|LOCAL_MCP_HOSTS' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 444ms:
+D:\project\GitHub\autoplan\src\loopService.js:104: const MCP_TOOL_NAMES = Object.freeze(['create_project', 'create_requirement', 'create_feedback']);
+D:\project\GitHub\autoplan\src\loopService.js:105: const LOCAL_MCP_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+
+**Refining crypto imports**
+
+I think I need to remove constants at the top of my script. Also, I wonder if I should take out the `hashFile` import from crypto, since it might not be necessary. It could be good to double-check that before proceeding. I’ll search for other references to crypto in my code to ensure everything is streamlined. It's all about keeping it clean and efficient!
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern 'crypto|compactEventMeta|normalizeDurationMs|taskRunDurationMs|syncedTaskStatus|operationSnapshotRow|runtimeOperationContextByTask|intakeSnapshotRow|normalizeOptionalString|normalizeOptionalNumber' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 444ms:
+D:\project\GitHub\autoplan\src\loopService.js:1: const crypto = require('node:crypto');
+D:\project\GitHub\autoplan\src\loopService.js:28: intakeSnapshotRow,
+D:\project\GitHub\autoplan\src\loopService.js:35: normalizeOptionalNumber,
+D:\project\GitHub\autoplan\src\loopService.js:36: normalizeOptionalString,
+D:\project\GitHub\autoplan\src\loopService.js:50: operationSnapshotRow,
+D:\project\GitHub\autoplan\src\loopService.js:54: runtimeOperationContextByTask,
+D:\project\GitHub\autoplan\src\loopService.js:87: compactEventMeta,
+D:\project\GitHub\autoplan\src\loopService.js:88: normalizeDurationMs,
+D:\project\GitHub\autoplan\src\loopService.js:89: syncedTaskStatus,
+D:\project\GitHub\autoplan\src\loopService.js:92: taskRunDurationMs,
+D:\project\GitHub\autoplan\src\loopService.js:509: const runDurationMs = isRunning ? taskRunDurationMs(task.started_at, finishedAt) : undefined;
+D:\project\GitHub\autoplan\src\loopService.js:510: const durationMs = normalizeDurationMs(task.duration_ms) + (runDurationMs || 0);
+
+**Streamlining code imports**
+
+I need to consider removing certain imports like `crypto`, `intakeSnapshot`, and some others, since they seem to be used exclusively by snapshots and not in loops. I’ll also check `normalizeOptional*`; my search only showed imports. As for `normalizeOptionalNumber`, it's currently only an import too, so I should remove that. For `operationSnapshot/runtime`, it's only used in snapshots, so those imports should go as well. I want to keep my code neat!
+codex
+我会清理 P003 搬迁后主文件的残留函数、常量和导入。
+exec
+powershell.exe -Command '$path='"'src/loopService.js'; "'$text=Get-Content -Raw -Encoding UTF8 $path;
+# Remove stale parseEventMeta function block
+$start=$text.IndexOf('"'function parseEventMeta(meta) {'); if("'$start -ge 0){ $end=$text.IndexOf('"'function intakeAttachmentOwnerTypes', "'$start); if($end -gt $start){ $text=$text.Remove($start,$end-$start) }}
+# Remove unused top constants
+$patterns=@(
+"const crypto = require'"\\('node:crypto'\\);\\r?\\n\",
+\"const MAX_PARALLEL_TASKS = 2;\\r?\\n\",
+\"const MCP_DEFAULT_CONFIG = Object\\.freeze\\(\\{[\\s\\S]*?\\}\\);\\r?\\n\",
+\"const MCP_TOOL_NAMES = Object\\.freeze\\(\\['create_project', 'create_requirement', 'create_feedback'\\]\\);\\r?\\n\",
+\"const LOCAL_MCP_HOSTS = new Set\\(\\['127\\.0\\.0\\.1', '::1', 'localhost'\\]\\);\\r?\\n\",
+\"const SPECIAL_TASK_SCOPES = new Set\\(\\['unknown', 'validation'\\]\\);\\r?\\n\",
+\"const ACCEPTANCE_TASK_RE = /.*?validation\\)\\/i;\\r?\\n\",
+\"const PARALLEL_BLOCKING_TASK_RE = /.*?deploy\\)\\/i;\\r?\\n\",
+\"const TASK_SCOPE_LABEL_RE = '["'^'"']+';\\r?\\n\",
+\"const TASK_SCOPE_RE = new RegExp\\(["'^'"\\n]+\\);\\r?\\n\",
+\"const TASK_SCOPE_COMMENT_RE = new RegExp\\(["'^'"\\n]+\\);\\r?\\n\",
+\"const TASK_SCOPE_SPLIT_RE = /\\[,，、;；\\]\\+/;\\r?\\n\",
+\"const TASK_PATH_RE = /["'^'"\\n]+\\r?\\n\"
+);
+foreach("'$p in $patterns){ $text=[regex]::Replace($text,$p,'"'') }
+# Remove now-unused destructured import lines
+foreach("'$name in @('"'  intakeSnapshotRow,','  normalizeOptionalNumber,','  normalizeOptionalString,','  operationSnapshotRow,','  runtimeOperationContextByTask,','  compactEventMeta,','  syncedTaskStatus,')){
+  "'$text=$text.Replace("$name`r`n",'"'').Replace(\""'$name`n",'"'')
+}
+[System.IO.File]::WriteAllText((Resolve-Path "'$path), $text, [System.Text.UTF8Encoding]::new($false))' in D:\project\GitHub\autoplan
+ succeeded in 446ms:
+codex
+清理完成；现在检查主服务顶部和模块间引用是否合理。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src/loopService.js -TotalCount 105; Select-String -Path src/loopService.js -Pattern '"'^function (parseEventMeta|taskScopeText|hashFile|planConcurrencySuggestion|workspaceToolEnv|taskSnapshotRow)|MAX_PARALLEL_TASKS|MCP_DEFAULT_CONFIG|TASK_SCOPE|ACCEPTANCE_TASK_RE|PARALLEL_BLOCKING_TASK_RE|SPECIAL_TASK_SCOPES|crypto'"' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 463ms:
+const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { nowIso } = require('./database');
+const { CodexActivityPrinter } = require('./codexActivity');
+const {
+  codexNewSessionArgs,
+  codexResumeSessionArgs,
+  runAgentCliAttempt,
+} = require('./agentCli');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  LOOP_CONFIG_INPUT_KEYS,
+  VALIDATION_COMMAND_INPUT_KEYS,
+  agentCliContextFields,
+  agentCliOperationFields,
+  agentCliProviderDisplayName,
+  agentCliStateUpdates,
+  clearCodexSessionFields,
+  codexSessionContextFields,
+  effectiveAgentCliConfig,
+  extractCodexSessionId,
+  hasAgentCliOverride,
+  hasAnyOwnProperty,
+  hasCodexSessionOption,
+  isCodexResumeFailure,
+  nextAgentCliConfig,
+  nextIntakeAgentCliConfig,
+  normalizeAgentCliConfig,
+  normalizeCodexSessionId,
+  normalizeIntakeAgentCliConfig,
+  operationCodexSessionId,
+  planAgentCliColumnValues,
+  readFirstOwnValue,
+  shortCodexSessionId,
+} = require('./loop/agentCliConfig');
+const {
+  archiveRuntimeOperation,
+  ensureProjectRuntime,
+  existingProjectRuntime,
+  findActiveRuntimeProject,
+  findRuntimeOperations,
+  killChildProcess,
+  normalizeRuntimeStatus,
+  recordRuntimeError,
+  registerRuntimeOperation,
+  resetStoredRuntimeState,
+  runtimeProjectSummary,
+  scheduleProjectRuntime,
+  setProjectPhase,
+  stopProjectRuntime,
+  stopRuntimeTask,
+  waitForChild,
+} = require('./loop/runtime');
+const planGeneration = require('./loop/planGeneration');
+const planParser = require('./loop/planParser');
+const snapshots = require('./loop/snapshots');
+const concurrency = require('./loop/concurrency');
+const workspaceFiles = require('./loop/workspaceFiles');
+const { parseEventMeta } = snapshots;
+const { isAcceptanceTask } = concurrency;
+const {
+  hashFile,
+  hashText,
+  normalizeRelative,
+  readSnippet,
+  safePart,
+  tailText,
+  workspaceKey,
+  workspaceToolEnv,
+} = workspaceFiles;
+const taskExecution = require('./loop/taskExecution');
+const validationFlow = require('./loop/validation');
+const {
+  LEGACY_TASK_EVENT_TYPES,
+  TASK_EVENT_COMPATIBILITY,
+  TASK_EVENT_SEMANTICS,
+  TASK_EVENT_STATUS,
+  TASK_EVENT_TYPES,
+  normalizeDurationMs,
+  taskEventMessage,
+  taskEventMeta,
+  taskRunDurationMs,
+  withTaskDurationMeta,
+} = require('./loop/taskEvents');
+
+const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+
+class LoopService extends EventEmitter {
+  constructor(db) {
+    super();
+    this.db = db;
+    this.runtimes = new Map();
+    this.resetRuntimeState();
+  }
+
+  runtime(projectId) {
+    return ensureProjectRuntime(this.runtimes, projectId);
+  }
+
+  existingRuntime(projectId) {
+    return existingProjectRuntime(this.runtimes, projectId);
+  }
+
+**Inspecting module syntax issues**
+
+I’m thinking about potential syntax issues in my module. Specifically, I need to look at the `planParser` regex constants—maybe I’m using too many backslashes. It's something I definitely need to inspect closely, as it can lead to bugs or unexpected behavior. I want to make sure everything is functioning properly, so I’ll take a closer look at that part of the code soon!
+codex
+主服务顶部已干净；我会检查新模块开头和关键函数签名。
+exec
+powershell.exe -Command 'foreach($f in '"'src/loop/planParser.js','src/loop/concurrency.js','src/loop/snapshots.js','src/loop/workspaceFiles.js'){ '--- '+"'$f; Get-Content -Encoding UTF8 $f -TotalCount 35; Select-String -Path $f -Pattern '"'"'^function |''^async function |module'"\\.exports' | Select-Object -First 18 | ForEach-Object { '{0}: {1}' -f "'$_.LineNumber,$_.Line.Trim() } }' in D:\project\GitHub\autoplan
+ succeeded in 465ms:
+--- src/loop/planParser.js
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const { syncedTaskStatus, taskEventMeta, TASK_EVENT_STATUS } = require('./taskEvents');
+const { hashFile } = require('./workspaceFiles');
+
+const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|????|???)';
+const TASK_SCOPE_RE = new RegExp(`${TASK_SCOPE_LABEL_RE}\\s*[:=?]\\s*([^>\\]\\n]+)`, 'i');
+const TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${TASK_SCOPE_LABEL_RE}\\s*[:=?]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+const TASK_SCOPE_SPLIT_RE = /[,??;?]+/;
+const TASK_PATH_RE = /[\\w./\\\\-]+\\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+
+function appendTask(service, helpers, projectId, planId, title) {
+    const project = service.project(projectId);
+    const workspace = project?.workspace_path;
+    const plan = service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+    if (!plan) throw new Error('计划不存在');
+    if (!workspace) throw new Error('请先设置项目工作区路径');
+
+    const planFile = path.join(workspace, plan.file_path);
+    if (!fs.existsSync(planFile)) throw new Error('plan 文件不存在，无法追加任务');
+
+    const cleanTitle = String(title || '').trim();
+    if (!cleanTitle) throw new Error('任务标题不能为空');
+
+    // 计算下一个 task_key
+    const existing = service.db.all('SELECT task_key FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order', [planId]);
+    const maxNum = existing.reduce((max, row) => {
+      const m = String(row.task_key || '').match(/P0*(\d+)/i);
+      return m ? Math.max(max, Number(m[1])) : max;
+    }, 0);
+    const taskKey = `P${String(maxNum + 1).padStart(3, '0')}`;
+
+    // 追加到 plan 文件的"## 任务计划"段末尾
+    let content = fs.readFileSync(planFile, 'utf8');
+13: function appendTask(service, helpers, projectId, planId, title) {
+79: function syncPlanTasks(service, helpers, planId, planFile) {
+158: function taskScopeText(task) {
+165: function taskDeclaredScopes(task, options = {}) {
+185: function explicitTaskScopeParts(raw) {
+190: function addScopeParts(scopes, parts, options = {}) {
+197: function normalizeTaskScope(value, options = {}) {
+209: function ensureTaskScopeComment(line, fallbackScope = 'unknown') {
+214: function stripTaskScopeComment(value) {
+218: function normalizePlanTaskScopes(planFile) {
+229: function insertTaskLineBeforeTask(content, task, line) {
+239: function extractMarkdownTitle(markdown) {
+248: function cleanMarkdownHeadingTitle(value) {
+255: module.exports = {
+--- src/loop/concurrency.js
+const fs = require('node:fs');
+const { TASK_EVENT_STATUS } = require('./taskEvents');
+const { normalizeTaskScope, taskDeclaredScopes } = require('./planParser');
+const { resolveWorkspaceChildPath } = require('./workspaceFiles');
+
+const MAX_PARALLEL_TASKS = 2;
+const SPECIAL_TASK_SCOPES = new Set(['unknown', 'validation']);
+const ACCEPTANCE_TASK_RE = /(????|????|????|????|????|????|acceptance|validation)/i;
+const PARALLEL_BLOCKING_TASK_RE = /(??|??|??|??|??|??|??|??|??|test|validate|regression|release|deploy)/i;
+
+function validatedParallelTaskBatches(service, workspace, plan, confirmedBatches) {
+  const batches = normalizeConfirmedTaskBatches(confirmedBatches);
+  if (!batches.length) throw new Error('?????????');
+  const seenTaskIds = new Set();
+  return batches.map((batchTaskIds, batchIndex) => {
+    if (batchTaskIds.length < 2) throw new Error(`? ${batchIndex + 1} ????? 2 ???`);
+    if (batchTaskIds.length > MAX_PARALLEL_TASKS) {
+      throw new Error(`? ${batchIndex + 1} ???????? ${MAX_PARALLEL_TASKS}`);
+    }
+    const scopeSet = new Set();
+    return batchTaskIds.map((taskId) => {
+      if (seenTaskIds.has(taskId)) throw new Error(`?? #${taskId} ?????`);
+      seenTaskIds.add(taskId);
+      const task = service.taskForProject(plan.project_id, taskId);
+      if (!task || Number(task.plan_id) !== Number(plan.id)) throw new Error(`?? #${taskId} ???????`);
+      if (task.status !== TASK_EVENT_STATUS.PENDING) {
+        throw new Error(`${task.task_key || `?? #${task.id}`} ???????`);
+      }
+      const scopes = taskParallelScopes(task);
+      if (!scopes.length) throw new Error(`${task.task_key || `?? #${task.id}`} ????? scope`);
+      const analysis = taskConcurrencyAnalysis(workspace, task);
+      if (!analysis.canRunInParallel) throw new Error(`${task.task_key || `?? #${task.id}`} ??????${analysis.reason}`);
+      for (const scope of scopes) {
+        if (scopeSet.has(scope)) throw new Error(`? ${batchIndex + 1} ??? scope ???${scope}`);
+        scopeSet.add(scope);
+11: function validatedParallelTaskBatches(service, workspace, plan, confirmedBatches) {
+42: function isAcceptanceTask(task) {
+48: function taskScopeFileInfos(workspace, task) {
+54: function taskScopeFileInfo(workspace, scope) {
+95: function planConcurrencySuggestion(workspace, tasks) {
+151: function taskConcurrencyAnalysis(workspace, task) {
+171: function concurrencyTaskSummary(task, reason, scopes = []) {
+182: function emptyConcurrencySuggestion() {
+194: function normalizeConfirmedTaskBatches(value) {
+211: function taskParallelScopes(task) {
+217: module.exports = {
+--- src/loop/snapshots.js
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const { DEFAULT_AGENT_CLI_PROVIDER, agentCliContextFields, codexSessionContextFields, effectiveAgentCliConfig, intakeSnapshotRow, normalizeOptionalString } = require('./agentCliConfig');
+const { TASK_EVENT_STATUS, normalizeDurationMs, taskRunDurationMs } = require('./taskEvents');
+const { operationSnapshotRow, runtimeOperationContextByTask } = require('./runtime');
+const { planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');
+const { extractMarkdownTitle } = require('./planParser');
+const { resolveWorkspaceChildPath } = require('./workspaceFiles');
+
+const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 19690, path: '/mcp' });
+
+function snapshot(service, helpers, projectId = null) {
+    const projects = service.projects();
+    const mcp = mcpStatusSnapshot(service.db);
+    if (!projectId) return emptySnapshot(projects, mcp);
+
+    const activeProject = service.project(projectId);
+    if (!activeProject) return emptySnapshot(projects, mcp);
+
+    const state = {
+      ...(service.status(projectId) || {}),
+      workspace_path: activeProject.workspace_path || '',
+    };
+    const runtime = service.existingRuntime(projectId);
+    const taskOperationContexts = runtimeOperationContextByTask(runtime, projectId);
+    const planRows = service.db.all(
+      'SELECT * FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
+      [projectId],
+    );
+    const taskRows = service.db.all(
+      `SELECT plan_tasks.*, plans.file_path
+       FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+       WHERE plans.project_id = ?
+       ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC, plan_tasks.sort_order ASC, plan_tasks.id ASC`,
+13: function snapshot(service, helpers, projectId = null) {
+114: function taskSnapshotRow(workspace, task, operationContext = null) {
+143: function mcpStatusSnapshot(db) {
+192: function mcpStatusLabel({ enabled, running, lastError }) {
+198: function normalizeMcpBoolean(value, fallback) {
+206: function normalizeMcpTransport(value) {
+210: function normalizeMcpHost(value) {
+214: function normalizeMcpPort(value) {
+219: function normalizeMcpPath(value) {
+225: function emptySnapshot(projects, mcp = null) {
+245: function eventSnapshotRow(event) {
+253: function parseEventMeta(meta) {
+266: function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
+283: function normalizePlanSortOrder(value) {
+288: function groupPlanTasksByPlanId(tasks) {
+300: function readPlanMarkdownTitle(workspace, filePath) {
+312: module.exports = {
+--- src/loop/workspaceFiles.js
+const crypto = require('node:crypto');
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+
+function ensureWorkspaceDirs(service, helpers, workspace) {
+    for (const dir of ['docs/issues', 'docs/plan', 'docs/progress', 'docs/progress/logs']) {
+      fs.mkdirSync(path.join(workspace, dir), { recursive: true });
+    }
+  }
+
+function scanDirectory(service, helpers, root, workspace, extensions) {
+    if (!fs.existsSync(root)) return { root, aggregateHash: hashText(''), files: [] };
+    const files = [];
+    const visit = (dir) => {
+      for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          visit(full);
+        } else if (entry.isFile() && extensions.includes(path.extname(entry.name).toLowerCase())) {
+          const stat = fs.statSync(full);
+          files.push({
+            path: normalizeRelative(workspace, full),
+            hash: hashFile(full),
+            size: stat.size,
+            modifiedAt: stat.mtime.toISOString(),
+          });
+        }
+      }
+    };
+    visit(root);
+    files.sort((a, b) => a.path.localeCompare(b.path));
+    return {
+      root,
+      aggregateHash: hashText(files.map((file) => `${file.path}|${file.hash}|${file.size}`).join('\n')),
+6: function ensureWorkspaceDirs(service, helpers, workspace) {
+12: function scanDirectory(service, helpers, root, workspace, extensions) {
+40: function saveScan(service, helpers, projectId, type, scan) {
+53: function workspaceToolEnv(workspace, baseEnv = process.env) {
+80: function hashFile(filePath) {
+84: function hashText(text) {
+88: function resolveWorkspaceChildPath(workspace, filePath) {
+102: function normalizeRelative(root, fullPath) {
+106: function workspaceKey(workspace) {
+113: function readSnippet(filePath, maxChars) {
+118: function tailText(text, maxChars) {
+122: function safePart(value) {
+126: module.exports = {
+
+**Fixing encoding issues**
+
+I'm tackling the issue where custom Chinese text in my concurrency header is getting garbled due to script stdin encoding. It seems like I need to fix this manually using Set-Content, but I’m considering other options. Maybe a node script with Unicode escapes would prevent this problem. Alternatively, I could use a PowerShell here string that supports [Console] encoding. The goal is to ensure that custom headers and messages maintain their integrity without garble.
+**Adjusting regex for encoding**
+
+I'm refining the TASK_SCOPE_SPLIT to properly include the Chinese comma with Unicode escapes. I think it’s necessary to apply a patch through Node for a small replacement to fix the regex. Also, I need to ensure the planParser TASK_PATH_RE isn’t overly complicated with too many backslashes. The current file pattern has excessive backslashes; I want to simplify it to better match without confusion. The goal is clean and effective regex for my tasks!
+**Evaluating JSON and regex issues**
+
+I'm exploring a potential issue with how Get-Content is interpreting JSON data, particularly with the regex pattern defined as `const TASK_PATH_RE`. It appears that the double backslashes are being misrepresented. I wonder if I can replace the line with a simpler pattern in the source file. Checking with Node could help clarify this behavior. I'll need a custom script to manage the pattern replacement to ensure everything aligns correctly, particularly considering Unicode escapes in JavaScript strings.
+codex
+新模块自定义中文在管道中被转义损坏；我会用 Unicode 转义恢复原文。
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+let plan = fs.readFileSync('src/loop/planParser.js', 'utf8');
+plan = plan.replace(\"const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|????|???)';\", \"const TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|\\\\u5f71\\\\u54cd\\\\u8303\\\\u56f4|\\\\u5e76\\\\u53d1\\\\u952e)';\");
+plan = plan.replace(/\\[:=\\?\\]/g, '[:=\\\\uFF1A]');
+plan = plan.replace(\"const TASK_SCOPE_SPLIT_RE = /[,??;?]+/;\", \"const TASK_SCOPE_SPLIT_RE = /[,\\\\uFF0C\\\\u3001;\\\\uFF1B]+/;\");
+fs.writeFileSync('src/loop/planParser.js', plan, 'utf8');
+let conc = fs.readFileSync('src/loop/concurrency.js', 'utf8');
+conc = conc.replace(/const ACCEPTANCE_TASK_RE = .*?;\\n/, \"const ACCEPTANCE_TASK_RE = /(\\\\u5b8c\\\\u6574\\\\u9a8c\\\\u6536|\\\\u6574\\\\u4f53\\\\u9a8c\\\\u6536|\\\\u603b\\\\u4f53\\\\u9a8c\\\\u6536|\\\\u6700\\\\u7ec8\\\\u9a8c\\\\u6536|\\\\u5b8c\\\\u6574\\\\u9a8c\\\\u8bc1|\\\\u6700\\\\u7ec8\\\\u9a8c\\\\u8bc1|acceptance|validation)/i;\\n\");
+conc = conc.replace(/const PARALLEL_BLOCKING_TASK_RE = .*?;\\n/, \"const PARALLEL_BLOCKING_TASK_RE = /(\\\\u5168\\\\u91cf|\\\\u56de\\\\u5f52|\\\\u9a8c\\\\u8bc1|\\\\u9a8c\\\\u6536|\\\\u6d4b\\\\u8bd5|\\\\u8bb0\\\\u5f55|\\\\u6574\\\\u7406|\\\\u53d1\\\\u5e03|\\\\u90e8\\\\u7f72|test|validate|regression|release|deploy)/i;\\n\");
+const replacements = new Map([
+  ['?????????', '\\\\u672a\\\\u9009\\\\u62e9\\\\u5e76\\\\u53d1\\\\u4efb\\\\u52a1\\\\u6279\\\\u6b21'],
+  ['? "'${batchIndex + 1} ????? 2 ???'"', '\\\\u7b2c "'${batchIndex + 1} '"\\\\u6279\\\\u81f3\\\\u5c11\\\\u9700\\\\u8981 2 \\\\u4e2a\\\\u4efb\\\\u52a1'],
+  ['? "'${batchIndex + 1} ???????? ${MAX_PARALLEL_TASKS}'"', '\\\\u7b2c "'${batchIndex + 1} '"\\\\u6279\\\\u8d85\\\\u8fc7\\\\u6700\\\\u5927\\\\u5e76\\\\u53d1\\\\u6570 "'${MAX_PARALLEL_TASKS}'"'],
+  ['?? #"'${taskId} ?????'"', '\\\\u4efb\\\\u52a1 #"'${taskId} '"\\\\u88ab\\\\u91cd\\\\u590d\\\\u9009\\\\u62e9'],
+  ['?? #"'${taskId} ???????'"', '\\\\u4efb\\\\u52a1 #"'${taskId} '"\\\\u4e0d\\\\u5c5e\\\\u4e8e\\\\u5f53\\\\u524d\\\\u8ba1\\\\u5212'],
+  ['?? #"'${task.id}'"', '\\\\u4efb\\\\u52a1 #"'${task.id}'"'],
+  ['???????', '\\\\u4e0d\\\\u662f\\\\u5f85\\\\u6267\\\\u884c\\\\u72b6\\\\u6001'],
+  ['????? scope', '\\\\u7f3a\\\\u5c11\\\\u53ef\\\\u5e76\\\\u53d1 scope'],
+  ['??????"'${analysis.reason}'"', '\\\\u4e0d\\\\u5efa\\\\u8bae\\\\u5e76\\\\u53d1\\\\uFF1A"'${analysis.reason}'"'],
+  ['? "'${batchIndex + 1} ??? scope ???${scope}'"', '\\\\u7b2c "'${batchIndex + 1} '"\\\\u6279\\\\u5b58\\\\u5728 scope \\\\u51b2\\\\u7a81\\\\uFF1A"'${scope}'"'],
+]);
+for (const [from, to] of replacements) conc = conc.split(from).join(to);
+fs.writeFileSync('src/loop/concurrency.js', conc, 'utf8');
+'@ | node -" in D:\project\GitHub\autoplan
+ succeeded in 454ms:
+**Evaluating Unicode Usage**
+
+I need to see if using actual Chinese characters instead of unicode escapes is acceptable. The behavior remains the same since the strings produce the correct output at runtime, though readability is slightly impacted. It might be better to have the actual Chinese, but since the file is read and written in UTF-8, escaped strings should be fine. Maybe I should consider using Node for evaluating unicode strings. I'll need to inspect further for any remaining issues.
+codex
+已恢复语义为 Unicode 转义；我会确认没有残余乱码和冲突定义。
+exec
+powershell.exe -Command "Select-String -Path src/loop/*.js -Pattern '\\?\\?\\?' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Select-String -Path src/loopService.js -Pattern '"'"'^function (parseEventMeta|taskScopeText|hashFile|workspaceToolEnv|planConcurrencySuggestion|taskSnapshotRow)|const '"\\{ parseEventMeta \\}|function loopFlowHelpers' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 479ms:
+D:\project\GitHub\autoplan\src\loopService.js:61: const { parseEventMeta } = snapshots;
+D:\project\GitHub\autoplan\src\loopService.js:1154: function loopFlowHelpers() {
+
+**Checking module syntax and configuration**
+
+I need to check the modules for any syntax issues. It seems like the planParser imports the path, but maybe it's unused, which is fine. There might be a circular reference between planParser and workspaceFiles. Also, I'm noting a potential issue with the snapshots module regarding `MCP_DEFAULT_CONFIG`—it appears the port differs. I'll need to ensure that the snapshots are set back to the original value of 43847. I'll also look into the original MCP_TOOL_NAMES and LOCAL_MCP_HOSTS to inspect further.
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loop/snapshots.js; for($i=140;$i -lt 224;$i++){ '"'{0,4}: {1}' -f ("'$i+1),$lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 426ms:
+ 141: }
+ 142: 
+ 143: function mcpStatusSnapshot(db) {
+ 144:   const settings = db?.getSettings ? db.getSettings('mcp.') : {};
+ 145:   const enabled = normalizeMcpBoolean(process.env.AUTOPLAN_MCP_ENABLED ?? settings['mcp.enabled'], MCP_DEFAULT_CONFIG.enabled);
+ 146:   const transport = normalizeMcpTransport(process.env.AUTOPLAN_MCP_TRANSPORT ?? settings['mcp.transport']);
+ 147:   const host = normalizeMcpHost(process.env.AUTOPLAN_MCP_HOST ?? settings['mcp.host']);
+ 148:   const port = normalizeMcpPort(process.env.AUTOPLAN_MCP_PORT ?? settings['mcp.port']);
+ 149:   const mcpPath = normalizeMcpPath(process.env.AUTOPLAN_MCP_PATH ?? settings['mcp.path']);
+ 150:   const latestEvent = db?.get
+ 151:     ? db.get(
+ 152:         `SELECT type, message, meta, created_at
+ 153:          FROM events
+ 154:          WHERE type IN ('mcp.started', 'mcp.start.failed')
+ 155:          ORDER BY id DESC LIMIT 1`,
+ 156:       )
+ 157:     : null;
+ 158:   const eventMeta = parseEventMeta(latestEvent?.meta);
+ 159:   const eventMcp = eventMeta && typeof eventMeta === 'object' ? eventMeta.mcp : null;
+ 160:   const url = transport === 'http' ? `http://${host}:${port}${mcpPath}` : null;
+ 161:   const running = Boolean(enabled && latestEvent?.type === 'mcp.started');
+ 162:   const lastError = latestEvent?.type === 'mcp.start.failed'
+ 163:     ? eventMeta?.error || latestEvent.message || eventMcp?.lastError || 'MCP 服务启动失败'
+ 164:     : null;
+ 165: 
+ 166:   return {
+ 167:     enabled,
+ 168:     running,
+ 169:     status: mcpStatusLabel({ enabled, running, lastError }),
+ 170:     transport,
+ 171:     host: transport === 'http' ? host : null,
+ 172:     port: transport === 'http' ? port : null,
+ 173:     path: transport === 'http' ? mcpPath : null,
+ 174:     url,
+ 175:     localOnly: transport !== 'http' || LOCAL_MCP_HOSTS.has(String(host).toLowerCase()),
+ 176:     tools: MCP_TOOL_NAMES,
+ 177:     connectionExample: transport === 'http'
+ 178:       ? `http://${host}:${port}${mcpPath}`
+ 179:       : 'npm run mcp:stdio',
+ 180:     note: transport === 'http'
+ 181:       ? '默认仅监听本机地址，供本机 MCP 客户端连接。'
+ 182:       : 'stdio 模式由 MCP 客户端启动 AutoPlan MCP 进程。',
+ 183:     lastEvent: latestEvent ? {
+ 184:       type: latestEvent.type,
+ 185:       message: latestEvent.message,
+ 186:       createdAt: latestEvent.created_at,
+ 187:     } : null,
+ 188:     lastError,
+ 189:   };
+ 190: }
+ 191: 
+ 192: function mcpStatusLabel({ enabled, running, lastError }) {
+ 193:   if (!enabled) return 'disabled';
+ 194:   if (lastError) return 'error';
+ 195:   return running ? 'running' : 'configured';
+ 196: }
+ 197: 
+ 198: function normalizeMcpBoolean(value, fallback) {
+ 199:   if (value === undefined || value === null || value === '') return Boolean(fallback);
+ 200:   const normalized = String(value).trim().toLowerCase();
+ 201:   if (['0', 'false', 'off', 'disabled'].includes(normalized)) return false;
+ 202:   if (['1', 'true', 'on', 'enabled'].includes(normalized)) return true;
+ 203:   return Boolean(fallback);
+ 204: }
+ 205: 
+ 206: function normalizeMcpTransport(value) {
+ 207:   return String(value || MCP_DEFAULT_CONFIG.transport).trim().toLowerCase() === 'stdio' ? 'stdio' : 'http';
+ 208: }
+ 209: 
+ 210: function normalizeMcpHost(value) {
+ 211:   return String(value || MCP_DEFAULT_CONFIG.host).trim() || MCP_DEFAULT_CONFIG.host;
+ 212: }
+ 213: 
+ 214: function normalizeMcpPort(value) {
+ 215:   const port = Number(value || MCP_DEFAULT_CONFIG.port);
+ 216:   return Number.isInteger(port) && port > 0 && port <= 65535 ? port : MCP_DEFAULT_CONFIG.port;
+ 217: }
+ 218: 
+ 219: function normalizeMcpPath(value) {
+ 220:   const trimmed = String(value || MCP_DEFAULT_CONFIG.path).trim();
+ 221:   if (!trimmed || trimmed === '/') return MCP_DEFAULT_CONFIG.path;
+ 222:   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+ 223: }
+ 224: 
+
+**Updating configurations**
+
+I see that I'm missing some important constants like LOCAL_MCP_HOSTS and MCP_TOOL_NAMES in the snapshots, plus I need to reference the runtime syntax. I also need to add the port number 43847. Additionally, I'm wondering if the Chinese notes in the snapshots from the extracted source have been preserved since they show Chinese text. Alright, it looks like I need to go ahead and add those constants!
+codex
+快照模块缺少 MCP 常量，我会补回原默认端口和工具列表。
+exec
+powershell.exe -Command '$path='"'src/loop/snapshots.js'; "'$text=Get-Content -Raw -Encoding UTF8 $path; $text=$text -replace "const MCP_DEFAULT_CONFIG = Object'"\\.freeze\\(\\{ enabled: true, transport: 'http', host: '127\\.0\\.0\\.1', port: 19690, path: '/mcp' \\}\\);\", \"const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 43847, path: '/mcp' });"'`r`nconst MCP_TOOL_NAMES = Object.freeze(['"'create_project', 'create_requirement', 'create_feedback']);"'`r`nconst LOCAL_MCP_HOSTS = new Set(['"'127.0.0.1', '::1', 'localhost']);\"; [System.IO.File]::WriteAllText((Resolve-Path "'$path), $text, [System.Text.UTF8Encoding]::new($false))' in D:\project\GitHub\autoplan
+ succeeded in 432ms:
+**Identifying potential issues**
+
+I’m looking at potential issues in the code. There could be a problem with custom Unicode lines and if the actual file contains `\u` in a string. I’ve also noted concurrency with the import of `fs` and how it's related to taskScopeFileInfo. There are some other imports like snapshots and paths that could cause issues too. I need to check for missing names in loopService and see if I should use Select for specific older functions.
+codex
+继续做只读引用扫描，确认旧工具函数都迁入新模块。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern 'taskScopeText|taskDeclaredScopes|normalizeTaskScope|ensureTaskScopeComment|normalizePlanTaskScopes|insertTaskLineBeforeTask|taskScopeFileInfos|planConcurrencySuggestion|normalizeConfirmedTaskBatches|taskParallelScopes|emptySnapshot|eventSnapshotRow|planSnapshotRow|groupPlanTasksByPlanId|readPlanMarkdownTitle|resolveWorkspaceChildPath|workspaceToolEnv|hashFile|hashText|normalizeRelative|workspaceKey|readSnippet|tailText|safePart' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 449ms:
+D:\project\GitHub\autoplan\src\loopService.js:64: hashFile,
+D:\project\GitHub\autoplan\src\loopService.js:65: hashText,
+D:\project\GitHub\autoplan\src\loopService.js:66: normalizeRelative,
+D:\project\GitHub\autoplan\src\loopService.js:67: readSnippet,
+D:\project\GitHub\autoplan\src\loopService.js:68: safePart,
+D:\project\GitHub\autoplan\src\loopService.js:69: tailText,
+D:\project\GitHub\autoplan\src\loopService.js:70: workspaceKey,
+D:\project\GitHub\autoplan\src\loopService.js:71: workspaceToolEnv,
+D:\project\GitHub\autoplan\src\loopService.js:224: return findActiveRuntimeProject(this.runtimes, workspace, projectId, (id) => this.project(id), workspaceKey);
+D:\project\GitHub\autoplan\src\loopService.js:760: this.addEvent(operation.projectId, 'plan.guard.restored', `${agentCliProviderDisplayName(result.agentCliProvider)} 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+D:\project\GitHub\autoplan\src\loopService.js:782: const prefix = `${timestampForPath()}_${safePart(label)}`;
+D:\project\GitHub\autoplan\src\loopService.js:882: env: workspaceToolEnv(workspace),
+D:\project\GitHub\autoplan\src\loopService.js:967: const logFile = path.join(logDir, `${timestampForPath()}_${safePart(label)}.log`);
+D:\project\GitHub\autoplan\src\loopService.js:972: env: workspaceToolEnv(workspace),
+D:\project\GitHub\autoplan\src\loopService.js:1159: hashFile,
+D:\project\GitHub\autoplan\src\loopService.js:1160: hashText,
+D:\project\GitHub\autoplan\src\loopService.js:1163: normalizeRelative,
+D:\project\GitHub\autoplan\src\loopService.js:1164: readSnippet,
+D:\project\GitHub\autoplan\src\loopService.js:1165: tailText,
+
+**Checking imports and helpers**
+
+I’m looking at the imports and helpers, and it seems good overall. I still want to ensure that `timestampForPath` remains local since it hasn't been moved yet. I'll need to check P003 modules for specific details or elements, but I’m just not completely certain what I need to find there. It’s a bit tricky figuring this out, and I want to make sure everything is in order.
+codex
+引用扫描正常；最后确认模块导出、范围和 plan 文件未改。
+exec
+powershell.exe -Command "Select-String -Path src/loop/planParser.js,src/loop/concurrency.js,src/loop/snapshots.js,src/loop/workspaceFiles.js -Pattern '\\?\\?\\?|module\\.exports|const MCP_DEFAULT_CONFIG|const MCP_TOOL_NAMES|const LOCAL_MCP_HOSTS' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }
+'"'--- scoped diff stat ---'
+git diff --stat -- src/loopService.js src/loop/planParser.js src/loop/snapshots.js src/loop/concurrency.js src/loop/workspaceFiles.js docs/plan/plan_requirement_30_20260627-125155.md" in D:\project\GitHub\autoplan
+ succeeded in 470ms:
+D:\project\GitHub\autoplan\src\loop\planParser.js:255: module.exports = {
+D:\project\GitHub\autoplan\src\loop\concurrency.js:217: module.exports = {
+D:\project\GitHub\autoplan\src\loop\snapshots.js:11: const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 43847, path: '/mcp' });
+D:\project\GitHub\autoplan\src\loop\snapshots.js:12: const MCP_TOOL_NAMES = Object.freeze(['create_project', 'create_requirement', 'create_feedback']);
+D:\project\GitHub\autoplan\src\loop\snapshots.js:13: const LOCAL_MCP_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+D:\project\GitHub\autoplan\src\loop\snapshots.js:314: module.exports = {
+D:\project\GitHub\autoplan\src\loop\workspaceFiles.js:126: module.exports = {
+--- scoped diff stat ---
+ src/loopService.js | 2334 ++++------------------------------------------------
+ 1 file changed, 163 insertions(+), 2171 deletions(-)
+warning: in the working copy of 'src/loopService.js', LF will be replaced by CRLF the next time Git touches it
+
+**Figuring out module issues**
+
+There seem to be untracked modules that aren't showing up in stat, which is frustrating. I wonder if it could be due to `planParser` and `concurrency` having unicode escapes? It just seems like there’s no obvious solution. I might need to try running `git diff --stat --cached`, but that doesn't feel right either. I should focus on using `update_plan completed` for a final concise solution. Let's see how that goes!
+codex
+P003 修改完成；按要求未执行任何测试、构建或验收命令。
+  ✓ 定位 P003 函数边界
+  ✓ 抽出计划解析模块
+  ✓ 抽出快照映射模块
+  ✓ 抽出并发与文件工具
+  ✓ 确认范围不验收
+codex
+**完成**
+- 已完成 P003 拆分，新增 `src/loop/planParser.js:13`、`src/loop/snapshots.js:13`、`src/loop/concurrency.js:11`、`src/loop/workspaceFiles.js:6`。
+- `src/loopService.js:58` 起接入新模块，计划解析、快照映射、并发分析、工作区文件工具都改为委托调用。
+- `src/loopService.js:601`、`src/loopService.js:770`、`src/loopService.js:1077` 保留原方法名，外部调用方式不变。
+- plan 文件未修改，未勾选 checkbox，未更新进度区。
+- 按任务要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark 命令。
+- 工作区已有较多既有变更/未跟踪文件，我未处理 P003 scope 之外内容。
+tokens used
+399,176
+**完成**
+- 已完成 P003 拆分，新增 `src/loop/planParser.js:13`、`src/loop/snapshots.js:13`、`src/loop/concurrency.js:11`、`src/loop/workspaceFiles.js:6`。
+- `src/loopService.js:58` 起接入新模块，计划解析、快照映射、并发分析、工作区文件工具都改为委托调用。
+- `src/loopService.js:601`、`src/loopService.js:770`、`src/loopService.js:1077` 保留原方法名，外部调用方式不变。
+- plan 文件未修改，未勾选 checkbox，未更新进度区。
+- 按任务要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark 命令。
+- 工作区已有较多既有变更/未跟踪文件，我未处理 P003 scope 之外内容。

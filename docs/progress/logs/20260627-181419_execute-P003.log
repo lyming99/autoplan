@@ -1,0 +1,2107 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0791-9f67-7133-b68d-453216f23067
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_16_20260627-133130.md
+指定任务：
+- [ ] P003: 扩展搜索结果可定位信息 <!-- scope: src/renderer/types.ts,src/renderer/utils/search.ts,src/renderer/pages/WorkspacePage.tsx -->
+任务 scope：src/renderer/types.ts, src/renderer/utils/search.ts, src/renderer/pages/workspacepage.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Expanding searchable info**
+
+I’m focusing on P003 and continuing with the context. I need to scope out types and search within WorkspacePage. P001 already has the location added, but now I need to expand the searchable information to include taskId, planId, and taskKey. I should check the current files and see if P002 affected anything. It seems there are no tests needed, and I need to utilize the plan update while inspecting the current state of P001.
+codex
+我会沿用 P001 的 `location` 契约，继续补齐搜索结果里的具体定位字段。
+  → 确认当前定位字段
+  • 补齐搜索候选元数据
+  • 接入页面选择逻辑
+  • 静态自查范围变更
+codex
+先读取 P003 范围内现有类型和搜索构造点，只看相关片段。
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ $i=0; Get-Content -Encoding UTF8 $path | ForEach-Object { $i++; if($i -ge $start -and $i -lt ($start+$count)){ '"'{0,4}: {1}' -f "'$i,$_ } } }; Show '"'src/renderer/types.ts' 85 65; Show 'src/renderer/utils/search.ts' 35 35; Show 'src/renderer/utils/search.ts' 250 185; Show 'src/renderer/pages/WorkspacePage.tsx' 650 100" in D:\project\GitHub\autoplan
+ succeeded in 486ms:
+  85:   normalized: string;
+  86:   terms: string[];
+  87:   isEmpty: boolean;
+  88: }
+  89: 
+  90: export interface WorkspaceSearchSourceConfig {
+  91:   type: WorkspaceSearchSourceType;
+  92:   label: string;
+  93:   targetTab: WorkspaceTab;
+  94: }
+  95: 
+  96: export interface WorkspaceSearchMatch {
+  97:   field: WorkspaceSearchHitField;
+  98:   label: string;
+  99:   value: string;
+ 100:   snippet?: string;
+ 101: }
+ 102: 
+ 103: export interface WorkspaceSearchLocation {
+ 104:   targetTab: WorkspaceTab;
+ 105:   targetType: WorkspaceSearchTargetType;
+ 106:   targetId: number;
+ 107:   anchorId: string;
+ 108:   scrollBehavior: WorkspaceSearchScrollBehavior;
+ 109:   highlightMs: number;
+ 110:   planId?: number | null;
+ 111:   taskId?: number | null;
+ 112:   taskKey?: string | null;
+ 113: }
+ 114: 
+ 115: export interface WorkspaceSearchResult {
+ 116:   id: string;
+ 117:   source: WorkspaceSearchSourceType;
+ 118:   targetTab: WorkspaceTab;
+ 119:   location: WorkspaceSearchLocation;
+ 120:   recordId: number;
+ 121:   title: string;
+ 122:   summary: string;
+ 123:   status: string | null;
+ 124:   updatedAt: string;
+ 125:   matches: WorkspaceSearchMatch[];
+ 126: }
+ 127: 
+ 128: export interface WorkspaceSearchGroup {
+ 129:   source: WorkspaceSearchSourceType;
+ 130:   label: string;
+ 131:   targetTab: WorkspaceTab;
+ 132:   count: number;
+ 133:   results: WorkspaceSearchResult[];
+ 134: }
+ 135: 
+ 136: export interface WorkspaceSearchState {
+ 137:   query: WorkspaceSearchQuery;
+ 138:   total: number;
+ 139:   results: WorkspaceSearchResult[];
+ 140:   groups: WorkspaceSearchGroup[];
+ 141: }
+ 142: 
+ 143: export interface Project {
+ 144:   id: number;
+ 145:   name: string;
+ 146:   workspace_path: string;
+ 147:   description: string;
+ 148:   created_at: string;
+ 149:   updated_at: string;
+  35:   [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META]: 3,
+  36: };
+  37: 
+  38: type AttachmentRecord = AppSnapshot['attachments'][number];
+  39: 
+  40: interface WorkspaceSearchField {
+  41:   field: WorkspaceSearchHitField;
+  42:   label: string;
+  43:   value: string;
+  44:   priority: number;
+  45: }
+  46: 
+  47: interface WorkspaceSearchCandidate {
+  48:   source: WorkspaceSearchSourceType;
+  49:   recordId: number;
+  50:   title: string;
+  51:   summary: string;
+  52:   status: string | null;
+  53:   updatedAt: string;
+  54:   location: WorkspaceSearchLocation;
+  55:   fields: WorkspaceSearchField[];
+  56: }
+  57: 
+  58: interface RankedWorkspaceSearchResult {
+  59:   result: WorkspaceSearchResult;
+  60:   priority: number;
+  61:   updatedAtMs: number;
+  62: }
+  63: 
+  64: export const WORKSPACE_SEARCH_SOURCE_CONFIGS: WorkspaceSearchSourceConfig[] = [
+  65:   {
+  66:     type: WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+  67:     label: '需求',
+  68:     targetTab: 'requirement',
+  69:   },
+ 250:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', requirement.status);
+ 251:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.SOURCE_PATH, '来源路径', requirement.source_path);
+ 252:   pushAttachmentFields(fields, attachments);
+ 253: 
+ 254:   return {
+ 255:     source: WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+ 256:     recordId: requirement.id,
+ 257:     title: toSearchText(requirement.title) || `需求 #${requirement.id}`,
+ 258:     summary: summarizeSearchText(requirement.body || requirement.source_path || requirement.status, '暂无正文'),
+ 259:     status: nullableSearchText(requirement.status),
+ 260:     updatedAt: requirement.updated_at,
+ 261:     location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT, requirement.id),
+ 262:     fields,
+ 263:   };
+ 264: }
+ 265: 
+ 266: function createFeedbackCandidate(
+ 267:   feedback: AppSnapshot['feedback'][number],
+ 268:   attachments: readonly AttachmentRecord[],
+ 269: ): WorkspaceSearchCandidate {
+ 270:   const fields: WorkspaceSearchField[] = [];
+ 271:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', feedback.title);
+ 272:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', feedback.body);
+ 273:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', feedback.status);
+ 274:   pushAttachmentFields(fields, attachments);
+ 275: 
+ 276:   return {
+ 277:     source: WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK,
+ 278:     recordId: feedback.id,
+ 279:     title: toSearchText(feedback.title) || `反馈 #${feedback.id}`,
+ 280:     summary: summarizeSearchText(feedback.body || feedback.status, '暂无正文'),
+ 281:     status: nullableSearchText(feedback.status),
+ 282:     updatedAt: feedback.updated_at,
+ 283:     location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK, feedback.id),
+ 284:     fields,
+ 285:   };
+ 286: }
+ 287: 
+ 288: function createPlanCandidate(plan: AppSnapshot['plans'][number]): WorkspaceSearchCandidate {
+ 289:   const fields: WorkspaceSearchField[] = [];
+ 290:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', plan.title);
+ 291:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '文件路径', plan.file_path);
+ 292:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', plan.status);
+ 293:   const planTitle = toSearchText(plan.title);
+ 294:   const fileName = getFileName(plan.file_path);
+ 295: 
+ 296:   return {
+ 297:     source: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN,
+ 298:     recordId: plan.id,
+ 299:     title: planTitle || fileName || `Plan #${plan.id}`,
+ 300:     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+ 301:     status: nullableSearchText(plan.status),
+ 302:     updatedAt: plan.updated_at,
+ 303:     location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
+ 304:     fields,
+ 305:   };
+ 306: }
+ 307: 
+ 308: function createTaskCandidate(task: AppSnapshot['tasks'][number]): WorkspaceSearchCandidate {
+ 309:   const fields: WorkspaceSearchField[] = [];
+ 310:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', task.task_key);
+ 311:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', task.title);
+ 312:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', task.status);
+ 313:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.SCOPE, 'Scope', task.scope);
+ 314:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.RAW_LINE, '原始任务行', task.raw_line);
+ 315:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '文件路径', task.file_path);
+ 316: 
+ 317:   const taskTitle = toSearchText(task.title);
+ 318:   const taskKey = toSearchText(task.task_key);
+ 319: 
+ 320:   return {
+ 321:     source: WORKSPACE_SEARCH_SOURCE_TYPES.TASK,
+ 322:     recordId: task.id,
+ 323:     title: taskKey && taskTitle ? `${taskKey}: ${taskTitle}` : taskTitle || taskKey || `任务 #${task.id}`,
+ 324:     summary: summarizeSearchText(task.raw_line || task.scope || task.file_path, '暂无内容'),
+ 325:     status: nullableSearchText(task.status),
+ 326:     updatedAt: task.updated_at,
+ 327:     location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.TASK, task.id, {
+ 328:       planId: task.plan_id,
+ 329:       taskId: task.id,
+ 330:       taskKey,
+ 331:     }),
+ 332:     fields,
+ 333:   };
+ 334: }
+ 335: 
+ 336: function createEventCandidate(event: AppSnapshot['events'][number]): WorkspaceSearchCandidate {
+ 337:   const fields: WorkspaceSearchField[] = [];
+ 338:   const meta = getObjectMeta(event.meta);
+ 339:   const eventMeta = stringifySearchMeta(event.meta);
+ 340: 
+ 341:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
+ 342:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+ 343:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+ 344:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
+ 345:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+ 346:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
+ 347: 
+ 348:   return {
+ 349:     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+ 350:     recordId: event.id,
+ 351:     title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+ 352:     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+ 353:     status: nullableSearchText(meta?.status),
+ 354:     updatedAt: event.created_at,
+ 355:     location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.EVENT, event.id, {
+ 356:       planId: meta?.planId ?? meta?.plan_id,
+ 357:       taskId: meta?.taskId ?? meta?.task_id,
+ 358:       taskKey: meta?.taskKey ?? meta?.task_key,
+ 359:     }),
+ 360:     fields,
+ 361:   };
+ 362: }
+ 363: 
+ 364: function createRankedWorkspaceSearchResult(
+ 365:   candidate: WorkspaceSearchCandidate,
+ 366:   query: WorkspaceSearchQuery,
+ 367: ): RankedWorkspaceSearchResult | null {
+ 368:   const searchableText = candidate.fields.map((field) => field.value.toLowerCase()).join(' ');
+ 369:   if (!doesTextMatchQuery(searchableText, query)) {
+ 370:     return null;
+ 371:   }
+ 372: 
+ 373:   const matches = candidate.fields
+ 374:     .filter((field) => doesFieldMatchQuery(field, query))
+ 375:     .map((field): WorkspaceSearchMatch => ({
+ 376:       field: field.field,
+ 377:       label: field.label,
+ 378:       value: field.value,
+ 379:       snippet: createSearchSnippet(field.value, query),
+ 380:     }));
+ 381:   if (matches.length === 0) {
+ 382:     return null;
+ 383:   }
+ 384: 
+ 385:   const priority = matches.reduce(
+ 386:     (best, match) => Math.min(best, getSearchFieldPriority(match.field)),
+ 387:     FALLBACK_SEARCH_PRIORITY,
+ 388:   );
+ 389:   const updatedAtMs = getTimestampMs(candidate.updatedAt);
+ 390: 
+ 391:   return {
+ 392:     priority,
+ 393:     updatedAtMs,
+ 394:     result: {
+ 395:       id: `${candidate.source}:${candidate.recordId}`,
+ 396:       source: candidate.source,
+ 397:       targetTab: candidate.location.targetTab,
+ 398:       location: candidate.location,
+ 399:       recordId: candidate.recordId,
+ 400:       title: candidate.title,
+ 401:       summary: candidate.summary,
+ 402:       status: candidate.status,
+ 403:       updatedAt: candidate.updatedAt,
+ 404:       matches,
+ 405:     },
+ 406:   };
+ 407: }
+ 408: 
+ 409: function createWorkspaceSearchLocation(
+ 410:   targetType: WorkspaceSearchSourceType,
+ 411:   targetId: number,
+ 412:   options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
+ 413: ): WorkspaceSearchLocation {
+ 414:   const planId = readSearchId(options.planId);
+ 415:   const taskId = readSearchId(options.taskId);
+ 416:   const taskKey = nullableSearchText(options.taskKey);
+ 417: 
+ 418:   return {
+ 419:     targetTab: getWorkspaceSearchTargetTab(targetType),
+ 420:     targetType,
+ 421:     targetId,
+ 422:     anchorId: createWorkspaceSearchAnchorId(targetType, targetId),
+ 423:     scrollBehavior: WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR,
+ 424:     highlightMs: WORKSPACE_SEARCH_LOCATION_HIGHLIGHT_MS,
+ 425:     planId,
+ 426:     taskId,
+ 427:     taskKey,
+ 428:   };
+ 429: }
+ 430: 
+ 431: function createWorkspaceSearchAnchorId(targetType: WorkspaceSearchSourceType, targetId: number) {
+ 432:   return `workspace-${targetType}-${targetId}`;
+ 433: }
+ 434: 
+
+**Reviewing task filtering logic**
+
+I’m analyzing the P003 task, which mentions that clicking on task search results can open the task tab. It’s mentioning that the search results carry important information, specifically focusing on the plan ID and file path instead of the traditional record ID. I think it might be good to use metadata better in filtering tasks, ensuring the correct behavior remains unchanged. So, I’ll need to adjust the `createFilteredWorkspaceItems` to reflect these changes while still ensuring consistent functionality.
+codex
+P001 已有基础 `location`，P003 需要把 plan/task/filePath 等定位元数据显式携带到结果对象。
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ $i=0; Get-Content -Encoding UTF8 $path | ForEach-Object { $i++; if($i -ge $start -and $i -lt ($start+$count)){ '"'{0,4}: {1}' -f "'$i,$_ } } }; Show '"'src/renderer/pages/WorkspacePage.tsx' 1015 80; Show 'src/renderer/utils/search.ts' 288 42; Show 'src/renderer/utils/search.ts' 409 34" in D:\project\GitHub\autoplan
+ succeeded in 471ms:
+ 288: function createPlanCandidate(plan: AppSnapshot['plans'][number]): WorkspaceSearchCandidate {
+ 289:   const fields: WorkspaceSearchField[] = [];
+ 290:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', plan.title);
+ 291:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '文件路径', plan.file_path);
+ 292:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', plan.status);
+ 293:   const planTitle = toSearchText(plan.title);
+ 294:   const fileName = getFileName(plan.file_path);
+ 295: 
+ 296:   return {
+ 297:     source: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN,
+ 298:     recordId: plan.id,
+ 299:     title: planTitle || fileName || `Plan #${plan.id}`,
+ 300:     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+ 301:     status: nullableSearchText(plan.status),
+ 302:     updatedAt: plan.updated_at,
+ 303:     location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
+ 304:     fields,
+ 305:   };
+ 306: }
+ 307: 
+ 308: function createTaskCandidate(task: AppSnapshot['tasks'][number]): WorkspaceSearchCandidate {
+ 309:   const fields: WorkspaceSearchField[] = [];
+ 310:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', task.task_key);
+ 311:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', task.title);
+ 312:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', task.status);
+ 313:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.SCOPE, 'Scope', task.scope);
+ 314:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.RAW_LINE, '原始任务行', task.raw_line);
+ 315:   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '文件路径', task.file_path);
+ 316: 
+ 317:   const taskTitle = toSearchText(task.title);
+ 318:   const taskKey = toSearchText(task.task_key);
+ 319: 
+ 320:   return {
+ 321:     source: WORKSPACE_SEARCH_SOURCE_TYPES.TASK,
+ 322:     recordId: task.id,
+ 323:     title: taskKey && taskTitle ? `${taskKey}: ${taskTitle}` : taskTitle || taskKey || `任务 #${task.id}`,
+ 324:     summary: summarizeSearchText(task.raw_line || task.scope || task.file_path, '暂无内容'),
+ 325:     status: nullableSearchText(task.status),
+ 326:     updatedAt: task.updated_at,
+ 327:     location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.TASK, task.id, {
+ 328:       planId: task.plan_id,
+ 329:       taskId: task.id,
+ 409: function createWorkspaceSearchLocation(
+ 410:   targetType: WorkspaceSearchSourceType,
+ 411:   targetId: number,
+ 412:   options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
+ 413: ): WorkspaceSearchLocation {
+ 414:   const planId = readSearchId(options.planId);
+ 415:   const taskId = readSearchId(options.taskId);
+ 416:   const taskKey = nullableSearchText(options.taskKey);
+ 417: 
+ 418:   return {
+ 419:     targetTab: getWorkspaceSearchTargetTab(targetType),
+ 420:     targetType,
+ 421:     targetId,
+ 422:     anchorId: createWorkspaceSearchAnchorId(targetType, targetId),
+ 423:     scrollBehavior: WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR,
+ 424:     highlightMs: WORKSPACE_SEARCH_LOCATION_HIGHLIGHT_MS,
+ 425:     planId,
+ 426:     taskId,
+ 427:     taskKey,
+ 428:   };
+ 429: }
+ 430: 
+ 431: function createWorkspaceSearchAnchorId(targetType: WorkspaceSearchSourceType, targetId: number) {
+ 432:   return `workspace-${targetType}-${targetId}`;
+ 433: }
+ 434: 
+ 435: function readSearchId(value: unknown) {
+ 436:   if (value === null || typeof value === 'undefined' || value === '') return null;
+ 437:   const id = Number(value);
+ 438:   return Number.isFinite(id) ? id : null;
+ 439: }
+ 440: 
+ 441: function pushSearchField(
+ 442:   fields: WorkspaceSearchField[],
+
+**Evaluating command output**
+
+I'm looking into the command that only printed search chunks and not the workspace. It seems to be showing an issue. Maybe it printed without a header or in a certain order? I noticed it didn't show the workspace, which is something I'd like to address later. It seems like I need to consider patch types to rectify this situation so that everything displays correctly in the future.
+codex
+我会把 `planId/taskId/taskKey/filePath` 同步到 `location` 和结果顶层，方便后续定位实现直接消费。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\types.ts
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+
+**Patching file options**
+
+I'm considering how to approach the patch search. I need to include options for filePath and location, while also adding top-level result fields. It feels like having a plan for filePath/task filePath/event would streamline things. I wonder if including candidates is essential, but I think I might not need that. I’ll just use candidate.location in the patch. Let's refine this further!
+codex
+类型已扩展；现在补搜索候选生成，让各来源都携带对应定位元数据。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+**Updating requirements feedback**
+
+I think I need to ensure that the requirements feedback doesn't include a file path. That seems fine. It looks like I need to update the WorkspacePage filters to utilize `result.planId` and `result.taskId`. I'm also realizing I need to look more closely at the inspect function to get its exact specifications. It's important to get all of this right to ensure everything functions smoothly!
+codex
+搜索结果已携带顶层定位字段；接下来让页面过滤逻辑读取这些字段而非只依赖 `recordId`。
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ $i=0; Get-Content -Encoding UTF8 $path | ForEach-Object { $i++; if($i -ge $start -and $i -lt ($start+$count)){ '"'{0,4}: {1}' -f "'$i,$_ } } }; Show '"'src/renderer/pages/WorkspacePage.tsx' 1015 95" in D:\project\GitHub\autoplan
+ succeeded in 445ms:
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+codex
+行号已变化，我改用模式定位过滤函数。
+exec
+powershell.exe -Command "Select-String -Path 'src/renderer/pages/WorkspacePage.tsx' -Pattern 'createFilteredWorkspaceItems|filterItemsBySearchGroup|filterTasksBySearchGroups|selectSearchResult' -Context 3,8" in D:\project\GitHub\autoplan
+ succeeded in 491ms:
+
+  src\renderer\pages\WorkspacePage.tsx:49:    searchableItemCount,
+  src\renderer\pages\WorkspacePage.tsx:50:    searchHitCount,
+  src\renderer\pages\WorkspacePage.tsx:51:    searchQuery,
+> src\renderer\pages\WorkspacePage.tsx:52:    selectSearchResult,
+  src\renderer\pages\WorkspacePage.tsx:53:    selectTab,
+  src\renderer\pages\WorkspacePage.tsx:54:    setScopeFileOpenSettings,
+  src\renderer\pages\WorkspacePage.tsx:55:    setSearchQuery,
+  src\renderer\pages\WorkspacePage.tsx:56:    snapshot,
+  src\renderer\pages\WorkspacePage.tsx:57:    state,
+  src\renderer\pages\WorkspacePage.tsx:58:    submitLoopConfig,
+  src\renderer\pages\WorkspacePage.tsx:59:    switchProject,
+  src\renderer\pages\WorkspacePage.tsx:60:    updateFeedback,
+  src\renderer\pages\WorkspacePage.tsx:147:        <SearchResults
+  src\renderer\pages\WorkspacePage.tsx:148:          onClear={() => setSearchQuery('')}
+  src\renderer\pages\WorkspacePage.tsx:149:          onSelectGroup={selectTab}
+> src\renderer\pages\WorkspacePage.tsx:150:          onSelectResult={selectSearchResult}
+  src\renderer\pages\WorkspacePage.tsx:151:          searchState={workspaceSearch}
+  src\renderer\pages\WorkspacePage.tsx:152:        />
+  src\renderer\pages\WorkspacePage.tsx:153:
+  src\renderer\pages\WorkspacePage.tsx:154:        <section className={`view ${activeTab === 'overview' ? 'active' : ''
+}`}>
+  src\renderer\pages\WorkspacePage.tsx:155:          {activeTab === 'overview' ? (
+  src\renderer\pages\WorkspacePage.tsx:156:            <>
+  src\renderer\pages\WorkspacePage.tsx:157:              {error ? <div className="error-banner">{error}</div> : null}
+  src\renderer\pages\WorkspacePage.tsx:158:              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoT
+asks={() => selectTab('tasks')} />
+
+
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+codex
+`WorkspacePage` 也已组件化，我读取 hook/过滤逻辑实际位置。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 'src/renderer/pages/WorkspacePage.tsx' | Select-Object -First 260; Write-Output '--- imports maybe hooks ---'; Select-String -Path 'src/renderer/**/*.ts*' -Pattern 'createFilteredWorkspaceItems|filterTasksBySearchGroups|filterItemsBySearchGroup|searchWorkspaceSnapshot' -Context 2,6" in D:\project\GitHub\autoplan
+ succeeded in 510ms:
+import type {
+  AppSnapshot,
+  Plan,
+  Project,
+  WorkspaceTab,
+} from '../types';
+import { useWorkspaceController } from '../hooks/useWorkspaceController';
+import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
+import { IntakePanel } from '../components/IntakePanel';
+import { EventList, PlanList, TaskList } from '../components/PlanLists';
+import { SearchResults } from '../components/SearchResults';
+import { Icon } from '../components/icons';
+import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+
+export function WorkspacePage() {
+  const {
+    activeTab,
+    addPendingFiles,
+    appendIntakeTask,
+    closePlanReader,
+    composerCliSelection,
+    createFeedback,
+    createRequirement,
+    deleteFeedback,
+    deleteRequirement,
+    displayTasks,
+    error,
+    filteredEmptyText,
+    filteredItems,
+    interruptIntake,
+    latestReadingPlan,
+    loopForm,
+    navigate,
+    openPlanReader,
+    openTaskPlanReader,
+    pendingAttachments,
+    planReadState,
+    project,
+    projectId,
+    projects,
+    refreshPlanReader,
+    removePendingAttachment,
+    resumeIntake,
+    runLoopAction,
+    scopeFileOpenSettings,
+    searchableItemCount,
+    searchHitCount,
+    searchQuery,
+    selectSearchResult,
+    selectTab,
+    setScopeFileOpenSettings,
+    setSearchQuery,
+    snapshot,
+    state,
+    submitLoopConfig,
+    switchProject,
+    updateFeedback,
+    updateLoopForm,
+    updateRequirement,
+    workspaceSearch,
+  } = useWorkspaceController();
+
+  const createRequirementFromComposer = (payload: string | ComposerSubmitPayload) =>
+    createRequirement(payload as unknown as string);
+  const createFeedbackFromComposer = (payload: string | ComposerSubmitPayload) =>
+    createFeedback(payload as unknown as string);
+  const reorderPlansFromList = (orderedPlans: Plan[]) =>
+    runLoopAction(() => {
+      if (!snapshot) throw new Error('工作区快照尚未加载');
+      const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
+      const orderedQueue = [...orderedPlans];
+      const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
+      return (window.autoplan as typeof window.autoplan & {
+        reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
+      }).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
+    });
+
+  if (!snapshot) {
+    return (
+      <div className="workspace-shell">
+        <WorkspaceSidebar
+          activeTab={activeTab}
+          onTab={selectTab}
+          onBack={() => navigate('/projects')}
+          projectId={projectId}
+          projects={projects}
+          currentProject={project}
+          state={null}
+          onSwitchProject={switchProject}
+        />
+        <div className="workspace-main">
+          <div className="empty">加载中...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="workspace-shell">
+      <WorkspaceSidebar
+        activeTab={activeTab}
+        onTab={selectTab}
+        onBack={() => navigate('/projects')}
+        projectId={projectId}
+        projects={projects}
+        currentProject={project}
+        state={state}
+        onSwitchProject={switchProject}
+      />
+      <div className="workspace-main">
+        <header className="topbar">
+          <div className="topbar-title">
+            <h1>{tabTitle(activeTab)}</h1>
+            <p>{tabSubtitle(activeTab, project)}</p>
+          </div>
+          <WorkspaceSearchBox
+            hitCount={searchHitCount}
+            onQueryChange={setSearchQuery}
+            query={searchQuery}
+            totalCount={searchableItemCount}
+          />
+          <div className="topbar-actions">
+            <span className="pill">
+              <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+              {state ? `${state.running ? 'running' : 'stopped'} · ${state.phase || 'idle'}` : 'idle'}
+            </span>
+            <button
+              type="button"
+              className={`btn btn-sm ${state?.running ? 'btn-danger' : 'btn-primary'}`}
+              onClick={() =>
+                runLoopAction(() =>
+                  state?.running
+                    ? window.autoplan.stopLoop({ projectId, manual: true })
+                    : window.autoplan.startLoop({ projectId, manual: true }),
+                )
+              }
+            >
+              <Icon name={state?.running ? 'stop' : 'run'} size={14} aria-hidden />
+              {state?.running ? '停止' : '启动'}
+            </button>
+          </div>
+        </header>
+
+        <SearchResults
+          onClear={() => setSearchQuery('')}
+          onSelectGroup={selectTab}
+          onSelectResult={selectSearchResult}
+          searchState={workspaceSearch}
+        />
+
+        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+          {activeTab === 'overview' ? (
+            <>
+              {error ? <div className="error-banner">{error}</div> : null}
+              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+            </>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+          {activeTab === 'requirement' ? (
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
+                heading="需求记录"
+                items={filteredItems.requirements}
+                pendingAttachments={pendingAttachments.requirement}
+                placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+                submitLabel="发送需求"
+                subtitle="循环开启后自动扫描并生成计划"
+                type="requirement"
+                attachments={snapshot.attachments}
+                onAddFiles={addPendingFiles}
+                onDelete={deleteRequirement}
+                onRemoveAttachment={removePendingAttachment}
+                onSubmit={createRequirementFromComposer}
+                onUpdate={updateRequirement}
+                onInterrupt={interruptIntake}
+                onResume={resumeIntake}
+                onAppendTask={appendIntakeTask}
+              />
+            </ComposerCliSelectionProvider>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
+          {activeTab === 'feedback' ? (
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无反馈。'}
+                heading="反馈记录"
+                items={filteredItems.feedback}
+                pendingAttachments={pendingAttachments.feedback}
+                placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+                submitLabel="发送反馈"
+                subtitle="循环开启后自动扫描并生成计划"
+                type="feedback"
+                attachments={snapshot.attachments}
+                onAddFiles={addPendingFiles}
+                onDelete={deleteFeedback}
+                onRemoveAttachment={removePendingAttachment}
+                onSubmit={createFeedbackFromComposer}
+                onUpdate={updateFeedback}
+                onInterrupt={interruptIntake}
+                onResume={resumeIntake}
+                onAppendTask={appendIntakeTask}
+              />
+            </ComposerCliSelectionProvider>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+          {activeTab === 'tasks' ? (
+            <div className="task-main">
+              <div className="task-status-grid">
+                <section className="card">
+                  <div className="card-head">
+                    <h2>Plan</h2>
+                  </div>
+                  <PlanList
+                    emptyText={filteredEmptyText}
+                    latestReadingPlan={latestReadingPlan}
+                    onCloseReader={closePlanReader}
+                    onOpenReader={openPlanReader}
+                    onRunParallel={({ plan, batches }) =>
+                      runLoopAction(() =>
+                        (window.autoplan as typeof window.autoplan & {
+                          runTaskBatches: (input: {
+                            projectId: number;
+                            planId: number;
+                            batches: Array<{ taskIds: number[] }>;
+                            manual: true;
+                          }) => Promise<AppSnapshot>;
+                        }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+                      )
+                    }
+                    onRefreshReader={refreshPlanReader}
+                    onReorderPlans={reorderPlansFromList}
+                    plans={filteredItems.plans}
+                    readerState={planReadState}
+                    tasks={snapshot.tasks}
+                    totalPlanCount={snapshot.plans.length}
+                  />
+                </section>
+                <section className="card">
+                  <div className="card-head">
+                    <h2>任务</h2>
+                  </div>
+                  <TaskList
+                    emptyText={filteredEmptyText}
+                    tasks={displayTasks}
+                    onOpenPlan={openTaskPlanReader}
+                    onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                    onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+                  />
+                </section>
+              </div>
+--- imports maybe hooks ---
+
+  src\renderer\hooks\useWorkspaceController.ts:15:} from '../types';
+  src\renderer\hooks\useWorkspaceController.ts:16:import { useSnapshot } from './useSnapshot';
+> src\renderer\hooks\useWorkspaceController.ts:17:import { searchWorkspaceSnapshot } from '../utils/search';
+  src\renderer\hooks\useWorkspaceController.ts:18:import {
+  src\renderer\hooks\useWorkspaceController.ts:19:  appendPendingAttachments,
+  src\renderer\hooks\useWorkspaceController.ts:20:  agentCliOptions,
+  src\renderer\hooks\useWorkspaceController.ts:21:  codexReasoningOptions,
+  src\renderer\hooks\useWorkspaceController.ts:22:  createEmptyPlanReadState,
+  src\renderer\hooks\useWorkspaceController.ts:23:  createPendingClipboardImageAttachment,
+  src\renderer\hooks\useWorkspaceController.ts:39:import {
+  src\renderer\hooks\useWorkspaceController.ts:40:  countSearchableItems,
+> src\renderer\hooks\useWorkspaceController.ts:41:  createFilteredWorkspaceItems,
+  src\renderer\hooks\useWorkspaceController.ts:42:  searchNoMatchText,
+  src\renderer\hooks\useWorkspaceController.ts:43:  withTaskCliProviderTitle,
+  src\renderer\hooks\useWorkspaceController.ts:44:} from '../utils/workspaceSearch';
+  src\renderer\hooks\useWorkspaceController.ts:45:
+  src\renderer\hooks\useWorkspaceController.ts:46:export function useWorkspaceController() {
+  src\renderer\hooks\useWorkspaceController.ts:47:  const params = useParams<{ projectId: string }>();
+  src\renderer\hooks\useWorkspaceController.ts:85:  const state = snapshot?.state || null;
+  src\renderer\hooks\useWorkspaceController.ts:86:  const projects = snapshot?.projects || [];
+> src\renderer\hooks\useWorkspaceController.ts:87:  const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snaps
+hot, searchQuery), [snapshot, searchQuery]);
+  src\renderer\hooks\useWorkspaceController.ts:88:  const searchableItemCount = useMemo(() => (snapshot ? countSearchab
+leItems(snapshot) : 0), [snapshot]);
+  src\renderer\hooks\useWorkspaceController.ts:89:  const searchHitCount = workspaceSearch.total;
+  src\renderer\hooks\useWorkspaceController.ts:90:  const isSearching = !workspaceSearch.query.isEmpty;
+  src\renderer\hooks\useWorkspaceController.ts:91:  const filteredItems = useMemo(
+> src\renderer\hooks\useWorkspaceController.ts:92:    () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
+  src\renderer\hooks\useWorkspaceController.ts:93:    [snapshot, workspaceSearch],
+  src\renderer\hooks\useWorkspaceController.ts:94:  );
+  src\renderer\hooks\useWorkspaceController.ts:95:  const displayTasks = useMemo(
+  src\renderer\hooks\useWorkspaceController.ts:96:    () => filteredItems.tasks.map((task) => withTaskCliProviderTitle(
+task, state?.agent_cli_provider)),
+  src\renderer\hooks\useWorkspaceController.ts:97:    [filteredItems.tasks, state?.agent_cli_provider],
+  src\renderer\hooks\useWorkspaceController.ts:98:  );
+  src\renderer\utils\search.ts:188:}
+  src\renderer\utils\search.ts:189:
+> src\renderer\utils\search.ts:190:export function searchWorkspaceSnapshot(
+  src\renderer\utils\search.ts:191:  snapshot: AppSnapshot | null | undefined,
+  src\renderer\utils\search.ts:192:  queryInput: string | WorkspaceSearchQuery | null | undefined,
+  src\renderer\utils\search.ts:193:): WorkspaceSearchState {
+  src\renderer\utils\search.ts:194:  const query = resolveWorkspaceSearchQuery(queryInput);
+  src\renderer\utils\search.ts:195:  if (!snapshot || query.isEmpty) {
+  src\renderer\utils\search.ts:196:    return createWorkspaceSearchStateFromResults(query, []);
+  src\renderer\utils\search.ts:226:  queryInput: string | WorkspaceSearchQuery | null | undefined,
+  src\renderer\utils\search.ts:227:): WorkspaceSearchState {
+> src\renderer\utils\search.ts:228:  return searchWorkspaceSnapshot(snapshot, queryInput);
+  src\renderer\utils\search.ts:229:}
+  src\renderer\utils\search.ts:230:
+  src\renderer\utils\search.ts:231:function createWorkspaceSearchStateFromResults(
+  src\renderer\utils\search.ts:232:  query: WorkspaceSearchQuery,
+  src\renderer\utils\search.ts:233:  results: WorkspaceSearchResult[],
+  src\renderer\utils\search.ts:234:): WorkspaceSearchState {
+  src\renderer\utils\workspaceSearch.ts:32:}
+  src\renderer\utils\workspaceSearch.ts:33:
+> src\renderer\utils\workspaceSearch.ts:34:export function createFilteredWorkspaceItems(
+  src\renderer\utils\workspaceSearch.ts:35:  snapshot: AppSnapshot | null | undefined,
+  src\renderer\utils\workspaceSearch.ts:36:  searchState: WorkspaceSearchState,
+  src\renderer\utils\workspaceSearch.ts:37:): WorkspaceFilterableItems {
+  src\renderer\utils\workspaceSearch.ts:38:  if (!snapshot) {
+  src\renderer\utils\workspaceSearch.ts:39:    return { requirements: [], feedback: [], plans: [], tasks: [], events: [
+] };
+  src\renderer\utils\workspaceSearch.ts:40:  }
+  src\renderer\utils\workspaceSearch.ts:49:  }
+  src\renderer\utils\workspaceSearch.ts:50:
+> src\renderer\utils\workspaceSearch.ts:51:  const plans = filterItemsBySearchGroup(snapshot.plans, searchState.groups,
+ WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
+> src\renderer\utils\workspaceSearch.ts:52:  const tasks = filterTasksBySearchGroups(snapshot.tasks, plans, searchState
+.groups);
+  src\renderer\utils\workspaceSearch.ts:53:
+  src\renderer\utils\workspaceSearch.ts:54:  return {
+> src\renderer\utils\workspaceSearch.ts:55:    requirements: filterItemsBySearchGroup(
+  src\renderer\utils\workspaceSearch.ts:56:      snapshot.requirements,
+  src\renderer\utils\workspaceSearch.ts:57:      searchState.groups,
+  src\renderer\utils\workspaceSearch.ts:58:      WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+  src\renderer\utils\workspaceSearch.ts:59:    ),
+> src\renderer\utils\workspaceSearch.ts:60:    feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups
+, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
+  src\renderer\utils\workspaceSearch.ts:61:    plans,
+  src\renderer\utils\workspaceSearch.ts:62:    tasks,
+> src\renderer\utils\workspaceSearch.ts:63:    events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WO
+RKSPACE_SEARCH_SOURCE_TYPES.EVENT),
+  src\renderer\utils\workspaceSearch.ts:64:  };
+  src\renderer\utils\workspaceSearch.ts:65:}
+  src\renderer\utils\workspaceSearch.ts:66:
+> src\renderer\utils\workspaceSearch.ts:67:export function filterItemsBySearchGroup<T extends { id: number }>(
+  src\renderer\utils\workspaceSearch.ts:68:  items: T[],
+  src\renderer\utils\workspaceSearch.ts:69:  groups: WorkspaceSearchGroup[],
+  src\renderer\utils\workspaceSearch.ts:70:  source: WorkspaceSearchSourceType,
+  src\renderer\utils\workspaceSearch.ts:71:) {
+  src\renderer\utils\workspaceSearch.ts:72:  const group = groups.find((item) => item.source === source);
+  src\renderer\utils\workspaceSearch.ts:73:  if (!group?.results.length) return [];
+  src\renderer\utils\workspaceSearch.ts:77:}
+  src\renderer\utils\workspaceSearch.ts:78:
+> src\renderer\utils\workspaceSearch.ts:79:export function filterTasksBySearchGroups(
+  src\renderer\utils\workspaceSearch.ts:80:  tasks: PlanTask[],
+  src\renderer\utils\workspaceSearch.ts:81:  plans: Plan[],
+  src\renderer\utils\workspaceSearch.ts:82:  groups: WorkspaceSearchGroup[],
+  src\renderer\utils\workspaceSearch.ts:83:) {
+> src\renderer\utils\workspaceSearch.ts:84:  const directTasks = filterItemsBySearchGroup(tasks, groups, WORKSPACE_SEAR
+CH_SOURCE_TYPES.TASK);
+  src\renderer\utils\workspaceSearch.ts:85:  if (!plans.length) return directTasks;
+  src\renderer\utils\workspaceSearch.ts:86:
+  src\renderer\utils\workspaceSearch.ts:87:  const taskIds = new Set(directTasks.map((task) => task.id));
+  src\renderer\utils\workspaceSearch.ts:88:  const planIds = new Set(plans.map((plan) => plan.id));
+  src\renderer\utils\workspaceSearch.ts:89:  const planFilePaths = new Set(plans.map((plan) => readPlanTaskAssociationF
+ilePath(plan)).filter(Boolean));
+  src\renderer\utils\workspaceSearch.ts:90:  const planTasks = tasks.filter((task) => {
+
+
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+codex
+过滤逻辑已被抽到 scope 外的工具文件；P003 scope 内我只更新页面对搜索结果定位入口的传递，不改外部工具。
+exec
+powershell.exe -Command "Select-String -Path 'src/renderer/hooks/useWorkspaceController.ts' -Pattern 'selectSearchResult|WorkspaceSearchResult|location|targetTab' -Context 3,6; Select-String -Path 'src/renderer/pages/WorkspacePage.tsx' -Pattern 'selectSearchResult|SearchResults' -Context 2,4" in D:\project\GitHub\autoplan
+ succeeded in 484ms:
+
+  src\renderer\hooks\useWorkspaceController.ts:10:  Plan,
+  src\renderer\hooks\useWorkspaceController.ts:11:  PlanTask,
+  src\renderer\hooks\useWorkspaceController.ts:12:  WorkspacePlanReadState,
+> src\renderer\hooks\useWorkspaceController.ts:13:  WorkspaceSearchResult,
+  src\renderer\hooks\useWorkspaceController.ts:14:  WorkspaceTab,
+  src\renderer\hooks\useWorkspaceController.ts:15:} from '../types';
+  src\renderer\hooks\useWorkspaceController.ts:16:import { useSnapshot } from './useSnapshot';
+  src\renderer\hooks\useWorkspaceController.ts:17:import { searchWorkspaceSnapshot } from '../utils/search';
+  src\renderer\hooks\useWorkspaceController.ts:18:import {
+  src\renderer\hooks\useWorkspaceController.ts:19:  appendPendingAttachments,
+  src\renderer\hooks\useWorkspaceController.ts:466:    [setSearchParams],
+  src\renderer\hooks\useWorkspaceController.ts:467:  );
+  src\renderer\hooks\useWorkspaceController.ts:468:
+> src\renderer\hooks\useWorkspaceController.ts:469:  const selectSearchResult = useCallback(
+> src\renderer\hooks\useWorkspaceController.ts:470:    (result: WorkspaceSearchResult) => {
+> src\renderer\hooks\useWorkspaceController.ts:471:      selectTab(result.location.targetTab);
+  src\renderer\hooks\useWorkspaceController.ts:472:    },
+  src\renderer\hooks\useWorkspaceController.ts:473:    [selectTab],
+  src\renderer\hooks\useWorkspaceController.ts:474:  );
+  src\renderer\hooks\useWorkspaceController.ts:475:
+  src\renderer\hooks\useWorkspaceController.ts:476:  return {
+  src\renderer\hooks\useWorkspaceController.ts:477:    activeTab,
+  src\renderer\hooks\useWorkspaceController.ts:507:    searchableItemCount,
+  src\renderer\hooks\useWorkspaceController.ts:508:    searchHitCount,
+  src\renderer\hooks\useWorkspaceController.ts:509:    searchQuery,
+> src\renderer\hooks\useWorkspaceController.ts:510:    selectSearchResult,
+  src\renderer\hooks\useWorkspaceController.ts:511:    selectTab,
+  src\renderer\hooks\useWorkspaceController.ts:512:    setScopeFileOpenSettings,
+  src\renderer\hooks\useWorkspaceController.ts:513:    setSearchQuery,
+  src\renderer\hooks\useWorkspaceController.ts:514:    snapshot,
+  src\renderer\hooks\useWorkspaceController.ts:515:    state,
+  src\renderer\hooks\useWorkspaceController.ts:516:    submitLoopConfig,
+  src\renderer\pages\WorkspacePage.tsx:9:import { IntakePanel } from '../components/IntakePanel';
+  src\renderer\pages\WorkspacePage.tsx:10:import { EventList, PlanList, TaskList } from '../components/PlanLists';
+> src\renderer\pages\WorkspacePage.tsx:11:import { SearchResults } from '../components/SearchResults';
+  src\renderer\pages\WorkspacePage.tsx:12:import { Icon } from '../components/icons';
+  src\renderer\pages\WorkspacePage.tsx:13:import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverv
+iewView';
+  src\renderer\pages\WorkspacePage.tsx:14:import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBo
+x';
+  src\renderer\pages\WorkspacePage.tsx:15:import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSetti
+ngsView';
+  src\renderer\pages\WorkspacePage.tsx:50:    searchHitCount,
+  src\renderer\pages\WorkspacePage.tsx:51:    searchQuery,
+> src\renderer\pages\WorkspacePage.tsx:52:    selectSearchResult,
+  src\renderer\pages\WorkspacePage.tsx:53:    selectTab,
+  src\renderer\pages\WorkspacePage.tsx:54:    setScopeFileOpenSettings,
+  src\renderer\pages\WorkspacePage.tsx:55:    setSearchQuery,
+  src\renderer\pages\WorkspacePage.tsx:56:    snapshot,
+  src\renderer\pages\WorkspacePage.tsx:145:        </header>
+  src\renderer\pages\WorkspacePage.tsx:146:
+> src\renderer\pages\WorkspacePage.tsx:147:        <SearchResults
+  src\renderer\pages\WorkspacePage.tsx:148:          onClear={() => setSearchQuery('')}
+  src\renderer\pages\WorkspacePage.tsx:149:          onSelectGroup={selectTab}
+> src\renderer\pages\WorkspacePage.tsx:150:          onSelectResult={selectSearchResult}
+  src\renderer\pages\WorkspacePage.tsx:151:          searchState={workspaceSearch}
+  src\renderer\pages\WorkspacePage.tsx:152:        />
+  src\renderer\pages\WorkspacePage.tsx:153:
+  src\renderer\pages\WorkspacePage.tsx:154:        <section className={`view ${activeTab === 'overview' ? 'active' : ''
+}`}>
+
+
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+codex
+P003 的实际消费点在 hook（scope 外）已使用 `location.targetTab`；我不改 scope 外文件，继续做静态一致性检查。
+exec
+powershell.exe -Command "Select-String -Path 'src/renderer/types.ts','src/renderer/utils/search.ts','src/renderer/pages/WorkspacePage.tsx' -Pattern 'filePath\\?:|targetType:|targetId:|anchorId:|planId:|taskId:|taskKey:|location: createWorkspaceSearchLocation|selectSearchResult' -Context 1,1" in D:\project\GitHub\autoplan
+ succeeded in 492ms:
+
+  src\renderer\types.ts:104:  targetTab: WorkspaceTab;
+> src\renderer\types.ts:105:  targetType: WorkspaceSearchTargetType;
+> src\renderer\types.ts:106:  targetId: number;
+> src\renderer\types.ts:107:  anchorId: string;
+  src\renderer\types.ts:108:  scrollBehavior: WorkspaceSearchScrollBehavior;
+  src\renderer\types.ts:112:  taskKey?: string | null;
+> src\renderer\types.ts:113:  filePath?: string | null;
+  src\renderer\types.ts:114:}
+  src\renderer\types.ts:120:  location: WorkspaceSearchLocation;
+> src\renderer\types.ts:121:  targetType: WorkspaceSearchTargetType;
+> src\renderer\types.ts:122:  targetId: number;
+> src\renderer\types.ts:123:  anchorId: string;
+  src\renderer\types.ts:124:  recordId: number;
+  src\renderer\types.ts:127:  taskKey?: string | null;
+> src\renderer\types.ts:128:  filePath?: string | null;
+  src\renderer\types.ts:129:  title: string;
+  src\renderer\types.ts:520:  projectId: number | null;
+> src\renderer\types.ts:521:  planId: number | null;
+> src\renderer\types.ts:522:  taskId: number | null;
+  src\renderer\types.ts:523:  agentCliProvider?: string;
+  src\renderer\types.ts:716:export interface TaskIdInput extends ProjectIdInput {
+> src\renderer\types.ts:717:  taskId: number;
+  src\renderer\types.ts:718:}
+  src\renderer\types.ts:720:export interface ReadPlanInput extends ProjectIdInput {
+> src\renderer\types.ts:721:  planId: number;
+  src\renderer\types.ts:722:}
+  src\renderer\utils\search.ts:260:    updatedAt: requirement.updated_at,
+> src\renderer\utils\search.ts:261:    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMEN
+T, requirement.id),
+  src\renderer\utils\search.ts:262:    fields,
+  src\renderer\utils\search.ts:282:    updatedAt: feedback.updated_at,
+> src\renderer\utils\search.ts:283:    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK, 
+feedback.id),
+  src\renderer\utils\search.ts:284:    fields,
+  src\renderer\utils\search.ts:302:    updatedAt: plan.updated_at,
+> src\renderer\utils\search.ts:303:    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan
+.id, {
+> src\renderer\utils\search.ts:304:      planId: plan.id,
+  src\renderer\utils\search.ts:305:      filePath: plan.file_path,
+  src\renderer\utils\search.ts:329:    updatedAt: task.updated_at,
+> src\renderer\utils\search.ts:330:    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.TASK, task
+.id, {
+> src\renderer\utils\search.ts:331:      planId: task.plan_id,
+> src\renderer\utils\search.ts:332:      taskId: task.id,
+  src\renderer\utils\search.ts:333:      taskKey,
+  src\renderer\utils\search.ts:358:    updatedAt: event.created_at,
+> src\renderer\utils\search.ts:359:    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.EVENT, eve
+nt.id, {
+> src\renderer\utils\search.ts:360:      planId: meta?.planId ?? meta?.plan_id,
+> src\renderer\utils\search.ts:361:      taskId: meta?.taskId ?? meta?.task_id,
+> src\renderer\utils\search.ts:362:      taskKey: meta?.taskKey ?? meta?.task_key,
+  src\renderer\utils\search.ts:363:      filePath: meta?.filePath ?? meta?.file_path,
+  src\renderer\utils\search.ts:403:      location: candidate.location,
+> src\renderer\utils\search.ts:404:      targetType: candidate.location.targetType,
+> src\renderer\utils\search.ts:405:      targetId: candidate.location.targetId,
+> src\renderer\utils\search.ts:406:      anchorId: candidate.location.anchorId,
+  src\renderer\utils\search.ts:407:      recordId: candidate.recordId,
+> src\renderer\utils\search.ts:408:      planId: candidate.location.planId,
+> src\renderer\utils\search.ts:409:      taskId: candidate.location.taskId,
+> src\renderer\utils\search.ts:410:      taskKey: candidate.location.taskKey,
+  src\renderer\utils\search.ts:411:      filePath: candidate.location.filePath,
+  src\renderer\utils\search.ts:421:function createWorkspaceSearchLocation(
+> src\renderer\utils\search.ts:422:  targetType: WorkspaceSearchSourceType,
+> src\renderer\utils\search.ts:423:  targetId: number,
+> src\renderer\utils\search.ts:424:  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unkno
+wn } = {},
+  src\renderer\utils\search.ts:425:): WorkspaceSearchLocation {
+  src\renderer\utils\search.ts:434:    targetId,
+> src\renderer\utils\search.ts:435:    anchorId: createWorkspaceSearchAnchorId(targetType, targetId),
+  src\renderer\utils\search.ts:436:    scrollBehavior: WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR,
+  src\renderer\utils\search.ts:444:
+> src\renderer\utils\search.ts:445:function createWorkspaceSearchAnchorId(targetType: WorkspaceSearchSourceType, target
+Id: number) {
+  src\renderer\utils\search.ts:446:  return `workspace-${targetType}-${targetId}`;
+  src\renderer\pages\WorkspacePage.tsx:51:    searchQuery,
+> src\renderer\pages\WorkspacePage.tsx:52:    selectSearchResult,
+  src\renderer\pages\WorkspacePage.tsx:53:    selectTab,
+  src\renderer\pages\WorkspacePage.tsx:149:          onSelectGroup={selectTab}
+> src\renderer\pages\WorkspacePage.tsx:150:          onSelectResult={selectSearchResult}
+  src\renderer\pages\WorkspacePage.tsx:151:          searchState={workspaceSearch}
+  src\renderer\pages\WorkspacePage.tsx:232:                            projectId: number;
+> src\renderer\pages\WorkspacePage.tsx:233:                            planId: number;
+  src\renderer\pages\WorkspacePage.tsx:234:                            batches: Array<{ taskIds: number[] }>;
+  src\renderer\pages\WorkspacePage.tsx:236:                          }) => Promise<AppSnapshot>;
+> src\renderer\pages\WorkspacePage.tsx:237:                        }).runTaskBatches({ projectId, planId: plan.id, batc
+hes, manual: true }),
+  src\renderer\pages\WorkspacePage.tsx:238:                      )
+  src\renderer\pages\WorkspacePage.tsx:255:                    onOpenPlan={openTaskPlanReader}
+> src\renderer\pages\WorkspacePage.tsx:256:                    onRun={(task) => runLoopAction(() => window.autoplan.run
+Task({ projectId, taskId: task.id }))}
+> src\renderer\pages\WorkspacePage.tsx:257:                    onStop={(task) => runLoopAction(() => window.autoplan.st
+opTask({ projectId, taskId: task.id }))}
+  src\renderer\pages\WorkspacePage.tsx:258:                  />
+
+
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+**Considering code adjustments**
+
+I think I need to look at `WorkspaceSearchLocation.filePath` in the helper function, particularly regarding `nullableSearchText`. If it's unknown, it should probably default to null. That sounds like a reasonable plan! I want to check `searchWorkspaceSnapshot` too; the candidates array seems fine. I’m not sure I need tests for this. I could run `git diff --stat -- scope` to keep things tidy, ensuring my plan remains unchanged.
+codex
+定位字段一致性已确认；最后查看范围状态，不运行任何验证命令。
+exec
+powershell.exe -Command 'git diff --stat -- src/renderer/types.ts src/renderer/utils/search.ts src/renderer/pages/WorkspacePage.tsx; git status --short -- src/renderer/types.ts src/renderer/utils/search.ts src/renderer/pages/WorkspacePage.tsx docs/plan/plan_feedback_16_20260627-133130.md' in D:\project\GitHub\autoplan
+ succeeded in 327ms:
+ src/renderer/pages/WorkspacePage.tsx | 1284 +++-------------------------------
+ src/renderer/types.ts                |  209 +++++-
+ src/renderer/utils/search.ts         |   66 +-
+ 3 files changed, 352 insertions(+), 1207 deletions(-)
+ M src/renderer/pages/WorkspacePage.tsx
+ M src/renderer/types.ts
+ M src/renderer/utils/search.ts
+?? docs/plan/plan_feedback_16_20260627-133130.md
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/utils/search.ts', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+codex
+P003 开发修改完成；没有运行测试、构建或 lint。
+  ✓ 确认当前定位字段
+  ✓ 补齐搜索候选元数据
+  ✓ 接入页面选择逻辑
+  ✓ 静态自查范围变更
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+codex
+已完成 P003，未修改 plan 文件、未勾选 checkbox、未更新进度区。
+
+**完成内容**
+- 在 `src/renderer/types.ts:103` 扩展 `WorkspaceSearchLocation`，新增 `filePath`。
+- 在 `src/renderer/types.ts:115` 扩展 `WorkspaceSearchResult` 顶层定位字段：`targetType`、`targetId`、`anchorId`、`planId`、`taskId`、`taskKey`、`filePath`。
+- 在 `src/renderer/utils/search.ts:303` 为 Plan 结果携带 `planId` 和 `filePath`。
+- 在 `src/renderer/utils/search.ts:330` 为任务结果携带 `planId`、`taskId`、`taskKey`、`filePath`。
+- 在 `src/renderer/utils/search.ts:359` 为事件结果从 meta 中提取可选 `planId/taskId/taskKey/filePath`。
+- 在 `src/renderer/utils/search.ts:404` 将定位字段同步到搜索结果顶层，保留原有搜索命中、排序、分组行为。
+- `src/renderer/pages/WorkspacePage.tsx:147` 现有入口继续传递 `selectSearchResult`，无需额外改动页面结构。
+
+**验证说明**
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark。
+- 只做了静态范围检查；`docs/plan/plan_feedback_16_20260627-133130.md` 未由我修改。
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 1f884de04f85f99f2a4af23aaff6e78490c9bee2..2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -110,6 +110,7 @@
+   planId?: number | null;
+   taskId?: number | null;
+   taskKey?: string | null;
++  filePath?: string | null;
+ }
+ 
+ export interface WorkspaceSearchResult {
+@@ -117,7 +118,14 @@
+   source: WorkspaceSearchSourceType;
+   targetTab: WorkspaceTab;
+   location: WorkspaceSearchLocation;
++  targetType: WorkspaceSearchTargetType;
++  targetId: number;
++  anchorId: string;
+   recordId: number;
++  planId?: number | null;
++  taskId?: number | null;
++  taskKey?: string | null;
++  filePath?: string | null;
+   title: string;
+   summary: string;
+   status: string | null;
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index c0a8203007d0443db43ca5a0a6d0c82fcfeb86ff..ac3a9074494f3eb40608dd2e6c82dfed599c4e20
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -300,7 +300,10 @@
+     summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+     status: nullableSearchText(plan.status),
+     updatedAt: plan.updated_at,
+-    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
++    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
++      planId: plan.id,
++      filePath: plan.file_path,
++    }),
+     fields,
+   };
+ }
+@@ -328,6 +331,7 @@
+       planId: task.plan_id,
+       taskId: task.id,
+       taskKey,
++      filePath: task.file_path,
+     }),
+     fields,
+   };
+@@ -356,6 +360,7 @@
+       planId: meta?.planId ?? meta?.plan_id,
+       taskId: meta?.taskId ?? meta?.task_id,
+       taskKey: meta?.taskKey ?? meta?.task_key,
++      filePath: meta?.filePath ?? meta?.file_path,
+     }),
+     fields,
+   };
+@@ -396,7 +401,14 @@
+       source: candidate.source,
+       targetTab: candidate.location.targetTab,
+       location: candidate.location,
++      targetType: candidate.location.targetType,
++      targetId: candidate.location.targetId,
++      anchorId: candidate.location.anchorId,
+       recordId: candidate.recordId,
++      planId: candidate.location.planId,
++      taskId: candidate.location.taskId,
++      taskKey: candidate.location.taskKey,
++      filePath: candidate.location.filePath,
+       title: candidate.title,
+       summary: candidate.summary,
+       status: candidate.status,
+@@ -409,11 +421,12 @@
+ function createWorkspaceSearchLocation(
+   targetType: WorkspaceSearchSourceType,
+   targetId: number,
+-  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
++  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+ ): WorkspaceSearchLocation {
+   const planId = readSearchId(options.planId);
+   const taskId = readSearchId(options.taskId);
+   const taskKey = nullableSearchText(options.taskKey);
++  const filePath = nullableSearchText(options.filePath);
+ 
+   return {
+     targetTab: getWorkspaceSearchTargetTab(targetType),
+@@ -425,6 +438,7 @@
+     planId,
+     taskId,
+     taskKey,
++    filePath,
+   };
+ }
+ 
+
+tokens used
+302,818
+已完成 P003，未修改 plan 文件、未勾选 checkbox、未更新进度区。
+
+**完成内容**
+- 在 `src/renderer/types.ts:103` 扩展 `WorkspaceSearchLocation`，新增 `filePath`。
+- 在 `src/renderer/types.ts:115` 扩展 `WorkspaceSearchResult` 顶层定位字段：`targetType`、`targetId`、`anchorId`、`planId`、`taskId`、`taskKey`、`filePath`。
+- 在 `src/renderer/utils/search.ts:303` 为 Plan 结果携带 `planId` 和 `filePath`。
+- 在 `src/renderer/utils/search.ts:330` 为任务结果携带 `planId`、`taskId`、`taskKey`、`filePath`。
+- 在 `src/renderer/utils/search.ts:359` 为事件结果从 meta 中提取可选 `planId/taskId/taskKey/filePath`。
+- 在 `src/renderer/utils/search.ts:404` 将定位字段同步到搜索结果顶层，保留原有搜索命中、排序、分组行为。
+- `src/renderer/pages/WorkspacePage.tsx:147` 现有入口继续传递 `selectSearchResult`，无需额外改动页面结构。
+
+**验证说明**
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark。
+- 只做了静态范围检查；`docs/plan/plan_feedback_16_20260627-133130.md` 未由我修改。

@@ -35,6 +35,24 @@ export const codexReasoningOptions: AgentCliOption[] = [
   { value: 'xhigh', label: '超高 · 最深入' },
 ];
 
+export type SettingsChoiceOption<T extends string = string> = {
+  value: T;
+  label: string;
+  description: string;
+};
+
+export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
+  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
+  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
+];
+
+export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
+  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
+  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
+  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
+  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
+];
+
 export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
 
 export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
@@ -64,6 +82,13 @@ export type ScopeFileOpenSettings = {
 };
 
 export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+
+export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
+  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
+  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
+  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
+  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
+];
 
 export function createEmptyPlanReadState(): WorkspacePlanReadState {
   return { plan: null, result: null, loading: false, error: null };

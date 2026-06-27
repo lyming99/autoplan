@@ -31,7 +31,20 @@ function fallbackPathToFileUrl(filePath) {
 }
 
 contextBridge.exposeInMainWorld('autoplan', {
-  mcpToolNames: ['create_project', 'create_requirement', 'create_feedback'],
+  mcpToolNames: [
+    'list_projects',
+    'get_project',
+    'create_project',
+    'list_requirements',
+    'create_requirement',
+    'list_feedback',
+    'create_feedback',
+    'list_plans',
+    'get_plan',
+    'list_tasks',
+    'start_loop',
+    'stop_loop',
+  ],
   snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
   createProject: (input) => ipcRenderer.invoke('projects:create', input),
   updateProject: (input) => ipcRenderer.invoke('projects:update', input),

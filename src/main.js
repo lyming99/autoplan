@@ -7,6 +7,7 @@ const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
 const { createIntakeService, titleFromBody } = require('./intakeService');
 const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
+const { mcpServerConfig, saveMcpSettings } = require('./mcpConfig');
 const { createMcpServer } = require('./mcpServer');
 
 if (protocol?.registerSchemesAsPrivileged) {
@@ -32,7 +33,6 @@ async function createApp() {
       mainWindow.webContents.send('loop:update', snapshot);
     }
   });
-  startMcpServer().catch((error) => recordMcpStartupError(error));
 
   mainWindow = new BrowserWindow({
     width: 1220,
@@ -48,9 +48,10 @@ async function createApp() {
     },
   });
   await loadRenderer(mainWindow);
+  scheduleMcpServerStart();
 }
 
-app.whenReady().then(createApp);
+app.whenReady().then(() => createApp().catch((error) => console.error('[app] startup failed', error)));
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
@@ -121,7 +122,9 @@ ipcMain.handle('projects:delete', (_event, input = {}) => {
 
 ipcMain.handle('loop:configure', (_event, config = {}) => {
   const projectId = requiredProjectId(config);
+  const mcpConfigChanged = saveMcpSettings(db, config);
   loop.configure(projectId, config);
+  if (mcpConfigChanged) scheduleMcpServerRestart();
   return loop.snapshot(projectId);
 });
 
@@ -290,18 +293,17 @@ function intakeService() {
   return createIntakeService({ db, loop, attachmentsRoot });
 }
 
+function scheduleMcpServerStart() { setTimeout(() => startMcpServer().catch((error) => recordMcpStartupError(error)), 0); }
+
+function scheduleMcpServerRestart() { setTimeout(() => restartMcpServer().catch((error) => recordMcpStartupError(error)), 0); }
+
+async function restartMcpServer() { if (mcpServer) await mcpServer.stop().catch((error) => console.error('[mcp] stop before restart failed', error)); return startMcpServer(); }
+
 async function startMcpServer() {
-  mcpServer = createMcpServer({
-    db,
-    loop,
-    intakeService: intakeService(),
-    logger: console,
-  });
+  mcpServer = createMcpServer({ db, loop, intakeService: intakeService(), config: mcpServerConfig(db), logger: console });
   const state = await mcpServer.start();
   const projectId = loop?.defaultProjectId?.();
-  if (projectId && state.enabled && state.running) {
-    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
-  }
+  if (projectId && state.enabled && state.running) loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
   return state;
 }
 
@@ -309,18 +311,10 @@ function recordMcpStartupError(error) {
   const message = error?.message || String(error || '未知错误');
   console.error('[mcp] start failed', error);
   const projectId = loop?.defaultProjectId?.();
-  if (projectId) {
-    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
-      mcp: mcpServer?.status?.() || null,
-      error: message,
-    });
-  }
+  if (projectId) loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, { mcp: mcpServer?.status?.() || null, error: message });
 }
 
-function mcpStatusMessage(state = {}) {
-  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
-  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
-}
+function mcpStatusMessage(state = {}) { return state.transport === 'stdio' ? 'MCP 服务已启动：stdio' : `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`; }
 
 function registerFileProtocol() {
   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;

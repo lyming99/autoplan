@@ -1,0 +1,678 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f077a-b1f3-7150-8568-c87c81dc6b8f
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_31_20260627-130629.md
+指定任务：
+- [ ] P001: 扩展计划状态与排序数据模型 <!-- scope: src/database.js,src/loopService.js,src/renderer/types.ts -->
+任务 scope：src/database.js, src/loopservice.js, src/renderer/types.ts
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Evaluating patch decisions**
+
+I need to decide on patching back the `planRows` and `taskRows` to the old format, ordering by `created_at DESC` and possibly adding `id DESC` for stability. It's important to include `sort_order` since `nextRunnablePlan` utilizes it. Additionally, backfilling the `sort_order` will help maintain compatibility with older executions. This approach seems solid to ensure that the history display remains preserved as well.
+codex
+为严格限定 P001，我会恢复 snapshot 旧展示顺序，仅暴露排序数据。
+2026-06-27T07:53:32.387475Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in D:\project\GitHub\autoplan\src\loopService.js:
+    const planRows = this.db.all(
+      'SELECT * FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
+      [projectId],
+    );
+**Considering code issues**
+
+It looks like the patch failed, and I’m wondering if maybe a line has changed. I think I need to inspect the snippet more closely to understand the problem. I need to figure out where the discrepancy is, so I can address it properly. To make sure everything is working as it should, I’ll carefully review the code and see what adjustments I might need to make. Let's see what I can find!
+codex
+补丁上下文不匹配，我先读取当前片段再精确调整。
+exec
+powershell.exe -Command '$ls=Get-Content -Encoding UTF8 src/loopService.js; $ls[1768..1784]' in D:\project\GitHub\autoplan
+ succeeded in 438ms:
+**Rethinking file content**
+
+I'm pondering why the file is empty. Could it be that the file is shorter than expected? I need to check if I used the Get-Content command properly. Maybe I should consider counting the lines to see if there really is any content there. It’s quite puzzling! I just want to get to the bottom of this and ensure I'm handling the file correctly. Let’s investigate further!
+codex
+片段读取返回空，可能文件行号变动；我用搜索定位当前 snapshot 查询。
+exec
+powershell.exe -Command "rg -n \"SELECT \\* FROM plans WHERE project_id|ORDER BY plans\\.\" src/loopService.js" in D:\project\GitHub\autoplan
+2026-06-27T07:53:45.210921Z ERROR codex_core::tools::router: error={"output":"rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 1\r\n+ rg -n \"SELECT \\* FROM plans WHERE project_id|ORDER BY plans\\.\" src/lo ...\r\n+ ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.1}}
+ exited 1 in 1140ms:
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 1
++ rg -n "SELECT \* FROM plans WHERE project_id|ORDER BY plans\." src/lo ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+**Troubleshooting command issues**
+
+I'm facing a challenge because the command 'rg' isn't found, which could mean there’s an issue with the environment path. Instead of trying multiple times, I could explore using Select-String as an alternative. It’s interesting to see how different tools can interact, but I want to ensure I'm applying the right strategy here. Let's try resolving this issue efficiently by understanding the alternatives better!
+codex
+`rg` 当前不可用，我改用 PowerShell 原生命令定位。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern \"SELECT \\* FROM plans WHERE project_id|ORDER BY plans\\.\" -CaseSensitive | ForEach-Object { \"{0}:{1}\" -f "'$_.LineNumber,$_.Line }' in D:\project\GitHub\autoplan
+ succeeded in 423ms:
+codex
+没有匹配结果有点异常，我检查文件大小和前几行确认文件状态。
+exec
+powershell.exe -Command 'Get-Item src/loopService.js | Select-Object FullName,Length; Get-Content -Encoding UTF8 src/loopService.js -TotalCount 5' in D:\project\GitHub\autoplan
+ succeeded in 451ms:
+
+FullName                                      Length
+--------                                      ------
+D:\project\GitHub\autoplan\src\loopService.js  45544
+const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { nowIso } = require('./database');
+
+
+
+**Inspecting file changes**
+
+I just noticed that a file might have changed. It seems like there could be a missing crypto import, and perhaps the user or AutoPlan made a change? I’m wondering if our previous patch got lost somewhere in the mix. So, we need to adapt without overwriting anything. My next step should be to carefully inspect the relevant sections and use Select-String to plan further. Let's make sure to figure this out!
+codex
+文件有外部变化，我会重新基于当前内容定位 P001 需要保留的改动。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern \"nextRunnablePlan|insertPlan|sort_order|planSnapshotRow|snapshot\\(\" | ForEach-Object { \"{0}:{1}\" -f "'$_.LineNumber,$_.Line }' in D:\project\GitHub\autoplan
+ succeeded in 442ms:
+318:        : this.nextRunnablePlan(projectId);
+597:  nextRunnablePlan(projectId) {
+601:       ORDER BY sort_order ASC, created_at ASC, id ASC
+608:    const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
+609:    return Number(row?.sort_order || 0) + 1;
+612:  insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+623:      'sort_order',
+643:    const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+644:    const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+656:  planAgentCliEventSnapshot(projectId, planId) {
+672:  planSourceAgentCliSnapshot(projectId, planId) {
+1048:    this.emit('update', this.snapshot(projectId));
+1051:  snapshot(projectId = null) {
+1052:    return snapshots.snapshot(this, loopFlowHelpers(), projectId);
+
+**Exploring loopService refactor**
+
+I'm examining how loopService has been refactored. It seems like it might connect to snapshots externally now. My understanding is that I can only modify the scope, but if the snapshot has moved, that's curious. The P001 scope indicates loopService, yet it imports snapshots. Hm, I'll need to inspect the details a bit more closely to get everything sorted. There's definitely something interesting happening here!
+codex
+当前分支把 snapshot 委托出去了；我只在 `loopService` 暴露 helper，避免改 scope 外文件。
+exec
+powershell.exe -Command '$ls=Get-Content -Encoding UTF8 src/loopService.js; Write-Host '"'--- 560-635 ---'; "'$ls[560..635]; Write-Host '"'--- 1038-1060 ---'; "'$ls[1038..1060]; Write-Host '"'--- top 1-80 ---'; "'$ls[0..80]' in D:\project\GitHub\autoplan
+ succeeded in 464ms:
+--- 560-635 ---
+
+  /** 恢复被中断的 plan：blocked → pending，plan → pending，循环运行时自动继续执行 */
+  resumePlan(projectId, planId) {
+    this.db.run(
+      `UPDATE plan_tasks SET status = ?, updated_at = ?
+       WHERE plan_id = ? AND status = ?`,
+      ['pending', nowIso(), planId, 'blocked'],
+    );
+    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+    this.addEvent(projectId, 'plan.resumed', `plan #${planId} 已恢复`);
+    this.emitUpdate(projectId);
+  }
+
+  /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
+  appendTask(projectId, planId, title) {
+    return planParser.appendTask(this, loopFlowHelpers(), projectId, planId, title);
+  }
+
+  ensureWorkspaceDirs(workspace) {
+    return workspaceFiles.ensureWorkspaceDirs(this, loopFlowHelpers(), workspace);
+  }
+
+  scanDirectory(root, workspace, extensions) {
+    return workspaceFiles.scanDirectory(this, loopFlowHelpers(), root, workspace, extensions);
+  }
+
+  saveScan(projectId, type, scan) {
+    return workspaceFiles.saveScan(this, loopFlowHelpers(), projectId, type, scan);
+  }
+
+  hasPlanForIssueHash(projectId, issueHash) {
+    return Boolean(
+      this.db.get('SELECT id FROM plans WHERE project_id = ? AND issue_hash = ? LIMIT 1', [projectId, issueHash]),
+    );
+  }
+
+  nextRunnablePlan(projectId) {
+    return this.db.get(
+      `SELECT * FROM plans
+       WHERE project_id = ? AND status NOT IN ('completed', 'interrupted')
+       ORDER BY sort_order ASC, created_at ASC, id ASC
+       LIMIT 1`,
+      [projectId],
+    );
+  }
+
+  nextPlanSortOrder(projectId) {
+    const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
+    return Number(row?.sort_order || 0) + 1;
+  }
+
+  insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+    const createdAt = nowIso();
+    const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+      ? Number(sortOrder)
+      : this.nextPlanSortOrder(projectId);
+    const columns = [
+      'project_id',
+      'issue_hash',
+      'file_path',
+      'hash',
+      'status',
+      'sort_order',
+      'total_tasks',
+      'completed_tasks',
+      'validation_passed',
+      'created_at',
+      'updated_at',
+    ];
+    const values = [projectId, issueHash, filePath, hash, status, normalizedSortOrder, 0, 0, 0, createdAt, createdAt];
+    for (const [column, value] of planAgentCliColumnValues(this.planColumns(), agentCliConfig)) {
+      columns.push(column);
+      values.push(value);
+    }
+    return this.db.insert(
+      `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+--- 1038-1060 ---
+      type,
+      message,
+      meta ? JSON.stringify(meta) : null,
+      nowIso(),
+    ]);
+    this.emitUpdate(projectId);
+  }
+
+  emitUpdate(projectId) {
+    this.emit('update', this.snapshot(projectId));
+  }
+
+  snapshot(projectId = null) {
+    return snapshots.snapshot(this, loopFlowHelpers(), projectId);
+  }
+}
+
+function intakeAttachmentOwnerTypes(intakeType) {
+  return intakeType === 'feedback' ? ['feedback'] : ['requirement', 'requirements'];
+}
+
+function describeIntakeAttachment(workspace, attachment, index) {
+  const name = attachmentField(attachment, ['original_name', 'originalName', 'name', 'filename', 'file_name']) || `附件 ${index + 1}`;
+--- top 1-80 ---
+const { EventEmitter } = require('node:events');
+const fs = require('node:fs');
+const path = require('node:path');
+const { spawn } = require('node:child_process');
+const { nowIso } = require('./database');
+const { CodexActivityPrinter } = require('./codexActivity');
+const {
+  codexNewSessionArgs,
+  codexResumeSessionArgs,
+  runAgentCliAttempt,
+} = require('./agentCli');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  LOOP_CONFIG_INPUT_KEYS,
+  VALIDATION_COMMAND_INPUT_KEYS,
+  agentCliContextFields,
+  agentCliOperationFields,
+  agentCliProviderDisplayName,
+  agentCliStateUpdates,
+  clearCodexSessionFields,
+  codexSessionContextFields,
+  effectiveAgentCliConfig,
+  extractCodexSessionId,
+  hasAgentCliOverride,
+  hasAnyOwnProperty,
+  hasCodexSessionOption,
+  isCodexResumeFailure,
+  nextAgentCliConfig,
+  nextIntakeAgentCliConfig,
+  normalizeAgentCliConfig,
+  normalizeCodexSessionId,
+  normalizeIntakeAgentCliConfig,
+  operationCodexSessionId,
+  planAgentCliColumnValues,
+  readFirstOwnValue,
+  shortCodexSessionId,
+} = require('./loop/agentCliConfig');
+const {
+  archiveRuntimeOperation,
+  ensureProjectRuntime,
+  existingProjectRuntime,
+  findActiveRuntimeProject,
+  findRuntimeOperations,
+  killChildProcess,
+  normalizeRuntimeStatus,
+  recordRuntimeError,
+  registerRuntimeOperation,
+  resetStoredRuntimeState,
+  runtimeProjectSummary,
+  scheduleProjectRuntime,
+  setProjectPhase,
+  stopProjectRuntime,
+  stopRuntimeTask,
+  waitForChild,
+} = require('./loop/runtime');
+const planGeneration = require('./loop/planGeneration');
+const planParser = require('./loop/planParser');
+const snapshots = require('./loop/snapshots');
+const concurrency = require('./loop/concurrency');
+const workspaceFiles = require('./loop/workspaceFiles');
+const { parseEventMeta } = snapshots;
+const { isAcceptanceTask } = concurrency;
+const {
+  hashFile,
+  hashText,
+  normalizeRelative,
+  readSnippet,
+  safePart,
+  tailText,
+  workspaceKey,
+  workspaceToolEnv,
+} = workspaceFiles;
+const taskExecution = require('./loop/taskExecution');
+const validationFlow = require('./loop/validation');
+const {
+  LEGACY_TASK_EVENT_TYPES,
+  TASK_EVENT_COMPATIBILITY,
+  TASK_EVENT_SEMANTICS,
+  TASK_EVENT_STATUS,
+  TASK_EVENT_TYPES,
+  normalizeDurationMs,
+
+codex
+snapshot 实现在模块内；我只读取确认是否已透传新增字段，不越权修改。
+exec
+powershell.exe -Command "Select-String -Path src/loop/snapshots.js -Pattern \"planRows|planSnapshotRow|is_draft|sort_order|SELECT \\* FROM plans|ORDER BY\" | ForEach-Object { \"{0}:{1}\" -f "'$_.LineNumber,$_.Line }; $s=Get-Content -Encoding UTF8 src/loop/snapshots.js; $s[0..120]' in D:\project\GitHub\autoplan
+ succeeded in 464ms:
+29:    const planRows = service.db.all(
+30:      'SELECT * FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
+37:       ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC, plan_tasks.sort_order ASC, plan_tasks.id ASC`,
+42:      planRows.map((plan) => [
+47:    const planSnapshots = planRows.map((plan) => planSnapshotRow(
+67:          ORDER BY requirements.updated_at DESC`,
+76:          ORDER BY feedback.updated_at DESC`,
+80:        'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
+94:        .all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId])
+97:        'SELECT * FROM scan_files WHERE project_id = ? ORDER BY scanned_at DESC, file_path ASC',
+157:         ORDER BY id DESC LIMIT 1`,
+268:function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
+275:    sort_order: normalizePlanSortOrder(plan.sort_order),
+276:    is_draft: status === 'draft',
+320:  planSnapshotRow,
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const { DEFAULT_AGENT_CLI_PROVIDER, agentCliContextFields, codexSessionContextFields, effectiveAgentCliConfig, intakeSnapshotRow, normalizeOptionalString } = require('./agentCliConfig');
+const { TASK_EVENT_STATUS, normalizeDurationMs, taskRunDurationMs } = require('./taskEvents');
+const { operationSnapshotRow, runtimeOperationContextByTask } = require('./runtime');
+const { planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');
+const { extractMarkdownTitle } = require('./planParser');
+const { resolveWorkspaceChildPath } = require('./workspaceFiles');
+
+const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 43847, path: '/mcp' });
+const MCP_TOOL_NAMES = Object.freeze(['create_project', 'create_requirement', 'create_feedback']);
+const LOCAL_MCP_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+
+function snapshot(service, helpers, projectId = null) {
+    const projects = service.projects();
+    const mcp = mcpStatusSnapshot(service.db);
+    if (!projectId) return emptySnapshot(projects, mcp);
+
+    const activeProject = service.project(projectId);
+    if (!activeProject) return emptySnapshot(projects, mcp);
+
+    const state = {
+      ...(service.status(projectId) || {}),
+      workspace_path: activeProject.workspace_path || '',
+    };
+    const runtime = service.existingRuntime(projectId);
+    const taskOperationContexts = runtimeOperationContextByTask(runtime, projectId);
+    const planRows = service.db.all(
+      'SELECT * FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
+      [projectId],
+    );
+    const taskRows = service.db.all(
+      `SELECT plan_tasks.*, plans.file_path
+       FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+       WHERE plans.project_id = ?
+       ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC, plan_tasks.sort_order ASC, plan_tasks.id ASC`,
+      [projectId],
+    );
+    const tasksByPlanId = groupPlanTasksByPlanId(taskRows);
+    const concurrencySuggestionByPlanId = new Map(
+      planRows.map((plan) => [
+        Number(plan.id),
+        planConcurrencySuggestion(activeProject.workspace_path, tasksByPlanId.get(Number(plan.id)) || []),
+      ]),
+    );
+    const planSnapshots = planRows.map((plan) => planSnapshotRow(
+      activeProject.workspace_path,
+      plan,
+      concurrencySuggestionByPlanId.get(Number(plan.id)),
+      service.planSnapshotAgentCliConfig(plan),
+    ));
+    const planTitleById = new Map(planSnapshots.map((plan) => [Number(plan.id), plan.title || '']));
+
+    return {
+      activeProjectId: projectId,
+      activeProject,
+      projects,
+      mcp,
+      state,
+      requirements: service.db.all(
+        `SELECT requirements.*, plans.status AS plan_status,
+                plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+         FROM requirements
+         LEFT JOIN plans ON plans.id = requirements.linked_plan_id
+         WHERE requirements.project_id = ?
+          ORDER BY requirements.updated_at DESC`,
+        [projectId],
+      ).map((row) => intakeSnapshotRow(row)),
+      feedback: service.db.all(
+        `SELECT feedback.*, plans.status AS plan_status,
+                plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+         FROM feedback
+         LEFT JOIN plans ON plans.id = feedback.linked_plan_id
+         WHERE feedback.project_id = ?
+          ORDER BY feedback.updated_at DESC`,
+        [projectId],
+      ).map((row) => intakeSnapshotRow(row)),
+      attachments: service.db.all(
+        'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
+        [projectId],
+      ),
+      plans: planSnapshots,
+      tasks: taskRows
+        .map((task) => taskSnapshotRow(
+          activeProject.workspace_path,
+          {
+            ...task,
+            plan_title: planTitleById.get(Number(task.plan_id)) || '',
+          },
+          taskOperationContexts.get(Number(task.id)),
+        )),
+      events: service.db
+        .all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId])
+        .map((event) => eventSnapshotRow(event)),
+      scans: service.db.all(
+        'SELECT * FROM scan_files WHERE project_id = ? ORDER BY scanned_at DESC, file_path ASC',
+        [projectId],
+      ),
+      activeOperation:
+        runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
+          ? operationSnapshotRow(runtime.activeOperation)
+          : null,
+      activeOperations: runtime?.activeOperations
+        ? Array.from(runtime.activeOperations.values())
+            .filter((operation) => Number(operation.projectId) === Number(projectId))
+            .map((operation) => operationSnapshotRow(operation))
+        : [],
+      lastOperation:
+        runtime?.lastOperation && Number(runtime.lastOperation.projectId) === Number(projectId)
+          ? runtime.lastOperation
+          : null,
+    };
+  }
+
+function taskSnapshotRow(workspace, task, operationContext = null) {
+  if (!task) return task;
+  const startedAt = normalizeOptionalString(task.started_at) || null;
+  const finishedAt = normalizeOptionalString(task.finished_at) || null;
+  const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+  const runDurationMs = isRunning ? taskRunDurationMs(startedAt, nowIso()) : undefined;
+
+**Evaluating file modifications**
+
+I'm noticing some interesting snapshots that have already been modified. It looks like they were probably altered by our earlier work, but I'm not entirely sure if they're still untracked files. The git status indicates something about "src/loop/" being untracked, which might relate to previous edits. I think I shouldn’t edit it because it already has that P001 snapshot.  I might need to duplicate `normalizePlanSortOrder` in loopService, so I’ll search for that.
+codex
+snapshot 模块已经透传 `sort_order/is_draft`；无需改 scope 外文件。接着做范围核对。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern \"normalizePlanSortOrder|planSnapshotRow\\(\" | ForEach-Object { \"{0}:{1}\" -f "'$_.LineNumber,$_.Line }; Select-String -Path src/database.js -Pattern "sort_order|backfillPlanSortOrders|idx_plans_project_sort" | ForEach-Object { "database.js:{0}:{1}" -f $_.LineNumber,$_.Line }; Select-String -Path src/renderer/types.ts -Pattern "PLAN_STATUS|PlanStatus|sort_order|is_draft" | ForEach-Object { "types.ts:{0}:{1}" -f $_.LineNumber,$_.Line }' in D:\project\GitHub\autoplan
+ succeeded in 459ms:
+database.js:118:        sort_order INTEGER NOT NULL DEFAULT 0,
+database.js:137:        sort_order INTEGER NOT NULL,
+database.js:147:      ON plan_tasks (plan_id, status, sort_order, id);
+database.js:187:    this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+database.js:192:      CREATE INDEX IF NOT EXISTS idx_plans_project_sort
+database.js:193:      ON plans (project_id, sort_order, created_at, id)
+database.js:209:    this.backfillPlanSortOrders();
+database.js:287:  backfillPlanSortOrders() {
+database.js:289:      `SELECT id, project_id, sort_order
+database.js:303:        const order = Number(plan.sort_order);
+database.js:307:        const order = Number(plan.sort_order);
+database.js:310:        this.db.run('UPDATE plans SET sort_order = ? WHERE id = ?', [nextOrder, plan.id]);
+types.ts:7:export const PLAN_STATUS = {
+types.ts:17:export type PlanStatus = (typeof PLAN_STATUS)[keyof typeof PLAN_STATUS];
+types.ts:187:  plan_status?: string | null;
+types.ts:205:  plan_status?: string | null;
+types.ts:232:  status: PlanStatus;
+types.ts:233:  sort_order: number;
+types.ts:234:  is_draft: boolean;
+types.ts:323:  sort_order: number;
+
+codex
+范围核对显示数据库和类型改动到位；我再确认 `loopService` 里的插入/执行排序。
+exec
+powershell.exe -Command 'Select-String -Path src/loopService.js -Pattern "nextRunnablePlan|nextPlanSortOrder|insertPlan|sort_order" | ForEach-Object { "loopService.js:{0}:{1}" -f $_.LineNumber,$_.Line }' in D:\project\GitHub\autoplan
+ succeeded in 428ms:
+loopService.js:318:        : this.nextRunnablePlan(projectId);
+loopService.js:597:  nextRunnablePlan(projectId) {
+loopService.js:601:       ORDER BY sort_order ASC, created_at ASC, id ASC
+loopService.js:607:  nextPlanSortOrder(projectId) {
+loopService.js:608:    const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
+loopService.js:609:    return Number(row?.sort_order || 0) + 1;
+loopService.js:612:  insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+loopService.js:616:      : this.nextPlanSortOrder(projectId);
+loopService.js:623:      'sort_order',
+
+**Inspecting PlanTask Types**
+
+I'm considering whether I need to inspect the types around PlanTask. I’ve identified that the sort_order is located at line 323. It might be necessary to change the database line numbers and references. Since the plan file is untracked, I can't perform a diff, and using `git diff` won’t work. I'll check the scope for modifications instead with `git diff --name-only` and `git status --short`. However, I want to avoid outputting a long list, opting to keep it scoped.
+codex
+不运行测试/构建；最后只核对当前任务 scope 内的变更文件。
+exec
+powershell.exe -Command "git diff --name-only -- src/database.js src/loopService.js src/renderer/types.ts; Write-Host '--- plan diff check ---'; git diff --name-only -- docs/plan/plan_requirement_31_20260627-130629.md" in D:\project\GitHub\autoplan
+ succeeded in 561ms:
+src/database.js
+src/loopService.js
+src/renderer/types.ts
+--- plan diff check ---
+warning: in the working copy of 'src/database.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/loopService.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it
+
+**Inspecting code syntax**
+
+I need to pay attention to possible line endings warnings and note that there’s no plan diff. It might be best to avoid tests for now. I should check snippets for correct syntax. When creating an index string for the database, it shouldn't have a semicolon, but that’s okay. I wonder if I should run `this.db.run` before the defaultProjectId since it's placed after ensuring columns before defaultProjectId. Let's take a closer look at lines 180-215.
+codex
+scope 核对通过；我再人工查看补丁关键片段，排除明显语法问题。
+exec
+powershell.exe -Command '$db=Get-Content -Encoding UTF8 src/database.js; Write-Host '"'--- database 180-215 ---'; "'$db[180..215]; Write-Host '"'--- database 287-314 ---'; "'$db[287..314]; $ls=Get-Content -Encoding UTF8 src/loopService.js; Write-Host '"'--- loopService 597-635 ---'; "'$ls[597..635]; $ts=Get-Content -Encoding UTF8 src/renderer/types.ts; Write-Host '"'--- types 1-20, 226-236 ---'; "'$ts[0..20]; $ts[226..236]' in D:\project\GitHub\autoplan
+ succeeded in 517ms:
+--- database 180-215 ---
+    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+    this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
+    this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+    this.ensureColumn('plans', 'project_id', 'INTEGER');
+    this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
+    this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+    this.db.run(`
+      CREATE INDEX IF NOT EXISTS idx_plans_project_sort
+      ON plans (project_id, sort_order, created_at, id)
+    `);
+    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+    this.ensureColumn('events', 'project_id', 'INTEGER');
+    this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
+    this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
+
+    const defaultProjectId = this.ensureDefaultProject();
+    this.ensureDefaultSettings();
+    this.migrateScanFilesTable(defaultProjectId);
+    this.assignLegacyRows(defaultProjectId);
+    this.backfillPlanSortOrders();
+    this.ensureProjectState(defaultProjectId);
+  }
+
+  ensureDefaultProject() {
+    const existing = this.get('SELECT id FROM projects ORDER BY id ASC LIMIT 1');
+    if (existing) return Number(existing.id);
+
+--- database 287-314 ---
+    const rows = this.all(
+      `SELECT id, project_id, sort_order
+       FROM plans
+       ORDER BY COALESCE(project_id, 0) ASC, created_at ASC, id ASC`,
+    );
+    const byProject = new Map();
+    for (const row of rows) {
+      const key = String(row.project_id ?? 0);
+      const plans = byProject.get(key) || [];
+      plans.push(row);
+      byProject.set(key, plans);
+    }
+
+    for (const plans of byProject.values()) {
+      let nextOrder = plans.reduce((max, plan) => {
+        const order = Number(plan.sort_order);
+        return Number.isFinite(order) && order > max ? order : max;
+      }, 0);
+      for (const plan of plans) {
+        const order = Number(plan.sort_order);
+        if (Number.isFinite(order) && order > 0) continue;
+        nextOrder += 1;
+        this.db.run('UPDATE plans SET sort_order = ? WHERE id = ?', [nextOrder, plan.id]);
+      }
+    }
+  }
+
+  migrateScanFilesTable(defaultProjectId) {
+--- loopService 597-635 ---
+    return this.db.get(
+      `SELECT * FROM plans
+       WHERE project_id = ? AND status NOT IN ('completed', 'interrupted')
+       ORDER BY sort_order ASC, created_at ASC, id ASC
+       LIMIT 1`,
+      [projectId],
+    );
+  }
+
+  nextPlanSortOrder(projectId) {
+    const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
+    return Number(row?.sort_order || 0) + 1;
+  }
+
+  insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+    const createdAt = nowIso();
+    const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+      ? Number(sortOrder)
+      : this.nextPlanSortOrder(projectId);
+    const columns = [
+      'project_id',
+      'issue_hash',
+      'file_path',
+      'hash',
+      'status',
+      'sort_order',
+      'total_tasks',
+      'completed_tasks',
+      'validation_passed',
+      'created_at',
+      'updated_at',
+    ];
+    const values = [projectId, issueHash, filePath, hash, status, normalizedSortOrder, 0, 0, 0, createdAt, createdAt];
+    for (const [column, value] of planAgentCliColumnValues(this.planColumns(), agentCliConfig)) {
+      columns.push(column);
+      values.push(value);
+    }
+    return this.db.insert(
+      `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+--- types 1-20, 226-236 ---
+export type IntakeType = 'requirement' | 'feedback';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
+export type AgentCliProvider = 'codex' | 'claude' | string;
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | string;
+
+export const PLAN_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  READY_FOR_VALIDATION: 'ready_for_validation',
+  VALIDATION_FAILED: 'validation_failed',
+  COMPLETED: 'completed',
+  INTERRUPTED: 'interrupted',
+  DRAFT: 'draft',
+} as const;
+
+export type PlanStatus = (typeof PLAN_STATUS)[keyof typeof PLAN_STATUS];
+
+export interface AgentCliOption {
+  value: AgentCliProvider;
+  label: string;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  title?: string | null;
+  hash: string;
+  status: PlanStatus;
+  sort_order: number;
+  is_draft: boolean;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+
+codex
+人工片段检查完成；按要求不启动任何测试或构建。
+  ✓ 读取 P001 上下文
+  ✓ 梳理相关数据模型
+  ✓ 修改范围内业务文件
+  ✓ 静态检查改动边界
+codex
+已完成 P001，仅改动指定 scope 内文件，未修改 plan 文件/checkbox/进度区。
+
+- `src/database.js:118` 为 `plans` 表新增持久化 `sort_order` 字段，并在 `src/database.js:187` 加入兼容迁移。
+- `src/database.js:209` 增加历史计划排序回填，按旧执行顺序生成稳定默认顺序，避免空值排序异常。
+- `src/loopService.js:597` 让下一可执行计划按 `sort_order` 读取；`src/loopService.js:607` 新计划自动追加到当前项目排序末尾。
+- `src/renderer/types.ts:7` 新增 `PLAN_STATUS/PlanStatus`，覆盖 `pending/running/completed/draft` 等状态；`src/renderer/types.ts:232` 扩展 `Plan` 的 `sort_order` 和 `is_draft`。
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark；最终验证留给 AutoPlan 统一执行。
+tokens used
+157,569
+已完成 P001，仅改动指定 scope 内文件，未修改 plan 文件/checkbox/进度区。
+
+- `src/database.js:118` 为 `plans` 表新增持久化 `sort_order` 字段，并在 `src/database.js:187` 加入兼容迁移。
+- `src/database.js:209` 增加历史计划排序回填，按旧执行顺序生成稳定默认顺序，避免空值排序异常。
+- `src/loopService.js:597` 让下一可执行计划按 `sort_order` 读取；`src/loopService.js:607` 新计划自动追加到当前项目排序末尾。
+- `src/renderer/types.ts:7` 新增 `PLAN_STATUS/PlanStatus`，覆盖 `pending/running/completed/draft` 等状态；`src/renderer/types.ts:232` 扩展 `Plan` 的 `sort_order` 和 `is_draft`。
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark；最终验证留给 AutoPlan 统一执行。

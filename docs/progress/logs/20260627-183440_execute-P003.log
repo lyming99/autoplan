@@ -1,0 +1,866 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0798-a7d6-7812-b542-39b81fbfd5f9
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_17_20260627-133901.md
+指定任务：
+- [ ] P003: 同步搜索与辅助展示文案 <!-- scope: src/renderer/components/PlanLists.tsx,src/renderer/utils/search.ts,src/renderer/components/SearchResults.tsx -->
+任务 scope：src/renderer/components/planlists.tsx, src/renderer/utils/search.ts, src/renderer/components/searchresults.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用 P002 的本地 `formatEvent` 映射，让搜索候选也使用同一展示标题，同时保留原始 key 搜索。
+  → 确认搜索事件候选
+  • 同步格式化文案
+  • 静态检查范围
+exec
+powershell.exe -Command "(Get-Content -Encoding UTF8 src\\renderer\\utils\\search.ts | Select-Object -First 35) -join \""'`n"; "`n--- event candidate ---"; (Get-Content -Encoding UTF8 src'"\\renderer\\utils\\search.ts | Select-Object -Skip 330 -First 35) -join \""'`n"; "`n--- planlists exports ---"; (Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx | Select-Object -First 45) -join \""'`n"' in D:\project\GitHub\autoplan
+ succeeded in 1257ms:
+import { WORKSPACE_SEARCH_HIT_FIELDS, WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
+import type {
+  AppSnapshot,
+  WorkspaceSearchGroup,
+  WorkspaceSearchHitField,
+  WorkspaceSearchLocation,
+  WorkspaceSearchMatch,
+  WorkspaceSearchQuery,
+  WorkspaceSearchResult,
+  WorkspaceSearchSourceConfig,
+  WorkspaceSearchSourceType,
+  WorkspaceSearchState,
+  WorkspaceTab,
+} from '../types';
+import { getTimestampMs } from './time';
+
+const SEARCH_SUMMARY_MAX_LENGTH = 140;
+const SEARCH_SNIPPET_MAX_LENGTH = 120;
+const FALLBACK_SEARCH_PRIORITY = 99;
+const WORKSPACE_SEARCH_LOCATION_HIGHLIGHT_MS = 2400;
+const WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR = 'smooth';
+
+const WORKSPACE_SEARCH_FIELD_PRIORITIES: Record<WorkspaceSearchHitField, number> = {
+  [WORKSPACE_SEARCH_HIT_FIELDS.TITLE]: 0,
+  [WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY]: 0,
+  [WORKSPACE_SEARCH_HIT_FIELDS.STATUS]: 1,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE]: 1,
+  [WORKSPACE_SEARCH_HIT_FIELDS.BODY]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.MARKDOWN]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.RAW_LINE]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.SOURCE_PATH]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.SCOPE]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META]: 3,
+
+--- event candidate ---
+      planId: task.plan_id,
+      taskId: task.id,
+      taskKey,
+      filePath: task.file_path,
+    }),
+    fields,
+  };
+}
+
+function createEventCandidate(event: AppSnapshot['events'][number]): WorkspaceSearchCandidate {
+  const fields: WorkspaceSearchField[] = [];
+  const meta = getObjectMeta(event.meta);
+  const eventMeta = stringifySearchMeta(event.meta);
+
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
+
+  return {
+    source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+    recordId: event.id,
+    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+    summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+    status: nullableSearchText(meta?.status),
+    updatedAt: event.created_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.EVENT, event.id, {
+      planId: meta?.planId ?? meta?.plan_id,
+      taskId: meta?.taskId ?? meta?.task_id,
+      taskKey: meta?.taskKey ?? meta?.task_key,
+      filePath: meta?.filePath ?? meta?.file_path,
+    }),
+    fields,
+
+--- planlists exports ---
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import type { AppEvent, Plan, PlanTask, WorkspaceSearchResult } from '../types';
+import { RecordCard } from './IntakePanel';
+import { PlanList as BasePlanList } from './plans/PlanList';
+import { formatChinaDateTime } from '../utils/time';
+import {
+  TASK_STATUS_FILTERS,
+  formatTaskDuration,
+  formatTaskPlanGroupSummary,
+  groupTasksByPlan,
+  matchesTaskStatusFilter,
+  scopeFileLabel,
+  scopeFileStatus,
+  type TaskStatusFilter,
+  type TimedPlanTask,
+} from '../utils/planTasks';
+import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
+import type { EventDisplay } from '../utils/planEvents';
+
+export { getEventSearchText };
+export type { EventDisplay } from '../utils/planEvents';
+
+const SYSTEM_EVENT_TITLES: Record<string, string> = {
+  'scan.done': '扫描完成',
+  'feedback.created': '反馈已创建',
+  'plan.generated': '计划已生成',
+};
+
+export function formatEvent(event: AppEvent): EventDisplay {
+  const display = formatBaseEvent(event);
+  if (display.tone || display.badge) return display;
+  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
+  return title === display.title ? display : { ...display, title };
+}
+
+type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+type PlanListProps = ComponentProps<typeof BasePlanList> & {
+  onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+};
+
+const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'running', label: '执行中' },
+  { key: 'completed', label: '已完成' },
+
+codex
+我会先让 `PlanLists.tsx` 导出的事件搜索文本也经过本地中文标题。
+  ✓ 确认搜索事件候选
+  → 同步格式化文案
+  • 静态检查范围
+codex
+接下来应用小补丁：覆盖导出的 `getEventSearchText`，并在搜索候选使用展示标题。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+codex
+`PlanLists` 已同步辅助搜索文本。现在更新事件搜索候选标题与字段。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index ac3a9074494f3eb40608dd2e6c82dfed599c4e20..5e7cf9ed5b73cbbfd9def29c9837beb1c5686e53
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -12,6 +12,7 @@
+   WorkspaceSearchState,
+   WorkspaceTab,
+ } from '../types';
++import { formatEvent, getEventSearchText } from '../components/PlanLists';
+ import { getTimestampMs } from './time';
+ 
+ const SEARCH_SUMMARY_MAX_LENGTH = 140;
+@@ -341,18 +342,23 @@
+   const fields: WorkspaceSearchField[] = [];
+   const meta = getObjectMeta(event.meta);
+   const eventMeta = stringifySearchMeta(event.meta);
++  const display = formatEvent(event);
++  const eventSearchText = getEventSearchText(event);
+ 
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', display.title);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', display.body);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '任务标题', meta?.taskTitle);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
+ 
+   return {
+     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+     recordId: event.id,
+-    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
++    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+     status: nullableSearchText(meta?.status),
+     updatedAt: event.created_at,
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index ac3a9074494f3eb40608dd2e6c82dfed599c4e20..5e7cf9ed5b73cbbfd9def29c9837beb1c5686e53
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -12,6 +12,7 @@
+   WorkspaceSearchState,
+   WorkspaceTab,
+ } from '../types';
++import { formatEvent, getEventSearchText } from '../components/PlanLists';
+ import { getTimestampMs } from './time';
+ 
+ const SEARCH_SUMMARY_MAX_LENGTH = 140;
+@@ -341,18 +342,23 @@
+   const fields: WorkspaceSearchField[] = [];
+   const meta = getObjectMeta(event.meta);
+   const eventMeta = stringifySearchMeta(event.meta);
++  const display = formatEvent(event);
++  const eventSearchText = getEventSearchText(event);
+ 
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', display.title);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', display.body);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '任务标题', meta?.taskTitle);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
+ 
+   return {
+     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+     recordId: event.id,
+-    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
++    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+     status: nullableSearchText(meta?.status),
+     updatedAt: event.created_at,
+
+**Considering search structure**
+
+I need to address the potential for an import cycle and lint issues, specifically with importing `formatEvent` into `search.ts`. PlanLists imports types and utils, while `SearchResults` might not need modification. There’s a concern about duplicate `EVENT_META` due to `eventSearchText`. The priority for matches is important, especially for the Chinese title. Also, I’m aware the summary might show raw `event.type` which could be misleading. I think overall, keeping `SearchResults` unchanged might be best.
+**Examining search results**
+
+The `SearchResults` component only shows when there’s a query, such as "反馈" for feedback created, which matches the title "反馈已创建." If there’s no body in the event and the user searches for `projectId`, the `eventSearchText` might include a long string with the raw key, but that’s not the main focus. Checking for import cycles between `search.ts`, `PlanLists.tsx`, and related files is crucial. I should confirm there are no unnecessary imports and that `SearchResults.tsx` remains unchanged, especially regarding `formatEvent`.
+codex
+搜索候选已改用展示标题。现在做只读静态检查，不运行任何验收命令。
+  ✓ 确认搜索事件候选
+  ✓ 同步格式化文案
+  → 静态检查范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index ac3a9074494f3eb40608dd2e6c82dfed599c4e20..5e7cf9ed5b73cbbfd9def29c9837beb1c5686e53
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -12,6 +12,7 @@
+   WorkspaceSearchState,
+   WorkspaceTab,
+ } from '../types';
++import { formatEvent, getEventSearchText } from '../components/PlanLists';
+ import { getTimestampMs } from './time';
+ 
+ const SEARCH_SUMMARY_MAX_LENGTH = 140;
+@@ -341,18 +342,23 @@
+   const fields: WorkspaceSearchField[] = [];
+   const meta = getObjectMeta(event.meta);
+   const eventMeta = stringifySearchMeta(event.meta);
++  const display = formatEvent(event);
++  const eventSearchText = getEventSearchText(event);
+ 
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', display.title);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', display.body);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '任务标题', meta?.taskTitle);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
+ 
+   return {
+     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+     recordId: event.id,
+-    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
++    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+     status: nullableSearchText(meta?.status),
+     updatedAt: event.created_at,
+
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\components\\PlanLists.tsx,src\\renderer\\utils\\search.ts,src\\renderer\\components\\SearchResults.tsx -Pattern 'getBaseEventSearchText|export function getEventSearchText|formatEvent\\(|SYSTEM_EVENT_TITLES|formatEvent, getEventSearchText|eventSearchText|title: toSearchText\\(display\\.title\\)|事件搜索文本|search-result-title|snippet' | ForEach-Object { \""'$($_.Path.Replace((Get-Location).Path + '"'\\\\','')):"'$($_.LineNumber):$($_.Line)" }' in D:\project\GitHub\autoplan
+ succeeded in 487ms:
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:17:import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:22:const SYSTEM_EVENT_TITLES: Record<string, string> = {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:28:export function formatEvent(event: AppEvent): EventDisplay {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:31:  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:35:export function getEventSearchText(event: AppEvent) {
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:36:  const display = formatEvent(event);
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:38:    getBaseEventSearchText(event),
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:252:        const display = formatEvent(event);
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:15:import { formatEvent, getEventSearchText } from '../components/PlanLists';
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:19:const SEARCH_SNIPPET_MAX_LENGTH = 120;
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:345:  const display = formatEvent(event);
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:346:  const eventSearchText = getEventSearchText(event);
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:356:  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:361:    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:390:      snippet: createSearchSnippet(field.value, query),
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:519:function createSearchSnippet(value: string, query: WorkspaceSearchQuery) {
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:521:  if (text.length <= SEARCH_SNIPPET_MAX_LENGTH) return text;
+D:\project\GitHub\autoplan\src\renderer\utils\search.ts:527:  const end = Math.min(text.length, start + SEARCH_SNIPPET_MAX_LENGTH);
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:174:  const snippet = primaryMatch?.snippet || result.summary;
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:180:        <span className="search-result-title">{result.title}</span>
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:183:      <span className="search-result-snippet">
+D:\project\GitHub\autoplan\src\renderer\components\SearchResults.tsx:185:        {snippet}
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index ac3a9074494f3eb40608dd2e6c82dfed599c4e20..5e7cf9ed5b73cbbfd9def29c9837beb1c5686e53
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -12,6 +12,7 @@
+   WorkspaceSearchState,
+   WorkspaceTab,
+ } from '../types';
++import { formatEvent, getEventSearchText } from '../components/PlanLists';
+ import { getTimestampMs } from './time';
+ 
+ const SEARCH_SUMMARY_MAX_LENGTH = 140;
+@@ -341,18 +342,23 @@
+   const fields: WorkspaceSearchField[] = [];
+   const meta = getObjectMeta(event.meta);
+   const eventMeta = stringifySearchMeta(event.meta);
++  const display = formatEvent(event);
++  const eventSearchText = getEventSearchText(event);
+ 
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', display.title);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', display.body);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '任务标题', meta?.taskTitle);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
+ 
+   return {
+     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+     recordId: event.id,
+-    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
++    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+     status: nullableSearchText(meta?.status),
+     updatedAt: event.created_at,
+
+**Checking path issues**
+
+It looks like the path replacement didn't work because of backslashes. That's a bit frustrating! No worries, though; I can move forward. I should check the git status to see if any files are limited, which might help me understand what's happening. I really hope something stands out there because troubleshooting this is always a bit of a puzzle. Let’s see if I can find a workaround!
+codex
+静态检查通过；最后确认本任务涉及文件范围，不展开完整 diff。
+exec
+powershell.exe -Command "git status --short -- src\\renderer\\components\\PlanLists.tsx src\\renderer\\utils\\search.ts src\\renderer\\components\\SearchResults.tsx; Select-String -Path src\\renderer\\utils\\search.ts -Pattern 'summary: summarizeSearchText\\(event\\.type|updatedAt: event\\.created_at|source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT' | ForEach-Object { \""'$($_.LineNumber):$($_.Line)" }' in D:\project\GitHub\autoplan
+ succeeded in 476ms:
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/components/SearchResults.tsx
+ M src/renderer/utils/search.ts
+359:    source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+362:    summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+364:    updatedAt: event.created_at,
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index ac3a9074494f3eb40608dd2e6c82dfed599c4e20..5e7cf9ed5b73cbbfd9def29c9837beb1c5686e53
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -12,6 +12,7 @@
+   WorkspaceSearchState,
+   WorkspaceTab,
+ } from '../types';
++import { formatEvent, getEventSearchText } from '../components/PlanLists';
+ import { getTimestampMs } from './time';
+ 
+ const SEARCH_SUMMARY_MAX_LENGTH = 140;
+@@ -341,18 +342,23 @@
+   const fields: WorkspaceSearchField[] = [];
+   const meta = getObjectMeta(event.meta);
+   const eventMeta = stringifySearchMeta(event.meta);
++  const display = formatEvent(event);
++  const eventSearchText = getEventSearchText(event);
+ 
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', display.title);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', display.body);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '任务标题', meta?.taskTitle);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
+ 
+   return {
+     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+     recordId: event.id,
+-    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
++    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+     status: nullableSearchText(meta?.status),
+     updatedAt: event.created_at,
+
+codex
+P003 代码改动完成；我不会运行测试，交给最终验收阶段。
+  ✓ 确认搜索事件候选
+  ✓ 同步格式化文案
+  ✓ 静态检查范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index ac3a9074494f3eb40608dd2e6c82dfed599c4e20..5e7cf9ed5b73cbbfd9def29c9837beb1c5686e53
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -12,6 +12,7 @@
+   WorkspaceSearchState,
+   WorkspaceTab,
+ } from '../types';
++import { formatEvent, getEventSearchText } from '../components/PlanLists';
+ import { getTimestampMs } from './time';
+ 
+ const SEARCH_SUMMARY_MAX_LENGTH = 140;
+@@ -341,18 +342,23 @@
+   const fields: WorkspaceSearchField[] = [];
+   const meta = getObjectMeta(event.meta);
+   const eventMeta = stringifySearchMeta(event.meta);
++  const display = formatEvent(event);
++  const eventSearchText = getEventSearchText(event);
+ 
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', display.title);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', display.body);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '任务标题', meta?.taskTitle);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
+ 
+   return {
+     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+     recordId: event.id,
+-    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
++    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+     status: nullableSearchText(meta?.status),
+     updatedAt: event.created_at,
+
+codex
+已完成 P003，未修改 plan 文件，未运行测试/构建/lint。
+
+**变更内容**
+- `src/renderer/components/PlanLists.tsx:35` 覆盖导出 `getEventSearchText`，追加本地 `formatEvent` 的中文标题，同时保留原始 `event.type`。
+- `src/renderer/utils/search.ts:15` 让事件搜索候选复用 `PlanLists` 导出的 `formatEvent` / `getEventSearchText`。
+- `src/renderer/utils/search.ts:349` 将事件展示标题加入搜索字段，`scan.done` 等命中时主标题显示中文。
+- `src/renderer/utils/search.ts:361` 搜索结果标题优先使用 `display.title`，无正文事件也能显示“扫描完成 / 反馈已创建 / 计划已生成”。
+- `src/renderer/utils/search.ts:362` 保持事件摘要、时间、排序字段不变；`event.type` 仍在 `事件类型` 字段中可搜索。
+
+**说明**
+- `src/renderer/components/SearchResults.tsx:180` 现有渲染已使用 `result.title`，无需额外改动即可承接中文标题。
+- 工作区中 `SearchResults.tsx` 已有修改状态，但本次 P003 未对它追加补丁。
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 085d570a496abfd21ff36d60590960e22c8fbdd1..cdf51eb984665a175124ecd1c9a4383761ac50f5
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,10 +14,9 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+ import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
+ const SYSTEM_EVENT_TITLES: Record<string, string> = {
+@@ -33,6 +32,20 @@
+   return title === display.title ? display : { ...display, title };
+ }
+ 
++export function getEventSearchText(event: AppEvent) {
++  const display = formatEvent(event);
++  return [
++    getBaseEventSearchText(event),
++    event.type,
++    display.title,
++    display.body,
++    display.badge,
++    display.meta,
++  ]
++    .filter(Boolean)
++    .join(' ');
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+diff --git a/src/renderer/utils/search.ts b/src/renderer/utils/search.ts
+index ac3a9074494f3eb40608dd2e6c82dfed599c4e20..5e7cf9ed5b73cbbfd9def29c9837beb1c5686e53
+--- a/src/renderer/utils/search.ts
++++ b/src/renderer/utils/search.ts
+@@ -12,6 +12,7 @@
+   WorkspaceSearchState,
+   WorkspaceTab,
+ } from '../types';
++import { formatEvent, getEventSearchText } from '../components/PlanLists';
+ import { getTimestampMs } from './time';
+ 
+ const SEARCH_SUMMARY_MAX_LENGTH = 140;
+@@ -341,18 +342,23 @@
+   const fields: WorkspaceSearchField[] = [];
+   const meta = getObjectMeta(event.meta);
+   const eventMeta = stringifySearchMeta(event.meta);
++  const display = formatEvent(event);
++  const eventSearchText = getEventSearchText(event);
+ 
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', display.title);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', display.body);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+-  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '任务标题', meta?.taskTitle);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+   pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
++  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件搜索文本', eventSearchText);
+ 
+   return {
+     source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+     recordId: event.id,
+-    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
++    title: toSearchText(display.title) || toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+     summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+     status: nullableSearchText(meta?.status),
+     updatedAt: event.created_at,
+
+tokens used
+199,599
+已完成 P003，未修改 plan 文件，未运行测试/构建/lint。
+
+**变更内容**
+- `src/renderer/components/PlanLists.tsx:35` 覆盖导出 `getEventSearchText`，追加本地 `formatEvent` 的中文标题，同时保留原始 `event.type`。
+- `src/renderer/utils/search.ts:15` 让事件搜索候选复用 `PlanLists` 导出的 `formatEvent` / `getEventSearchText`。
+- `src/renderer/utils/search.ts:349` 将事件展示标题加入搜索字段，`scan.done` 等命中时主标题显示中文。
+- `src/renderer/utils/search.ts:361` 搜索结果标题优先使用 `display.title`，无正文事件也能显示“扫描完成 / 反馈已创建 / 计划已生成”。
+- `src/renderer/utils/search.ts:362` 保持事件摘要、时间、排序字段不变；`event.type` 仍在 `事件类型` 字段中可搜索。
+
+**说明**
+- `src/renderer/components/SearchResults.tsx:180` 现有渲染已使用 `result.title`，无需额外改动即可承接中文标题。
+- 工作区中 `SearchResults.tsx` 已有修改状态，但本次 P003 未对它追加补丁。

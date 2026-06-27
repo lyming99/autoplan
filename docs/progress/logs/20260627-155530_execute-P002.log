@@ -1,0 +1,1672 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f077a-b1f3-7150-8568-c87c81dc6b8f
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_31_20260627-130629.md
+指定任务：
+- [ ] P002: 增加计划顺序调整接口 <!-- scope: src/main.js,src/preload.js,src/loopService.js -->
+任务 scope：src/main.js, src/preload.js, src/loopservice.js
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用 P001 的排序字段基础，直接补 P002 的 IPC/API 通路。
+  → 定位现有 IPC 模式
+  • 实现计划重排服务
+  • 暴露主进程和 preload
+  • 核对 scope 与只读约束
+exec
+powershell.exe -Command "Select-String -Path src/main.js,src/preload.js,src/loopService.js -Pattern \"ipcMain\\.handle|reorder|move|plan|snapshot|contextBridge|invoke\" | ForEach-Object { \"{0}:{1}:{2}\" -f "'$_.Path,$_.LineNumber,$_.Line }' in D:\project\GitHub\autoplan
+ succeeded in 467ms:
+D:\project\GitHub\autoplan\src\main.js:14:    { scheme: 'autoplan-file', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+D:\project\GitHub\autoplan\src\main.js:26:  db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'));
+D:\project\GitHub\autoplan\src\main.js:30:  loop.on('update', (snapshot) => {
+D:\project\GitHub\autoplan\src\main.js:32:      mainWindow.webContents.send('loop:update', snapshot);
+D:\project\GitHub\autoplan\src\main.js:64:ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+D:\project\GitHub\autoplan\src\main.js:66:ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+D:\project\GitHub\autoplan\src\main.js:68:ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+D:\project\GitHub\autoplan\src\main.js:70:ipcMain.handle('projects:create', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:74:ipcMain.handle('projects:update', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:92:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:95:ipcMain.handle('projects:delete', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:101:    .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
+D:\project\GitHub\autoplan\src\main.js:108:    db.run(`DELETE FROM plan_tasks WHERE plan_id IN (${placeholders})`, taskIds);
+D:\project\GitHub\autoplan\src\main.js:110:  db.run('DELETE FROM plans WHERE project_id = ?', [projectId]);
+D:\project\GitHub\autoplan\src\main.js:113:  return loop.snapshot(null);
+D:\project\GitHub\autoplan\src\main.js:116:ipcMain.handle('loop:configure', (_event, config = {}) => {
+D:\project\GitHub\autoplan\src\main.js:119:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:122:ipcMain.handle('loop:start', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:126:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:129:ipcMain.handle('loop:stop', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:132:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:135:ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:139:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:142:ipcMain.handle('tasks:run', async (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:145:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:148:ipcMain.handle('tasks:runParallel', async (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:151:  await loop.runTaskBatches(projectId, requiredRecordId(input, 'planId'), input.batches || []);
+D:\project\GitHub\autoplan\src\main.js:152:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:155:ipcMain.handle('tasks:stop', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:158:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:161:ipcMain.handle('requirements:create', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:165:ipcMain.handle('requirements:update', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:189:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:192:ipcMain.handle('requirements:delete', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:195:  const rec = db.get('SELECT linked_plan_id FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+D:\project\GitHub\autoplan\src\main.js:196:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+D:\project\GitHub\autoplan\src\main.js:198:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:201:ipcMain.handle('feedback:create', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:205:ipcMain.handle('feedback:update', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:230:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:233:ipcMain.handle('feedback:delete', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:236:  const rec = db.get('SELECT linked_plan_id FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+D:\project\GitHub\autoplan\src\main.js:237:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+D:\project\GitHub\autoplan\src\main.js:239:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:243:ipcMain.handle('intake:interrupt', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:246:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+D:\project\GitHub\autoplan\src\main.js:250:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+D:\project\GitHub\autoplan\src\main.js:251:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:255:ipcMain.handle('intake:resume', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:258:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+D:\project\GitHub\autoplan\src\main.js:262:  if (rec?.linked_plan_id) loop.resumePlan(projectId, rec.linked_plan_id);
+D:\project\GitHub\autoplan\src\main.js:263:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:267:ipcMain.handle('intake:appendTask', (_event, input = {}) => {
+D:\project\GitHub\autoplan\src\main.js:270:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+D:\project\GitHub\autoplan\src\main.js:274:  if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
+D:\project\GitHub\autoplan\src\main.js:275:  loop.appendTask(projectId, rec.linked_plan_id, input.title);
+D:\project\GitHub\autoplan\src\main.js:276:  return loop.snapshot(projectId);
+D:\project\GitHub\autoplan\src\main.js:322:  protocol.handle('autoplan-file', async (request) => {
+D:\project\GitHub\autoplan\src\main.js:359:async function readPlan(input = {}) {
+D:\project\GitHub\autoplan\src\main.js:361:  const planId = Number(input.planId || input.id || 0);
+D:\project\GitHub\autoplan\src\main.js:362:  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
+D:\project\GitHub\autoplan\src\main.js:363:  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
+D:\project\GitHub\autoplan\src\main.js:366:  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
+D:\project\GitHub\autoplan\src\main.js:368:  const plan = db.get(
+D:\project\GitHub\autoplan\src\main.js:369:    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
+D:\project\GitHub\autoplan\src\main.js:370:    [planId, projectId],
+D:\project\GitHub\autoplan\src\main.js:372:  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
+D:\project\GitHub\autoplan\src\main.js:373:  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
+D:\project\GitHub\autoplan\src\main.js:374:  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
+D:\project\GitHub\autoplan\src\main.js:377:    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
+D:\project\GitHub\autoplan\src\main.js:378:    const markdown = await fs.promises.readFile(planPath, 'utf8');
+D:\project\GitHub\autoplan\src\main.js:379:    return planReadResult(plan, markdown, null);
+D:\project\GitHub\autoplan\src\main.js:381:    return planReadResult(plan, '', planReadErrorMessage(error));
+D:\project\GitHub\autoplan\src\main.js:410:    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+D:\project\GitHub\autoplan\src\main.js:417:    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+D:\project\GitHub\autoplan\src\main.js:425:      throw planReadError('FILE_NOT_FOUND', '文件不存在');
+D:\project\GitHub\autoplan\src\main.js:430:    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+D:\project\GitHub\autoplan\src\main.js:433:  if (stat.isDirectory()) throw planReadError('FILE_IS_DIRECTORY', '路径指向目录，不能作为文件打开');
+D:\project\GitHub\autoplan\src\main.js:434:  if (!stat.isFile()) throw planReadError('FILE_NOT_REGULAR', '路径不是普通文件');
+D:\project\GitHub\autoplan\src\main.js:448:    if (!command) throw planReadError('OPEN_COMMAND_MISSING', '第三方编辑器命令未配置');
+D:\project\GitHub\autoplan\src\main.js:453:  if (error) throw planReadError('OPEN_FILE_FAILED', error);
+D:\project\GitHub\autoplan\src\main.js:461:    child.once('error', (error) => reject(planReadError('OPEN_COMMAND_FAILED', error?.message || '编辑器命令启动失败')));
+D:\project\GitHub\autoplan\src\main.js:487:async function resolvePlanPath(workspacePath, filePath) {
+D:\project\GitHub\autoplan\src\main.js:491:    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
+D:\project\GitHub\autoplan\src\main.js:498:    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+D:\project\GitHub\autoplan\src\main.js:503:    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
+D:\project\GitHub\autoplan\src\main.js:519:function planReadResult(plan, markdown, error) {
+D:\project\GitHub\autoplan\src\main.js:522:    id: plan?.id ?? null,
+D:\project\GitHub\autoplan\src\main.js:523:    project_id: plan?.project_id ?? null,
+D:\project\GitHub\autoplan\src\main.js:524:    file_path: plan?.file_path || '',
+D:\project\GitHub\autoplan\src\main.js:526:    hash: plan?.hash || '',
+D:\project\GitHub\autoplan\src\main.js:527:    updated_at: plan?.updated_at || '',
+D:\project\GitHub\autoplan\src\main.js:532:function planReadError(code, message) {
+D:\project\GitHub\autoplan\src\main.js:538:function planReadErrorMessage(error) {
+D:\project\GitHub\autoplan\src\preload.js:2:const { contextBridge, ipcRenderer, webUtils } = require('electron');
+D:\project\GitHub\autoplan\src\preload.js:7:  if (isPersistedAttachmentPath(value)) return `autoplan-file://attachment/${encodeURIComponent(value)}`;
+D:\project\GitHub\autoplan\src\preload.js:33:contextBridge.exposeInMainWorld('autoplan', {
+D:\project\GitHub\autoplan\src\preload.js:35:  snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+D:\project\GitHub\autoplan\src\preload.js:36:  createProject: (input) => ipcRenderer.invoke('projects:create', input),
+D:\project\GitHub\autoplan\src\preload.js:37:  updateProject: (input) => ipcRenderer.invoke('projects:update', input),
+D:\project\GitHub\autoplan\src\preload.js:38:  deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+D:\project\GitHub\autoplan\src\preload.js:39:  configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+D:\project\GitHub\autoplan\src\preload.js:40:  startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+D:\project\GitHub\autoplan\src\preload.js:41:  stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+D:\project\GitHub\autoplan\src\preload.js:42:  runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+D:\project\GitHub\autoplan\src\preload.js:43:  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+D:\project\GitHub\autoplan\src\preload.js:44:  openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+D:\project\GitHub\autoplan\src\preload.js:45:  runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+D:\project\GitHub\autoplan\src\preload.js:46:  runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+D:\project\GitHub\autoplan\src\preload.js:47:  stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+D:\project\GitHub\autoplan\src\preload.js:48:  createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+D:\project\GitHub\autoplan\src\preload.js:49:  updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
+D:\project\GitHub\autoplan\src\preload.js:50:  deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),
+D:\project\GitHub\autoplan\src\preload.js:51:  createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
+D:\project\GitHub\autoplan\src\preload.js:52:  updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
+D:\project\GitHub\autoplan\src\preload.js:53:  deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
+D:\project\GitHub\autoplan\src\preload.js:54:  interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
+D:\project\GitHub\autoplan\src\preload.js:55:  resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
+D:\project\GitHub\autoplan\src\preload.js:56:  appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+D:\project\GitHub\autoplan\src\preload.js:60:    const listener = (_event, snapshot) => handler(snapshot);
+D:\project\GitHub\autoplan\src\preload.js:62:    return () => ipcRenderer.removeListener('loop:update', listener);
+D:\project\GitHub\autoplan\src\loopService.js:34:  planAgentCliColumnValues,
+D:\project\GitHub\autoplan\src\loopService.js:56:const planGeneration = require('./loop/planGeneration');
+D:\project\GitHub\autoplan\src\loopService.js:57:const planParser = require('./loop/planParser');
+D:\project\GitHub\autoplan\src\loopService.js:58:const snapshots = require('./loop/snapshots');
+D:\project\GitHub\autoplan\src\loopService.js:61:const { parseEventMeta } = snapshots;
+D:\project\GitHub\autoplan\src\loopService.js:89:const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+D:\project\GitHub\autoplan\src\loopService.js:209:  planColumns() {
+D:\project\GitHub\autoplan\src\loopService.js:210:    if (!this._planColumns) {
+D:\project\GitHub\autoplan\src\loopService.js:211:      this._planColumns = new Set(this.db.all('PRAGMA table_info(plans)').map((column) => column.name));
+D:\project\GitHub\autoplan\src\loopService.js:213:    return this._planColumns;
+D:\project\GitHub\autoplan\src\loopService.js:287:           WHERE project_id = ? AND linked_plan_id IS NULL
+D:\project\GitHub\autoplan\src\loopService.js:296:           WHERE project_id = ? AND linked_plan_id IS NULL
+D:\project\GitHub\autoplan\src\loopService.js:306:      let generatedPlanId = null;
+D:\project\GitHub\autoplan\src\loopService.js:308:        generatedPlanId = await this.generatePlanForIntake(projectId, workspace, pendingIntakes[0]);
+D:\project\GitHub\autoplan\src\loopService.js:311:      // 同步 docs/plan 目录下的 plan 文件（兼容文件式需求）
+D:\project\GitHub\autoplan\src\loopService.js:312:      const planScan = this.scanDirectory(path.join(workspace, 'docs', 'plan'), workspace, ['.md']);
+D:\project\GitHub\autoplan\src\loopService.js:313:      this.saveScan(projectId, 'plan', planScan);
+D:\project\GitHub\autoplan\src\loopService.js:315:      // 执行队列里可运行的 plan
+D:\project\GitHub\autoplan\src\loopService.js:316:      const nextPlan = generatedPlanId
+D:\project\GitHub\autoplan\src\loopService.js:317:        ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [generatedPlanId, projectId])
+D:\project\GitHub\autoplan\src\loopService.js:318:        : this.nextRunnablePlan(projectId);
+D:\project\GitHub\autoplan\src\loopService.js:319:      if (!nextPlan) {
+D:\project\GitHub\autoplan\src\loopService.js:326:      await this.processPlan(workspace, nextPlan);
+D:\project\GitHub\autoplan\src\loopService.js:344:    const plan = task ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [task.plan_id, projectId]) : null;
+D:\project\GitHub\autoplan\src\loopService.js:346:    if (!project || !task || !plan) throw new Error('任务不存在');
+D:\project\GitHub\autoplan\src\loopService.js:355:      if (this.isFinalAcceptanceTask(plan.id, task)) {
+D:\project\GitHub\autoplan\src\loopService.js:356:        await this.validatePlan(workspace, plan, { task });
+D:\project\GitHub\autoplan\src\loopService.js:358:        const result = await this.executeTask(workspace, plan, task);
+D:\project\GitHub\autoplan\src\loopService.js:360:          this.completeTask(workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:374:  async runTaskBatches(projectId, planId, confirmedBatches) {
+D:\project\GitHub\autoplan\src\loopService.js:379:    const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+D:\project\GitHub\autoplan\src\loopService.js:381:    if (!project || !plan) throw new Error('计划不存在');
+D:\project\GitHub\autoplan\src\loopService.js:382:    if (plan.validation_passed || plan.status === 'completed') throw new Error('计划已完成，不能启动并发执行');
+D:\project\GitHub\autoplan\src\loopService.js:389:    const batches = this.validatedParallelTaskBatches(workspace, plan, confirmedBatches);
+D:\project\GitHub\autoplan\src\loopService.js:394:        const results = await this.executeTaskBatch(workspace, plan, tasks, {
+D:\project\GitHub\autoplan\src\loopService.js:403:          planId: plan.id,
+D:\project\GitHub\autoplan\src\loopService.js:423:  validatedParallelTaskBatches(workspace, plan, confirmedBatches) {
+D:\project\GitHub\autoplan\src\loopService.js:424:    return concurrency.validatedParallelTaskBatches(this, workspace, plan, confirmedBatches);
+D:\project\GitHub\autoplan\src\loopService.js:434:      taskPlan: (eventTask) => this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [eventTask.plan_id, projectId]),
+D:\project\GitHub\autoplan\src\loopService.js:435:      planAgentCliConfig: (plan) => this.planAgentCliConfig(plan),
+D:\project\GitHub\autoplan\src\loopService.js:445:      `SELECT plan_tasks.*
+D:\project\GitHub\autoplan\src\loopService.js:446:       FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+D:\project\GitHub\autoplan\src\loopService.js:447:       WHERE plan_tasks.id = ? AND plans.project_id = ?`,
+D:\project\GitHub\autoplan\src\loopService.js:454:      `UPDATE plan_tasks
+D:\project\GitHub\autoplan\src\loopService.js:462:    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+D:\project\GitHub\autoplan\src\loopService.js:467:    if (!normalizedSessionId) return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+D:\project\GitHub\autoplan\src\loopService.js:469:      `UPDATE plan_tasks
+D:\project\GitHub\autoplan\src\loopService.js:474:    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+D:\project\GitHub\autoplan\src\loopService.js:478:    const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+D:\project\GitHub\autoplan\src\loopService.js:486:      `UPDATE plan_tasks
+D:\project\GitHub\autoplan\src\loopService.js:508:  recordTaskFailure(projectId, plan, task, finishedAt = nowIso(), metaOverrides = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:509:    const currentTask = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [task.id]) || task;
+D:\project\GitHub\autoplan\src\loopService.js:513:      planId: plan?.id,
+D:\project\GitHub\autoplan\src\loopService.js:521:  /** 中断某个 plan：停止正在执行的 codex 进程，未完成任务标记为 blocked，plan 标记为 interrupted */
+D:\project\GitHub\autoplan\src\loopService.js:522:  interruptPlan(projectId, planId) {
+D:\project\GitHub\autoplan\src\loopService.js:523:    const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+D:\project\GitHub\autoplan\src\loopService.js:524:    if (!plan) return;
+D:\project\GitHub\autoplan\src\loopService.js:525:    // 若当前正在执行该 plan 的任务，kill 进程
+D:\project\GitHub\autoplan\src\loopService.js:527:    const activePlanOperations = runtime
+D:\project\GitHub\autoplan\src\loopService.js:528:      ? findRuntimeOperations(runtime, (operation) => Number(operation?.planId) === Number(planId))
+D:\project\GitHub\autoplan\src\loopService.js:530:    for (const activeEntry of activePlanOperations) {
+D:\project\GitHub\autoplan\src\loopService.js:538:      const eventTask = interruptedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: planId } : null);
+D:\project\GitHub\autoplan\src\loopService.js:542:          planId,
+D:\project\GitHub\autoplan\src\loopService.js:553:      `UPDATE plan_tasks SET status = ?, updated_at = ?
+D:\project\GitHub\autoplan\src\loopService.js:554:       WHERE plan_id = ? AND status IN ('pending', 'running')`,
+D:\project\GitHub\autoplan\src\loopService.js:555:      ['blocked', nowIso(), planId],
+D:\project\GitHub\autoplan\src\loopService.js:557:    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['interrupted', nowIso(), planId]);
+D:\project\GitHub\autoplan\src\loopService.js:558:    this.addEvent(projectId, 'plan.interrupted', `plan #${planId} 已中断，未完成任务已挂起`);
+D:\project\GitHub\autoplan\src\loopService.js:562:  /** 恢复被中断的 plan：blocked → pending，plan → pending，循环运行时自动继续执行 */
+D:\project\GitHub\autoplan\src\loopService.js:563:  resumePlan(projectId, planId) {
+D:\project\GitHub\autoplan\src\loopService.js:565:      `UPDATE plan_tasks SET status = ?, updated_at = ?
+D:\project\GitHub\autoplan\src\loopService.js:566:       WHERE plan_id = ? AND status = ?`,
+D:\project\GitHub\autoplan\src\loopService.js:567:      ['pending', nowIso(), planId, 'blocked'],
+D:\project\GitHub\autoplan\src\loopService.js:569:    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+D:\project\GitHub\autoplan\src\loopService.js:570:    this.addEvent(projectId, 'plan.resumed', `plan #${planId} 已恢复`);
+D:\project\GitHub\autoplan\src\loopService.js:574:  /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
+D:\project\GitHub\autoplan\src\loopService.js:575:  appendTask(projectId, planId, title) {
+D:\project\GitHub\autoplan\src\loopService.js:576:    return planParser.appendTask(this, loopFlowHelpers(), projectId, planId, title);
+D:\project\GitHub\autoplan\src\loopService.js:591:  hasPlanForIssueHash(projectId, issueHash) {
+D:\project\GitHub\autoplan\src\loopService.js:593:      this.db.get('SELECT id FROM plans WHERE project_id = ? AND issue_hash = ? LIMIT 1', [projectId, issueHash]),
+D:\project\GitHub\autoplan\src\loopService.js:597:  nextRunnablePlan(projectId) {
+D:\project\GitHub\autoplan\src\loopService.js:599:      `SELECT * FROM plans
+D:\project\GitHub\autoplan\src\loopService.js:607:  nextPlanSortOrder(projectId) {
+D:\project\GitHub\autoplan\src\loopService.js:608:    const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
+D:\project\GitHub\autoplan\src\loopService.js:612:  insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+D:\project\GitHub\autoplan\src\loopService.js:616:      : this.nextPlanSortOrder(projectId);
+D:\project\GitHub\autoplan\src\loopService.js:631:    for (const [column, value] of planAgentCliColumnValues(this.planColumns(), agentCliConfig)) {
+D:\project\GitHub\autoplan\src\loopService.js:636:      `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+D:\project\GitHub\autoplan\src\loopService.js:641:  planAgentCliConfig(plan) {
+D:\project\GitHub\autoplan\src\loopService.js:642:    const projectDefaults = this.status(plan.project_id);
+D:\project\GitHub\autoplan\src\loopService.js:643:    const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+D:\project\GitHub\autoplan\src\loopService.js:644:    const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+D:\project\GitHub\autoplan\src\loopService.js:645:    const snapshotDefaults = eventSnapshot || sourceSnapshot || projectDefaults;
+D:\project\GitHub\autoplan\src\loopService.js:646:    if (hasAgentCliOverride(plan)) return effectiveAgentCliConfig(snapshotDefaults, plan);
+D:\project\GitHub\autoplan\src\loopService.js:647:    if (eventSnapshot) return effectiveAgentCliConfig(projectDefaults, eventSnapshot);
+D:\project\GitHub\autoplan\src\loopService.js:648:    if (sourceSnapshot) return effectiveAgentCliConfig(projectDefaults, sourceSnapshot);
+D:\project\GitHub\autoplan\src\loopService.js:652:  planSnapshotAgentCliConfig(plan) {
+D:\project\GitHub\autoplan\src\loopService.js:653:    return this.planAgentCliConfig(plan);
+D:\project\GitHub\autoplan\src\loopService.js:656:  planAgentCliEventSnapshot(projectId, planId) {
+D:\project\GitHub\autoplan\src\loopService.js:659:       WHERE project_id = ? AND type = 'plan.generated' AND meta IS NOT NULL
+D:\project\GitHub\autoplan\src\loopService.js:667:      if (Number(meta.planId ?? meta.plan_id) === Number(planId) && hasAgentCliOverride(meta)) return meta;
+D:\project\GitHub\autoplan\src\loopService.js:672:  planSourceAgentCliSnapshot(projectId, planId) {
+D:\project\GitHub\autoplan\src\loopService.js:673:    const requirement = this.db.get('SELECT * FROM requirements WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [
+D:\project\GitHub\autoplan\src\loopService.js:675:      planId,
+D:\project\GitHub\autoplan\src\loopService.js:678:    const feedback = this.db.get('SELECT * FROM feedback WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [projectId, planId]);
+D:\project\GitHub\autoplan\src\loopService.js:683:  async generatePlan(projectId, workspace, issueScan) {
+D:\project\GitHub\autoplan\src\loopService.js:684:    return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);
+D:\project\GitHub\autoplan\src\loopService.js:687:  /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+D:\project\GitHub\autoplan\src\loopService.js:688:  async generatePlanForIntake(projectId, workspace, intake) {
+D:\project\GitHub\autoplan\src\loopService.js:689:    return planGeneration.generatePlanForIntake(this, loopFlowHelpers(), projectId, workspace, intake);
+D:\project\GitHub\autoplan\src\loopService.js:693:    return planGeneration.intakeAttachmentPrompt(this, loopFlowHelpers(), projectId, workspace, intake, sourceName);
+D:\project\GitHub\autoplan\src\loopService.js:696:  async processPlan(workspace, plan) {
+D:\project\GitHub\autoplan\src\loopService.js:697:    return taskExecution.processPlan(this, loopFlowHelpers(), workspace, plan);
+D:\project\GitHub\autoplan\src\loopService.js:700:  isFinalAcceptanceTask(planId, task) {
+D:\project\GitHub\autoplan\src\loopService.js:701:    return validationFlow.isFinalAcceptanceTask(this, loopFlowHelpers(), planId, task);
+D:\project\GitHub\autoplan\src\loopService.js:704:  hasFinalAcceptanceTask(planId) {
+D:\project\GitHub\autoplan\src\loopService.js:705:    return validationFlow.hasFinalAcceptanceTask(this, loopFlowHelpers(), planId);
+D:\project\GitHub\autoplan\src\loopService.js:708:  previousPlanCodexSessionId(planId, task) {
+D:\project\GitHub\autoplan\src\loopService.js:709:    return taskExecution.previousPlanCodexSessionId(this, loopFlowHelpers(), planId, task);
+D:\project\GitHub\autoplan\src\loopService.js:716:  async executeTaskBatch(workspace, plan, tasks, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:717:    return taskExecution.executeTaskBatch(this, loopFlowHelpers(), workspace, plan, tasks, options);
+D:\project\GitHub\autoplan\src\loopService.js:720:  async executeTask(workspace, plan, task, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:721:    return taskExecution.executeTask(this, loopFlowHelpers(), workspace, plan, task, options);
+D:\project\GitHub\autoplan\src\loopService.js:724:  completeTask(workspace, plan, task, result) {
+D:\project\GitHub\autoplan\src\loopService.js:725:    return taskExecution.completeTask(this, loopFlowHelpers(), workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:728:  completeAcceptanceTask(workspace, plan, task, result) {
+D:\project\GitHub\autoplan\src\loopService.js:729:    return validationFlow.completeAcceptanceTask(this, loopFlowHelpers(), workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:732:  refreshPlanProgress(planId, planFile) {
+D:\project\GitHub\autoplan\src\loopService.js:733:    return taskExecution.refreshPlanProgress(this, loopFlowHelpers(), planId, planFile);
+D:\project\GitHub\autoplan\src\loopService.js:736:  markTaskCompletedInPlan(workspace, planFile, task, result) {
+D:\project\GitHub\autoplan\src\loopService.js:737:    return taskExecution.markTaskCompletedInPlan(this, loopFlowHelpers(), workspace, planFile, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:740:  async validatePlan(workspace, plan, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:741:    return validationFlow.validatePlan(this, loopFlowHelpers(), workspace, plan, options);
+D:\project\GitHub\autoplan\src\loopService.js:744:  syncPlanTasks(planId, planFile) {
+D:\project\GitHub\autoplan\src\loopService.js:745:    return planParser.syncPlanTasks(this, loopFlowHelpers(), planId, planFile);
+D:\project\GitHub\autoplan\src\loopService.js:753:  async runCodexWithPlanGuard(workspace, prompt, label, operation, planFile) {
+D:\project\GitHub\autoplan\src\loopService.js:754:    const before = planFile && fs.existsSync(planFile) ? fs.readFileSync(planFile, 'utf8') : null;
+D:\project\GitHub\autoplan\src\loopService.js:757:      const changed = !fs.existsSync(planFile) || fs.readFileSync(planFile, 'utf8') !== before;
+D:\project\GitHub\autoplan\src\loopService.js:759:        fs.writeFileSync(planFile, before, 'utf8');
+D:\project\GitHub\autoplan\src\loopService.js:760:        this.addEvent(operation.projectId, 'plan.guard.restored', `${agentCliProviderDisplayName(result.agentCliProvider)} 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+D:\project\GitHub\autoplan\src\loopService.js:762:          planId: operation.planId || null,
+D:\project\GitHub\autoplan\src\loopService.js:813:      const text = `\n[AutoPlan] ${message}\n`;
+D:\project\GitHub\autoplan\src\loopService.js:912:          planId: operation.planId || null,
+D:\project\GitHub\autoplan\src\loopService.js:928:          planId: operation.planId || null,
+D:\project\GitHub\autoplan\src\loopService.js:943:          planId: operation.planId || null,
+D:\project\GitHub\autoplan\src\loopService.js:1000:      const timedOut = Boolean(child.__autoplanTimedOut);
+D:\project\GitHub\autoplan\src\loopService.js:1003:        const text = `\n[AutoPlan] ${errorMessage}\n`;
+D:\project\GitHub\autoplan\src\loopService.js:1048:    this.emit('update', this.snapshot(projectId));
+D:\project\GitHub\autoplan\src\loopService.js:1051:  snapshot(projectId = null) {
+D:\project\GitHub\autoplan\src\loopService.js:1052:    return snapshots.snapshot(this, loopFlowHelpers(), projectId);
+
+codex
+已定位到现有 IPC 和 P001 排序字段；现在查看 main/preload 的具体 API 形状。
+exec
+powershell.exe -Command "Write-Host '--- main 60-170 ---'; "'$m=Get-Content -Encoding UTF8 src/main.js; $m[60..170]; Write-Host '"'--- main helpers tail ---'; "'$m[250..360]; Write-Host '"'--- preload ---'; Get-Content -Raw -Encoding UTF8 src/preload.js" in D:\project\GitHub\autoplan
+ succeeded in 477ms:
+--- main 60-170 ---
+  if (loop) loop.stop();
+});
+
+ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+
+ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+
+ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+
+ipcMain.handle('projects:create', (_event, input = {}) => {
+  return intakeService().createProject(input);
+});
+
+ipcMain.handle('projects:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const current = loop.project(projectId);
+  if (loop.hasRuntimeConfigInput(input)) {
+    loop.configure(projectId, input);
+  }
+  db.run(
+    `UPDATE projects
+     SET name = ?, workspace_path = ?, description = ?, updated_at = ?
+     WHERE id = ?`,
+    [
+      String(input.name || current.name).trim(),
+      input.workspacePath ?? current.workspace_path,
+      input.description ?? current.description,
+      nowIso(),
+      projectId,
+    ],
+  );
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('projects:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const state = loop.status(projectId);
+  if (state && state.running) throw new Error('请先停止该项目循环再删除');
+  loop.stop(projectId);
+  const taskIds = db
+    .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
+    .map((row) => row.id);
+  for (const table of ['requirements', 'feedback', 'attachments', 'events', 'scan_files']) {
+    db.run(`DELETE FROM ${table} WHERE project_id = ?`, [projectId]);
+  }
+  if (taskIds.length) {
+    const placeholders = taskIds.map(() => '?').join(',');
+    db.run(`DELETE FROM plan_tasks WHERE plan_id IN (${placeholders})`, taskIds);
+  }
+  db.run('DELETE FROM plans WHERE project_id = ?', [projectId]);
+  db.run('DELETE FROM project_states WHERE project_id = ?', [projectId]);
+  db.run('DELETE FROM projects WHERE id = ?', [projectId]);
+  return loop.snapshot(null);
+});
+
+ipcMain.handle('loop:configure', (_event, config = {}) => {
+  const projectId = requiredProjectId(config);
+  loop.configure(projectId, config);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('loop:start', (_event, input = {}) => {
+  requireManualAction(input, '启动循环');
+  const projectId = requiredProjectId(input);
+  loop.start(projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('loop:stop', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.stop(projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
+  requireManualAction(input, '单轮执行');
+  const projectId = requiredProjectId(input);
+  await loop.runOnce(projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('tasks:run', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  await loop.runTask(projectId, requiredRecordId(input, 'taskId'));
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('tasks:runParallel', async (_event, input = {}) => {
+  requireManualAction(input, '并发执行');
+  const projectId = requiredProjectId(input);
+  await loop.runTaskBatches(projectId, requiredRecordId(input, 'planId'), input.batches || []);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('tasks:stop', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.stopTask(projectId, requiredRecordId(input, 'taskId'));
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('requirements:create', (_event, input = {}) => {
+  return intakeService().createRequirement(input);
+});
+
+ipcMain.handle('requirements:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const current = db.get('SELECT * FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (!current) throw new Error('需求不存在');
+  const body = input.body ?? current.body ?? '';
+  const agentCliConfig = nextIntakeAgentCliConfig(current, input);
+--- main helpers tail ---
+  return loop.snapshot(projectId);
+});
+
+// 恢复被中断的计划
+ipcMain.handle('intake:resume', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+    requiredRecordId(input),
+    projectId,
+  ]);
+  if (rec?.linked_plan_id) loop.resumePlan(projectId, rec.linked_plan_id);
+  return loop.snapshot(projectId);
+});
+
+// 追加任务到需求/反馈关联的计划
+ipcMain.handle('intake:appendTask', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const table = input.type === 'feedback' ? 'feedback' : 'requirements';
+  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+    requiredRecordId(input),
+    projectId,
+  ]);
+  if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
+  loop.appendTask(projectId, rec.linked_plan_id, input.title);
+  return loop.snapshot(projectId);
+});
+
+function attachmentsRoot() {
+  return path.join(app.getPath('userData'), 'data', 'attachments');
+}
+
+function intakeService() {
+  return createIntakeService({ db, loop, attachmentsRoot });
+}
+
+async function startMcpServer() {
+  mcpServer = createMcpServer({
+    db,
+    loop,
+    intakeService: intakeService(),
+    logger: console,
+  });
+  const state = await mcpServer.start();
+  const projectId = loop?.defaultProjectId?.();
+  if (projectId && state.enabled && state.running) {
+    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
+  }
+  return state;
+}
+
+function recordMcpStartupError(error) {
+  const message = error?.message || String(error || '未知错误');
+  console.error('[mcp] start failed', error);
+  const projectId = loop?.defaultProjectId?.();
+  if (projectId) {
+    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
+      mcp: mcpServer?.status?.() || null,
+      error: message,
+    });
+  }
+}
+
+function mcpStatusMessage(state = {}) {
+  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
+  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
+}
+
+function registerFileProtocol() {
+  if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+  fileProtocolRegistered = true;
+  protocol.handle('autoplan-file', async (request) => {
+    try {
+      const filePath = decodeAttachmentFileUrl(request.url);
+      const root = attachmentsRoot();
+      if (!isInsidePath(root, filePath)) return new Response('Forbidden', { status: 403 });
+      const stat = await fs.promises.stat(filePath);
+      if (!stat.isFile()) return new Response('Not found', { status: 404 });
+      return net.fetch(pathToFileURL(filePath).toString());
+    } catch {
+      return new Response('Not found', { status: 404 });
+    }
+  });
+}
+
+function decodeAttachmentFileUrl(url) {
+  const parsed = new URL(url);
+  if (parsed.hostname !== 'attachment') throw new Error('Invalid attachment URL');
+  return decodeURIComponent(parsed.pathname.slice(1));
+}
+
+function loadRenderer(window) {
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  if (devServerUrl) return window.loadURL(devServerUrl);
+
+  const builtIndex = path.join(__dirname, '..', 'dist', 'index.html');
+  if (!fs.existsSync(builtIndex)) {
+    throw new Error('Renderer build not found. Run npm run dev or npm run build first.');
+  }
+  return window.loadFile(builtIndex);
+}
+
+function requiredProjectId(input = {}) {
+  const projectId = Number(input.projectId || input.id || 0);
+  if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
+  return projectId;
+}
+
+async function readPlan(input = {}) {
+  const projectId = Number(input.projectId || 0);
+  const planId = Number(input.planId || input.id || 0);
+--- preload ---
+const nodeUrl = require('node:url');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
+
+function toFileUrl(filePath) {
+  const value = String(filePath || '').trim();
+  if (!value || /^file:\/\//i.test(value)) return value;
+  if (isPersistedAttachmentPath(value)) return `autoplan-file://attachment/${encodeURIComponent(value)}`;
+  if (typeof nodeUrl.pathToFileURL === 'function') {
+    return nodeUrl.pathToFileURL(value).toString();
+  }
+  return fallbackPathToFileUrl(value);
+}
+
+function isPersistedAttachmentPath(filePath) {
+  return /[\\/]data[\\/]attachments[\\/]/i.test(filePath);
+}
+
+function fallbackPathToFileUrl(filePath) {
+  const normalized = filePath.replace(/\\/g, '/');
+  if (normalized.startsWith('//')) {
+    const [host, ...segments] = normalized.replace(/^\/+/, '').split('/');
+    return `file://${encodeURIComponent(host)}/${segments.map(encodeURIComponent).join('/')}`;
+  }
+
+  const pathname = normalized.startsWith('/') ? normalized : `/${normalized}`;
+  const encodedPath = pathname
+    .split('/')
+    .map((segment, index) => (index === 1 && /^[A-Za-z]:$/.test(segment) ? segment : encodeURIComponent(segment)))
+    .join('/');
+  return `file://${encodedPath}`;
+}
+
+contextBridge.exposeInMainWorld('autoplan', {
+  mcpToolNames: ['create_project', 'create_requirement', 'create_feedback'],
+  snapshot: (projectId) => ipcRenderer.invoke('snapshot', { projectId }),
+  createProject: (input) => ipcRenderer.invoke('projects:create', input),
+  updateProject: (input) => ipcRenderer.invoke('projects:update', input),
+  deleteProject: (input) => ipcRenderer.invoke('projects:delete', input),
+  configureLoop: (config) => ipcRenderer.invoke('loop:configure', config),
+  startLoop: (input) => ipcRenderer.invoke('loop:start', input),
+  stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+  runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+  openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+  runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+  runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+  stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+  createRequirement: (input) => ipcRenderer.invoke('requirements:create', input),
+  updateRequirement: (input) => ipcRenderer.invoke('requirements:update', input),
+  deleteRequirement: (input) => ipcRenderer.invoke('requirements:delete', input),
+  createFeedback: (input) => ipcRenderer.invoke('feedback:create', input),
+  updateFeedback: (input) => ipcRenderer.invoke('feedback:update', input),
+  deleteFeedback: (input) => ipcRenderer.invoke('feedback:delete', input),
+  interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
+  resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
+  appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+  getDroppedFilePath: (file) => webUtils.getPathForFile(file),
+  toFileUrl,
+  onLoopUpdate: (handler) => {
+    const listener = (_event, snapshot) => handler(snapshot);
+    ipcRenderer.on('loop:update', listener);
+    return () => ipcRenderer.removeListener('loop:update', listener);
+  },
+});
+
+
+codex
+IPC 风格很直接；现在查看辅助校验函数，重排会复用同样错误处理。
+exec
+powershell.exe -Command '$m=Get-Content -Encoding UTF8 src/main.js; Select-String -Path src/main.js -Pattern "function requiredRecordId|function requireManualAction|function readPlan|module.exports|plans:" | ForEach-Object { "{0}:{1}" -f $_.LineNumber,$_.Line }; Write-Host '"'--- main 330-430 ---'; "'$m[330..430]' in D:\project\GitHub\autoplan
+ succeeded in 470ms:
+66:ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+359:async function readPlan(input = {}) {
+549:function requireManualAction(input = {}, label = '操作') {
+553:function requiredRecordId(input = {}, key = 'id') {
+--- main 330-430 ---
+      return new Response('Not found', { status: 404 });
+    }
+  });
+}
+
+function decodeAttachmentFileUrl(url) {
+  const parsed = new URL(url);
+  if (parsed.hostname !== 'attachment') throw new Error('Invalid attachment URL');
+  return decodeURIComponent(parsed.pathname.slice(1));
+}
+
+function loadRenderer(window) {
+  const devServerUrl = process.env.ELECTRON_RENDERER_URL;
+  if (devServerUrl) return window.loadURL(devServerUrl);
+
+  const builtIndex = path.join(__dirname, '..', 'dist', 'index.html');
+  if (!fs.existsSync(builtIndex)) {
+    throw new Error('Renderer build not found. Run npm run dev or npm run build first.');
+  }
+  return window.loadFile(builtIndex);
+}
+
+function requiredProjectId(input = {}) {
+  const projectId = Number(input.projectId || input.id || 0);
+  if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
+  return projectId;
+}
+
+async function readPlan(input = {}) {
+  const projectId = Number(input.projectId || 0);
+  const planId = Number(input.planId || input.id || 0);
+  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
+  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
+
+  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
+  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
+
+  const plan = db.get(
+    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
+    [planId, projectId],
+  );
+  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
+  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
+  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
+
+  try {
+    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
+    const markdown = await fs.promises.readFile(planPath, 'utf8');
+    return planReadResult(plan, markdown, null);
+  } catch (error) {
+    return planReadResult(plan, '', planReadErrorMessage(error));
+  }
+}
+
+async function openWorkspaceFile(input = {}) {
+  const projectId = Number(input.projectId || 0);
+  const relativePath = String(input.filePath || input.path || '').trim();
+  if (!projectId) return openFileResult(false, '项目不存在');
+  if (!relativePath) return openFileResult(false, '文件路径为空');
+
+  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
+  if (!project) return openFileResult(false, '项目不存在');
+  if (!String(project.workspace_path || '').trim()) return openFileResult(false, '项目工作区路径为空');
+
+  try {
+    const filePath = await resolveWorkspaceFilePath(project.workspace_path, relativePath);
+    const mode = normalizeOpenFileMode(input.mode || readSetting('scopeFileOpenMode') || 'system');
+    const command = String(input.command || readSetting('scopeFileOpenCommand') || '').trim();
+    await openResolvedFilePath(filePath, mode, command);
+    return openFileResult(true, '', { filePath, mode });
+  } catch (error) {
+    return openFileResult(false, openFileErrorMessage(error));
+  }
+}
+
+async function resolveWorkspaceFilePath(workspacePath, filePath) {
+  const workspaceRoot = path.resolve(workspacePath);
+  const requestedPath = path.resolve(workspaceRoot, filePath);
+  if (!isInsidePath(workspaceRoot, requestedPath)) {
+    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+  }
+
+  let workspaceRealPath;
+  try {
+    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
+  } catch {
+    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+  }
+
+  let fileRealPath;
+  try {
+    fileRealPath = await fs.promises.realpath(requestedPath);
+  } catch (error) {
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+      throw planReadError('FILE_NOT_FOUND', '文件不存在');
+    }
+    throw error;
+  }
+  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
+    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+  }
+
+exec
+powershell.exe -Command '$m=Get-Content -Encoding UTF8 src/main.js; $m[520..565]' in D:\project\GitHub\autoplan
+ succeeded in 433ms:
+    ok: !error,
+    id: plan?.id ?? null,
+    project_id: plan?.project_id ?? null,
+    file_path: plan?.file_path || '',
+    markdown,
+    hash: plan?.hash || '',
+    updated_at: plan?.updated_at || '',
+    error,
+  };
+}
+
+function planReadError(code, message) {
+  const error = new Error(message);
+  error.code = code;
+  return error;
+}
+
+function planReadErrorMessage(error) {
+  if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
+  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
+  return error?.message || '计划文件读取失败';
+}
+
+function openFileErrorMessage(error) {
+  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '文件无法打开，请检查权限';
+  return error?.message || '文件打开失败';
+}
+
+function requireManualAction(input = {}, label = '操作') {
+  if (input.manual !== true) throw new Error(`${label}需要用户显式触发`);
+}
+
+function requiredRecordId(input = {}, key = 'id') {
+  const id = Number(input[key] || input.id || 0);
+  if (!id) throw new Error('记录不存在');
+  return id;
+}
+
+function deleteIntakeRecord(table, ownerType, projectId, id) {
+  const current = db.get(`SELECT id FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
+  if (!current) throw new Error('记录不存在');
+
+  if (ownerType === 'requirement') {
+    db.run('UPDATE feedback SET requirement_id = NULL, updated_at = ? WHERE project_id = ? AND requirement_id = ?', [
+      nowIso(),
+      projectId,
+
+codex
+我会在 `loopService` 增加完整顺序校验：非法、重复、缺失、跨项目都拒绝。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+
+codex
+服务层已完成；接着在主进程注册 IPC，并通过 preload 暴露给前端。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\main.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+
+codex
+主进程通道已加好；现在补 preload 方法名，保持现有 API 风格。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\preload.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+diff --git a/src/preload.js b/src/preload.js
+index 079ade73036d78e018e21c2a4718215abf1396f3..4d04338e0a132ed1c3094f1662ec064b1cc734c6
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -41,6 +41,7 @@
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
++  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+diff --git a/src/preload.js b/src/preload.js
+index 079ade73036d78e018e21c2a4718215abf1396f3..4d04338e0a132ed1c3094f1662ec064b1cc734c6
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -41,6 +41,7 @@
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
++  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+
+**Evaluating project scope**
+
+I think I need to inspect the current progress. The plan specifies that we're only focusing on the scope, which we've completed. It seems like we don’t need additional tests right now, but I might need to update the plan. I want to ensure everything aligns with the project goals, so I’ll take a closer look and reassess our steps moving forward. Updates might help clarify our direction!
+codex
+IPC 和 preload 已完成；我只做静态范围核对，不运行任何验收命令。
+  ✓ 定位现有 IPC 模式
+  ✓ 实现计划重排服务
+  ✓ 暴露主进程和 preload
+  → 核对 scope 与只读约束
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+diff --git a/src/preload.js b/src/preload.js
+index 079ade73036d78e018e21c2a4718215abf1396f3..4d04338e0a132ed1c3094f1662ec064b1cc734c6
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -41,6 +41,7 @@
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
++  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+
+codex
+接下来检查改动文件和关键片段，确保没有触碰 plan 文件。
+exec
+powershell.exe -Command "git diff --name-only -- src/main.js src/preload.js src/loopService.js; Write-Host '--- plan diff check ---'; git diff --name-only -- docs/plan/plan_requirement_31_20260627-130629.md; Write-Host '--- key refs ---'; Select-String -Path src/main.js,src/preload.js,src/loopService.js -Pattern \"plans:reorder|reorderPlans|UPDATE plans SET sort_order|计划顺序\" | ForEach-Object { \"{0}:{1}:{2}\" -f (Split-Path "'$_.Path -Leaf),$_.LineNumber,$_.Line }' in D:\project\GitHub\autoplan
+ succeeded in 530ms:
+src/loopService.js
+src/main.js
+src/preload.js
+--- plan diff check ---
+--- key refs ---
+main.js:68:ipcMain.handle('plans:reorder', (_event, input = {}) => {
+main.js:71:  return loop.reorderPlans(projectId, planIds);
+preload.js:44:  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+loopService.js:612:  reorderPlans(projectId, planIds) {
+loopService.js:615:    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
+loopService.js:618:    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
+loopService.js:619:    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
+loopService.js:625:    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
+loopService.js:629:      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
+loopService.js:637:      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
+warning: in the working copy of 'src/loopService.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/preload.js', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+diff --git a/src/preload.js b/src/preload.js
+index 079ade73036d78e018e21c2a4718215abf1396f3..4d04338e0a132ed1c3094f1662ec064b1cc734c6
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -41,6 +41,7 @@
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
++  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+
+**Inspecting loop syntax**
+
+I think I need to take a closer look at the loop method's syntax. There might be some details I've overlooked, so it's important to ensure everything is correct. I want to make sure I'm on the right track before moving forward. Let’s dig into that and see what I can uncover! It’s always better to double-check and avoid possible errors later on, right?
+codex
+范围核对通过；最后人工查看 `reorderPlans` 方法上下文。
+exec
+powershell.exe -Command '$ls=Get-Content -Encoding UTF8 src/loopService.js; $ls[607..646]; $m=Get-Content -Encoding UTF8 src/main.js; $m[64..74]; $p=Get-Content -Encoding UTF8 src/preload.js; $p[40..47]' in D:\project\GitHub\autoplan
+ succeeded in 438ms:
+    const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
+    return Number(row?.sort_order || 0) + 1;
+  }
+
+  reorderPlans(projectId, planIds) {
+    const normalizedProjectId = Number(projectId || 0);
+    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
+    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
+
+    const orderedIds = planIds.map((id) => Number(id));
+    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
+    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
+
+    const existingPlans = this.db.all(
+      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
+      [normalizedProjectId],
+    );
+    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
+
+    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
+    for (const id of orderedIds) {
+      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
+    }
+
+    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
+    const updatedAt = nowIso();
+    orderedIds.forEach((id, index) => {
+      const sortOrder = index + 1;
+      if (currentOrderById.get(id) === sortOrder) return;
+      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
+        sortOrder,
+        updatedAt,
+        id,
+        normalizedProjectId,
+      ]);
+    });
+    this.emitUpdate(normalizedProjectId);
+    return this.snapshot(normalizedProjectId);
+  }
+
+
+ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+
+ipcMain.handle('plans:reorder', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
+  return loop.reorderPlans(projectId, planIds);
+});
+
+ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+
+  stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+  runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+  openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+  runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+  runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+  stopTask: (input) => ipcRenderer.invoke('tasks:stop', input),
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+diff --git a/src/preload.js b/src/preload.js
+index 079ade73036d78e018e21c2a4718215abf1396f3..4d04338e0a132ed1c3094f1662ec064b1cc734c6
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -41,6 +41,7 @@
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
++  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+
+codex
+人工检查完成；按要求没有运行测试、构建或 lint。
+  ✓ 定位现有 IPC 模式
+  ✓ 实现计划重排服务
+  ✓ 暴露主进程和 preload
+  ✓ 核对 scope 与只读约束
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+diff --git a/src/preload.js b/src/preload.js
+index 079ade73036d78e018e21c2a4718215abf1396f3..4d04338e0a132ed1c3094f1662ec064b1cc734c6
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -41,6 +41,7 @@
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
++  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+
+codex
+已完成 P002，仅修改指定 scope，未触碰 plan 文件/checkbox/进度区。
+
+- `src/loopService.js:612` 新增 `reorderPlans(projectId, planIds)`，校验非法 ID、重复 ID、缺失/多余计划、跨项目计划。
+- `src/loopService.js:637` 只更新 `plans.sort_order` 和 `updated_at`，不改 `plan_tasks.task_key/sort_order/status`。
+- `src/main.js:68` 新增 `plans:reorder` IPC，接收 `projectId` 与 `planIds/plan_ids`，返回刷新后的 snapshot。
+- `src/preload.js:44` 暴露 `reorderPlans(input)` 给渲染进程调用。
+- 未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark；最终验收留给 AutoPlan 统一执行。
+diff --git a/src/loopService.js b/src/loopService.js
+index 09ad8286133c9024ff7161e8bfb7c583d4dd6f01..241c15fc794f6fa55f4e44e1eb5ff56e08fb7943
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -609,6 +609,42 @@
+     return Number(row?.sort_order || 0) + 1;
+   }
+ 
++  reorderPlans(projectId, planIds) {
++    const normalizedProjectId = Number(projectId || 0);
++    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
++    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
++
++    const orderedIds = planIds.map((id) => Number(id));
++    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
++    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
++
++    const existingPlans = this.db.all(
++      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
++      [normalizedProjectId],
++    );
++    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
++
++    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
++    for (const id of orderedIds) {
++      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
++    }
++
++    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
++    const updatedAt = nowIso();
++    orderedIds.forEach((id, index) => {
++      const sortOrder = index + 1;
++      if (currentOrderById.get(id) === sortOrder) return;
++      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
++        sortOrder,
++        updatedAt,
++        id,
++        normalizedProjectId,
++      ]);
++    });
++    this.emitUpdate(normalizedProjectId);
++    return this.snapshot(normalizedProjectId);
++  }
++
+   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+     const createdAt = nowIso();
+     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+diff --git a/src/main.js b/src/main.js
+index 8562d7106df3963cdfed2f14283c45a33fe2b4dc..bcde32a240cce30babf6d5fbc6471af3f3e03af5
+--- a/src/main.js
++++ b/src/main.js
+@@ -65,6 +65,12 @@
+ 
+ ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+ 
++ipcMain.handle('plans:reorder', (_event, input = {}) => {
++  const projectId = requiredProjectId(input);
++  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
++  return loop.reorderPlans(projectId, planIds);
++});
++
+ ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+ 
+ ipcMain.handle('projects:create', (_event, input = {}) => {
+diff --git a/src/preload.js b/src/preload.js
+index 079ade73036d78e018e21c2a4718215abf1396f3..4d04338e0a132ed1c3094f1662ec064b1cc734c6
+--- a/src/preload.js
++++ b/src/preload.js
+@@ -41,6 +41,7 @@
+   stopLoop: (input) => ipcRenderer.invoke('loop:stop', input),
+   runOnce: (input) => ipcRenderer.invoke('loop:runOnce', input),
+   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
++  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
+   runTask: (input) => ipcRenderer.invoke('tasks:run', input),
+   runTaskBatches: (input) => ipcRenderer.invoke('tasks:runParallel', input),
+
+已完成 P002，仅修改指定 scope，未触碰 plan 文件/checkbox/进度区。
+
+- `src/loopService.js:612` 新增 `reorderPlans(projectId, planIds)`，校验非法 ID、重复 ID、缺失/多余计划、跨项目计划。
+- `src/loopService.js:637` 只更新 `plans.sort_order` 和 `updated_at`，不改 `plan_tasks.task_key/sort_order/status`。
+- `src/main.js:68` 新增 `plans:reorder` IPC，接收 `projectId` 与 `planIds/plan_ids`，返回刷新后的 snapshot。
+- `src/preload.js:44` 暴露 `reorderPlans(input)` 给渲染进程调用。
+- 未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark；最终验收留给 AutoPlan 统一执行。

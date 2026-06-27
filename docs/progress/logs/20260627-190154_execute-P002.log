@@ -1,0 +1,515 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f08a4-46b2-7491-86f2-13346f160c4a
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_20_20260627-183133.md
+指定任务：
+- [ ] P002: 补充 README beta 版本说明 <!-- scope: README.md -->
+任务 scope：readme.md
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Considering how to proceed**
+
+I’m thinking about continuing with just the P002 README. I wonder if I really need to reread the entire plan since the user mentioned using existing analysis. I definitely want to go through the README, but I might just need to inspect relevant parts. Maybe I can use a command like grep or Select-String to sift through it quickly. I also need to draft a preamble, especially if the read is long.
+codex
+我会沿用前序结论，只检查并更新 `README.md` 的 beta 说明。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; if (Test-Path AGENTS.md) { Get-Content -Raw -Encoding UTF8 AGENTS.md }; Write-Output '---README HEAD---'; Get-Content -Encoding UTF8 README.md | Select-Object -First 220; Write-Output '---BETA SEARCH---'; Select-String -Path README.md -Pattern 'beta|Beta|Issue|发布|测试'" in D:\project\GitHub\autoplan
+ succeeded in 502ms:
+---README HEAD---
+# AutoPlan
+
+Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+
+## 需求与反馈附件
+
+需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
+
+- **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
+- **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
+- **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
+- **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
+- **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
+
+## CLI 后端
+
+AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**与**单条需求/反馈级**选择后端，不同项目和不同记录可使用不同 CLI：
+
+| 后端 | 默认命令 | 说明 |
+| --- | --- | --- |
+| **Codex CLI**（默认） | `codex` | 通过 `codex exec` 非交互执行，支持会话（session）复用，失败任务重试时延续上下文 |
+| **Claude CLI** | `claude` | 通过 `claude -p` 非交互 print 模式执行，prompt 经 stdin 传入，不使用 Codex 会话机制 |
+
+- **默认仍是 Codex**：未配置过的历史项目升级后继续使用 Codex，无需重新配置。
+- **项目级切换**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+- **单条配置优先**：需求输入框和反馈输入框下方都可单独选择 CLI 后端、命令路径和 Codex 思考深度。单条记录已配置时，计划生成、任务执行、失败修复和验收重试优先使用该记录生成计划时的配置；未配置时继承项目级默认配置。
+- **Codex 思考深度**：Codex 支持 `low`、`medium`、`high` 三档思考深度，默认 `medium`，执行时转换为 Codex CLI 的 `model_reasoning_effort` 配置；Claude 不使用该参数，选择 Claude 时思考深度不会参与提交或执行。
+- **计划级 CLI 快照**：每个计划会保存生成该计划时实际解析出的 CLI 后端、命令路径和 Codex 思考深度，用于计划列表与 Plan 全文阅读器展示；后续切换项目默认配置不会改变历史计划显示。
+- **历史计划兼容**：早期计划缺少计划级 CLI 字段时，展示按 Codex CLI + `medium` 思考深度降级；Claude 计划只显示 Claude CLI，不展示可误解的 Codex 思考深度。
+- **验收命令默认空**：新建项目不会预填验收命令；留空时任务完成后跳过外部验收命令，已保存的历史命令保持不变。
+- **Claude 前置条件**：需在本机已安装 `claude` CLI 并完成认证（`claude` 已可正常登录调用）。若命令不在 PATH，可在「CLI 命令路径」填写完整路径。
+- **会话隔离**：Codex 的会话复用仅在 Codex 后端启用；切换到 Claude 不会把历史 `codex_session_id` 传给 Claude，两类上下文物理隔离。
+- **可观测性**：运行中日志、事件流、任务卡片和概览会显示当前使用的 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+
+### 回归验证场景
+
+`npm run smoke` 使用 stub 覆盖反馈 #10 的关键路径，不依赖真实 `claude` 二进制：
+
+- 空验收命令保持为空字符串，并在计划完成后跳过外部验收命令。
+- 项目默认 Codex 时，单条需求可覆盖为 Codex + `high` 思考深度，生成计划时携带 `model_reasoning_effort="high"`。
+- 同一项目内单条反馈可覆盖为 Claude，生成计划时使用 `claude --print`，且不携带 Codex session 或思考深度参数。
+- 计划生成后快照会记录本次实际使用的后端与命令；Codex 计划记录规范化后的思考深度，Claude 计划不写入 Codex 思考深度；历史空字段按 Codex + `medium` 展示。
+
+手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+
+## MCP 外部接入
+
+AutoPlan 内置本机 MCP 服务，方便其它 MCP 客户端在不打开 GUI 表单的情况下创建项目、提交需求和提交反馈。桌面应用启动并完成数据库初始化后会启动 MCP 服务；启动失败不会影响 GUI，错误会进入事件流并显示在「设置 → MCP 外部接入」卡片。
+
+### 默认连接方式
+
+| 项 | 默认值 | 说明 |
+| --- | --- | --- |
+| 传输方式 | `http` | 使用 Streamable HTTP MCP 端点 |
+| 地址 | `127.0.0.1` | 默认仅绑定本机，不暴露公网 |
+| 端口 | `43847` | 连接地址为 `http://127.0.0.1:43847/mcp` |
+| stdio | `npm run mcp:stdio` | 供需要 stdio 的 MCP 客户端按进程方式启动 |
+
+可通过环境变量覆盖默认值：`AUTOPLAN_MCP_ENABLED=0` 禁用服务，`AUTOPLAN_MCP_TRANSPORT=stdio|http` 切换传输方式，`AUTOPLAN_MCP_HOST`、`AUTOPLAN_MCP_PORT`、`AUTOPLAN_MCP_PATH` 调整 HTTP 监听。HTTP 默认只允许本机地址；若显式绑定非本机地址，需同时设置 `AUTOPLAN_MCP_ALLOW_REMOTE=1`，并自行承担网络访问控制。
+
+### 工具清单与示例
+
+MCP 工具返回 `content[0].text` 中的 JSON 字符串，并在支持的客户端中提供 `structuredContent`。返回字段包含目标 `projectId`、可选 `requirementId` / `feedbackId`，以及最新 `snapshot` 摘要（当前项目、运行状态和记录数量）。
+
+#### `create_project`
+
+```json
+{
+  "name": "My App",
+  "workspacePath": "D:/project/my-app",
+  "description": "外部 MCP 创建的项目",
+  "agentCliProvider": "codex",
+  "agentCliCommand": "",
+  "codexReasoningEffort": "high"
+}
+```
+
+#### `create_requirement`
+
+```json
+{
+  "projectId": 1,
+  "title": "实现登录页",
+  "body": "请增加邮箱登录、错误提示和基础表单校验。",
+  "attachments": [
+    { "name": "login-sketch.png", "path": "D:/tmp/login-sketch.png", "type": "image/png" }
+  ],
+  "autoRun": true,
+  "agentCliProvider": "codex",
+  "codexReasoningEffort": "high"
+}
+```
+
+#### `create_feedback`
+
+```json
+{
+  "projectId": 1,
+  "requirementId": 12,
+  "title": "登录页反馈",
+  "body": "错误提示需要展示在输入框下方。",
+  "attachments": [
+    { "name": "feedback-placeholder.txt", "size": 0 }
+  ],
+  "autoRun": false,
+  "agentCliProvider": "claude"
+}
+```
+
+### 附件、安全与错误处理
+
+- **附件支持范围**：`attachments` 支持本机 `path` 文件、`dataUrl`、`base64` / `dataBase64`、`bytes`，也支持仅提供 `name` / `size` 的占位信息；仅占位附件会进入工具入参校验，但不会复制为持久化文件。
+- **安全边界**：HTTP MCP 默认监听 `127.0.0.1`，不会默认暴露公网；附件路径由本机 AutoPlan 进程读取，请只传入可信路径。
+- **关联校验**：`create_feedback.requirementId` 可为空；若需求不存在或属于其它项目，会返回明确错误，不会误写跨项目关联。
+- **常见错误**：必填字段缺失、字符串超长、`autoRun` 非布尔值、CLI 后端或 Codex 思考深度枚举非法、项目 ID 非正整数，都会以可修正的中文错误返回。
+
+`npm run smoke` 覆盖 MCP 工具创建项目、提交需求/反馈、反馈关联需求、`autoRun`、CLI 配置规范化、附件保存和无效入参错误；真实 MCP 客户端连通性留给最终手动验收。
+
+## 计划并发执行与 scope 文件
+
+AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+
+```md
+- [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
+- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+- [ ] P007: 完整验收 <!-- scope: validation -->
+```
+
+任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
+
+### 并发建议规则
+
+- **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
+- **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
+- **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
+
+### 手动并发执行流程
+
+1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
+2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
+3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
+4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
+5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
+
+### scope 文件打开配置
+
+Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
+
+打开方式在项目「设置」中配置，默认使用系统默认方式：
+
+| 打开方式 | 说明 | 示例配置 |
+| --- | --- | --- |
+| 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
+| 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
+| VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
+| 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
+
+请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
+
+## 发布
+
+项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+
+```bash
+python scripts/release.py --tag v0.2.0 --notes "发布说明"
+python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+```
+
+发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
+
+## 开发
+
+```bash
+npm install
+npm run dev        # 启动开发模式（Vite + Electron）
+npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度与 MCP 工具 stub 覆盖）
+npm run package:win  # 打包 Windows 安装包
+```
+
+> 真实的 Claude CLI 调用需要本机安装并认证 `claude`；真实 MCP 客户端连通性需手动验证。`npm run smoke` 通过 stub 覆盖后端路由、会话隔离、Codex 思考深度参数转换和 MCP 工具写入核心分支，不依赖真实二进制或外部 MCP 客户端。
+
+---BETA SEARCH---
+
+README.md:3:Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+README.md:134:- **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务
+。
+README.md:161:## 发布
+README.md:163:项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 Gi
+tHub Actions 页面手动触发。
+README.md:165:本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+README.md:168:python scripts/release.py --tag v0.2.0 --notes "发布说明"
+README.md:172:发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/rel
+ease.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装
+说明](docs/release/macos.md)。
+README.md:180:npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度与 MCP 工具 stub 覆盖）
+
+
+
+codex
+README 发布段落位置合适；我会补一个面向下载用户的 beta 说明小节。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\README.md
+diff --git a/README.md b/README.md
+index 3d65c81c25b28a73e9298007c491e308e4122f4f..a46f3ac7382785619670b46d930e22a70fc7def3
+--- a/README.md
++++ b/README.md
+@@ -162,6 +162,12 @@
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 
++### Beta 版本说明
++
++Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间。
++
++如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
++
+ 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 
+ ```bash
+
+diff --git a/README.md b/README.md
+index 3d65c81c25b28a73e9298007c491e308e4122f4f..a46f3ac7382785619670b46d930e22a70fc7def3
+--- a/README.md
++++ b/README.md
+@@ -162,6 +162,12 @@
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 
++### Beta 版本说明
++
++Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间。
++
++如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
++
+ 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 
+ ```bash
+
+**Verifying scope with git**
+
+I need to verify the scope of the changes, and using `git diff` on the README might be a good idea, although it's probably not necessary to check the entire file. Maybe I can just use `git diff -- README.md` to focus on that. I should also check the status, but it looks like there aren't any tests relevant here. Let’s keep it simple and focused on what needs to be addressed!
+codex
+Beta 说明已加入；现在只核对 README 改动范围。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; git diff -- README.md; Write-Output '---STATUS---'; git status --short -- README.md 'docs/plan/plan_feedback_20_20260627-183133.md'" in D:\project\GitHub\autoplan
+ succeeded in 507ms:
+diff --git a/README.md b/README.md
+index 5b124b7..a46f3ac 100644
+--- a/README.md
++++ b/README.md
+@@ -43,15 +43,91 @@ AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完
+ 
+ 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+ 
++## MCP 外部接入
++
++AutoPlan 内置本机 MCP 服务，方便其它 MCP 客户端在不打开 GUI 表单的情况下创建项目、提交需求和提交反馈。桌面应用启动并完成数据库初始化后会启动 MCP 服务；启动失败不会影响 GUI，错误会进入事件流并显示在「设置 → MCP 外部接入」卡片。
++
++### 默认连接方式
++
++| 项 | 默认值 | 说明 |
++| --- | --- | --- |
++| 传输方式 | `http` | 使用 Streamable HTTP MCP 端点 |
++| 地址 | `127.0.0.1` | 默认仅绑定本机，不暴露公网 |
++| 端口 | `43847` | 连接地址为 `http://127.0.0.1:43847/mcp` |
++| stdio | `npm run mcp:stdio` | 供需要 stdio 的 MCP 客户端按进程方式启动 |
++
++可通过环境变量覆盖默认值：`AUTOPLAN_MCP_ENABLED=0` 禁用服务，`AUTOPLAN_MCP_TRANSPORT=stdio|http` 切换传输方式，`AUTOPLAN_MCP_HOST`、`AUTOPLAN_MCP_PORT`、`AUTOPLAN_MCP_PATH` 调整 HTTP 监听。HTTP 默认只允许本机地址；若显式绑定非本机地址，需同时设置 `AUTOPLAN_MCP_ALLOW_REMOTE=1`，并自行承担网络访问控制。
++
++### 工具清单与示例
++
++MCP 工具返回 `content[0].text` 中的 JSON 字符串，并在支持的客户端中提供 `structuredContent`。返回字段包含目标 `projectId`、可选 `requirementId` / `feedbackId`，以及最新 `snapshot` 摘要（当前项目、运行状态和记录数量）。
++
++#### `create_project`
++
++```json
++{
++  "name": "My App",
++  "workspacePath": "D:/project/my-app",
++  "description": "外部 MCP 创建的项目",
++  "agentCliProvider": "codex",
++  "agentCliCommand": "",
++  "codexReasoningEffort": "high"
++}
++```
++
++#### `create_requirement`
++
++```json
++{
++  "projectId": 1,
++  "title": "实现登录页",
++  "body": "请增加邮箱登录、错误提示和基础表单校验。",
++  "attachments": [
++    { "name": "login-sketch.png", "path": "D:/tmp/login-sketch.png", "type": "image/png" }
++  ],
++  "autoRun": true,
++  "agentCliProvider": "codex",
++  "codexReasoningEffort": "high"
++}
++```
++
++#### `create_feedback`
++
++```json
++{
++  "projectId": 1,
++  "requirementId": 12,
++  "title": "登录页反馈",
++  "body": "错误提示需要展示在输入框下方。",
++  "attachments": [
++    { "name": "feedback-placeholder.txt", "size": 0 }
++  ],
++  "autoRun": false,
++  "agentCliProvider": "claude"
++}
++```
++
++### 附件、安全与错误处理
++
++- **附件支持范围**：`attachments` 支持本机 `path` 文件、`dataUrl`、`base64` / `dataBase64`、`bytes`，也支持仅提供 `name` / `size` 的占位信息；仅占位附件会进入工具入参校验，但不会复制为持久化文件。
++- **安全边界**：HTTP MCP 默认监听 `127.0.0.1`，不会默认暴露公网；附件路径由本机 AutoPlan 进程读取，请只传入可信路径。
++- **关联校验**：`create_feedback.requirementId` 可为空；若需求不存在或属于其它项目，会返回明确错误，不会误写跨项目关联。
++- **常见错误**：必填字段缺失、字符串超长、`autoRun` 非布尔值、CLI 后端或 Codex 思考深度枚举非法、项目 ID 非正整数，都会以可修正的中文错误返回。
++
++`npm run smoke` 覆盖 MCP 工具创建项目、提交需求/反馈、反馈关联需求、`autoRun`、CLI 配置规范化、附件保存和无效入参错误；真实 MCP 客户端连通性留给最终手动验收。
++
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+@@ -86,6 +162,12 @@ Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 
++### Beta 版本说明
++
++Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间。
++
++如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
++
+ 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 
+ ```bash
+@@ -93,16 +175,17 @@ python scripts/release.py --tag v0.2.0 --notes "发布说明"
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
++
+ ## 开发
+ 
+ ```bash
+ npm install
+ npm run dev        # 启动开发模式（Vite + Electron）
+ npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+-npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度 stub 覆盖）
++npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度与 MCP 工具 stub 覆盖）
+ npm run package:win  # 打包 Windows 安装包
+ ```
+ 
+-> 真实的 Claude CLI 调用需要本机安装并认证 `claude`，`npm run smoke` 通过 stub 覆盖后端路由、会话隔离和 Codex 思考深度参数转换核心分支，不依赖真实二进制。
++> 真实的 Claude CLI 调用需要本机安装并认证 `claude`；真实 MCP 客户端连通性需手动验证。`npm run smoke` 通过 stub 覆盖后端路由、会话隔离、Codex 思考深度参数转换和 MCP 工具写入核心分支，不依赖真实二进制或外部 MCP 客户端。
+ 
+---STATUS---
+ M README.md
+?? docs/plan/plan_feedback_20_20260627-183133.md
+warning: in the working copy of 'README.md', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/README.md b/README.md
+index 3d65c81c25b28a73e9298007c491e308e4122f4f..a46f3ac7382785619670b46d930e22a70fc7def3
+--- a/README.md
++++ b/README.md
+@@ -162,6 +162,12 @@
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 
++### Beta 版本说明
++
++Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间。
++
++如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
++
+ 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 
+ ```bash
+
+**Figuring out README changes**
+
+I need to look at the existing README changes compared to HEAD because it seems like there are lots of them. We're only adding "beta" this time, but I think having a line number would help clarify things. I should probably consider using Select-String for that. It might make sorting through everything easier. Let's see if I can get that organized in a way that's straightforward!
+codex
+README 存在既有未提交内容；我只新增了 beta 小节并取其行号。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Select-String -Path README.md -Pattern 'Beta 版本说明|未完整人工测试|GitHub Issue|AI 流程'" in D:\project\GitHub\autoplan
+ succeeded in 471ms:
+
+README.md:165:### Beta 版本说明
+README.md:167:Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间
+。
+README.md:169:如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计
+划并继续处理。
+
+
+
+diff --git a/README.md b/README.md
+index 3d65c81c25b28a73e9298007c491e308e4122f4f..a46f3ac7382785619670b46d930e22a70fc7def3
+--- a/README.md
++++ b/README.md
+@@ -162,6 +162,12 @@
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 
++### Beta 版本说明
++
++Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间。
++
++如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
++
+ 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 
+ ```bash
+
+codex
+已完成 P002，仅修改 `README.md`，未运行测试/构建/lint，也未修改 plan 文件。
+
+- 在 `README.md:165` 新增 `Beta 版本说明`
+- 在 `README.md:167` 说明 beta 是未完整人工测试的预发布版本，不等同稳定版且不承诺零缺陷
+- 在 `README.md:167` 补充“AI 修复后编译通过即可发布”的 beta 发布策略
+- 在 `README.md:169` 补充 GitHub Issue 反馈入口，以及后续 AutoPlan/AI 从 Issue 发现问题、生成修复计划并处理的说明
+- 注意：`README.md` 中已有其它未提交差异；本次 P002 只新增上述 beta 小节
+diff --git a/README.md b/README.md
+index 3d65c81c25b28a73e9298007c491e308e4122f4f..a46f3ac7382785619670b46d930e22a70fc7def3
+--- a/README.md
++++ b/README.md
+@@ -162,6 +162,12 @@
+ 
+ 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 
++### Beta 版本说明
++
++Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间。
++
++如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
++
+ 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 
+ ```bash
+
+已完成 P002，仅修改 `README.md`，未运行测试/构建/lint，也未修改 plan 文件。
+
+- 在 `README.md:165` 新增 `Beta 版本说明`
+- 在 `README.md:167` 说明 beta 是未完整人工测试的预发布版本，不等同稳定版且不承诺零缺陷
+- 在 `README.md:167` 补充“AI 修复后编译通过即可发布”的 beta 发布策略
+- 在 `README.md:169` 补充 GitHub Issue 反馈入口，以及后续 AutoPlan/AI 从 Issue 发现问题、生成修复计划并处理的说明
+- 注意：`README.md` 中已有其它未提交差异；本次 P002 只新增上述 beta 小节
+tokens used
+63,550

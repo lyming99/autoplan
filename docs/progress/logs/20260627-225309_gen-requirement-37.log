@@ -1,0 +1,1976 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0991-fbf4-71d0-bf45-1a76c6f6e240
+--------
+user
+你是需求整理与开发计划生成者。
+请根据以下需求，生成一个开发计划和验收标准。
+
+输出文件：D:\project\GitHub\autoplan\docs\plan\plan_requirement_37_20260627-225309.md
+
+格式要求：
+- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->
+- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行
+- 每个任务要有验收要点
+- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收
+- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准
+- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试
+- 必须包含总体验收标准和进度区
+- 只写 plan 文件，不要改业务代码
+
+需求 #37 内容：
+计划阅读前文界面，不要显示任务拆解，在markdown预览里面显示，但是markdown预览任务列表有问题，是不是markdown格式冲突？处理一下
+
+AutoPlan 任务拆解格式硬性要求（必须遵守）
+- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。
+- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。
+- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。
+- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务也使用连续编号，例如 `- [ ] P007: 完整验收 <!-- scope: validation -->`。
+- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。
+**Planning file creation**
+
+I need to create a plan file, and it seems inspecting the repository for any necessary instructions would be a good start. I might need to use the shell to execute some commands as part of this process. I’m thinking about how to ensure everything is set up correctly. Let’s make sure I have all the tools and information together before diving in! It’s essential to get this right.
+codex
+我会先快速查看仓库结构和现有计划文档格式，然后只写指定的 plan 文件。
+exec
+powershell.exe -Command "Get-ChildItem -Force; if (Test-Path AGENTS.md) { Get-Content AGENTS.md }; Get-ChildItem docs\\plan -ErrorAction SilentlyContinue | Select-Object -First 5" in D:\project\GitHub\autoplan
+ succeeded in 361ms:
+
+
+    目录: D:\project\GitHub\autoplan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+d-----         2026/6/27     20:23                .autoplan-runtime                                                    
+d-----         2026/6/25     22:13                .claude                                                              
+d--h--         2026/6/27     22:49                .git                                                                 
+d-----         2026/6/26     13:26                .github                                                              
+d-----         2026/6/24     23:46                assets                                                               
+d-----         2026/6/27     17:23                build                                                                
+d-----         2026/6/27     22:24                dist                                                                 
+d-----         2026/6/27     19:03                docs                                                                 
+d-----         2026/6/27     20:20                node_modules                                                         
+d-----         2026/6/27     22:25                release                                                              
+d-----         2026/6/27     21:14                release-preview                                                      
+d-----         2026/6/27     21:14                release-preview-installer                                            
+d-----         2026/6/24     23:36                release-test                                                         
+d-----         2026/6/27     19:58                scripts                                                              
+d-----         2026/6/27     21:46                src                                                                  
+d-----         2026/6/27     21:52                ui                                                                   
+-a----         2026/6/24     23:18         109404 .codex-autoplan-overview-final.png                                   
+-a----         2026/6/24     23:17         108438 .codex-autoplan-overview-left-log.png                                
+-a----         2026/6/24     23:21          79462 .codex-autoplan-overview-merged-log.png                              
+-a----         2026/6/24     23:14         102400 .codex-autoplan-overview.png                                         
+-a----         2026/6/24     22:52            288 .codex-dev-20260624-225246.log                                       
+-a----         2026/6/24     22:57            546 .codex-dev-20260624-225652.log                                       
+-a----         2026/6/24     23:01            686 .codex-dev-20260624-225837.log                                       
+-a----         2026/6/25     21:01          35405 .codex-dev-20260624-230150.log                                       
+-a----         2026/6/24     22:48            419 .codex-dev.log                                                       
+-a----         2026/6/25      0:11             66 .gitattributes                                                       
+-a----         2026/6/25      5:37             42 .gitignore                                                           
+-a----         2026/6/24     19:10            307 index.html                                                           
+-a----         2026/6/25      5:38          11524 LICENSE                                                              
+-a----         2026/6/27     19:21         265563 package-lock.json                                                    
+-a----         2026/6/27     22:21           3657 package.json                                                         
+-a----         2026/6/27     21:53          14831 README.md                                                            
+-a----         2026/6/24     23:45           7191 System.Drawing.Drawing2D.GraphicsPath                                
+-a----         2026/6/24     19:10            555 tsconfig.json                                                        
+-a----         2026/6/24     23:41            287 vite.config.ts                                                       
+
+
+    目录: D:\project\GitHub\autoplan\docs\plan
+
+
+Mode                 LastWriteTime         Length Name                                                                 
+----                 -------------         ------ ----                                                                 
+-a----         2026/6/26      6:11           8118 plan_feedback_10_20260626-034659.md                                  
+-a----         2026/6/27      3:48           7622 plan_feedback_13_20260627-033001.md                                  
+-a----         2026/6/27     19:24           8804 plan_feedback_14_20260627-131553.md                                  
+-a----         2026/6/27     19:24           7750 plan_feedback_15_20260627-132045.md                                  
+-a----         2026/6/27     19:24           9124 plan_feedback_16_20260627-133130.md                                  
+
+
+
+**Inspecting plan format**
+
+I need to take a closer look at the existing format of the plan. It’s important to ensure that I fully understand how it’s structured. Maybe there are elements that need tweaking or improving. I wonder if there are best practices I should follow or industry standards that could guide me in refining it further. Let's explore this and analyze what works and what might need adjustments!
+codex
+我找到现有计划目录了，接下来参考模板并生成新计划文件。
+exec
+powershell.exe -Command "Get-Content docs\\plan\\plan_feedback_16_20260627-133130.md -TotalCount 120" in D:\project\GitHub\autoplan
+ succeeded in 228ms:
+# 反馈 #16 开发计划：任务分组折叠与搜索结果弹窗定位
+
+## 背景
+
+反馈 #16 指出：“任务列表，分组要支持折叠；搜索结果要通过popup显示搜索结果，支持点击打开定位到指定项。” 当前需要优化两个交互链路：一是任务列表已经存在按 Plan 或状态等维度组织的分组展示，但缺少可折叠状态，长任务列表下浏览成本高；二是工作区搜索结果目前嵌入页面流中展示，点击后主要切换到对应栏目，缺少弹窗式结果面板和对具体记录/任务/计划的精确定位与高亮。
+
+## 设计约束
+
+- 本计划只处理任务列表分组折叠、搜索结果 popup 展示、搜索结果点击定位和必要的状态类型扩展，不改动任务执行、计划生成、CLI 调用和数据库结构。
+- 任务分组折叠应优先在前端状态内完成，默认展开策略需兼顾当前正在执行的任务和用户已有浏览上下文。
+- 搜索结果 popup 需保持现有搜索数据来源、排序和分组统计能力，不重新实现搜索索引，不引入后端全文检索。
+- 点击搜索结果必须能打开对应工作区 tab，并尽量滚动/聚焦/高亮到指定项；无法定位到 DOM 节点时也要有可见兜底提示。
+- 不要把运行测试、回归、构建拆成普通开发任务；最终检查统一放入最后的“完整验收”节点。
+
+## 任务拆解
+
+- [x] P001: 梳理任务分组与搜索定位模型 <!-- scope: src/renderer/components/PlanLists.tsx,src/renderer/components/SearchResults.tsx,src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts,src/renderer/utils/search.ts -->
+  - 验收要点：确认任务列表当前分组来源、分组 key、排序规则、任务过滤后分组更新方式，以及正在执行任务的展示优先级。
+  - 验收要点：梳理现有 `WorkspaceSearchResult` 可用字段，明确计划、任务、需求、反馈、事件等结果分别需要的目标 tab、记录 id 和可定位锚点。
+  - 验收要点：定义统一的前端定位契约，包括目标 tab、目标类型、目标 id、可选 plan/task id、滚动行为和临时高亮时长。
+  - 验收要点：形成改动边界，确保后续实现不改变搜索命中规则、不修改任务执行状态流转、不新增数据库迁移。
+
+- [x] P002: 实现任务分组折叠交互 <!-- scope: src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：任务列表每个分组标题行提供展开/收起按钮，展示分组名称、任务数量、进行中数量和完成数量等摘要信息。
+  - 验收要点：分组折叠状态在当前工作区会话内稳定保存，切换任务状态过滤、刷新 snapshot 或搜索过滤后不会无故丢失用户手动折叠选择。
+  - 验收要点：默认展开包含 running/stopping 任务的分组；没有运行中任务时默认展开最近有更新时间或第一个有任务的分组。
+  - 验收要点：折叠后的分组不渲染任务明细但保留摘要、可点击区域、键盘可达性和清晰的视觉状态。
+
+- [x] P003: 扩展搜索结果可定位信息 <!-- scope: src/renderer/types.ts,src/renderer/utils/search.ts,src/renderer/pages/WorkspacePage.tsx -->
+  - 验收要点：搜索结果对象包含足够的定位元数据，能区分 plan、task、requirement、feedback、event 等来源并指向具体记录。
+  - 验收要点：任务搜索结果能携带 `taskId`、`planId`、`taskKey` 等信息，点击后可打开任务 tab 并定位到对应任务项。
+  - 验收要点：计划搜索结果能携带 `planId` 或文件路径信息，点击后可打开任务/计划区域并定位到对应 Plan 卡片。
+  - 验收要点：需求、反馈和事件结果继续保持现有分组统计、排序和摘要展示，新增定位字段不破坏空搜索与多关键词搜索行为。
+
+- [x] P004: 改造搜索结果为 popup 面板 <!-- scope: src/renderer/components/SearchResults.tsx,src/renderer/pages/WorkspacePage.tsx,src/styles.css -->
+  - 验收要点：输入搜索词后结果以浮层 popup 展示在搜索框附近或工作区顶部合适位置，不再挤占主内容列表布局。
+  - 验收要点：popup 展示搜索词、总命中数、按来源分组的结果列表、空结果态和清空搜索入口，保留现有来源 chip 与“查看更多”能力。
+  - 验收要点：popup 支持点击外部、按 Esc、清空搜索和选择结果后关闭，并且关闭后主内容区域恢复正常显示。
+  - 验收要点：popup 具备基础无障碍能力，包括合适的 dialog/listbox 语义、焦点管理、键盘可关闭和不会遮挡关键导航。
+
+- [x] P005: 实现搜索结果点击定位高亮 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/PlanLists.tsx,src/renderer/components/IntakePanel.tsx,src/renderer/components/SearchResults.tsx,src/styles.css -->
+  - 验收要点：点击搜索结果后自动切换到对应 tab，并在数据渲染完成后滚动到目标卡片或任务项。
+  - 验收要点：目标项获得短暂高亮或聚焦样式，用户能明确知道搜索结果对应到页面中的哪一条记录。
+  - 验收要点：若目标位于已折叠任务分组中，系统会自动展开对应分组后再定位，不需要用户手动查找。
+  - 验收要点：当目标记录因过滤、删除或数据刷新暂不可见时，页面展示非阻塞提示，并保留切换到目标 tab 的行为。
+
+- [x] P006: 补充前端交互回归覆盖 <!-- scope: scripts/smoke-test.js,src/renderer/components/PlanLists.tsx,src/renderer/components/SearchResults.tsx,src/renderer/utils/search.ts -->
+  - 验收要点：覆盖任务分组默认展开、手动折叠、过滤后保留折叠状态、运行中任务所在分组自动展开等场景。
+  - 验收要点：覆盖搜索 popup 的打开、空结果、分组结果、清空、Esc 关闭和选择结果后关闭等场景。
+  - 验收要点：覆盖点击任务/计划搜索结果后切换 tab、展开分组、滚动到目标项和展示高亮的场景。
+  - 验收要点：测试代码只描述和校验交互行为，不在该任务内承担最终完整验收命令职责。
+
+- [x] P007: 完整验收 <!-- scope: validation -->
+  - 验收要点：执行最终验收命令 `npm run check && npm run smoke`，范围覆盖 TypeScript 编译、前端类型约束、搜索工具回归和 smoke 流程。
+  - 验收要点：本地启动应用后进入含多个任务分组的项目，确认任务分组可展开/收起，刷新数据和切换过滤后折叠状态符合预期。
+  - 验收要点：在全局搜索框输入能命中任务、计划、反馈和事件的关键词，确认结果通过 popup 显示，空结果与清空操作表现正确。
+  - 验收要点：分别点击任务和计划搜索结果，确认应用切换到对应 tab，自动展开必要分组，滚动并高亮到指定项。
+  - 验收要点：通过标准为最终验收命令退出码为 0，任务分组折叠、搜索 popup 和点击定位在手动验证中均符合反馈要求，且任务执行与计划阅读等无关功能无明显回退。
+
+## 总体验收标准
+
+- 分组可控：任务列表分组支持展开/收起，折叠状态清晰可见，运行中任务不会因为默认折叠而被隐藏。
+- 搜索浮层化：搜索结果通过 popup 展示，不挤占主内容布局，并支持清空、关闭、空结果和按来源查看。
+- 点击可定位：点击任一可定位搜索结果后能打开对应 tab，定位到具体记录或任务项，并给出可感知的高亮反馈。
+- 兜底明确：目标项不存在、被过滤或暂不可见时有非阻塞提示，不出现点击无反应或静默失败。
+- 兼容现有能力：搜索命中来源、排序、分组统计、任务状态过滤、计划卡片和事件列表等现有功能不因本次改动退化。
+- 最终验收命令：执行 `npm run check && npm run smoke`；验收范围为任务分组折叠、搜索结果 popup、搜索结果点击定位、高亮反馈和现有 smoke 主流程；通过标准为命令退出码为 0，且手动验证任务、计划、反馈、事件搜索结果均能按预期展示或定位。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：反馈 #16 开发计划已创建，待执行。
+- P001 AutoPlan 完成：2026-06-27T05:38:59.771Z；日志：docs/progress/logs/20260627-133331_execute-P001.log
+- P002 AutoPlan 完成：2026-06-27T10:14:13.758Z；日志：docs/progress/logs/20260627-180944_execute-P002.log
+- P003 AutoPlan 完成：2026-06-27T10:17:14.466Z；日志：docs/progress/logs/20260627-181419_execute-P003.log
+- P004 AutoPlan 完成：2026-06-27T10:21:06.877Z；日志：docs/progress/logs/20260627-181717_execute-P004.log
+- P005 AutoPlan 完成：2026-06-27T10:26:44.299Z；日志：docs/progress/logs/20260627-182110_execute-P005.log
+- P006 AutoPlan 完成：2026-06-27T10:29:24.119Z；日志：docs/progress/logs/20260627-182650_execute-P006.log
+- P007 AutoPlan 完成：2026-06-27T10:29:27.331Z
+
+**Planning file inspections**
+
+I need to draft a plan for the project requirements. It sounds like I should inspect the files to identify the necessary scopes. I also need to understand the application better. To assist with this, I think I can use markdown to preview the plan and make it easier to read. There’s a lot to consider here, but I’ll work through it step by step.
+codex
+我会定位“计划阅读”和 Markdown 预览相关代码，确保 scope 尽量准确。
+exec
+powershell.exe -Command 'rg -n "markdown|Markdown|任务拆解|plan|preview|预览|阅读" src ui scripts package.json' in D:\project\GitHub\autoplan
+ succeeded in 216ms:
+package.json:2:  "name": "autoplan",
+package.json:4:  "description": "Electron app for issue-driven autonomous planning and development loops.",
+package.json:24:    "appId": "com.autoplan.desktop",
+package.json:109:    "react-markdown": "^10.1.0",
+ui\workspace.html:368:      .plan-item, .task-item { padding:12px; border:1px solid var(--line); border-radius:var(--r-md); background:var(--bg-elevated); }
+ui\workspace.html:369:      .plan-top { display:flex; align-items:center; gap:8px; }
+ui\workspace.html:370:      .plan-path { font-family:var(--font-mono); font-size:12px; color:var(--text-1); font-weight:600; }
+ui\workspace.html:371:      .plan-meta { font-size:11px; color:var(--text-3); margin-top:8px; display:flex; gap:10px; }
+ui\workspace.html:372:      .plan-tabs { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; }
+ui\workspace.html:373:      .plan-tab { border:1px solid var(--line); border-radius:999px; background:var(--bg-soft); padding:5px 10px; font-size:12px; font-weight:700; color:var(--text-2); }
+ui\workspace.html:374:      .plan-tab.active { background:var(--brand-50); border-color:#cdd8ea; color:var(--brand-700); }
+ui\workspace.html:375:      .plan-order-actions { margin-left:auto; display:inline-flex; gap:4px; }
+ui\workspace.html:376:      .plan-order-actions button { border:0; background:transparent; color:var(--brand-600); font-size:12px; font-weight:700; }
+ui\workspace.html:449:              <button class="project-option" type="button" data-name="autoplan" data-path="GitHub/autoplan" data-color="grad2">
+ui\workspace.html:452:                  <span class="project-name">autoplan</span>
+ui\workspace.html:453:                  <span class="project-path">GitHub/autoplan</span>
+ui\workspace.html:561:                  <div>当前 Plan<b>plan_20260624-1032</b></div>
+ui\workspace.html:566:                <div class="card-head"><h2>循环阶段流水线</h2><span class="hint">scan / generate-plan / execute-task / validate / completed</span></div>
+ui\workspace.html:569:                    <div class="pipe-step done"><div class="pipe-node"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></div><div class="pipe-label">扫描</div><div class="pipe-sub">3 issues · 2 plans</div></div>
+ui\workspace.html:570:                    <div class="pipe-step done"><div class="pipe-node"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></div><div class="pipe-label">生成计划</div><div class="pipe-sub">plan_20260624</div></div>
+ui\workspace.html:583:                  <div class="feed-item info"><span class="feed-dot"></span><span class="feed-text">扫描完成 <b>issues=3, plans=2</b></span><span class="feed-time">10:42</span></div>
+ui\workspace.html:586:                  <div class="feed-item info"><span class="feed-dot"></span><span class="feed-text">新计划生成 <b>plan_20260624-1032</b></span><span class="feed-time">10:32</span></div>
+ui\workspace.html:707:                    <div class="plan-tabs" aria-label="计划状态筛选">
+ui\workspace.html:708:                      <button class="plan-tab active" type="button">全部 3</button>
+ui\workspace.html:709:                      <button class="plan-tab" type="button">执行中 1</button>
+ui\workspace.html:710:                      <button class="plan-tab" type="button">已完成 1</button>
+ui\workspace.html:711:                      <button class="plan-tab" type="button">草稿 1</button>
+ui\workspace.html:713:                    <div class="plan-item">
+ui\workspace.html:714:                      <div class="plan-top"><span class="plan-path">plan_20260624-1032.md</span><span class="chip chip-running" style="margin-left:auto">running</span><span class="plan-order-actions"><button disabled>上移</button><button disabled>下移</button></span></div>
+ui\workspace.html:716:                      <div class="plan-meta"><span>3 / 7 tasks</span><span>验收 pending</span></div>
+ui\workspace.html:718:                    <div class="plan-item">
+ui\workspace.html:719:                      <div class="plan-top"><span class="plan-path">plan_requirement_31_draft.md</span><span class="chip chip-waiting" style="margin-left:auto">draft</span><span class="plan-order-actions"><button>上移</button><button>下移</button></span></div>
+ui\workspace.html:721:                      <div class="plan-meta"><span>0 / 6 tasks</span><span>等待显式执行</span></div>
+ui\workspace.html:723:                    <div class="plan-item">
+ui\workspace.html:724:                      <div class="plan-top"><span class="plan-path">plan_20260624-0810.md</span><span class="chip chip-completed" style="margin-left:auto">completed</span><span class="plan-order-actions"><button disabled>上移</button><button disabled>下移</button></span></div>
+ui\workspace.html:726:                      <div class="plan-meta"><span>5 / 5 tasks</span><span>验收 passed</span></div>
+ui\workspace.html:733:                    <div class="task-item"><div class="plan-top"><span class="task-key">P004</span><span class="task-title">富文本选区处理</span><span class="chip chip-pending" style="margin-left:auto">pending</span></div></div>
+ui\workspace.html:734:                    <div class="task-item"><div class="plan-top"><span class="task-key">P003</span><span class="task-title">段落样式</span><span class="chip chip-completed" style="margin-left:auto">done</span></div></div>
+ui\workspace.html:735:                    <div class="task-item"><div class="plan-top"><span class="task-key">P002</span><span class="task-title">工具栏</span><span class="chip chip-completed" style="margin-left:auto">done</span></div></div>
+ui\workspace.html:752:              <div class="event-row"><span class="event-time">2026-06-24 10:42:05</span><span class="chip chip-running">scan.done</span><span class="event-msg">扫描完成 <code>issues=3, plans=2</code></span><a href="#">查看</a></div>
+ui\workspace.html:754:              <div class="event-row"><span class="event-time">2026-06-24 10:32:41</span><span class="chip chip-running">plan.generated</span><span class="event-msg">新计划生成 <code>docs/plan/plan_20260624-1032_a1b2c3d4.md</code></span><a href="#">打开</a></div>
+scripts\notarize-mac.js:25:  const directory = path.join(env('RUNNER_TEMP') || os.tmpdir(), 'autoplan-notarize');
+scripts\verify-release-artifacts.js:131:  const mountDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-dmg-'));
+scripts\verify-release-artifacts.js:151:  const extractDir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-zip-'));
+ui\tasks.html:232:      .plan-list { display: flex; flex-direction: column; gap: 10px; }
+ui\tasks.html:233:      .plan-card {
+ui\tasks.html:239:      .plan-card:hover { border-color: var(--line); }
+ui\tasks.html:240:      .plan-card.selected { border-color: #d6e0f3; background: var(--brand-50); }
+ui\tasks.html:242:      .plan-top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+ui\tasks.html:243:      .plan-path {
+ui\tasks.html:247:      .plan-title { font-size: 13px; font-weight: 600; color: var(--text-1); margin-top: 4px; }
+ui\tasks.html:248:      .plan-title.muted { color: var(--text-3); font-weight: 500; }
+ui\tasks.html:250:      .plan-progress { margin-top: 11px; }
+ui\tasks.html:272:      .plan-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 11px; font-size: 11px; color: var(--text-3); }
+ui\tasks.html:273:      .plan-meta .meta-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); }
+ui\tasks.html:280:      .plan-actions { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+ui\tasks.html:457:            <p>Plan 与任务进度，支持并发执行与全文阅读</p>
+ui\tasks.html:479:                  <div class="filter-tabs" id="planFilters">
+ui\tasks.html:486:                  <div class="plan-list">
+ui\tasks.html:488:                    <div class="plan-card running selected">
+ui\tasks.html:489:                      <div class="plan-top">
+ui\tasks.html:491:                        <span class="plan-path">plan_20260627-1032.md</span>
+ui\tasks.html:493:                      <div class="plan-title">富文本图片粘贴支持</div>
+ui\tasks.html:494:                      <div class="plan-progress">
+ui\tasks.html:506:                      <div class="plan-meta">
+ui\tasks.html:513:                      <div class="plan-actions">
+ui\tasks.html:515:                        <button class="btn btn-sm"><svg class="icon"><use href="#icon-doc"></use></svg>阅读全文</button>
+ui\tasks.html:521:                    <div class="plan-card draft">
+ui\tasks.html:522:                      <div class="plan-top">
+ui\tasks.html:524:                        <span class="plan-path">plan_requirement_31_draft.md</span>
+ui\tasks.html:526:                      <div class="plan-title muted">来自 需求 #6 · 待显式执行</div>
+ui\tasks.html:527:                      <div class="plan-progress">
+ui\tasks.html:539:                      <div class="plan-meta">
+ui\tasks.html:546:                      <div class="plan-actions">
+ui\tasks.html:548:                        <button class="btn btn-sm"><svg class="icon"><use href="#icon-doc"></use></svg>阅读全文</button>
+ui\tasks.html:553:                    <div class="plan-card completed">
+ui\tasks.html:554:                      <div class="plan-top">
+ui\tasks.html:556:                        <span class="plan-path">plan_20260627-0810.md</span>
+ui\tasks.html:558:                      <div class="plan-title">工具栏样式对齐飞书文档</div>
+ui\tasks.html:559:                      <div class="plan-progress">
+ui\tasks.html:566:                      <div class="plan-meta">
+ui\tasks.html:573:                      <div class="plan-actions">
+ui\tasks.html:575:                        <button class="btn btn-sm"><svg class="icon"><use href="#icon-doc"></use></svg>阅读全文</button>
+ui\tasks.html:590:                    <span style="font-size:11px;color:var(--text-3);">关联 plan_20260627-1032</span>
+ui\tasks.html:602:                    <!-- 分组：plan_20260627-1032 -->
+ui\tasks.html:607:                        <span class="tg-title">plan_20260627-1032 · 富文本图片粘贴</span>
+ui\tasks.html:684:                    <!-- 分组：plan_20260627-0810（已完成，默认折叠） -->
+ui\tasks.html:689:                        <span class="tg-title">plan_20260627-0810 · 工具栏样式</span>
+ui\tasks.html:778:      bindFilters('planFilters');
+ui\tasks.html:783:      document.querySelectorAll('.plan-card .btn-primary').forEach((btn) => {
+ui\tasks.html:794:      document.querySelectorAll('.plan-card').forEach((card) => {
+ui\tasks.html:797:          document.querySelectorAll('.plan-card').forEach((c) => c.classList.remove('selected'));
+ui\settings.html:532:                    <div class="set-card-hint">循环在此目录下扫描 issues / plans，并执行任务与验收命令</div>
+ui\settings.html:538:                      <span class="field-hint">循环在此目录下扫描 issues / plans，并执行任务与验收命令</span>
+ui\README.md:3:纯 HTML/CSS 设计稿，浏览器直接打开即可预览，无需依赖。
+ui\README.md:50:- Plan 卡片和 Plan 全文阅读器展示的是计划生成时固化的 CLI 快照，而不是当前项目默认配置；切换默认后端不会让历史计划显示漂移。
+ui\README.md:55:- Plan 卡片元信息同时展示计划级 CLI 摘要，与 Plan 全文阅读器摘要保持一致，不从当前项目默认 CLI 反推历史计划。
+ui\README.md:59:- Plan 全文阅读器中任务行的 `scope` 文件路径可点击打开；普通 Markdown 链接仍按普通链接渲染，代码块、滚动和表格阅读体验保持不变。
+ui\README.md:60:- Plan 全文阅读器摘要区展示计划级 CLI 后端与 Codex 思考深度；读取失败、计划文件缺失或 Markdown 为空时，仍基于计划记录展示该摘要。
+ui\README.md:78:- **左列 Plan**：卡片流，顶部状态筛选（全部 / 执行中 / 草稿 / 已完成）。每张 Plan 卡片展示路径、标题、进度条（完成数/总数）、并发建议摘要（可并发数 / 建议批次数 / 串行数，带图标语义色）、计划级 CLI 摘要标签（`Codex · 思考 xhigh`）+ 哈希 + 更新时间，底部操作区（并发执行 / 阅读全文 / 验收状态）。选中态用品牌色描边，运行中/草稿/已完成用左侧色条区分。
+scripts\release_beta.py:22:DEFAULT_GENERATED_DIRS = ("docs/plan", "docs/progress/logs")
+scripts\release_beta.py:367:    return f"""请根据下面的 Git 信息，为 AutoPlan {tag} 生成中文 GitHub Release Markdown。
+scripts\release_beta.py:370:- 只输出 Markdown，不要使用代码围栏，不要解释你的写作过程。
+scripts\release_beta.py:395:def strip_markdown_fence(notes: str) -> str:
+scripts\release_beta.py:408:    notes = strip_markdown_fence(notes)
+scripts\release_beta.py:706:            print("dry-run：不会写文件、不会提交、不会推送。Release notes 预览：")
+scripts\smoke-test.js:14:  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-smoke-'));
+scripts\smoke-test.js:15:  const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
+scripts\smoke-test.js:89:    const planId = writeSmokePlan(db, loop, workspace, projectId);
+scripts\smoke-test.js:91:    assert.equal(snapshot.plans.length, 1, '确认后应加入当前项目任务系统');
+scripts\smoke-test.js:92:    assert.equal(snapshot.plans[0].project_id, projectId, 'plan 应绑定项目');
+scripts\smoke-test.js:93:    assertPlanCliSnapshot(snapshot.plans[0], {
+scripts\smoke-test.js:97:    }, '历史 plan 快照');
+scripts\smoke-test.js:98:    assert.equal(snapshot.tasks.length, 6, '任务模块应同步 plan 中的 checkbox 为任务列表');
+scripts\smoke-test.js:103:    assert.equal(snapshot.plans[0].total_tasks, 6, 'plan 应记录总任务数');
+scripts\smoke-test.js:140:    const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+scripts\smoke-test.js:141:    const planFile = path.join(workspace, plan.file_path);
+scripts\smoke-test.js:142:    const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+scripts\smoke-test.js:146:    const originalPlanText = fs.readFileSync(planFile, 'utf8');
+scripts\smoke-test.js:151:      planId,
+scripts\smoke-test.js:152:      plan,
+scripts\smoke-test.js:153:      planFile,
+scripts\smoke-test.js:158:      assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
+scripts\smoke-test.js:161:      const runningTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+scripts\smoke-test.js:169:      fs.writeFileSync(planFile, originalPlanText.replace('P002', 'P999'), 'utf8');
+scripts\smoke-test.js:172:    const executeResult = await loop.executeTask(workspace, plan, executableTask);
+scripts\smoke-test.js:175:    loop.completeTask(workspace, plan, executableTask, executeResult);
+scripts\smoke-test.js:176:    const guardedPlanText = fs.readFileSync(planFile, 'utf8');
+scripts\smoke-test.js:179:    assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
+scripts\smoke-test.js:180:    const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
+scripts\smoke-test.js:199:      db.get('SELECT completed_tasks FROM plans WHERE id = ?', [planId]).completed_tasks,
+scripts\smoke-test.js:201:      '系统应更新 plan 完成计数',
+scripts\smoke-test.js:204:    const retryTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+scripts\smoke-test.js:208:      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+scripts\smoke-test.js:221:    const failedResult = await loop.executeTask(workspace, plan, retryTask);
+scripts\smoke-test.js:224:    const failedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+scripts\smoke-test.js:239:    const retryAttemptTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+scripts\smoke-test.js:243:      const runningRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+scripts\smoke-test.js:250:    const retryResult = await loop.executeTask(workspace, plan, retryAttemptTask);
+scripts\smoke-test.js:253:    loop.completeTask(workspace, plan, retryAttemptTask, retryResult);
+scripts\smoke-test.js:254:    const retriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [retryTask.id]);
+scripts\smoke-test.js:260:    const stoppableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P003']);
+scripts\smoke-test.js:264:    const stoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+scripts\smoke-test.js:273:    const retryStoppedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+scripts\smoke-test.js:277:      const runningStoppedRetryTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+scripts\smoke-test.js:282:    const stoppedRetryResult = await loop.executeTask(workspace, plan, retryStoppedTask);
+scripts\smoke-test.js:285:    loop.completeTask(workspace, plan, retryStoppedTask, stoppedRetryResult);
+scripts\smoke-test.js:286:    const stoppedRetriedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [stoppableTask.id]);
+scripts\smoke-test.js:291:    fs.writeFileSync(planFile, fs.readFileSync(planFile, 'utf8').replaceAll('- [ ]', '- [x]'), 'utf8');
+scripts\smoke-test.js:292:    loop.syncPlanTasks(planId, planFile);
+scripts\smoke-test.js:293:    await loop.validatePlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+scripts\smoke-test.js:295:    assert.equal(snapshot.plans[0].status, 'completed', '验收通过后 plan 应标记 completed');
+scripts\smoke-test.js:296:    assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
+scripts\smoke-test.js:340:    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, config persistence, scope concurrency, scope file open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
+scripts\smoke-test.js:391:  assert.ok(taskResult.planId, '任务搜索结果应携带 planId');
+scripts\smoke-test.js:392:  assert.match(taskResult.filePath, /smoke-plan\.md$/, '任务搜索结果应携带 Plan 文件路径');
+scripts\smoke-test.js:401:  assert.equal(taskPlanTitleResult.planId, taskResult.planId, 'Plan 标题命中的任务结果应保留 planId');
+scripts\smoke-test.js:403:  const planResult = assertSearchHit(
+scripts\smoke-test.js:404:    searchWorkspaceSnapshot(snapshot, 'smoke-plan.md'),
+scripts\smoke-test.js:405:    'plan',
+scripts\smoke-test.js:407:    /smoke-plan\.md/,
+scripts\smoke-test.js:410:  assertSearchLocation(planResult, {
+scripts\smoke-test.js:411:    anchorId: `workspace-plan-${planResult.recordId}`,
+scripts\smoke-test.js:413:    targetType: 'plan',
+scripts\smoke-test.js:415:  assert.equal(planResult.planId, planResult.recordId, 'Plan 搜索结果应携带 planId');
+scripts\smoke-test.js:416:  assert.match(planResult.filePath, /smoke-plan\.md$/, 'Plan 搜索结果应携带文件路径');
+scripts\smoke-test.js:437:  const planRel = path.join('docs', 'plan', 'final-acceptance-smoke.md');
+scripts\smoke-test.js:438:  const planFile = path.join(workspace, planRel);
+scripts\smoke-test.js:439:  fs.mkdirSync(path.dirname(planFile), { recursive: true });
+scripts\smoke-test.js:441:    planFile,
+scripts\smoke-test.js:455:  const planId = insertPlan(db, projectId, planRel, 'final-acceptance-smoke');
+scripts\smoke-test.js:456:  loop.syncPlanTasks(planId, planFile);
+scripts\smoke-test.js:457:  const acceptanceTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
+scripts\smoke-test.js:467:    await loop.processPlan(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+scripts\smoke-test.js:473:  const acceptedPlan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+scripts\smoke-test.js:474:  const acceptedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [acceptanceTask.id]);
+scripts\smoke-test.js:475:  assert.equal(acceptedPlan.status, 'completed', 'final acceptance task should complete the plan');
+scripts\smoke-test.js:478:  assert.match(fs.readFileSync(planFile, 'utf8'), /- \[x\] P002: 完整验收/, 'final acceptance checkbox should be checked');
+scripts\smoke-test.js:515:  const planListsSource = fs.readFileSync(
+scripts\smoke-test.js:524:  assert.match(planListsSource, /aria-expanded=\{expanded\}/, '任务分组应暴露展开状态');
+scripts\smoke-test.js:525:  assert.match(planListsSource, /setExpandedOverrides/, '任务分组折叠状态应保存在前端会话内');
+scripts\smoke-test.js:526:  assert.match(planListsSource, /workspace-task-\$\{task\.id\}/, '任务卡片应提供搜索定位锚点');
+scripts\smoke-test.js:527:  assert.match(planListsSource, /workspace-event-\$\{event\.id\}/, '事件卡片应提供搜索定位锚点');
+scripts\smoke-test.js:528:  assert.match(planListsSource, /data-testid="plan-select-toggle"/, 'Plan 列表应暴露选择按钮测试标识');
+scripts\smoke-test.js:529:  assert.match(planListsSource, /aria-pressed=\{selected\}/, 'Plan 选择按钮应暴露 pressed 状态');
+scripts\smoke-test.js:530:  assert.match(planListsSource, /data-testid="plan-task-filter-banner"/, '任务列表应暴露 Plan 过滤提示标识');
+scripts\smoke-test.js:531:  assert.match(planListsSource, /data-testid="plan-task-filter-clear"/, '任务列表应提供清空 Plan 过滤入口');
+scripts\smoke-test.js:533:  assert.match(workspacePageSource, /planFilter=\{selectedPlanTaskFilter\}/, 'TaskList 应接收 Plan 过滤上下文');
+scripts\smoke-test.js:534:  assert.match(workspacePageSource, /onSelectPlan=\{planSelectionState\.selectPlan\}/, 'PlanList 应接收受控选择回调');
+scripts\smoke-test.js:556:  assert.equal(formatEvent(event('plan.generated', '计划文件已生成')).title, '计划已生成', 'plan.generated 应显示中文标题');
+scripts\smoke-test.js:567:  { projectId, otherProjectId, otherWorkspace, planId, plan, planFile, originalPlanText },
+scripts\smoke-test.js:571:  const existingRead = await readPlan(null, { projectId, planId });
+scripts\smoke-test.js:573:  assert.equal(existingRead.id, planId, '读取存在的 Plan 应返回 plan id');
+scripts\smoke-test.js:575:  assert.equal(existingRead.file_path, plan.file_path, '读取存在的 Plan 应返回相对路径');
+scripts\smoke-test.js:576:  assert.equal(existingRead.markdown, originalPlanText, '读取存在的 Plan 应返回完整 Markdown');
+scripts\smoke-test.js:587:  const malformedPlanRel = path.join('docs', 'plan', 'malformed-task-section.md');
+scripts\smoke-test.js:588:  const malformedPlanFile = path.join(path.dirname(path.dirname(path.dirname(planFile))), malformedPlanRel);
+scripts\smoke-test.js:592:    ['# Malformed Task Section', '', '## 任务拆解', '', 'P001: 普通段落任务，不是 checkbox <!-- scope: smoke/malformed.js -->', ''].join('\n'),
+scripts\smoke-test.js:595:  const malformedPlanId = insertPlan(db, projectId, malformedPlanRel, 'smoke-plan-read-malformed');
+scripts\smoke-test.js:596:  const malformedRead = await readPlan(null, { projectId, planId: malformedPlanId });
+scripts\smoke-test.js:602:  db.run('DELETE FROM plans WHERE id = ?', [malformedPlanId]);
+scripts\smoke-test.js:604:  const unknownRead = await readPlan(null, { projectId, planId: planId + 99999 });
+scripts\smoke-test.js:606:  assert.equal(unknownRead.markdown, '', '读取不存在的 Plan 不应返回正文');
+scripts\smoke-test.js:609:  const otherPlanRel = path.join('docs', 'plan', 'other-project-readable.md');
+scripts\smoke-test.js:613:  const otherPlanId = insertPlan(db, otherProjectId, otherPlanRel, 'smoke-plan-read-other');
+scripts\smoke-test.js:615:  const crossProjectRead = await readPlan(null, { projectId, planId: otherPlanId });
+scripts\smoke-test.js:617:  assert.equal(crossProjectRead.markdown, '', '跨项目读取不应泄漏 Markdown 正文');
+scripts\smoke-test.js:620:  const reverseCrossProjectRead = await readPlan(null, { projectId: otherProjectId, planId });
+scripts\smoke-test.js:622:  assert.equal(reverseCrossProjectRead.markdown, '', '反向跨项目读取不应泄漏 Markdown 正文');
+scripts\smoke-test.js:628:    path.join('docs', 'plan', 'missing-plan.md'),
+scripts\smoke-test.js:629:    'smoke-plan-read-missing',
+scripts\smoke-test.js:631:  const missingRead = await readPlan(null, { projectId: otherProjectId, planId: missingPlanId });
+scripts\smoke-test.js:633:  assert.equal(missingRead.markdown, '', '读取缺失的 Plan 文件不应返回正文');
+scripts\smoke-test.js:639:    path.join('..', 'outside-plan.md'),
+scripts\smoke-test.js:640:    'smoke-plan-read-outside',
+scripts\smoke-test.js:642:  const outsideRead = await readPlan(null, { projectId: otherProjectId, planId: outsidePlanId });
+scripts\smoke-test.js:644:  assert.equal(outsideRead.markdown, '', '读取越界 Plan 路径不应返回正文');
+scripts\smoke-test.js:647:  assert.equal(fs.readFileSync(planFile, 'utf8'), originalPlanText, 'Plan 阅读 smoke 不应修改正式 Plan 文件');
+scripts\smoke-test.js:920:  }, context), 'MCP list_plans');
+scripts\smoke-test.js:922:    listedPlans.plans.some((plan) => Number(plan.id) === Number(mcpPlanId)),
+scripts\smoke-test.js:923:    'MCP list_plans should return the synced plan',
+scripts\smoke-test.js:927:    planId: mcpPlanId,
+scripts\smoke-test.js:928:  }, context), 'MCP get_plan');
+scripts\smoke-test.js:929:  assert.equal(fetchedPlan.plan.id, mcpPlanId, 'MCP get_plan should return the target plan');
+scripts\smoke-test.js:930:  assert.equal(fetchedPlan.tasks.length, 6, 'MCP get_plan should return plan tasks');
+scripts\smoke-test.js:933:    planId: mcpPlanId,
+scripts\smoke-test.js:936:  assert.equal(listedTasks.tasks.length, 6, 'MCP list_tasks should filter by plan and status');
+scripts\smoke-test.js:1051:  const handler = handlers.get('plans:read');
+scripts\smoke-test.js:1052:  assert.equal(typeof handler, 'function', '主进程应注册 plans:read IPC handler');
+scripts\smoke-test.js:1066:      getPath: () => path.join(os.tmpdir(), 'autoplan-smoke-user-data'),
+scripts\smoke-test.js:1199:    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+scripts\smoke-test.js:1205:/** 直接写一个 plan markdown 文件并入库同步任务，替代旧的 planDraft 接受流程。 */
+scripts\smoke-test.js:1207:  const planDir = path.join(workspace, 'docs', 'plan');
+scripts\smoke-test.js:1208:  fs.mkdirSync(planDir, { recursive: true });
+scripts\smoke-test.js:1209:  const planRel = path.join('docs', 'plan', 'smoke-plan.md');
+scripts\smoke-test.js:1210:  const planFile = path.join(workspace, planRel);
+scripts\smoke-test.js:1212:    planFile,
+scripts\smoke-test.js:1228:  const planId = db.insert(
+scripts\smoke-test.js:1229:    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+scripts\smoke-test.js:1231:    [projectId, 'smoke-plan', planRel, '', 'pending', now, now],
+scripts\smoke-test.js:1233:  loop.syncPlanTasks(planId, planFile);
+scripts\smoke-test.js:1234:  return planId;
+scripts\smoke-test.js:1238:  const planDir = path.join(workspace, 'docs', 'plan');
+scripts\smoke-test.js:1239:  fs.mkdirSync(planDir, { recursive: true });
+scripts\smoke-test.js:1240:  const planRel = path.join('docs', 'plan', 'parser-regression.md');
+scripts\smoke-test.js:1241:  const planFile = path.join(workspace, planRel);
+scripts\smoke-test.js:1245:    '## 任务拆解',
+scripts\smoke-test.js:1250:    '  - [ ] P012：中文标点与缩进 <!-- scope： src/renderer/components/PlanLists.tsx；src/renderer/components/MarkdownReader.tsx -->',
+scripts\smoke-test.js:1255:  fs.writeFileSync(planFile, original, 'utf8');
+scripts\smoke-test.js:1256:  const planId = insertPlan(db, projectId, planRel, 'parser-regression-smoke');
+scripts\smoke-test.js:1258:  loop.syncPlanTasks(planId, planFile);
+scripts\smoke-test.js:1259:  const tasks = db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC', [planId]);
+scripts\smoke-test.js:1268:  assert.ok(tasks[1].raw_line.includes('scope: unknown'), '缺少 scope 的 raw_line 应补 unknown 注释用于阅读器展示');
+scripts\smoke-test.js:1271:  assert.match(tasks[2].scope, /planlists\.tsx/, '中文 scope 分隔符应被解析');
+scripts\smoke-test.js:1276:  assert.equal(fs.readFileSync(planFile, 'utf8'), original, '解析回归不应改写原始 Plan Markdown');
+scripts\smoke-test.js:1277:  db.run('DELETE FROM plan_tasks WHERE plan_id = ?', [planId]);
+scripts\smoke-test.js:1278:  db.run('DELETE FROM plans WHERE id = ?', [planId]);
+scripts\smoke-test.js:1423:      assert.equal(_workspace, options.workspace, `${options.label} plan 生成应使用附件项目工作区`);
+scripts\smoke-test.js:1424:      assert.equal(operation.projectId, options.projectId, `${options.label} plan 生成 operation 应绑定项目`);
+scripts\smoke-test.js:1426:      assert.match(prompt, /最后一个任务必须是“完整验收”节点/, `${options.label} plan prompt 应要求最终验收节点`);
+scripts\smoke-test.js:1446:      const planFile = outputMatch[1].trim();
+scripts\smoke-test.js:1447:      fs.mkdirSync(path.dirname(planFile), { recursive: true });
+scripts\smoke-test.js:1449:        planFile,
+scripts\smoke-test.js:1456:      return { exitCode: 0, logFile, lastFile: planFile };
+scripts\smoke-test.js:1459:    const planId = await loop.generatePlanForIntake(options.projectId, options.workspace, options.intake);
+scripts\smoke-test.js:1460:    assert.ok(planId, `${options.label} 应通过 stub 生成 plan`);
+scripts\smoke-test.js:1468:  const planRel = path.join('docs', 'plan', 'scope-concurrency-smoke.md');
+scripts\smoke-test.js:1469:  const planFile = path.join(workspace, planRel);
+scripts\smoke-test.js:1470:  fs.mkdirSync(path.dirname(planFile), { recursive: true });
+scripts\smoke-test.js:1475:    planFile,
+scripts\smoke-test.js:1488:  const planId = insertPlan(db, projectId, planRel, 'scope-concurrency-smoke');
+scripts\smoke-test.js:1489:  loop.syncPlanTasks(planId, planFile);
+scripts\smoke-test.js:1491:  const plan = snapshot.plans.find((item) => item.id === planId);
+scripts\smoke-test.js:1492:  assert.ok(plan, 'scope smoke plan 应进入快照');
+scripts\smoke-test.js:1505:  assert.equal(plan.concurrency_suggestion.hasSafeParallelBatches, true, '应存在安全并发批次');
+scripts\smoke-test.js:1507:    plan.concurrency_suggestion.batches[0].tasks.map((task) => task.task_key),
+scripts\smoke-test.js:1512:    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S004' && /unknown/.test(task.reason)),
+scripts\smoke-test.js:1516:    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S003'),
+scripts\smoke-test.js:1520:    plan.concurrency_suggestion.serialTasks.some((task) => task.task_key === 'S005' && /validation|验收/.test(task.reason)),
+scripts\smoke-test.js:1524:    () => loop.validatedParallelTaskBatches(workspace, db.get('SELECT * FROM plans WHERE id = ?', [planId]), [
+scripts\smoke-test.js:1531:  const smokePlan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+scripts\smoke-test.js:1539:      const task = db.get('SELECT task_key FROM plan_tasks WHERE id = ?', [operation.taskId]);
+scripts\smoke-test.js:1543:    await loop.runTaskBatches(projectId, planId, [{ taskIds: plan.concurrency_suggestion.batches[0].tasks.map((task) => task.id) }]);
+scripts\smoke-test.js:1552:    completedSnapshot.events.some((event) => event.type === 'tasks.parallel.finished' && event.meta?.planId === planId),
+scripts\smoke-test.js:1555:  assert.equal(fs.readFileSync(planFile, 'utf8').includes('- [x] S001'), true, '并发完成应写回对应 checkbox');
+scripts\smoke-test.js:1606:  const contextPlanRel = path.join('docs', 'plan', 'context-reuse-smoke.md');
+scripts\smoke-test.js:1619:      '- [ ] C007: 串行继承 plan 上下文 <!-- scope: smoke/c007.js -->',
+scripts\smoke-test.js:1627:    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+scripts\smoke-test.js:1632:  const contextPlan = db.get('SELECT * FROM plans WHERE id = ?', [contextPlanId]);
+scripts\smoke-test.js:1633:  const contextTask = (taskKey) => db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [contextPlanId, taskKey]);
+scripts\smoke-test.js:1653:      assert.equal(operation.planId, contextPlanId, '首次失败执行 operation 应绑定 plan');
+scripts\smoke-test.js:1675:      assert.equal(operation.planId, contextPlanId, '重试执行 operation 应绑定 plan');
+scripts\smoke-test.js:1698:      assert.match(prompt, /恢复同一 plan 前序任务的 Codex 会话/, '串行任务 prompt 应说明复用 plan 上下文');
+scripts\smoke-test.js:1700:      assert.equal(operation.planId, contextPlanId, '串行任务 operation 应绑定 plan');
+scripts\smoke-test.js:1702:      assert.equal(operation.codexSessionId, retrySessionId, '同一 plan 后续串行任务应继承前序 session id');
+scripts\smoke-test.js:1713:    assert.equal(serialResult.exitCode, 0, '同一 plan 串行上下文 smoke 应成功');
+scripts\smoke-test.js:1730:      assert.equal(operation.planId, contextPlanId, '并发执行 operation 应绑定 plan');
+scripts\smoke-test.js:1732:      assert.equal(operation.codexSessionId, undefined, '同一 plan 的不同任务首次执行不应复用其它 session id');
+scripts\smoke-test.js:1852:          const planMatch = prompt.match(/输出文件：(.+)/);
+scripts\smoke-test.js:1853:          if (planMatch) {
+scripts\smoke-test.js:1854:            const generatedPlanFile = planMatch[1].trim();
+scripts\smoke-test.js:1888:    path.join(workspace, '.autoplan-runtime', 'pub-cache'),
+scripts\smoke-test.js:1896:  const generatedPlan = db.get('SELECT * FROM plans WHERE issue_hash = ?', [backendIssueScan.aggregateHash]);
+scripts\smoke-test.js:1903:  const generatedPlanSnapshot = patchedLoop.snapshot(projectId).plans.find((plan) => plan.id === generatedPlan.id);
+scripts\smoke-test.js:1910:  const generatedTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [
+scripts\smoke-test.js:1927:  const claudePlanRel = path.join('docs', 'plan', 'backend-claude-smoke.md');
+scripts\smoke-test.js:1932:    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+scripts\smoke-test.js:1937:  const claudeTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [claudePlanId, 'B001']);
+scripts\smoke-test.js:1943:    planId: claudePlanId,
+scripts\smoke-test.js:1963:    planId: claudePlanId,
+scripts\smoke-test.js:1976:    planId: claudePlanId,
+scripts\smoke-test.js:1995:    planId: claudePlanId,
+scripts\smoke-test.js:2023:  const emptyValidationPlanRel = path.join('docs', 'plan', 'feedback10-empty-validation.md');
+scripts\smoke-test.js:2039:    db.get('SELECT * FROM plans WHERE id = ?', [emptyValidationPlanId]),
+scripts\smoke-test.js:2041:  const emptyValidationPlan = db.get('SELECT * FROM plans WHERE id = ?', [emptyValidationPlanId]);
+scripts\smoke-test.js:2042:  assert.equal(emptyValidationPlan.status, 'completed', '空验收命令应直接完成 plan');
+scripts\smoke-test.js:2046:     WHERE project_id = ? AND type = 'plan.completed'
+scripts\smoke-test.js:2052:  const blockedValidationPlanRel = path.join('docs', 'plan', 'feedback10-blocked-validation.md');
+scripts\smoke-test.js:2086:      db.get('SELECT * FROM plans WHERE id = ?', [blockedValidationPlanId]),
+scripts\smoke-test.js:2151:          const planMatch = prompt.match(/输出文件：(.+)/);
+scripts\smoke-test.js:2152:          if (!planMatch) return;
+scripts\smoke-test.js:2153:          const generatedPlanFile = planMatch[1].trim();
+scripts\smoke-test.js:2182:  const linkedRequirement = db.get('SELECT linked_plan_id FROM requirements WHERE id = ?', [requirement.id]);
+scripts\smoke-test.js:2183:  assert.equal(linkedRequirement.linked_plan_id, requirementPlanId, 'Codex high 需求应回写 linked_plan_id');
+scripts\smoke-test.js:2187:  assertPlanCliSnapshot(db.get('SELECT * FROM plans WHERE id = ?', [requirementPlanId]), {
+scripts\smoke-test.js:2192:  const requirementPlanSnapshot = patchedLoop.snapshot(regressionProjectId).plans.find((plan) => plan.id === requirementPlanId);
+scripts\smoke-test.js:2210:  const linkedFeedback = db.get('SELECT linked_plan_id FROM feedback WHERE id = ?', [feedback.id]);
+scripts\smoke-test.js:2211:  assert.equal(linkedFeedback.linked_plan_id, feedbackPlanId, 'Claude 反馈应回写 linked_plan_id');
+scripts\smoke-test.js:2215:  assertPlanCliSnapshot(db.get('SELECT * FROM plans WHERE id = ?', [feedbackPlanId]), {
+scripts\smoke-test.js:2220:  const feedbackPlanSnapshot = patchedLoop.snapshot(regressionProjectId).plans.find((plan) => plan.id === feedbackPlanId);
+scripts\smoke-test.js:2248:function assertPlanCliSnapshot(plan, expected, label) {
+scripts\smoke-test.js:2249:  assert.ok(plan, `${label} 应存在`);
+scripts\smoke-test.js:2250:  assert.equal(plan.agent_cli_provider, expected.provider, `${label} 应记录 CLI 后端`);
+scripts\smoke-test.js:2251:  assert.equal(plan.agent_cli_command || '', expected.command || '', `${label} 应记录 CLI 命令快照`);
+scripts\smoke-test.js:2252:  assert.equal(plan.codex_reasoning_effort ?? null, expected.effort, `${label} 应记录 Codex 思考深度快照`);
+scripts\smoke-test.js:2256:  const { planCliSummaryLabel } = loadRendererTsModule(
+scripts\smoke-test.js:2259:  return planCliSummaryLabel(source);
+scripts\smoke-test.js:2279:function latestPlanGeneratedMeta(db, projectId, planId) {
+scripts\smoke-test.js:2282:     WHERE project_id = ? AND type = 'plan.generated'
+scripts\smoke-test.js:2286:  assert.ok(event, '应记录 plan.generated 事件');
+scripts\smoke-test.js:2288:  assert.equal(meta.planId, planId, 'plan.generated 事件应对应当前 plan');
+scripts\smoke-test.js:2423:  assert.equal(event.meta.planId, task.plan_id, `${label} meta 应包含 planId`);
+ui\projects.html:385:        { id: 1, color: 'grad1', name: 'wenz_richtext', path: 'wenz_flutter/wenz_richtext', desc: '富文本编辑器组件，支持图片粘贴、段落样式、工具栏。', cmd: 'flutter analyze', interval: 5, status: 'running', plans: 2, tasks: 7, done: 3, time: '2 分钟前' },
+ui\projects.html:386:        { id: 2, color: 'grad2', name: 'autoplan', path: 'GitHub/autoplan', desc: '本工具自身：需求 / 计划 / 执行 / 验收的自动化循环。', cmd: 'npm run check', interval: 5, status: 'stopped', plans: 1, tasks: 5, done: 5, time: '1 小时前' },
+ui\projects.html:387:        { id: 3, color: 'grad3', name: 'design-system', path: 'GitHub/design-system', desc: '团队设计系统文档站与组件 Token 同步工具。', cmd: 'npm run build', interval: 10, status: 'running', plans: 3, tasks: 12, done: 8, time: '12 分钟前' },
+ui\projects.html:388:        { id: 4, color: 'grad4', name: 'shop-admin', path: 'biz/shop-admin', desc: '电商后台，订单与商品管理模块改造。', cmd: 'pnpm lint', interval: 8, status: 'error', plans: 1, tasks: 4, done: 1, time: '今天 09:18' },
+ui\projects.html:445:              <div class="pc-stat">计划<b>${p.plans}</b></div>
+ui\projects.html:552:          projects.unshift({ id: Date.now(), status: 'stopped', plans: 0, tasks: 0, done: 0, time: '刚刚', ...payload });
+src\preload.js:7:  if (isPersistedAttachmentPath(value)) return `autoplan-file://attachment/${encodeURIComponent(value)}`;
+src\preload.js:33:contextBridge.exposeInMainWorld('autoplan', {
+src\preload.js:42:    'list_plans',
+src\preload.js:43:    'get_plan',
+src\preload.js:56:  readPlan: (input) => ipcRenderer.invoke('plans:read', input),
+src\preload.js:57:  reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+src\styles.css:7:.task-plan-group-toggle {
+src\styles.css:17:.task-plan-group-toggle:hover {
+src\styles.css:21:.task-plan-group-toggle:focus-visible {
+src\styles.css:26:.task-plan-group-title-wrap {
+src\styles.css:34:.task-plan-group-chevron {
+src\styles.css:47:.task-plan-group.is-collapsed .task-plan-group-chevron {
+src\styles.css:51:.task-plan-group-meta {
+src\styles.css:62:.task-plan-group-counts {
+src\styles.css:79:.task-plan-group-items {
+src\styles.css:85:.task-plan-group.is-collapsed {
+src\styles.css:89:.task-plan-group.is-collapsed .task-plan-group-toggle {
+src\styles.css:93:.plan-selection-bar {
+src\styles.css:107:.plan-selection-bar.is-active {
+src\styles.css:113:.plan-selection-summary {
+src\styles.css:121:.plan-selection-clear:disabled {
+src\styles.css:126:.plan-selection-list {
+src\styles.css:130:.plan-select-row {
+src\styles.css:135:.plan-select-row.is-selected {
+src\styles.css:141:.plan-select-row-title {
+src\styles.css:148:.plan-selected-badge {
+src\styles.css:159:.plan-select-button.active {
+src\styles.css:164:.plan-select-button:focus-visible,
+src\styles.css:165:.plan-selection-clear:focus-visible {
+src\styles.css:172:  .task-plan-group-meta {
+src\styles.css:178:  .task-plan-group-toggle {
+src\styles.css:182:  .plan-selection-bar {
+src\mcpServer.js:11:  name: 'autoplan',
+src\mcpServer.js:263:  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
+src\mcpServer.js:267:  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
+src\mcpTools.js:9:  LIST_PLANS: 'list_plans',
+src\mcpTools.js:10:  GET_PLAN: 'get_plan',
+src\mcpTools.js:172:    title: 'List AutoPlan plans',
+src\mcpTools.js:173:    description: 'List plans for a project.',
+src\mcpTools.js:178:    title: 'Get AutoPlan plan',
+src\mcpTools.js:179:    description: 'Get one plan and its tasks.',
+src\mcpTools.js:183:      required: ['projectId', 'planId'],
+src\mcpTools.js:186:        planId: { type: 'integer', minimum: 1 },
+src\mcpTools.js:193:    description: 'List tasks for a project, optionally filtered by plan or status.',
+src\mcpTools.js:200:        planId: { type: 'integer', minimum: 1 },
+src\mcpTools.js:313:      plans: listPlanRows(requiredDb(context), input).map((plan) => planSummary(plan)),
+src\mcpTools.js:319:    const plan = requiredPlan(db, input.projectId, input.planId);
+src\mcpTools.js:322:      plan: planSummary(plan),
+src\mcpTools.js:323:      tasks: listTaskRows(db, { projectId: input.projectId, planId: input.planId, limit: LIMITS.rows }).map((task) => taskSummary(task)),
+src\mcpTools.js:329:    if (input.planId) requiredPlan(db, input.projectId, input.planId);
+src\mcpTools.js:439:    planId: requiredPositiveInteger(input, 'planId'),
+src\mcpTools.js:446:    planId: optionalPositiveInteger(input, 'planId'),
+src\mcpTools.js:593:function requiredPlan(db, projectId, planId) {
+src\mcpTools.js:594:  const plan = db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+src\mcpTools.js:595:  if (!plan) throw new Error('Plan not found');
+src\mcpTools.js:596:  return plan;
+src\mcpTools.js:642:    `SELECT * FROM plans
+src\mcpTools.js:653:  if (input.planId) {
+src\mcpTools.js:654:    filterClause += ' AND plan_tasks.plan_id = ?';
+src\mcpTools.js:655:    params.push(input.planId);
+src\mcpTools.js:658:    filterClause += ' AND plan_tasks.status = ?';
+src\mcpTools.js:663:    `SELECT plan_tasks.*, plans.project_id, plans.file_path AS plan_file_path
+src\mcpTools.js:664:     FROM plan_tasks
+src\mcpTools.js:665:     JOIN plans ON plans.id = plan_tasks.plan_id
+src\mcpTools.js:666:     WHERE plans.project_id = ?${filterClause}
+src\mcpTools.js:667:     ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC,
+src\mcpTools.js:668:              plan_tasks.sort_order ASC, plan_tasks.id ASC
+src\mcpTools.js:704:    linkedPlanId: record.linked_plan_id || null,
+src\mcpTools.js:723:function planSummary(plan) {
+src\mcpTools.js:724:  if (!plan) return null;
+src\mcpTools.js:726:    id: plan.id,
+src\mcpTools.js:727:    projectId: plan.project_id,
+src\mcpTools.js:728:    issueHash: plan.issue_hash || '',
+src\mcpTools.js:729:    filePath: plan.file_path || '',
+src\mcpTools.js:730:    hash: plan.hash || '',
+src\mcpTools.js:731:    status: plan.status || 'pending',
+src\mcpTools.js:732:    sortOrder: Number(plan.sort_order || 0),
+src\mcpTools.js:733:    totalTasks: Number(plan.total_tasks || 0),
+src\mcpTools.js:734:    completedTasks: Number(plan.completed_tasks || 0),
+src\mcpTools.js:735:    validationPassed: Boolean(plan.validation_passed),
+src\mcpTools.js:736:    agentCliProvider: plan.agent_cli_provider || null,
+src\mcpTools.js:737:    agentCliCommand: plan.agent_cli_command || '',
+src\mcpTools.js:738:    codexReasoningEffort: plan.codex_reasoning_effort || null,
+src\mcpTools.js:739:    createdAt: plan.created_at,
+src\mcpTools.js:740:    updatedAt: plan.updated_at,
+src\mcpTools.js:749:    planId: task.plan_id,
+src\mcpTools.js:750:    planFilePath: task.plan_file_path || task.file_path || '',
+src\mcpTools.js:778:      plans: countOf(snapshot.plans),
+src\attachments.js:250:    '.md': 'text/markdown',
+src\agentCli.js:181:  const timedOut = Boolean(child.__autoplanTimedOut);
+src\database.js:131:      CREATE TABLE IF NOT EXISTS plans (
+src\database.js:149:      CREATE TABLE IF NOT EXISTS plan_tasks (
+src\database.js:151:        plan_id INTEGER NOT NULL,
+src\database.js:163:        UNIQUE(plan_id, task_key)
+src\database.js:166:      CREATE INDEX IF NOT EXISTS idx_plan_tasks_plan_status_sort
+src\database.js:167:      ON plan_tasks (plan_id, status, sort_order, id);
+src\database.js:196:    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+src\database.js:201:    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+src\database.js:206:    this.ensureColumn('plans', 'project_id', 'INTEGER');
+src\database.js:207:    this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+src\database.js:208:    this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
+src\database.js:209:    this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+src\database.js:210:    this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+src\database.js:212:      CREATE INDEX IF NOT EXISTS idx_plans_project_sort
+src\database.js:213:      ON plans (project_id, sort_order, created_at, id)
+src\database.js:215:    this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+src\database.js:216:    this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+src\database.js:217:    this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+src\database.js:218:    this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
+src\database.js:219:    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+src\database.js:266:    for (const table of ['requirements', 'feedback', 'attachments', 'plans', 'events', 'scan_files']) {
+src\database.js:310:       FROM plans
+src\database.js:316:      const plans = byProject.get(key) || [];
+src\database.js:317:      plans.push(row);
+src\database.js:318:      byProject.set(key, plans);
+src\database.js:321:    for (const plans of byProject.values()) {
+src\database.js:322:      let nextOrder = plans.reduce((max, plan) => {
+src\database.js:323:        const order = Number(plan.sort_order);
+src\database.js:326:      for (const plan of plans) {
+src\database.js:327:        const order = Number(plan.sort_order);
+src\database.js:330:        this.db.run('UPDATE plans SET sort_order = ? WHERE id = ?', [nextOrder, plan.id]);
+src\loop\concurrency.js:3:const { normalizeTaskScope, taskDeclaredScopes } = require('./planParser');
+src\loop\concurrency.js:11:function validatedParallelTaskBatches(service, workspace, plan, confirmedBatches) {
+src\loop\concurrency.js:24:      const task = service.taskForProject(plan.project_id, taskId);
+src\loop\concurrency.js:25:      if (!task || Number(task.plan_id) !== Number(plan.id)) throw new Error(`\u4efb\u52a1 #${taskId} \u88ab\u91cd\u590d\u9009\u62e9??`);
+src\loop\concurrency.js:95:function planConcurrencySuggestion(workspace, tasks) {
+src\loop\concurrency.js:223:  planConcurrencySuggestion,
+src\codexActivity.js:2: * 移植自 run_advanced_plan_with_codex.dart 的 CodexActivityPrinter。
+src\codexActivity.js:17:  'thinking', 'plan', 'running', 'exec', 'command', 'test', 'analyze',
+src\loop\planParser.js:13:function appendTask(service, helpers, projectId, planId, title) {
+src\loop\planParser.js:16:    const plan = service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+src\loop\planParser.js:17:    if (!plan) throw new Error('计划不存在');
+src\loop\planParser.js:20:    const planFile = path.join(workspace, plan.file_path);
+src\loop\planParser.js:21:    if (!fs.existsSync(planFile)) throw new Error('plan 文件不存在，无法追加任务');
+src\loop\planParser.js:27:    const existing = service.db.all('SELECT task_key FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order', [planId]);
+src\loop\planParser.js:34:    // 追加到 plan 文件的"## 任务计划"段末尾
+src\loop\planParser.js:35:    let content = fs.readFileSync(planFile, 'utf8');
+src\loop\planParser.js:39:      'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+src\loop\planParser.js:40:      [planId],
+src\loop\planParser.js:50:    fs.writeFileSync(planFile, content, 'utf8');
+src\loop\planParser.js:52:    // 若 plan 被中断过，恢复为 pending 让新任务可执行
+src\loop\planParser.js:53:    if (plan.status === 'interrupted') {
+src\loop\planParser.js:54:      service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+src\loop\planParser.js:57:    service.syncPlanTasks(planId, planFile);
+src\loop\planParser.js:58:    const task = service.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, taskKey]);
+src\loop\planParser.js:64:        planId,
+src\loop\planParser.js:79:function syncPlanTasks(service, helpers, planId, planFile) {
+src\loop\planParser.js:80:    if (!fs.existsSync(planFile)) return;
+src\loop\planParser.js:81:    normalizePlanTaskScopes(planFile);
+src\loop\planParser.js:82:    const text = fs.readFileSync(planFile, 'utf8');
+src\loop\planParser.js:102:    const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+src\loop\planParser.js:117:          `UPDATE plan_tasks
+src\loop\planParser.js:132:          `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+src\loop\planParser.js:134:          [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+src\loop\planParser.js:141:        service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+src\loop\planParser.js:146:    const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+src\loop\planParser.js:153:      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+src\loop\planParser.js:154:      [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+src\loop\planParser.js:176:      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) {
+src\loop\planParser.js:218:function normalizePlanTaskScopes(planFile) {
+src\loop\planParser.js:219:  const content = fs.readFileSync(planFile, 'utf8');
+src\loop\planParser.js:226:  if (changed) fs.writeFileSync(planFile, next, 'utf8');
+src\loop\planParser.js:239:function extractMarkdownTitle(markdown) {
+src\loop\planParser.js:240:  const lines = String(markdown || '').split(/\r?\n/);
+src\loop\planParser.js:242:  if (h1) return cleanMarkdownHeadingTitle(h1.replace(/^\uFEFF?\s*#\s+/, ''));
+src\loop\planParser.js:245:  return heading ? cleanMarkdownHeadingTitle(heading.replace(/^\uFEFF?\s*#{1,6}\s+/, '')) : '';
+src\loop\planParser.js:248:function cleanMarkdownHeadingTitle(value) {
+src\loop\planParser.js:258:  cleanMarkdownHeadingTitle,
+src\loop\planParser.js:261:  extractMarkdownTitle,
+src\loop\runtime.js:13:const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);
+src\loop\runtime.js:14:const ACTIVE_RUNTIME_PHASE_SQL = "('running','scan','generate-plan','execute-task','validate')";
+src\loop\runtime.js:138:  db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE status = ?', ['pending', now, 'running']);
+src\loop\runtime.js:178:      const eventTask = stoppedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: operation?.planId } : null);
+src\loop\runtime.js:219:      ...agentCliContextFields(taskPlan ? callbacks.planAgentCliConfig(taskPlan) : callbacks.status(projectId), { defaultProvider: true }),
+src\loop\runtime.js:257:      planId: op.planId || null,
+src\loop\runtime.js:291:    planId: operation.planId || null,
+src\loop\runtime.js:380:      child.__autoplanTimedOut = true;
+src\loop\agentCliConfig.js:207:function planAgentCliColumnValues(columns, config) {
+src\loop\agentCliConfig.js:387:  planAgentCliColumnValues,
+src\loop\snapshots.js:7:const { emptyConcurrencySuggestion, planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');
+src\loop\snapshots.js:8:const { extractMarkdownTitle } = require('./planParser');
+src\loop\snapshots.js:30:    const planRows = service.db.all(
+src\loop\snapshots.js:31:      'SELECT * FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
+src\loop\snapshots.js:35:      `SELECT plan_tasks.*, plans.file_path
+src\loop\snapshots.js:36:       FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+src\loop\snapshots.js:37:       WHERE plans.project_id = ?
+src\loop\snapshots.js:38:       ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC, plan_tasks.sort_order ASC, plan_tasks.id ASC`,
+src\loop\snapshots.js:43:      planRows.map((plan) => [
+src\loop\snapshots.js:44:        Number(plan.id),
+src\loop\snapshots.js:48:          plan,
+src\loop\snapshots.js:49:          tasksByPlanId.get(Number(plan.id)) || [],
+src\loop\snapshots.js:53:    const planSnapshots = planRows.map((plan) => planSnapshotRow(
+src\loop\snapshots.js:56:      plan,
+src\loop\snapshots.js:57:      concurrencySuggestionByPlanId.get(Number(plan.id)),
+src\loop\snapshots.js:58:      service.planSnapshotAgentCliConfig(plan),
+src\loop\snapshots.js:60:    const planTitleById = new Map(planSnapshots.map((plan) => [Number(plan.id), plan.title || '']));
+src\loop\snapshots.js:69:        `SELECT requirements.*, plans.status AS plan_status,
+src\loop\snapshots.js:70:                plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+src\loop\snapshots.js:72:         LEFT JOIN plans ON plans.id = requirements.linked_plan_id
+src\loop\snapshots.js:78:        `SELECT feedback.*, plans.status AS plan_status,
+src\loop\snapshots.js:79:                plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+src\loop\snapshots.js:81:         LEFT JOIN plans ON plans.id = feedback.linked_plan_id
+src\loop\snapshots.js:90:      plans: planSnapshots,
+src\loop\snapshots.js:97:            plan_title: planTitleById.get(Number(task.plan_id)) || '',
+src\loop\snapshots.js:245:    plans: [],
+src\loop\snapshots.js:276:function planSnapshotRow(service, workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
+src\loop\snapshots.js:277:  if (!plan) return plan;
+src\loop\snapshots.js:278:  const planAgentCliConfig = agentCliConfig || effectiveAgentCliConfig({}, plan);
+src\loop\snapshots.js:279:  const status = String(plan.status || 'pending');
+src\loop\snapshots.js:281:    ...plan,
+src\loop\snapshots.js:283:    sort_order: normalizePlanSortOrder(plan.sort_order),
+src\loop\snapshots.js:285:    agent_cli_provider: planAgentCliConfig.provider,
+src\loop\snapshots.js:286:    agent_cli_command: planAgentCliConfig.command,
+src\loop\snapshots.js:287:    codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
+src\loop\snapshots.js:288:    title: cachedPlanMarkdownTitle(service, workspace, plan),
+src\loop\snapshots.js:301:    const planId = Number(task?.plan_id);
+src\loop\snapshots.js:302:    if (!Number.isFinite(planId)) continue;
+src\loop\snapshots.js:303:    const planTasks = grouped.get(planId) || [];
+src\loop\snapshots.js:304:    planTasks.push(task);
+src\loop\snapshots.js:305:    grouped.set(planId, planTasks);
+src\loop\snapshots.js:310:function readPlanMarkdownTitle(workspace, filePath) {
+src\loop\snapshots.js:311:  const planPath = resolveWorkspaceChildPath(workspace, filePath);
+src\loop\snapshots.js:312:  if (!planPath) return '';
+src\loop\snapshots.js:315:    const markdown = readSnippet(planPath, 64 * 1024);
+src\loop\snapshots.js:316:    return extractMarkdownTitle(markdown);
+src\loop\snapshots.js:322:function cachedPlanMarkdownTitle(service, workspace, plan) {
+src\loop\snapshots.js:323:  if (!service) return readPlanMarkdownTitle(workspace, plan?.file_path);
+src\loop\snapshots.js:324:  if (!service._planTitleCache) service._planTitleCache = new Map();
+src\loop\snapshots.js:325:  const cache = service._planTitleCache;
+src\loop\snapshots.js:326:  const version = plan?.hash || plan?.updated_at || '';
+src\loop\snapshots.js:327:  const key = `${workspace || ''}\0${plan?.file_path || ''}\0${version}`;
+src\loop\snapshots.js:329:  const title = readPlanMarkdownTitle(workspace, plan?.file_path);
+src\loop\snapshots.js:335:function cachedPlanConcurrencySuggestion(service, workspace, plan, tasks) {
+src\loop\snapshots.js:336:  if (!service) return planConcurrencySuggestion(workspace, tasks);
+src\loop\snapshots.js:337:  if (!service._planConcurrencyCache) service._planConcurrencyCache = new Map();
+src\loop\snapshots.js:338:  const cache = service._planConcurrencyCache;
+src\loop\snapshots.js:348:  const key = `${workspace || ''}\0${plan?.id || ''}\0${taskFingerprint}`;
+src\loop\snapshots.js:350:  const suggestion = planConcurrencySuggestion(workspace, tasks);
+src\loop\snapshots.js:377:  cachedPlanMarkdownTitle,
+src\loop\snapshots.js:384:  planSnapshotRow,
+src\loop\snapshots.js:385:  readPlanMarkdownTitle,
+src\loop\planGeneration.js:13:    service.setPhase(projectId, 'generate-plan');
+src\loop\planGeneration.js:14:    const planAgentCliConfig = effectiveAgentCliConfig(service.status(projectId));
+src\loop\planGeneration.js:15:    const planFile = path.join(
+src\loop\planGeneration.js:18:      'plan',
+src\loop\planGeneration.js:19:      `plan_${timestampForPath()}_${issueScan.aggregateHash.slice(0, 8)}.md`,
+src\loop\planGeneration.js:32:      `输出文件：${planFile}`,
+src\loop\planGeneration.js:38:      '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+src\loop\planGeneration.js:42:      '- 只写 plan 文件，不要改业务代码',
+src\loop\planGeneration.js:48:    const result = await service.runCodex(workspace, prompt, 'generate-plan', {
+src\loop\planGeneration.js:50:      ...agentCliOperationFields(planAgentCliConfig),
+src\loop\planGeneration.js:53:    const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+src\loop\planGeneration.js:55:    if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+src\loop\planGeneration.js:56:      service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, agentContext);
+src\loop\planGeneration.js:63:      filePath: normalizeRelative(workspace, planFile),
+src\loop\planGeneration.js:64:      hash: hashFile(planFile),
+src\loop\planGeneration.js:66:      agentCliConfig: planAgentCliSnapshot,
+src\loop\planGeneration.js:68:    service.syncPlanTasks(id, planFile);
+src\loop\planGeneration.js:74:    service.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+src\loop\planGeneration.js:76:      planId: id,
+src\loop\planGeneration.js:84:    service.setPhase(projectId, 'generate-plan');
+src\loop\planGeneration.js:85:    const planAgentCliConfig = effectiveAgentCliConfig(service.status(projectId), intake);
+src\loop\planGeneration.js:87:    const planFile = path.join(
+src\loop\planGeneration.js:90:      'plan',
+src\loop\planGeneration.js:91:      `plan_${intake.__type}_${safeId}_${timestampForPath()}.md`,
+src\loop\planGeneration.js:98:      `输出文件：${planFile}`,
+src\loop\planGeneration.js:104:      '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+src\loop\planGeneration.js:108:      '- 只写 plan 文件，不要改业务代码',
+src\loop\planGeneration.js:120:      ...agentCliOperationFields(planAgentCliConfig),
+src\loop\planGeneration.js:123:    const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+src\loop\planGeneration.js:125:    if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+src\loop\planGeneration.js:126:      service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`, agentContext);
+src\loop\planGeneration.js:131:    const planStatus = draftPlanRequested(intake) ? 'draft' : 'pending';
+src\loop\planGeneration.js:135:      filePath: normalizeRelative(workspace, planFile),
+src\loop\planGeneration.js:136:      hash: hashFile(planFile),
+src\loop\planGeneration.js:137:      status: planStatus,
+src\loop\planGeneration.js:138:      agentCliConfig: planAgentCliSnapshot,
+src\loop\planGeneration.js:140:    service.syncPlanTasks(id, planFile);
+src\loop\planGeneration.js:141:    if (planStatus === 'draft') {
+src\loop\planGeneration.js:142:      service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['draft', nowIso(), id]);
+src\loop\planGeneration.js:145:    service.db.run(`UPDATE ${table} SET linked_plan_id = ?, updated_at = ? WHERE id = ?`, [id, nowIso(), intake.id]);
+src\loop\planGeneration.js:146:    service.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+src\loop\planGeneration.js:148:      planId: id,
+src\loop\planGeneration.js:189:      '以下附件已持久化到本地文件系统；不要将图片二进制内联进 plan，工具可以通过“持久化本地路径”读取附件内容。',
+src\loop\planGeneration.js:190:      '生成 plan 时，如任务理解或后续执行依赖附件内容，请在计划、验收要点或任务说明中保留必要的附件路径或引用。',
+src\loop\taskEvents.js:58:      planId: task?.plan_id,
+src\loop\taskEvents.js:81:  meta.planId = normalizeOptionalNumber(meta.planId);
+src\loop\taskExecution.js:20:const { taskScopeText } = require('./planParser');
+src\loop\taskExecution.js:23:async function processPlan(service, helpers, workspace, plan) {
+src\loop\taskExecution.js:24:    plan = service.activateDraftPlan ? service.activateDraftPlan(plan) : plan;
+src\loop\taskExecution.js:25:    const planFile = path.join(workspace, plan.file_path);
+src\loop\taskExecution.js:26:    service.syncPlanTasks(plan.id, planFile);
+src\loop\taskExecution.js:28:      `SELECT * FROM plan_tasks WHERE plan_id = ? AND status = 'pending'
+src\loop\taskExecution.js:30:      [plan.id],
+src\loop\taskExecution.js:34:      if (service.isFinalAcceptanceTask(plan.id, firstPendingTask)) {
+src\loop\taskExecution.js:35:        await service.validatePlan(workspace, plan, { task: firstPendingTask });
+src\loop\taskExecution.js:38:      const result = await service.executeTask(workspace, plan, firstPendingTask);
+src\loop\taskExecution.js:40:        service.completeTask(workspace, plan, firstPendingTask, result);
+src\loop\taskExecution.js:44:    if (service.hasFinalAcceptanceTask(plan.id)) {
+src\loop\taskExecution.js:45:      const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [plan.id]);
+src\loop\taskExecution.js:48:    await service.validatePlan(workspace, plan);
+src\loop\taskExecution.js:51:function previousPlanCodexSessionId(service, helpers, planId, task) {
+src\loop\taskExecution.js:55:       FROM plan_tasks
+src\loop\taskExecution.js:56:       WHERE plan_id = ?
+src\loop\taskExecution.js:63:      [planId, TASK_EVENT_STATUS.COMPLETED, task.sort_order || 0, task.sort_order || 0, task.id || 0],
+src\loop\taskExecution.js:85:async function executeTaskBatch(service, helpers, workspace, plan, tasks, options = {}) {
+src\loop\taskExecution.js:86:    service.setPhase(plan.project_id, 'execute-task');
+src\loop\taskExecution.js:87:    const agentContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
+src\loop\taskExecution.js:89:      plan.project_id,
+src\loop\taskExecution.js:94:        planId: plan.id,
+src\loop\taskExecution.js:104:          result = await service.executeTask(workspace, plan, task, { parallel: true });
+src\loop\taskExecution.js:108:            service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+src\loop\taskExecution.js:115:          service.completeTask(workspace, plan, task, result);
+src\loop\taskExecution.js:123:async function executeTask(service, helpers, workspace, plan, task, options = {}) {
+src\loop\taskExecution.js:125:    service.setPhase(plan.project_id, 'execute-task');
+src\loop\taskExecution.js:128:    const taskAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
+src\loop\taskExecution.js:131:    const planSessionId = isTaskCodexProvider && !options.parallel
+src\loop\taskExecution.js:132:      ? service.previousPlanCodexSessionId(plan.id, startedTask)
+src\loop\taskExecution.js:134:    const existingSessionId = taskSessionId || planSessionId;
+src\loop\taskExecution.js:135:    const inheritedPlanSession = Boolean(!taskSessionId && planSessionId);
+src\loop\taskExecution.js:140:          codexSessionState: inheritedPlanSession ? 'plan-resume' : undefined,
+src\loop\taskExecution.js:143:    service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedTask, {
+src\loop\taskExecution.js:145:      planId: plan.id,
+src\loop\taskExecution.js:150:    const planFile = path.join(workspace, plan.file_path);
+src\loop\taskExecution.js:152:      '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
+src\loop\taskExecution.js:156:      '- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”',
+src\loop\taskExecution.js:163:      completionRules.unshift('- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理');
+src\loop\taskExecution.js:172:      `plan 文件（只读）：${planFile}`,
+src\loop\taskExecution.js:182:        projectId: plan.project_id,
+src\loop\taskExecution.js:183:        planId: plan.id,
+src\loop\taskExecution.js:188:        ...(inheritedPlanSession ? { codexSessionState: 'plan-resume' } : {}),
+src\loop\taskExecution.js:189:      }, planFile);
+src\loop\taskExecution.js:194:      const failedTask = service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+src\loop\taskExecution.js:210:      service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+src\loop\taskExecution.js:221:function completeTask(service, helpers, workspace, plan, task, result) {
+src\loop\taskExecution.js:222:    const planFile = path.join(workspace, plan.file_path);
+src\loop\taskExecution.js:224:    service.markTaskCompletedInPlan(workspace, planFile, task, result);
+src\loop\taskExecution.js:226:    service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+src\loop\taskExecution.js:228:      planId: plan.id,
+src\loop\taskExecution.js:235:    service.refreshPlanProgress(plan.id, planFile);
+src\loop\taskExecution.js:236:    service.emitUpdate(plan.project_id);
+src\loop\taskExecution.js:239:function refreshPlanProgress(service, helpers, planId, planFile) {
+src\loop\taskExecution.js:244:       FROM plan_tasks
+src\loop\taskExecution.js:245:       WHERE plan_id = ?`,
+src\loop\taskExecution.js:246:      [planId],
+src\loop\taskExecution.js:251:    const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+src\loop\taskExecution.js:253:      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+src\loop\taskExecution.js:254:      [hash, status, total, completed, nowIso(), planId],
+src\loop\taskExecution.js:258:function markTaskCompletedInPlan(service, helpers, workspace, planFile, task, result) {
+src\loop\taskExecution.js:259:    if (!fs.existsSync(planFile)) return;
+src\loop\taskExecution.js:263:    let content = fs.readFileSync(planFile, 'utf8');
+src\loop\taskExecution.js:277:    fs.writeFileSync(planFile, content, 'utf8');
+src\loop\workspaceFiles.js:6:const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+src\loop\workspaceFiles.js:9:    for (const dir of ['docs/issues', 'docs/plan', 'docs/progress', 'docs/progress/logs']) {
+src\loopService.js:34:  planAgentCliColumnValues,
+src\loopService.js:57:const planGeneration = require('./loop/planGeneration');
+src\loopService.js:58:const planParser = require('./loop/planParser');
+src\loopService.js:98:const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+src\loopService.js:223:  planColumns() {
+src\loopService.js:224:    if (!this._planColumns) {
+src\loopService.js:225:      this._planColumns = new Set(this.db.all('PRAGMA table_info(plans)').map((column) => column.name));
+src\loopService.js:227:    return this._planColumns;
+src\loopService.js:302:           WHERE project_id = ? AND linked_plan_id IS NULL
+src\loopService.js:311:           WHERE project_id = ? AND linked_plan_id IS NULL
+src\loopService.js:326:      // 同步 docs/plan 目录下的 plan 文件（兼容文件式需求）
+src\loopService.js:327:      const planScan = await this.scanDirectoryInWorker(path.join(workspace, 'docs', 'plan'), workspace, ['.md']);
+src\loopService.js:329:      this.saveScan(projectId, 'plan', planScan);
+src\loopService.js:331:      // 执行队列里可运行的 plan
+src\loopService.js:333:        ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [generatedPlanId, projectId])
+src\loopService.js:363:    const plan = task ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [task.plan_id, projectId]) : null;
+src\loopService.js:365:    if (!project || !task || !plan) throw new Error('任务不存在');
+src\loopService.js:372:    const executablePlan = this.activateDraftPlan(plan);
+src\loopService.js:394:  async runTaskBatches(projectId, planId, confirmedBatches) {
+src\loopService.js:399:    const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+src\loopService.js:401:    if (!project || !plan) throw new Error('计划不存在');
+src\loopService.js:402:    if (plan.validation_passed || plan.status === 'completed') throw new Error('计划已完成，不能启动并发执行');
+src\loopService.js:409:    const batches = this.validatedParallelTaskBatches(workspace, plan, confirmedBatches);
+src\loopService.js:410:    const executablePlan = this.activateDraftPlan(plan);
+src\loopService.js:424:          planId: plan.id,
+src\loopService.js:444:  validatedParallelTaskBatches(workspace, plan, confirmedBatches) {
+src\loopService.js:445:    return concurrency.validatedParallelTaskBatches(this, workspace, plan, confirmedBatches);
+src\loopService.js:455:      taskPlan: (eventTask) => this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [eventTask.plan_id, projectId]),
+src\loopService.js:456:      planAgentCliConfig: (plan) => this.planAgentCliConfig(plan),
+src\loopService.js:466:      `SELECT plan_tasks.*
+src\loopService.js:467:       FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+src\loopService.js:468:       WHERE plan_tasks.id = ? AND plans.project_id = ?`,
+src\loopService.js:475:      `UPDATE plan_tasks
+src\loopService.js:483:    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+src\loopService.js:488:    if (!normalizedSessionId) return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+src\loopService.js:490:      `UPDATE plan_tasks
+src\loopService.js:495:    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+src\loopService.js:499:    const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+src\loopService.js:507:      `UPDATE plan_tasks
+src\loopService.js:529:  recordTaskFailure(projectId, plan, task, finishedAt = nowIso(), metaOverrides = {}) {
+src\loopService.js:530:    const currentTask = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [task.id]) || task;
+src\loopService.js:534:      planId: plan?.id,
+src\loopService.js:542:  /** 中断某个 plan：停止正在执行的 codex 进程，未完成任务标记为 blocked，plan 标记为 interrupted */
+src\loopService.js:543:  interruptPlan(projectId, planId) {
+src\loopService.js:544:    const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+src\loopService.js:545:    if (!plan) return;
+src\loopService.js:546:    // 若当前正在执行该 plan 的任务，kill 进程
+src\loopService.js:549:      ? findRuntimeOperations(runtime, (operation) => Number(operation?.planId) === Number(planId))
+src\loopService.js:559:      const eventTask = interruptedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: planId } : null);
+src\loopService.js:563:          planId,
+src\loopService.js:574:      `UPDATE plan_tasks SET status = ?, updated_at = ?
+src\loopService.js:575:       WHERE plan_id = ? AND status IN ('pending', 'running')`,
+src\loopService.js:576:      ['blocked', nowIso(), planId],
+src\loopService.js:578:    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['interrupted', nowIso(), planId]);
+src\loopService.js:579:    this.addEvent(projectId, 'plan.interrupted', `plan #${planId} 已中断，未完成任务已挂起`);
+src\loopService.js:583:  /** 恢复被中断的 plan：blocked → pending，plan → pending，循环运行时自动继续执行 */
+src\loopService.js:584:  resumePlan(projectId, planId) {
+src\loopService.js:586:      `UPDATE plan_tasks SET status = ?, updated_at = ?
+src\loopService.js:587:       WHERE plan_id = ? AND status = ?`,
+src\loopService.js:588:      ['pending', nowIso(), planId, 'blocked'],
+src\loopService.js:590:    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+src\loopService.js:591:    this.addEvent(projectId, 'plan.resumed', `plan #${planId} 已恢复`);
+src\loopService.js:595:  /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
+src\loopService.js:596:  appendTask(projectId, planId, title) {
+src\loopService.js:597:    return planParser.appendTask(this, loopFlowHelpers(), projectId, planId, title);
+src\loopService.js:618:      this.db.get('SELECT id FROM plans WHERE project_id = ? AND issue_hash = ? LIMIT 1', [projectId, issueHash]),
+src\loopService.js:624:      `SELECT * FROM plans
+src\loopService.js:633:    const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
+src\loopService.js:637:  activateDraftPlan(plan) {
+src\loopService.js:638:    if (!plan || plan.status !== 'draft') return plan;
+src\loopService.js:640:    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ? AND status = ?', [
+src\loopService.js:643:      plan.id,
+src\loopService.js:646:    this.addEvent(plan.project_id, 'plan.draft.started', `草稿计划 #${plan.id} 已开始执行`, { planId: plan.id });
+src\loopService.js:647:    return { ...plan, status: 'running', updated_at: updatedAt };
+src\loopService.js:650:  reorderPlans(projectId, planIds) {
+src\loopService.js:653:    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
+src\loopService.js:655:    const orderedIds = planIds.map((id) => Number(id));
+src\loopService.js:660:      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
+src\loopService.js:665:    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
+src\loopService.js:670:    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
+src\loopService.js:675:      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
+src\loopService.js:705:    for (const [column, value] of planAgentCliColumnValues(this.planColumns(), agentCliConfig)) {
+src\loopService.js:710:      `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+src\loopService.js:715:  planAgentCliConfig(plan) {
+src\loopService.js:716:    const projectDefaults = this.status(plan.project_id);
+src\loopService.js:717:    const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+src\loopService.js:718:    const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+src\loopService.js:720:    if (hasAgentCliOverride(plan)) return effectiveAgentCliConfig(snapshotDefaults, plan);
+src\loopService.js:726:  planSnapshotAgentCliConfig(plan) {
+src\loopService.js:727:    return this.planAgentCliConfig(plan);
+src\loopService.js:730:  planAgentCliEventSnapshot(projectId, planId) {
+src\loopService.js:733:       WHERE project_id = ? AND type = 'plan.generated' AND meta IS NOT NULL
+src\loopService.js:741:      if (Number(meta.planId ?? meta.plan_id) === Number(planId) && hasAgentCliOverride(meta)) return meta;
+src\loopService.js:746:  planSourceAgentCliSnapshot(projectId, planId) {
+src\loopService.js:747:    const requirement = this.db.get('SELECT * FROM requirements WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [
+src\loopService.js:749:      planId,
+src\loopService.js:752:    const feedback = this.db.get('SELECT * FROM feedback WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [projectId, planId]);
+src\loopService.js:758:    return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);
+src\loopService.js:761:  /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+src\loopService.js:763:    return planGeneration.generatePlanForIntake(this, loopFlowHelpers(), projectId, workspace, intake);
+src\loopService.js:767:    return planGeneration.intakeAttachmentPrompt(this, loopFlowHelpers(), projectId, workspace, intake, sourceName);
+src\loopService.js:770:  async processPlan(workspace, plan) {
+src\loopService.js:771:    return taskExecution.processPlan(this, loopFlowHelpers(), workspace, plan);
+src\loopService.js:774:  isFinalAcceptanceTask(planId, task) {
+src\loopService.js:775:    return validationFlow.isFinalAcceptanceTask(this, loopFlowHelpers(), planId, task);
+src\loopService.js:778:  hasFinalAcceptanceTask(planId) {
+src\loopService.js:779:    return validationFlow.hasFinalAcceptanceTask(this, loopFlowHelpers(), planId);
+src\loopService.js:782:  previousPlanCodexSessionId(planId, task) {
+src\loopService.js:783:    return taskExecution.previousPlanCodexSessionId(this, loopFlowHelpers(), planId, task);
+src\loopService.js:790:  async executeTaskBatch(workspace, plan, tasks, options = {}) {
+src\loopService.js:791:    return taskExecution.executeTaskBatch(this, loopFlowHelpers(), workspace, plan, tasks, options);
+src\loopService.js:794:  async executeTask(workspace, plan, task, options = {}) {
+src\loopService.js:795:    return taskExecution.executeTask(this, loopFlowHelpers(), workspace, plan, task, options);
+src\loopService.js:798:  completeTask(workspace, plan, task, result) {
+src\loopService.js:799:    return taskExecution.completeTask(this, loopFlowHelpers(), workspace, plan, task, result);
+src\loopService.js:802:  completeAcceptanceTask(workspace, plan, task, result) {
+src\loopService.js:803:    return validationFlow.completeAcceptanceTask(this, loopFlowHelpers(), workspace, plan, task, result);
+src\loopService.js:806:  refreshPlanProgress(planId, planFile) {
+src\loopService.js:807:    return taskExecution.refreshPlanProgress(this, loopFlowHelpers(), planId, planFile);
+src\loopService.js:810:  markTaskCompletedInPlan(workspace, planFile, task, result) {
+src\loopService.js:811:    return taskExecution.markTaskCompletedInPlan(this, loopFlowHelpers(), workspace, planFile, task, result);
+src\loopService.js:814:  async validatePlan(workspace, plan, options = {}) {
+src\loopService.js:815:    return validationFlow.validatePlan(this, loopFlowHelpers(), workspace, plan, options);
+src\loopService.js:818:  syncPlanTasks(planId, planFile) {
+src\loopService.js:819:    return syncPlanTasksFromMarkdown(this, planId, planFile);
+src\loopService.js:827:  async runCodexWithPlanGuard(workspace, prompt, label, operation, planFile) {
+src\loopService.js:828:    const before = planFile && fs.existsSync(planFile) ? fs.readFileSync(planFile, 'utf8') : null;
+src\loopService.js:831:      const changed = !fs.existsSync(planFile) || fs.readFileSync(planFile, 'utf8') !== before;
+src\loopService.js:833:        fs.writeFileSync(planFile, before, 'utf8');
+src\loopService.js:834:        this.addEvent(operation.projectId, 'plan.guard.restored', `${agentCliProviderDisplayName(result.agentCliProvider)} 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+src\loopService.js:836:          planId: operation.planId || null,
+src\loopService.js:848:    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+src\loopService.js:998:          planId: operation.planId || null,
+src\loopService.js:1014:          planId: operation.planId || null,
+src\loopService.js:1029:          planId: operation.planId || null,
+src\loopService.js:1088:      const timedOut = Boolean(child.__autoplanTimedOut);
+src\loopService.js:1246:function planGenerationGuardedPrompt(prompt, label, operation = {}) {
+src\loopService.js:1251:    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
+src\loopService.js:1253:    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
+src\loopService.js:1261:  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
+src\loopService.js:1264:function syncPlanTasksFromMarkdown(service, planId, planFile) {
+src\loopService.js:1265:  if (!fs.existsSync(planFile)) return;
+src\loopService.js:1266:  const text = fs.readFileSync(planFile, 'utf8');
+src\loopService.js:1267:  const tasks = parsePlanTasksFromMarkdown(text);
+src\loopService.js:1268:  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+src\loopService.js:1269:  const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+src\loopService.js:1284:        `UPDATE plan_tasks
+src\loopService.js:1291:        `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+src\loopService.js:1293:        [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+src\loopService.js:1299:    for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+src\loopService.js:1303:  const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+src\loopService.js:1310:    'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+src\loopService.js:1311:    [hashFile(planFile), status, tasks.length, completed, nowIso(), planId],
+src\loopService.js:1315:function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
+src\loopService.js:1316:  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
+src\loopService.js:1317:  if (!plan?.project_id) return;
+src\loopService.js:1318:  const filePath = plan.file_path || planFile;
+src\loopService.js:1319:  const message = `计划未解析到任务拆解：${filePath}`;
+src\loopService.js:1321:    plan.project_id,
+src\loopService.js:1322:    'plan.tasks.parse.empty',
+src\loopService.js:1326:  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
+src\loopService.js:1327:    planId,
+src\loopService.js:1330:    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
+src\loopService.js:1332:    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
+src\loopService.js:1336:function parsePlanTasksFromMarkdown(markdown) {
+src\loopService.js:1338:  const lines = String(markdown || '').split(/\r?\n/);
+src\loopService.js:1351:      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
+src\loopService.js:1380:function planTaskScopeText(task, fallbackScope = 'unknown') {
+src\loopService.js:1381:  const explicit = planTaskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+src\loopService.js:1385:  const inferred = planTaskDeclaredScopes(task, { keepUnknown: false });
+src\loopService.js:1389:function planTaskDeclaredScopes(task, options = {}) {
+src\loopService.js:1398:      if (scope && !scope.startsWith('docs/plan/') && !scope.startsWith('docs/progress/')) scopes.add(scope);
+src\renderer\types.ts:53:  PLAN: 'plan',
+src\renderer\types.ts:65:  MARKDOWN: 'markdown',
+src\renderer\types.ts:110:  planId?: number | null;
+src\renderer\types.ts:125:  planId?: number | null;
+src\renderer\types.ts:194:  linked_plan_id?: number | null;
+src\renderer\types.ts:195:  plan_status?: string | null;
+src\renderer\types.ts:196:  plan_completed?: number | null;
+src\renderer\types.ts:197:  plan_total?: number | null;
+src\renderer\types.ts:212:  linked_plan_id?: number | null;
+src\renderer\types.ts:213:  plan_status?: string | null;
+src\renderer\types.ts:214:  plan_completed?: number | null;
+src\renderer\types.ts:215:  plan_total?: number | null;
+src\renderer\types.ts:289:export type ReadPlanTaskParseStatus = 'parsed' | 'parse_empty' | 'no_tasks' | 'empty_markdown' | 'read_failed';
+src\renderer\types.ts:293:  plan_id: number;
+src\renderer\types.ts:309:  markdown: string;
+src\renderer\types.ts:322:  plan: Plan | null;
+src\renderer\types.ts:345:  plan_id: number;
+src\renderer\types.ts:362:  /** JOIN plans 得到 */
+src\renderer\types.ts:364:  /** JOIN plans 并读取计划 Markdown 标题得到 */
+src\renderer\types.ts:365:  plan_title: string;
+src\renderer\types.ts:368:export type PlanTaskAssociationSource = 'plan_id' | 'file_path';
+src\renderer\types.ts:371:  plan_id?: number | null;
+src\renderer\types.ts:381:  if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+src\renderer\types.ts:382:  const planId = Number(task.plan_id);
+src\renderer\types.ts:383:  return Number.isFinite(planId) ? planId : null;
+src\renderer\types.ts:392:  plan: PlanTaskAssociationPlanRef,
+src\renderer\types.ts:395:  if (taskPlanId !== null) return taskPlanId === plan.id ? 'plan_id' : null;
+src\renderer\types.ts:398:  const planFilePath = readPlanTaskAssociationFilePath(plan);
+src\renderer\types.ts:399:  return taskFilePath && planFilePath && taskFilePath === planFilePath ? 'file_path' : null;
+src\renderer\types.ts:402:export function isTaskAssociatedWithPlan(task: PlanTaskAssociationTaskRef, plan: PlanTaskAssociationPlanRef) {
+src\renderer\types.ts:403:  return getPlanTaskAssociationSource(task, plan) !== null;
+src\renderer\types.ts:409:  selectPlan: (plan: Plan) => void;
+src\renderer\types.ts:464:  planId?: number | null;
+src\renderer\types.ts:510:  plans: Plan[];
+src\renderer\types.ts:528:  planId: number | null;
+src\renderer\types.ts:555:  previewUrl: string;
+src\renderer\types.ts:603:  LIST_PLANS: 'list_plans',
+src\renderer\types.ts:604:  GET_PLAN: 'get_plan',
+src\renderer\types.ts:695:    plans: number;
+src\renderer\types.ts:737:  planId: number;
+src\renderer\types.ts:760:export interface AutoplanApi {
+src\renderer\types.ts:789:    autoplan: AutoplanApi;
+src\renderer\utils\planEvents.ts:2:import { planCliSummaryLabel } from '../components/shared';
+src\renderer\utils\planEvents.ts:101:  const planId = readMetaText(meta, ['planId', 'plan_id']);
+src\renderer\utils\planEvents.ts:104:  const cliSummary = agentCliProvider ? planCliSummaryLabel(meta) : '';
+src\renderer\utils\planEvents.ts:108:    planId ? `Plan #${planId}` : '',
+src\renderer\hooks\useSnapshot.ts:38:    const unsubscribe = window.autoplan.onLoopUpdate((next) => {
+src\renderer\hooks\useSnapshot.ts:43:    window.autoplan
+src\renderer\hooks\useWorkspaceController.ts:70:      const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+src\renderer\hooks\useWorkspaceController.ts:80:  const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
+src\renderer\hooks\useWorkspaceController.ts:81:  const planReadRequestRef = useRef(0);
+src\renderer\hooks\useWorkspaceController.ts:99:    if (!planReadState.plan) return null;
+src\renderer\hooks\useWorkspaceController.ts:101:      snapshot?.plans.find(
+src\renderer\hooks\useWorkspaceController.ts:102:        (plan) => plan.id === planReadState.plan?.id && plan.project_id === planReadState.plan?.project_id,
+src\renderer\hooks\useWorkspaceController.ts:103:      ) || planReadState.plan
+src\renderer\hooks\useWorkspaceController.ts:105:  }, [planReadState.plan, snapshot?.plans]);
+src\renderer\hooks\useWorkspaceController.ts:162:    window.localStorage.setItem('autoplan.scopeFileOpenSettings', JSON.stringify(scopeFileOpenSettings));
+src\renderer\hooks\useWorkspaceController.ts:171:    planReadRequestRef.current += 1;
+src\renderer\hooks\useWorkspaceController.ts:174:      planReadRequestRef.current += 1;
+src\renderer\hooks\useWorkspaceController.ts:217:        const next = await window.autoplan.createRequirement({
+src\renderer\hooks\useWorkspaceController.ts:242:        const next = await window.autoplan.createFeedback({
+src\renderer\hooks\useWorkspaceController.ts:267:        const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
+src\renderer\hooks\useWorkspaceController.ts:283:        const next = await window.autoplan.deleteRequirement({ projectId, id });
+src\renderer\hooks\useWorkspaceController.ts:299:        const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
+src\renderer\hooks\useWorkspaceController.ts:315:        const next = await window.autoplan.deleteFeedback({ projectId, id });
+src\renderer\hooks\useWorkspaceController.ts:330:      const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+src\renderer\hooks\useWorkspaceController.ts:355:        const next = await window.autoplan.interruptIntake({ projectId, type, id });
+src\renderer\hooks\useWorkspaceController.ts:368:        const next = await window.autoplan.resumeIntake({ projectId, type, id });
+src\renderer\hooks\useWorkspaceController.ts:381:        const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+src\renderer\hooks\useWorkspaceController.ts:391:  const readPlanForReader = useCallback(async (plan: Plan) => {
+src\renderer\hooks\useWorkspaceController.ts:392:    const requestId = planReadRequestRef.current + 1;
+src\renderer\hooks\useWorkspaceController.ts:393:    planReadRequestRef.current = requestId;
+src\renderer\hooks\useWorkspaceController.ts:394:    setPlanReadState({ plan, result: null, loading: true, error: null });
+src\renderer\hooks\useWorkspaceController.ts:397:      const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+src\renderer\hooks\useWorkspaceController.ts:398:      if (planReadRequestRef.current !== requestId) return;
+src\renderer\hooks\useWorkspaceController.ts:401:        plan: {
+src\renderer\hooks\useWorkspaceController.ts:402:          ...plan,
+src\renderer\hooks\useWorkspaceController.ts:403:          file_path: result.file_path || plan.file_path,
+src\renderer\hooks\useWorkspaceController.ts:404:          hash: result.hash || plan.hash,
+src\renderer\hooks\useWorkspaceController.ts:405:          updated_at: result.updated_at || plan.updated_at,
+src\renderer\hooks\useWorkspaceController.ts:412:      if (planReadRequestRef.current !== requestId) return;
+src\renderer\hooks\useWorkspaceController.ts:414:        plan,
+src\renderer\hooks\useWorkspaceController.ts:423:    (plan: Plan) => {
+src\renderer\hooks\useWorkspaceController.ts:424:      const currentPlan = planReadState.plan;
+src\renderer\hooks\useWorkspaceController.ts:425:      if (planReadState.loading && currentPlan && currentPlan.id === plan.id && currentPlan.project_id === plan.project_id) {
+src\renderer\hooks\useWorkspaceController.ts:428:      void readPlanForReader(plan);
+src\renderer\hooks\useWorkspaceController.ts:430:    [planReadState.loading, planReadState.plan?.id, planReadState.plan?.project_id, readPlanForReader],
+src\renderer\hooks\useWorkspaceController.ts:434:    planReadRequestRef.current += 1;
+src\renderer\hooks\useWorkspaceController.ts:439:    if (planReadState.loading) return;
+src\renderer\hooks\useWorkspaceController.ts:440:    const plan = latestReadingPlan || planReadState.plan;
+src\renderer\hooks\useWorkspaceController.ts:441:    if (!plan) return;
+src\renderer\hooks\useWorkspaceController.ts:442:    void readPlanForReader(plan);
+src\renderer\hooks\useWorkspaceController.ts:443:  }, [latestReadingPlan, planReadState.loading, planReadState.plan, readPlanForReader]);
+src\renderer\hooks\useWorkspaceController.ts:447:      const plan = snapshot?.plans.find((item) => getPlanTaskAssociationSource(task, item) !== null);
+src\renderer\hooks\useWorkspaceController.ts:448:      if (plan) openPlanReader(plan);
+src\renderer\hooks\useWorkspaceController.ts:450:    [openPlanReader, snapshot?.plans],
+src\renderer\hooks\useWorkspaceController.ts:496:    planReadState,
+src\renderer\styles\components.css:148:.plan-card-list { display: flex; flex-direction: column; gap: 10px; padding: 12px; }
+src\renderer\styles\components.css:149:.plan-card {
+src\renderer\styles\components.css:154:.plan-card:hover { border-color: var(--line); box-shadow: var(--shadow-sm); }
+src\renderer\styles\components.css:155:.plan-card.selected { border-color: #d6e0f3; background: var(--brand-50); }
+src\renderer\styles\components.css:156:.plan-card.running { border-color: rgba(45,126,255,0.28); }
+src\renderer\styles\components.css:157:.plan-card.draft { background: linear-gradient(180deg, var(--bg-elevated), rgba(255,247,237,0.72)); }
+src\renderer\styles\components.css:158:.plan-card.completed { background: linear-gradient(180deg, var(--bg-elevated), rgba(236,253,245,0.7)); }
+src\renderer\styles\components.css:159:.plan-top { display: flex; align-items: center; gap: 8px; min-width: 0; flex-wrap: wrap; }
+src\renderer\styles\components.css:160:.plan-path {
+src\renderer\styles\components.css:164:.plan-title { margin-top: 4px; color: var(--text-1); font-size: 13px; font-weight: 600; line-height: 1.45; overflow-wrap: anywhere; }
+src\renderer\styles\components.css:165:.plan-title.muted { color: var(--text-3); font-weight: 500; }
+src\renderer\styles\components.css:166:.plan-progress { margin-top: 11px; }
+src\renderer\styles\components.css:174:.plan-progress-subline { margin-top: 5px; color: var(--text-3); font-size: 11px; }
+src\renderer\styles\components.css:182:.plan-meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; min-width: 0; margin-top: 11px; color: var(--text-3); font-size: 11px; }
+src\renderer\styles\components.css:183:.plan-meta .mono { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+src\renderer\styles\components.css:186:.plan-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-width: 0; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+src\renderer\styles\components.css:187:.plan-primary-actions, .plan-secondary-actions { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; min-width: 0; }
+src\renderer\styles\components.css:188:.plan-secondary-actions .btn-link { padding: 3px 5px; }
+src\renderer\styles\components.css:189:.plan-select-button.active { color: var(--brand-700); text-decoration: underline; }
+src\renderer\styles\components.css:190:.plan-validation { margin-left: auto; color: var(--text-3); font-size: 11px; white-space: nowrap; }
+src\renderer\styles\components.css:191:.plan-validation.passed { color: var(--success); }
+src\renderer\styles\components.css:192:.plan-validation.pending { color: var(--text-3); }
+src\renderer\styles\components.css:193:.plan-list-error { margin: 10px 12px 0; }
+src\renderer\styles\components.css:197:.task-plan-group {
+src\renderer\styles\components.css:201:.task-plan-group.has-running, .task-plan-group:has(.chip-running) { border-color: rgba(45,126,255,0.2); background: linear-gradient(180deg, var(--bg-elevated), rgba(239,246,255,0.76)); }
+src\renderer\styles\components.css:202:.task-plan-group-head {
+src\renderer\styles\components.css:206:.task-plan-group-toggle { cursor: pointer; }
+src\renderer\styles\components.css:207:.task-plan-group-toggle:hover .task-plan-group-title { color: var(--brand-700); }
+src\renderer\styles\components.css:208:.task-plan-group-title-wrap { display: inline-flex; align-items: center; gap: 8px; min-width: 0; flex: 1 1 auto; }
+src\renderer\styles\components.css:209:.task-plan-group-chevron { flex: 0 0 auto; color: var(--text-3); font-size: 11px; transition: transform 0.14s; }
+src\renderer\styles\components.css:210:.task-plan-group.is-collapsed .task-plan-group-chevron { transform: rotate(-90deg); }
+src\renderer\styles\components.css:211:.task-plan-group-dot { flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
+src\renderer\styles\components.css:212:.task-plan-group.has-running .task-plan-group-dot, .task-plan-group:has(.chip-running) .task-plan-group-dot { background: var(--info); box-shadow: 0 0 0 4px var(--info-bg); }
+src\renderer\styles\components.css:213:.task-plan-group-meta { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; min-width: 0; flex: 0 1 50%; }
+src\renderer\styles\components.css:214:.task-plan-group-counts {
+src\renderer\styles\components.css:218:.task-plan-group-title {
+src\renderer\styles\components.css:222:.task-plan-group-summary {
+src\renderer\styles\components.css:226:.task-plan-group-items { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+src\renderer\styles\components.css:227:.task-plan-group .item, .task-item {
+src\renderer\styles\components.css:231:.task-plan-group .item.running, .task-plan-group .item:has(.chip-running), .task-item.running { border-color: rgba(45,126,255,0.22); background: var(--info-bg); }
+src\renderer\styles\components.css:232:.task-plan-group .item-title, .task-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+src\renderer\styles\components.css:264:.plan-selection-bar {
+src\renderer\styles\components.css:268:.plan-selection-bar.is-active { background: var(--brand-50); color: var(--brand-700); }
+src\renderer\styles\components.css:269:.plan-selection-summary { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+src\renderer\styles\components.css:270:.plan-selection-clear { flex: 0 0 auto; }
+src\renderer\styles\components.css:271:.plan-selection-clear:disabled { color: var(--text-4); }
+src\renderer\styles\components.css:284:.markdown-reader { min-width: 0; max-width: 100%; color: var(--text-1); font-size: 13.5px; line-height: 1.72; overflow-wrap: anywhere; }
+src\renderer\styles\components.css:285:.markdown-reader > :first-child { margin-top: 0; }
+src\renderer\styles\components.css:286:.markdown-reader > :last-child { margin-bottom: 0; }
+src\renderer\styles\components.css:287:.markdown-reader-empty { padding: 28px 18px; border: 1px dashed var(--line); border-radius: var(--r-md); background: var(--bg-soft); color: var(--text-3); text-align: center; font-size: 13px; }
+src\renderer\styles\components.css:288:.markdown-reader h1 { margin: 0 0 14px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); font-size: 22px; line-height: 1.3; font-weight: 800; }
+src\renderer\styles\components.css:289:.markdown-reader h2 { margin: 24px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line-soft); font-size: 18px; line-height: 1.35; font-weight: 750; }
+src\renderer\styles\components.css:290:.markdown-reader h3 { margin: 20px 0 8px; font-size: 15.5px; line-height: 1.4; font-weight: 700; }
+src\renderer\styles\components.css:291:.markdown-reader h4, .markdown-reader h5, .markdown-reader h6 { margin: 16px 0 8px; font-size: 14px; line-height: 1.4; font-weight: 700; }
+src\renderer\styles\components.css:292:.markdown-reader p { margin: 0 0 12px; color: var(--text-2); }
+src\renderer\styles\components.css:293:.markdown-reader a { color: var(--brand-600); overflow-wrap: anywhere; word-break: break-word; }
+src\renderer\styles\components.css:294:.markdown-reader a:hover { text-decoration: underline; }
+src\renderer\styles\components.css:295:.markdown-scope-files { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 5px; vertical-align: baseline; }
+src\renderer\styles\components.css:296:.markdown-scope-label { padding: 2px 6px; border-radius: 999px; background: var(--brand-50); color: var(--brand-600); font-size: 11px; font-weight: 800; }
+src\renderer\styles\components.css:297:.markdown-scope-link {
+src\renderer\styles\components.css:301:.markdown-scope-link:hover:not(:disabled) { border-color: var(--brand-500); background: var(--brand-50); text-decoration: none; }
+src\renderer\styles\components.css:302:.markdown-scope-link.special, .markdown-scope-link:disabled { color: var(--text-4); cursor: not-allowed; }
+src\renderer\styles\components.css:303:.markdown-reader ul, .markdown-reader ol { margin: 0 0 14px; padding-left: 1.45em; color: var(--text-2); }
+src\renderer\styles\components.css:304:.markdown-reader li { margin: 4px 0; }
+src\renderer\styles\components.css:305:.markdown-reader li > p { margin: 6px 0; }
+src\renderer\styles\components.css:306:.markdown-reader .contains-task-list { list-style: none; padding-left: 1.2em; }
+src\renderer\styles\components.css:307:.markdown-reader .task-list-item { margin-left: -1.2em; }
+src\renderer\styles\components.css:308:.markdown-reader input[type="checkbox"] { width: auto; margin: 0 7px 0 0; accent-color: var(--brand-600); vertical-align: -2px; }
+src\renderer\styles\components.css:309:.markdown-reader .task-list-item > input[type="checkbox"] { margin-top: 0.42em; }
+src\renderer\styles\components.css:310:.markdown-reader blockquote { margin: 14px 0; padding: 10px 14px; border-left: 3px solid var(--brand-500); border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--brand-50); color: var(--text-2); }
+src\renderer\styles\components.css:311:.markdown-reader blockquote p { color: inherit; }
+src\renderer\styles\components.css:312:.markdown-reader code { padding: 2px 5px; border: 1px solid var(--line-soft); border-radius: var(--r-sm); background: var(--bg-soft); color: var(--text-1); font-family: var(--font-mono); font-size: 0.92em; word-break: break-word; }
+src\renderer\styles\components.css:313:.markdown-reader pre { max-width: 100%; margin: 14px 0; padding: 12px 14px; overflow: auto; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); box-shadow: inset 0 1px 0 rgba(255,255,255,0.65); }
+src\renderer\styles\components.css:314:.markdown-reader pre code { display: block; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--text-1); white-space: pre; word-break: normal; overflow-wrap: normal; }
+src\renderer\styles\components.css:315:.markdown-reader pre:focus-visible, .markdown-reader-table:focus-visible { outline: 2px solid var(--brand-500); outline-offset: 2px; }
+src\renderer\styles\components.css:316:.markdown-reader-table { max-width: 100%; margin: 14px 0; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--r-md); }
+src\renderer\styles\components.css:317:.markdown-reader-table table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 13px; }
+src\renderer\styles\components.css:318:.markdown-reader th, .markdown-reader td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+src\renderer\styles\components.css:319:.markdown-reader th { background: var(--bg-soft); color: var(--text-1); font-weight: 700; }
+src\renderer\styles\components.css:320:.markdown-reader tr:nth-child(even) td { background: rgba(248,250,253,0.65); }
+src\renderer\styles\components.css:321:.markdown-reader hr { margin: 20px 0; border: 0; border-top: 1px solid var(--line); }
+src\renderer\styles\components.css:322:.markdown-reader img { max-width: 100%; height: auto; border-radius: var(--r-md); box-shadow: var(--shadow-sm); }
+src\renderer\styles\components.css:394:.plan-reader-modal { width: 100%; max-width: min(920px, calc(100vw - 48px)); max-height: min(86dvh, 860px); display: flex; flex-direction: column; }
+src\renderer\styles\components.css:395:.plan-reader-head { flex: 0 0 auto; align-items: flex-start; }
+src\renderer\styles\components.css:396:.plan-reader-title { min-width: 0; display: flex; flex: 1 1 auto; flex-direction: column; gap: 5px; }
+src\renderer\styles\components.css:397:.plan-reader-path { max-width: 100%; overflow: hidden; color: var(--text-3); font-size: 12px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+src\renderer\styles\components.css:398:.plan-reader-actions { flex: 0 0 auto; }
+src\renderer\styles\components.css:399:.plan-reader-body { flex: 1 1 auto; min-height: 0; overflow: auto; overscroll-behavior: contain; padding: 16px 22px 22px; display: flex; flex-direction: column; gap: 14px; }
+src\renderer\styles\components.css:400:.plan-reader-body:focus-visible { outline: 2px solid var(--brand-500); outline-offset: -4px; }
+src\renderer\styles\components.css:401:.plan-reader-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 0; }
+src\renderer\styles\components.css:402:.plan-reader-summary-item { min-width: 0; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: var(--r-md); background: var(--bg-soft); }
+src\renderer\styles\components.css:403:.plan-reader-summary-item dt { display: block; margin-bottom: 4px; color: var(--text-3); font-size: 11px; font-weight: 700; }
+src\renderer\styles\components.css:404:.plan-reader-summary-item dd { display: block; min-width: 0; margin: 0; overflow: hidden; color: var(--text-1); font-size: 12.5px; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+src\renderer\styles\components.css:405:.plan-reader-content { min-width: 0; padding: 16px; overflow: visible; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-sm); }
+src\renderer\styles\components.css:406:.plan-reader-loading, .plan-reader-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-radius: var(--r-md); font-size: 13px; line-height: 1.5; }
+src\renderer\styles\components.css:407:.plan-reader-loading { border: 1px dashed var(--line); background: var(--bg-soft); color: var(--text-3); }
+src\renderer\styles\components.css:408:.plan-reader-error { border: 1px solid rgba(229,72,77,0.28); background: var(--danger-bg); color: var(--danger); }
+src\renderer\styles\workspace.css:288:  .task-plan-group { padding: 9px; }
+src\renderer\styles\workspace.css:289:  .task-plan-group-head { flex-direction: column; gap: 3px; }
+src\renderer\styles\workspace.css:290:  .task-plan-group-title, .task-plan-group-summary { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+src\renderer\styles\workspace.css:296:  .plan-reader-modal { max-width: none; max-height: calc(100dvh - 28px); }
+src\renderer\styles\workspace.css:297:  .plan-reader-head { padding: 16px; }
+src\renderer\styles\workspace.css:298:  .plan-reader-actions { width: 100%; justify-content: space-between; }
+src\renderer\styles\workspace.css:299:  .plan-reader-body { padding: 14px; }
+src\renderer\styles\workspace.css:300:  .plan-reader-summary { grid-template-columns: 1fr; }
+src\renderer\styles\workspace.css:301:  .plan-reader-content { padding: 12px; }
+src\renderer\styles\workspace.css:302:  .markdown-reader { font-size: 13px; line-height: 1.68; }
+src\renderer\utils\planTasks.ts:10:export type TimedPlanTask = Omit<PlanTask, 'file_path' | 'plan_id'> & {
+src\renderer\utils\planTasks.ts:12:  plan_id?: number | null;
+src\renderer\utils\planTasks.ts:18:type TaskPlanGroupSource = 'plan' | 'file' | 'title' | 'unknown';
+src\renderer\utils\planTasks.ts:45:  plan: Plan;
+src\renderer\utils\planTasks.ts:144:  return String(task.plan_title || readPlanTaskAssociationFilePath(task) || '未命名计划').trim() || '未命名计划';
+src\renderer\utils\planTasks.ts:148:  const planId = readPlanId(task);
+src\renderer\utils\planTasks.ts:149:  if (planId !== null) return { key: `plan:${planId}`, source: 'plan', sourceId: String(planId) };
+src\renderer\utils\planTasks.ts:154:  return { key: 'unknown-plan', source: 'unknown', sourceId: null };
+src\renderer\utils\planTasks.ts:227:export function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+src\renderer\utils\planTasks.ts:229:  const linkedTasks = timedTasks.filter((task) => isTaskAssociatedWithPlan(task, plan));
+src\renderer\utils\planTasks.ts:233:  if (!linkedTasks.length && !hasTaskAssociations && planCount === 1) return timedTasks;
+src\renderer\utils\planTasks.ts:247:export function planTitle(plan: Plan) {
+src\renderer\utils\planTasks.ts:248:  return String((plan as Plan & { title?: string | null }).title || '').trim();
+src\renderer\components\Composer.tsx:280:          : attachment.previewUrl
+src\loop\validation.js:7:function isFinalAcceptanceTask(service, helpers, planId, task) {
+src\loop\validation.js:11:      'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+src\loop\validation.js:12:      [planId],
+src\loop\validation.js:17:function hasFinalAcceptanceTask(service, helpers, planId) {
+src\loop\validation.js:20:      'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+src\loop\validation.js:21:      [planId],
+src\loop\validation.js:26:function completeAcceptanceTask(service, helpers, workspace, plan, task, result) {
+src\loop\validation.js:28:    const planFile = path.join(workspace, plan.file_path);
+src\loop\validation.js:30:    service.markTaskCompletedInPlan(workspace, planFile, task, result);
+src\loop\validation.js:35:       FROM plan_tasks
+src\loop\validation.js:36:       WHERE plan_id = ?`,
+src\loop\validation.js:37:      [plan.id],
+src\loop\validation.js:39:    const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+src\loop\validation.js:41:      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+src\loop\validation.js:42:      [hash, 'completed', Number(totals.total || 0), Number(totals.completed || 0), nowIso(), plan.id],
+src\loop\validation.js:44:    service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+src\loop\validation.js:45:      ...agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true }),
+src\loop\validation.js:46:      planId: plan.id,
+src\loop\validation.js:53:    service.emitUpdate(plan.project_id);
+src\loop\validation.js:56:async function validatePlan(service, helpers, workspace, plan, options = {}) {
+src\loop\validation.js:58:    service.setPhase(plan.project_id, 'validate');
+src\loop\validation.js:59:    const planFile = path.join(workspace, plan.file_path);
+src\loop\validation.js:60:    const planAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
+src\loop\validation.js:66:      service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedAcceptanceTask, {
+src\loop\validation.js:67:        ...planAgentCliContext,
+src\loop\validation.js:68:        planId: plan.id,
+src\loop\validation.js:74:    const command = String(service.status(plan.project_id)?.validation_command || '').trim();
+src\loop\validation.js:79:        'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+src\loop\validation.js:80:        ['completed', validation.finishedAt, plan.id],
+src\loop\validation.js:82:      service.addEvent(plan.project_id, 'plan.completed', '任务全部完成（验收命令为空，已跳过校验）', {
+src\loop\validation.js:83:        ...planAgentCliContext,
+src\loop\validation.js:84:        planId: plan.id,
+src\loop\validation.js:86:      if (startedAcceptanceTask) service.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
+src\loop\validation.js:89:    let validation = await service.runShell(workspace, command, `validate-${plan.id}`, { projectId: plan.project_id });
+src\loop\validation.js:96:      service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+src\loop\validation.js:99:        plan.id,
+src\loop\validation.js:102:        'plan 已完成，但宿主项目验收失败。请只修复验证错误。',
+src\loop\validation.js:103:        `plan 文件（只读）：${planFile}`,
+src\loop\validation.js:104:        '不要修改 plan 文件、checkbox 或进度区。',
+src\loop\validation.js:109:      await service.runCodexWithPlanGuard(workspace, prompt, `repair-${plan.id}-${attempt}`, {
+src\loop\validation.js:110:        projectId: plan.project_id,
+src\loop\validation.js:111:        planId: plan.id,
+src\loop\validation.js:112:        ...planAgentCliContext,
+src\loop\validation.js:113:      }, planFile);
+src\loop\validation.js:114:      validation = await service.runShell(workspace, command, `validate-${plan.id}-repair-${attempt}`, {
+src\loop\validation.js:115:        projectId: plan.project_id,
+src\loop\validation.js:123:        'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+src\loop\validation.js:124:        ['completed', validation.finishedAt, plan.id],
+src\loop\validation.js:126:      service.addEvent(plan.project_id, 'plan.completed', plan.file_path, { ...planAgentCliContext, planId: plan.id });
+src\loop\validation.js:127:      if (startedAcceptanceTask) service.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
+src\loop\validation.js:130:      service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+src\loop\validation.js:133:        plan.id,
+src\loop\validation.js:136:      service.addEvent(plan.project_id, eventType, validation.logFile || validationFailure.failureSummary || command, {
+src\loop\validation.js:137:        ...planAgentCliContext,
+src\loop\validation.js:138:        planId: plan.id,
+src\loop\validation.js:144:        service.recordTaskFailure(plan.project_id, plan, startedAcceptanceTask, validation.finishedAt, {
+src\loop\validation.js:145:          ...planAgentCliContext,
+src\renderer\pages\ProjectsPage.tsx:63:        ? await window.autoplan.updateProject({
+src\renderer\pages\ProjectsPage.tsx:71:        : await window.autoplan.createProject({
+src\renderer\pages\ProjectsPage.tsx:89:      const next = await window.autoplan.deleteProject({ projectId: deleting.id });
+src\renderer\pages\ProjectsPage.tsx:317:      'generate-plan': '生成计划',
+src\renderer\utils\workspaceSearch.ts:18:export type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
+src\renderer\utils\workspaceSearch.ts:29:    return { requirements: [], feedback: [], plans: [], tasks: [], events: [] };
+src\renderer\utils\workspaceSearch.ts:35:      plans: snapshot.plans,
+src\renderer\utils\workspaceSearch.ts:41:  const plans = filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
+src\renderer\utils\workspaceSearch.ts:42:  const tasks = filterTasksBySearchGroups(snapshot.tasks, plans, searchState.groups);
+src\renderer\utils\workspaceSearch.ts:51:    plans,
+src\renderer\utils\workspaceSearch.ts:71:  plans: Plan[],
+src\renderer\utils\workspaceSearch.ts:75:  if (!plans.length) return directTasks;
+src\renderer\utils\workspaceSearch.ts:78:  const planIds = new Set(plans.map((plan) => plan.id));
+src\renderer\utils\workspaceSearch.ts:79:  const planFilePaths = new Set(plans.map((plan) => readPlanTaskAssociationFilePath(plan)).filter(Boolean));
+src\renderer\utils\workspaceSearch.ts:80:  const planTasks = tasks.filter((task) => {
+src\renderer\utils\workspaceSearch.ts:81:    const planId = readPlanTaskAssociationPlanId(task);
+src\renderer\utils\workspaceSearch.ts:82:    if (planId !== null) return planIds.has(planId);
+src\renderer\utils\workspaceSearch.ts:84:    return Boolean(filePath && planFilePaths.has(filePath));
+src\renderer\utils\workspaceSearch.ts:87:  return [...directTasks, ...planTasks.filter((task) => !taskIds.has(task.id))];
+src\main.js:14:    { scheme: 'autoplan-file', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+src\main.js:26:  db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'));
+src\main.js:66:ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+src\main.js:68:ipcMain.handle('plans:reorder', (_event, input = {}) => {
+src\main.js:70:  const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
+src\main.js:71:  return loop.reorderPlans(projectId, planIds);
+src\main.js:107:    .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
+src\main.js:114:    db.run(`DELETE FROM plan_tasks WHERE plan_id IN (${placeholders})`, taskIds);
+src\main.js:116:  db.run('DELETE FROM plans WHERE project_id = ?', [projectId]);
+src\main.js:157:  await loop.runTaskBatches(projectId, requiredRecordId(input, 'planId'), input.batches || []);
+src\main.js:201:  const rec = db.get('SELECT linked_plan_id FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+src\main.js:202:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+src\main.js:242:  const rec = db.get('SELECT linked_plan_id FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+src\main.js:243:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+src\main.js:252:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+src\main.js:256:  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+src\main.js:264:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+src\main.js:268:  if (rec?.linked_plan_id) loop.resumePlan(projectId, rec.linked_plan_id);
+src\main.js:276:  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
+src\main.js:280:  if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
+src\main.js:281:  loop.appendTask(projectId, rec.linked_plan_id, input.title);
+src\main.js:328:  protocol.handle('autoplan-file', async (request) => {
+src\main.js:367:  const planId = Number(input.planId || input.id || 0);
+src\main.js:368:  if (!projectId) return planReadResult({ project_id: null, id: planId || null }, '', '项目不存在');
+src\main.js:369:  if (!planId) return planReadResult({ project_id: projectId, id: null }, '', '计划不存在');
+src\main.js:372:  if (!project) return planReadResult({ project_id: projectId, id: planId }, '', '项目不存在');
+src\main.js:374:  const plan = db.get(
+src\main.js:375:    'SELECT id, project_id, file_path, hash, updated_at FROM plans WHERE id = ? AND project_id = ?',
+src\main.js:376:    [planId, projectId],
+src\main.js:378:  if (!plan) return planReadResult({ project_id: projectId, id: planId }, '', '计划不存在');
+src\main.js:379:  if (!String(project.workspace_path || '').trim()) return planReadResult(plan, '', '项目工作区路径为空');
+src\main.js:380:  if (!String(plan.file_path || '').trim()) return planReadResult(plan, '', '计划文件路径为空');
+src\main.js:383:    const planPath = await resolvePlanPath(project.workspace_path, plan.file_path);
+src\main.js:384:    const markdown = await fs.promises.readFile(planPath, 'utf8');
+src\main.js:385:    return planReadResult(plan, markdown, null);
+src\main.js:387:    return planReadResult(plan, '', planReadErrorMessage(error));
+src\main.js:416:    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+src\main.js:423:    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+src\main.js:431:      throw planReadError('FILE_NOT_FOUND', '文件不存在');
+src\main.js:436:    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
+src\main.js:439:  if (stat.isDirectory()) throw planReadError('FILE_IS_DIRECTORY', '路径指向目录，不能作为文件打开');
+src\main.js:440:  if (!stat.isFile()) throw planReadError('FILE_NOT_REGULAR', '路径不是普通文件');
+src\main.js:454:    if (!command) throw planReadError('OPEN_COMMAND_MISSING', '第三方编辑器命令未配置');
+src\main.js:459:  if (error) throw planReadError('OPEN_FILE_FAILED', error);
+src\main.js:467:    child.once('error', (error) => reject(planReadError('OPEN_COMMAND_FAILED', error?.message || '编辑器命令启动失败')));
+src\main.js:497:    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
+src\main.js:504:    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
+src\main.js:509:    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
+src\main.js:525:function planReadResult(plan, markdown, error) {
+src\main.js:526:  const tasks = readPlanTasksForReader(plan);
+src\main.js:528:  const parseStatus = planReadTaskParseStatus(markdown, error, tasks);
+src\main.js:531:    id: plan?.id ?? null,
+src\main.js:532:    project_id: plan?.project_id ?? null,
+src\main.js:533:    file_path: plan?.file_path || '',
+src\main.js:534:    markdown,
+src\main.js:541:    hash: plan?.hash || '',
+src\main.js:542:    updated_at: plan?.updated_at || '',
+src\main.js:547:function readPlanTasksForReader(plan) {
+src\main.js:548:  const planId = Number(plan?.id || 0);
+src\main.js:549:  if (!planId) return [];
+src\main.js:552:      `SELECT id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
+src\main.js:553:       FROM plan_tasks
+src\main.js:554:       WHERE plan_id = ?
+src\main.js:556:      [planId],
+src\main.js:575:function planReadTaskParseStatus(markdown, error, tasks) {
+src\main.js:577:  const content = String(markdown || '');
+src\main.js:578:  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划)(?:\s|$)/i.test(content);
+src\main.js:583:  if (!content.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
+src\main.js:587:      message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务；请检查任务行是否为固定 checkbox 格式并包含 scope。',
+src\main.js:591:  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
+src\main.js:594:function planReadError(code, message) {
+src\main.js:600:function planReadErrorMessage(error) {
+src\renderer\components\IntakePanel.tsx:87:  const planStatus = (item: IntakeItem) => item.plan_status || null;
+src\renderer\components\IntakePanel.tsx:88:  const planPct = (item: IntakeItem) => {
+src\renderer\components\IntakePanel.tsx:89:    const total = Number(item.plan_total || 0);
+src\renderer\components\IntakePanel.tsx:90:    const done = Number(item.plan_completed || 0);
+src\renderer\components\IntakePanel.tsx:157:              const ps = planStatus(item);
+src\renderer\components\IntakePanel.tsx:158:              const hasPlan = Boolean(item.linked_plan_id);
+src\renderer\components\IntakePanel.tsx:169:                        <span className={`chip ${planChipClass(ps)}`}>
+src\renderer\components\IntakePanel.tsx:170:                          {planStatusLabel(ps)} {item.plan_completed ?? 0}/{item.plan_total ?? 0}
+src\renderer\components\IntakePanel.tsx:183:                        <span style={{ width: `${planPct(item)}%` }} />
+src\renderer\components\IntakePanel.tsx:324:function planChipClass(planStatus: string) {
+src\renderer\components\IntakePanel.tsx:325:  const s = String(planStatus || '').toLowerCase();
+src\renderer\components\IntakePanel.tsx:329:  if (['pending', 'running', 'generate-plan', 'execute-task', 'validate', 'scan'].includes(s)) return 'chip-running';
+src\renderer\components\IntakePanel.tsx:333:function planStatusLabel(planStatus: string) {
+src\renderer\components\IntakePanel.tsx:334:  const s = String(planStatus || '').toLowerCase();
+src\renderer\components\IntakePanel.tsx:342:  return map[s] || planStatus;
+src\renderer\pages\WorkspacePage.tsx:44:    planReadState,
+src\renderer\pages\WorkspacePage.tsx:74:  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
+src\renderer\pages\WorkspacePage.tsx:76:  const planSelectionState: WorkspacePlanSelectionState = {
+src\renderer\pages\WorkspacePage.tsx:79:    selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+src\renderer\pages\WorkspacePage.tsx:90:        plan: selectedPlan,
+src\renderer\pages\WorkspacePage.tsx:93:        onClear: planSelectionState.clearSelection,
+src\renderer\pages\WorkspacePage.tsx:105:      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
+src\renderer\pages\WorkspacePage.tsx:155:    const resultPlan = findPlanForSearchResult(result, snapshot?.plans || []);
+src\renderer\pages\WorkspacePage.tsx:171:      const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
+src\renderer\pages\WorkspacePage.tsx:173:      const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
+src\renderer\pages\WorkspacePage.tsx:174:      return (window.autoplan as typeof window.autoplan & {
+src\renderer\pages\WorkspacePage.tsx:175:        reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
+src\renderer\pages\WorkspacePage.tsx:176:      }).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
+src\renderer\pages\WorkspacePage.tsx:243:                    ? window.autoplan.stopLoop({ projectId, manual: true })
+src\renderer\pages\WorkspacePage.tsx:244:                    : window.autoplan.startLoop({ projectId, manual: true }),
+src\renderer\pages\WorkspacePage.tsx:327:              data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
+src\renderer\pages\WorkspacePage.tsx:328:              data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
+src\renderer\pages\WorkspacePage.tsx:340:                    onRunParallel={({ plan, batches }) =>
+src\renderer\pages\WorkspacePage.tsx:342:                        (window.autoplan as typeof window.autoplan & {
+src\renderer\pages\WorkspacePage.tsx:345:                            planId: number;
+src\renderer\pages\WorkspacePage.tsx:349:                        }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+src\renderer\pages\WorkspacePage.tsx:354:                    onClearPlanSelection={planSelectionState.clearSelection}
+src\renderer\pages\WorkspacePage.tsx:355:                    onSelectPlan={planSelectionState.selectPlan}
+src\renderer\pages\WorkspacePage.tsx:356:                    plans={filteredItems.plans}
+src\renderer\pages\WorkspacePage.tsx:357:                    readerState={planReadState}
+src\renderer\pages\WorkspacePage.tsx:358:                    selectedPlan={planSelectionState.selectedPlan}
+src\renderer\pages\WorkspacePage.tsx:359:                    selectedPlanId={planSelectionState.selectedPlanId}
+src\renderer\pages\WorkspacePage.tsx:361:                    totalPlanCount={snapshot.plans.length}
+src\renderer\pages\WorkspacePage.tsx:371:                    planFilter={selectedPlanTaskFilter}
+src\renderer\pages\WorkspacePage.tsx:374:                    onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+src\renderer\pages\WorkspacePage.tsx:375:                    onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+src\renderer\pages\WorkspacePage.tsx:395:                    ? window.autoplan.stopLoop({ projectId, manual: true })
+src\renderer\pages\WorkspacePage.tsx:396:                    : window.autoplan.startLoop({ projectId, manual: true }),
+src\renderer\pages\WorkspacePage.tsx:450:    result.planId ? `workspace-plan-${result.planId}` : '',
+src\renderer\pages\WorkspacePage.tsx:451:    result.filePath ? `workspace-plan-file-${sanitizeWorkspaceSearchAnchor(result.filePath)}` : '',
+src\renderer\pages\WorkspacePage.tsx:461:function findPlanForSearchResult(result: WorkspaceSearchResult, plans: Plan[]) {
+src\renderer\pages\WorkspacePage.tsx:462:  const planId = normalizeSearchResultPlanId(result.planId ?? (result.targetType === 'plan' ? result.targetId : null));
+src\renderer\pages\WorkspacePage.tsx:463:  if (planId !== null) {
+src\renderer\pages\WorkspacePage.tsx:464:    const plan = plans.find((item) => item.id === planId);
+src\renderer\pages\WorkspacePage.tsx:465:    if (plan) return plan;
+src\renderer\pages\WorkspacePage.tsx:470:  return plans.find((plan) => readPlanTaskAssociationFilePath(plan) === filePath) || null;
+src\renderer\pages\WorkspacePage.tsx:475:  const planId = Number(value);
+src\renderer\pages\WorkspacePage.tsx:476:  return Number.isFinite(planId) ? planId : null;
+src\renderer\components\SearchResults.tsx:17:  plan: 'plan',
+src\renderer\components\SearchResults.tsx:25:  plan: 'Plan',
+src\renderer\components\SearchResults.tsx:200:  const planFilterText = getSearchResultPlanFilterText(result);
+src\renderer\components\SearchResults.tsx:201:  return planFilterText ? `${targetText}，${planFilterText}` : targetText;
+src\renderer\components\SearchResults.tsx:206:  if (result.source === 'plan') return '并筛选该 Plan 的任务';
+src\renderer\components\SearchResults.tsx:207:  if (result.source === 'task' && (result.planId || result.filePath)) return '并切换到所属 Plan 任务';
+src\renderer\components\icons.tsx:50:const planIcon = (
+src\renderer\components\icons.tsx:217:  plan: planIcon,
+src\renderer\components\icons.tsx:218:  plans: planIcon,
+src\renderer\utils\search.ts:211:    ...(snapshot.plans ?? []).map(createPlanCandidate),
+src\renderer\utils\search.ts:289:function createPlanCandidate(plan: AppSnapshot['plans'][number]): WorkspaceSearchCandidate {
+src\renderer\utils\search.ts:291:  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', plan.title);
+src\renderer\utils\search.ts:292:  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '文件路径', plan.file_path);
+src\renderer\utils\search.ts:293:  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', plan.status);
+src\renderer\utils\search.ts:294:  const planTitle = toSearchText(plan.title);
+src\renderer\utils\search.ts:295:  const fileName = getFileName(plan.file_path);
+src\renderer\utils\search.ts:299:    recordId: plan.id,
+src\renderer\utils\search.ts:300:    title: planTitle || fileName || `Plan #${plan.id}`,
+src\renderer\utils\search.ts:301:    summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+src\renderer\utils\search.ts:302:    status: nullableSearchText(plan.status),
+src\renderer\utils\search.ts:303:    updatedAt: plan.updated_at,
+src\renderer\utils\search.ts:304:    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, {
+src\renderer\utils\search.ts:305:      planId: plan.id,
+src\renderer\utils\search.ts:306:      filePath: plan.file_path,
+src\renderer\utils\search.ts:316:  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, 'Plan 标题', task.plan_title);
+src\renderer\utils\search.ts:333:      planId: task.plan_id,
+src\renderer\utils\search.ts:367:      planId: meta?.planId ?? meta?.plan_id,
+src\renderer\utils\search.ts:415:      planId: candidate.location.planId,
+src\renderer\utils\search.ts:431:  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown; filePath?: unknown } = {},
+src\renderer\utils\search.ts:433:  const planId = readSearchId(options.planId);
+src\renderer\utils\search.ts:445:    planId,
+src\renderer\components\MarkdownReader.tsx:2:import ReactMarkdown from 'react-markdown';
+src\renderer\components\MarkdownReader.tsx:5:type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+src\renderer\components\MarkdownReader.tsx:6:type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+src\renderer\components\MarkdownReader.tsx:7:type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+src\renderer\components\MarkdownReader.tsx:10:export type MarkdownReaderProps = {
+src\renderer\components\MarkdownReader.tsx:11:  markdown?: string | null;
+src\renderer\components\MarkdownReader.tsx:21:const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+src\renderer\components\MarkdownReader.tsx:49:function exposeHtmlComments(markdown: string) {
+src\renderer\components\MarkdownReader.tsx:52:  return markdown
+src\renderer\components\MarkdownReader.tsx:75:const markdownComponents: MarkdownComponents = {
+src\renderer\components\MarkdownReader.tsx:110:      <div className="markdown-reader-table" role="region" aria-label="可横向滚动表格" tabIndex={0}>
+src\renderer\components\MarkdownReader.tsx:139:      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+src\renderer\components\MarkdownReader.tsx:140:        <span className="markdown-scope-label">scope</span>
+src\renderer\components\MarkdownReader.tsx:147:              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+src\renderer\components\MarkdownReader.tsx:155:        }) : <span className="markdown-scope-link special mono">unknown</span>}
+src\renderer\components\MarkdownReader.tsx:185:    const result = await (window.autoplan as typeof window.autoplan & {
+src\renderer\components\MarkdownReader.tsx:199:function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+src\renderer\components\MarkdownReader.tsx:201:    ...markdownComponents,
+src\renderer\components\MarkdownReader.tsx:222:export function MarkdownReader({
+src\renderer\components\MarkdownReader.tsx:223:  markdown,
+src\renderer\components\MarkdownReader.tsx:226:  ariaLabel = 'Markdown 正文',
+src\renderer\components\MarkdownReader.tsx:228:}: MarkdownReaderProps) {
+src\renderer\components\MarkdownReader.tsx:229:  const content = markdown ?? '';
+src\renderer\components\MarkdownReader.tsx:230:  const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+src\renderer\components\MarkdownReader.tsx:234:      <div className={`${classes} markdown-reader-empty`} role="status" aria-live="polite">
+src\renderer\components\MarkdownReader.tsx:242:      <ReactMarkdown
+src\renderer\components\MarkdownReader.tsx:243:        components={createMarkdownComponents(onOpenScopeFile)}
+src\renderer\components\MarkdownReader.tsx:248:      </ReactMarkdown>
+src\renderer\components\MarkdownReader.tsx:253:export default MarkdownReader;
+src\renderer\components\shared.tsx:5:    return window.autoplan.getDroppedFilePath(file) || (file as File & { path?: string }).path || '';
+src\renderer\components\shared.tsx:15:    return window.autoplan.toFileUrl(path);
+src\renderer\components\shared.tsx:53:export function planCliSummaryLabel(source?: object | null): string {
+src\renderer\components\shared.tsx:115:  if (['running', 'processing', 'validate', 'generate-plan', 'execute-task', 'scan'].includes(s)) return 'chip-running';
+src\renderer\components\PlanLists.tsx:4:import { PlanList as BasePlanList } from './plans/PlanList';
+src\renderer\components\PlanLists.tsx:17:} from '../utils/planTasks';
+src\renderer\components\PlanLists.tsx:18:import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+src\renderer\components\PlanLists.tsx:19:import type { EventDisplay } from '../utils/planEvents';
+src\renderer\components\PlanLists.tsx:21:export type { EventDisplay } from '../utils/planEvents';
+src\renderer\components\PlanLists.tsx:26:  'plan.generated': '计划已生成',
+src\renderer\components\PlanLists.tsx:52:  plan: Plan;
+src\renderer\components\PlanLists.tsx:58:  onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+src\renderer\components\PlanLists.tsx:61:  onSelectPlan?: (plan: Plan) => void;
+src\renderer\components\PlanLists.tsx:72:function planDisplayName(plan: Plan) {
+src\renderer\components\PlanLists.tsx:73:  return plan.title || plan.file_path || `Plan #${plan.id}`;
+src\renderer\components\PlanLists.tsx:83:  planFilter,
+src\renderer\components\PlanLists.tsx:91:  planFilter?: TaskListPlanFilter | null;
+src\renderer\components\PlanLists.tsx:114:  const planFilterEmptyText = planFilter
+src\renderer\components\PlanLists.tsx:115:    ? planFilter.totalTaskCount
+src\renderer\components\PlanLists.tsx:120:    ? planFilter
+src\renderer\components\PlanLists.tsx:123:    : planFilterEmptyText;
+src\renderer\components\PlanLists.tsx:145:      {planFilter ? (
+src\renderer\components\PlanLists.tsx:146:        <div className="search-locate-notice" data-testid="plan-task-filter-banner">
+src\renderer\components\PlanLists.tsx:148:            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
+src\renderer\components\PlanLists.tsx:149:            {planFilter.totalTaskCount}
+src\renderer\components\PlanLists.tsx:151:          <button type="button" className="btn-link" data-testid="plan-task-filter-clear" onClick={planFilter.onClear}>
+src\renderer\components\PlanLists.tsx:178:            const groupItemsId = `task-plan-group-items-${sanitizeTaskGroupKey(group.key)}`;
+src\renderer\components\PlanLists.tsx:181:                className={`task-plan-group${expanded ? '' : ' is-collapsed'}`}
+src\renderer\components\PlanLists.tsx:189:                  className="task-plan-group-head task-plan-group-toggle"
+src\renderer\components\PlanLists.tsx:194:                  <span className="task-plan-group-title-wrap">
+src\renderer\components\PlanLists.tsx:195:                    <span className="task-plan-group-chevron" aria-hidden="true">▾</span>
+src\renderer\components\PlanLists.tsx:196:                    <span className="task-plan-group-title" title={group.title}>{group.title}</span>
+src\renderer\components\PlanLists.tsx:198:                  <span className="task-plan-group-meta">
+src\renderer\components\PlanLists.tsx:199:                    <span className="task-plan-group-counts">{formatTaskPlanGroupCounts(group)}</span>
+src\renderer\components\PlanLists.tsx:200:                    <span className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</span>
+src\renderer\components\PlanLists.tsx:204:                  <div id={groupItemsId} className="task-plan-group-items">
+src\renderer\components\PlanLists.tsx:243:                                  aria-label={`预览 ${task.file_path}`}
+src\renderer\components\PlanLists.tsx:325:  const planId = target.planId ?? (target.targetType === 'plan' ? target.targetId : null);
+src\renderer\components\PlanLists.tsx:329:    if (planId !== null && group.source === 'plan' && Number(group.sourceId) === Number(planId)) return true;
+src\renderer\components\PlanLists.tsx:336:  if (group.source === 'plan' && group.sourceId) return `workspace-plan-${group.sourceId}`;
+src\renderer\components\PlanLists.tsx:337:  if (group.source === 'file' && group.sourceId) return `workspace-plan-file-${sanitizeTaskGroupKey(group.sourceId)}`;
+src\renderer\components\PlanLists.tsx:342:  plans,
+src\renderer\components\PlanLists.tsx:357:  const orderedPlans = useMemo(() => [...plans].sort(comparePlanOrder), [plans]);
+src\renderer\components\PlanLists.tsx:358:  const counts = useMemo(() => planStatusCounts(orderedPlans), [orderedPlans]);
+src\renderer\components\PlanLists.tsx:359:  const visiblePlans = orderedPlans.filter((plan) => planMatchesStatusTab(plan, activeStatus));
+src\renderer\components\PlanLists.tsx:363:    controlledSelectedPlan || orderedPlans.find((plan) => plan.id === effectiveSelectedPlanId) || null;
+src\renderer\components\PlanLists.tsx:369:      return orderedPlans.some((plan) => plan.id === current) ? current : null;
+src\renderer\components\PlanLists.tsx:373:  function selectPlan(plan: Plan) {
+src\renderer\components\PlanLists.tsx:375:      setLocalSelectedPlanId((current) => (current === plan.id ? null : plan.id));
+src\renderer\components\PlanLists.tsx:377:    onSelectPlan?.(plan);
+src\renderer\components\PlanLists.tsx:387:  async function movePlan(plan: Plan, direction: -1 | 1) {
+src\renderer\components\PlanLists.tsx:389:    const fromIndex = orderedPlans.findIndex((item) => item.id === plan.id);
+src\renderer\components\PlanLists.tsx:392:    if (fromIndex < 0 || !target || !canReorderPlan(plan) || !canReorderPlan(target)) return;
+src\renderer\components\PlanLists.tsx:396:    nextPlans[toIndex] = plan;
+src\renderer\components\PlanLists.tsx:405:  async function runDraftPlan(plan: Plan) {
+src\renderer\components\PlanLists.tsx:407:    if (onRunParallel && plan.concurrency_suggestion?.hasSafeParallelBatches) {
+src\renderer\components\PlanLists.tsx:409:        plan,
+src\renderer\components\PlanLists.tsx:410:        batches: plan.concurrency_suggestion.batches.map((batch) => ({
+src\renderer\components\PlanLists.tsx:417:    const task = firstPendingTaskForPlan(plan, props.tasks || []);
+src\renderer\components\PlanLists.tsx:423:    setDraftRunningPlanId(plan.id);
+src\renderer\components\PlanLists.tsx:425:      await (window.autoplan as typeof window.autoplan & {
+src\renderer\components\PlanLists.tsx:427:      }).runTask({ projectId: plan.project_id, taskId: task.id });
+src\renderer\components\PlanLists.tsx:435:  function renderPlanControls(plan: Plan) {
+src\renderer\components\PlanLists.tsx:436:    const currentIndex = orderedPlans.findIndex((item) => item.id === plan.id);
+src\renderer\components\PlanLists.tsx:439:    const disabledReason = reorderDisabledReason(plan);
+src\renderer\components\PlanLists.tsx:440:    const draftRunDisabledReason = isDraftPlan(plan) ? draftPlanRunDisabledReason(plan, props.tasks || []) : '';
+src\renderer\components\PlanLists.tsx:441:    const selected = effectiveSelectedPlanId === plan.id;
+src\renderer\components\PlanLists.tsx:447:          className={`btn-link plan-select-button${selected ? ' active' : ''}`}
+src\renderer\components\PlanLists.tsx:449:          data-testid="plan-select-toggle"
+src\renderer\components\PlanLists.tsx:450:          onClick={() => selectPlan(plan)}
+src\renderer\components\PlanLists.tsx:459:          onClick={() => movePlan(plan, -1)}
+src\renderer\components\PlanLists.tsx:468:          onClick={() => movePlan(plan, 1)}
+src\renderer\components\PlanLists.tsx:472:        {isDraftPlan(plan) ? (
+src\renderer\components\PlanLists.tsx:476:            disabled={draftRunningPlanId === plan.id || Boolean(draftRunDisabledReason)}
+src\renderer\components\PlanLists.tsx:478:            onClick={() => runDraftPlan(plan)}
+src\renderer\components\PlanLists.tsx:480:            {draftRunningPlanId === plan.id ? '启动中…' : '执行草稿'}
+src\renderer\components\PlanLists.tsx:505:      <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+src\renderer\components\PlanLists.tsx:506:        <span className="plan-selection-summary">
+src\renderer\components\PlanLists.tsx:508:            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+src\renderer\components\PlanLists.tsx:513:          className="btn-link plan-selection-clear"
+src\renderer\components\PlanLists.tsx:514:          data-testid="plan-selection-clear"
+src\renderer\components\PlanLists.tsx:522:      {draftRunError ? <div className="error-banner plan-list-error">{draftRunError}</div> : null}
+src\renderer\components\PlanLists.tsx:528:        plans={visiblePlans}
+src\renderer\components\PlanLists.tsx:531:        totalPlanCount={props.totalPlanCount ?? plans.length}
+src\renderer\components\PlanLists.tsx:545:function planStatusCounts(plans: Plan[]): Record<PlanStatusTab, number> {
+src\renderer\components\PlanLists.tsx:546:  return plans.reduce(
+src\renderer\components\PlanLists.tsx:547:    (counts, plan) => {
+src\renderer\components\PlanLists.tsx:549:      if (isDraftPlan(plan)) counts.draft += 1;
+src\renderer\components\PlanLists.tsx:550:      else if (isCompletedPlan(plan)) counts.completed += 1;
+src\renderer\components\PlanLists.tsx:558:function planMatchesStatusTab(plan: Plan, status: PlanStatusTab) {
+src\renderer\components\PlanLists.tsx:560:  if (status === 'draft') return isDraftPlan(plan);
+src\renderer\components\PlanLists.tsx:561:  if (status === 'completed') return isCompletedPlan(plan);
+src\renderer\components\PlanLists.tsx:562:  return !isDraftPlan(plan) && !isCompletedPlan(plan);
+src\renderer\components\PlanLists.tsx:565:function isDraftPlan(plan: Plan) {
+src\renderer\components\PlanLists.tsx:566:  return plan.is_draft || plan.status === 'draft';
+src\renderer\components\PlanLists.tsx:569:function isCompletedPlan(plan: Plan) {
+src\renderer\components\PlanLists.tsx:570:  return Boolean(plan.validation_passed) || plan.status === 'completed';
+src\renderer\components\PlanLists.tsx:573:function canReorderPlan(plan: Plan) {
+src\renderer\components\PlanLists.tsx:574:  return !['running', 'completed'].includes(String(plan.status || '')) && !plan.validation_passed;
+src\renderer\components\PlanLists.tsx:577:function reorderDisabledReason(plan: Plan) {
+src\renderer\components\PlanLists.tsx:578:  if (plan.status === 'running') return '执行中不可移动';
+src\renderer\components\PlanLists.tsx:579:  if (isCompletedPlan(plan)) return '已完成不可移动';
+src\renderer\components\PlanLists.tsx:583:function draftPlanRunDisabledReason(plan: Plan, tasks: PlanTask[]) {
+src\renderer\components\PlanLists.tsx:584:  if (!isDraftPlan(plan)) return '';
+src\renderer\components\PlanLists.tsx:585:  if (plan.concurrency_suggestion?.hasSafeParallelBatches) return '';
+src\renderer\components\PlanLists.tsx:586:  return firstPendingTaskForPlan(plan, tasks) ? '' : '草稿计划暂无可执行任务';
+src\renderer\components\PlanLists.tsx:589:function firstPendingTaskForPlan(plan: Plan, tasks: PlanTask[]) {
+src\renderer\components\PlanLists.tsx:591:    .filter((task) => Number(task.plan_id) === Number(plan.id) && task.status === 'pending')
+src\renderer\components\shared.test.tsx:3:  planCliSummaryLabel,
+src\renderer\components\shared.test.tsx:34:    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
+src\renderer\utils\workspaceForms.ts:69:  return { plan: null, result: null, loading: false, error: null };
+src\renderer\utils\workspaceForms.ts:90:    previewUrl: toSafeFileUrl(path),
+src\renderer\utils\workspaceForms.ts:128:    previewUrl: dataUrl,
+src\renderer\components\workspace\WorkspaceOverviewView.tsx:23:  const planCount = snapshot.plans.length;
+src\renderer\components\workspace\WorkspaceOverviewView.tsx:24:  const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
+src\renderer\components\workspace\WorkspaceOverviewView.tsx:28:  const phases = ['scan', 'generate-plan', 'execute-task', 'validate', 'completed'];
+src\renderer\components\workspace\WorkspaceOverviewView.tsx:65:          icon="plan"
+src\renderer\components\workspace\WorkspaceOverviewView.tsx:66:          value={String(planCount)}
+src\renderer\components\workspace\WorkspaceOverviewView.tsx:102:                  Plan <b>{snapshot.plans.length}</b>
+src\renderer\components\workspace\WorkspaceOverviewView.tsx:194:      'generate-plan': '生成计划',
+src\renderer\components\plans\EventList.tsx:2:import { formatEvent } from '../../utils/planEvents';
+src\renderer\components\plans\TaskList.tsx:17:} from '../../utils/planTasks';
+src\renderer\components\plans\TaskList.tsx:84:            const groupItemsId = `task-plan-group-items-${sanitizeTaskGroupKey(group.key)}`;
+src\renderer\components\plans\TaskList.tsx:87:                className={`task-plan-group${group.hasRunningTask ? ' has-running' : ''}${expanded ? '' : ' is-collapsed'}`}
+src\renderer\components\plans\TaskList.tsx:93:                  className="task-plan-group-head task-plan-group-toggle"
+src\renderer\components\plans\TaskList.tsx:98:                  <span className="task-plan-group-title-wrap">
+src\renderer\components\plans\TaskList.tsx:99:                    <span className="task-plan-group-chevron" aria-hidden="true">▾</span>
+src\renderer\components\plans\TaskList.tsx:100:                    <span className="task-plan-group-dot" aria-hidden="true" />
+src\renderer\components\plans\TaskList.tsx:101:                    <span className="task-plan-group-title" title={group.title}>{group.title}</span>
+src\renderer\components\plans\TaskList.tsx:103:                  <span className="task-plan-group-meta">
+src\renderer\components\plans\TaskList.tsx:104:                    <span className="task-plan-group-counts">{formatTaskPlanGroupCounts(group)}</span>
+src\renderer\components\plans\TaskList.tsx:105:                    <span className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</span>
+src\renderer\components\plans\TaskList.tsx:109:                  <div id={groupItemsId} className="task-plan-group-items">
+src\renderer\components\plans\TaskList.tsx:129:                              aria-label={`预览 ${task.file_path}`}
+src\renderer\components\plans\PlanList.tsx:4:import { MarkdownReader } from '../MarkdownReader';
+src\renderer\components\plans\PlanList.tsx:5:import { planCliSummaryLabel } from '../shared';
+src\renderer\components\plans\PlanList.tsx:9:  planTitle,
+src\renderer\components\plans\PlanList.tsx:12:} from '../../utils/planTasks';
+src\renderer\components\plans\PlanList.tsx:48:function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+src\renderer\components\plans\PlanList.tsx:50:  if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+src\renderer\components\plans\PlanList.tsx:51:  if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+src\renderer\components\plans\PlanList.tsx:55:function getPlanProgressPercent(plan: Plan) {
+src\renderer\components\plans\PlanList.tsx:56:  const total = Math.max(0, Number(plan.total_tasks || 0));
+src\renderer\components\plans\PlanList.tsx:58:  return Math.max(0, Math.min(100, Math.round((Number(plan.completed_tasks || 0) / total) * 100)));
+src\renderer\components\plans\PlanList.tsx:61:function planCardState(plan: Plan, hasRunningTask: boolean) {
+src\renderer\components\plans\PlanList.tsx:62:  if (plan.is_draft || plan.status === 'draft') return 'draft';
+src\renderer\components\plans\PlanList.tsx:63:  if (plan.validation_passed || plan.status === 'completed') return 'completed';
+src\renderer\components\plans\PlanList.tsx:64:  if (hasRunningTask || plan.status === 'running') return 'running';
+src\renderer\components\plans\PlanList.tsx:68:function planCardChipClass(state: string) {
+src\renderer\components\plans\PlanList.tsx:94:  emptyText = '暂无 plan。',
+src\renderer\components\plans\PlanList.tsx:100:  plans,
+src\renderer\components\plans\PlanList.tsx:105:  totalPlanCount = plans.length,
+src\renderer\components\plans\PlanList.tsx:110:  onOpenReader: (plan: Plan) => void;
+src\renderer\components\plans\PlanList.tsx:113:  plans: Plan[];
+src\renderer\components\plans\PlanList.tsx:115:  renderPlanControls?: (plan: Plan) => ReactNode;
+src\renderer\components\plans\PlanList.tsx:120:  const readingPlan = readerState.plan;
+src\renderer\components\plans\PlanList.tsx:121:  const planReadResult = readerState.result;
+src\renderer\components\plans\PlanList.tsx:122:  const planReadError = readerState.error;
+src\renderer\components\plans\PlanList.tsx:123:  const planReading = readerState.loading;
+src\renderer\components\plans\PlanList.tsx:124:  const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+src\renderer\components\plans\PlanList.tsx:125:  const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+src\renderer\components\plans\PlanList.tsx:126:  const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+src\renderer\components\plans\PlanList.tsx:128:  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+src\renderer\components\plans\PlanList.tsx:129:  const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+src\renderer\components\plans\PlanList.tsx:130:  const readerTasks = planReadResult?.tasks || [];
+src\renderer\components\plans\PlanList.tsx:131:  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+src\renderer\components\plans\PlanList.tsx:132:  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+src\renderer\components\plans\PlanList.tsx:133:  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+src\renderer\components\plans\PlanList.tsx:134:  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+src\renderer\components\plans\PlanList.tsx:142:  const readerStatusText = planReadError
+src\renderer\components\plans\PlanList.tsx:143:    ? `读取失败：${planReadError}`
+src\renderer\components\plans\PlanList.tsx:144:    : planReading
+src\renderer\components\plans\PlanList.tsx:148:        : 'Plan 全文已加载，当前为只读阅读模式。';
+src\renderer\components\plans\PlanList.tsx:206:      {plans.length ? (
+src\renderer\components\plans\PlanList.tsx:207:        <div className="list compact plan-card-list">
+src\renderer\components\plans\PlanList.tsx:208:          {plans.map((plan) => {
+src\renderer\components\plans\PlanList.tsx:209:            const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+src\renderer\components\plans\PlanList.tsx:210:            const durationSummary = formatPlanDurationSummary(planTasks);
+src\renderer\components\plans\PlanList.tsx:211:            const title = planTitle(plan);
+src\renderer\components\plans\PlanList.tsx:212:            const progressPercent = getPlanProgressPercent(plan);
+src\renderer\components\plans\PlanList.tsx:213:            const cliSummary = planCliSummaryLabel(plan);
+src\renderer\components\plans\PlanList.tsx:215:              readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+src\renderer\components\plans\PlanList.tsx:217:            const disableRead = planReading && readingThisPlan;
+src\renderer\components\plans\PlanList.tsx:218:            const suggestion = plan.concurrency_suggestion;
+src\renderer\components\plans\PlanList.tsx:219:            const runningInPlan = planTasks.some((task) => task.status === 'running');
+src\renderer\components\plans\PlanList.tsx:220:            const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
+src\renderer\components\plans\PlanList.tsx:222:            const cardState = planCardState(plan, runningInPlan);
+src\renderer\components\plans\PlanList.tsx:223:            const selected = selectedPlanId === plan.id;
+src\renderer\components\plans\PlanList.tsx:224:            const progressTone = plan.validation_passed || plan.status === 'completed' ? ' success' : runningInPlan ? ' running' : '';
+src\renderer\components\plans\PlanList.tsx:227:                className={`plan-card ${cardState}${selected ? ' selected' : ''}`}
+src\renderer\components\plans\PlanList.tsx:228:                key={plan.id}
+src\renderer\components\plans\PlanList.tsx:229:                data-plan-status={cardState}
+src\renderer\components\plans\PlanList.tsx:232:                <div className="plan-top">
+src\renderer\components\plans\PlanList.tsx:233:                  <span className={`chip ${planCardChipClass(cardState)}`}>{plan.status}</span>
+src\renderer\components\plans\PlanList.tsx:234:                  <span className="plan-path" title={plan.file_path}>{plan.file_path}</span>
+src\renderer\components\plans\PlanList.tsx:237:                {title ? <div className={`plan-title${cardState === 'draft' ? ' muted' : ''}`} title={title}>{title}</div> : null}
+src\renderer\components\plans\PlanList.tsx:239:                <div className="plan-progress">
+src\renderer\components\plans\PlanList.tsx:242:                    <span className="ph-right">{plan.completed_tasks} / {plan.total_tasks} · {progressPercent}%</span>
+src\renderer\components\plans\PlanList.tsx:247:                  <div className="plan-progress-subline">{durationSummary}</div>
+src\renderer\components\plans\PlanList.tsx:257:                <div className="plan-meta">
+src\renderer\components\plans\PlanList.tsx:260:                  <span className="mono">{plan.hash?.slice(0, 12) || 'no-hash'}</span>
+src\renderer\components\plans\PlanList.tsx:262:                  <span>{formatChinaDateTime(plan.updated_at)}</span>
+src\renderer\components\plans\PlanList.tsx:265:                <div className="plan-actions">
+src\renderer\components\plans\PlanList.tsx:266:                  <div className="plan-primary-actions">
+src\renderer\components\plans\PlanList.tsx:269:                      className="btn btn-sm btn-primary plan-parallel-link"
+src\renderer\components\plans\PlanList.tsx:272:                      onClick={() => setConfirmingPlan(plan)}
+src\renderer\components\plans\PlanList.tsx:278:                      className="btn btn-sm plan-read-link"
+src\renderer\components\plans\PlanList.tsx:282:                      aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+src\renderer\components\plans\PlanList.tsx:284:                      onClick={() => onOpenReader(plan)}
+src\renderer\components\plans\PlanList.tsx:286:                      {disableRead ? '读取中…' : '阅读全文'}
+src\renderer\components\plans\PlanList.tsx:289:                  {renderPlanControls ? <div className="plan-secondary-actions">{renderPlanControls(plan)}</div> : null}
+src\renderer\components\plans\PlanList.tsx:290:                  <span className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}>
+src\renderer\components\plans\PlanList.tsx:291:                    验收 {plan.validation_passed ? 'passed' : 'pending'}
+src\renderer\components\plans\PlanList.tsx:346:                  const plan = confirmingPlan;
+src\renderer\components\plans\PlanList.tsx:349:                    plan,
+src\renderer\components\plans\PlanList.tsx:350:                    batches: plan.concurrency_suggestion.batches.map((batch) => ({
+src\renderer\components\plans\PlanList.tsx:368:            className="modal plan-reader-modal"
+src\renderer\components\plans\PlanList.tsx:377:            <div className="modal-head plan-reader-head">
+src\renderer\components\plans\PlanList.tsx:378:              <div className="plan-reader-title">
+src\renderer\components\plans\PlanList.tsx:380:                <span className="plan-reader-path mono" title={readerFilePath}>
+src\renderer\components\plans\PlanList.tsx:387:              <div className="item-actions plan-reader-actions">
+src\renderer\components\plans\PlanList.tsx:391:                  disabled={planReading}
+src\renderer\components\plans\PlanList.tsx:395:                  {planReading ? '读取中…' : '刷新'}
+src\renderer\components\plans\PlanList.tsx:397:                <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+src\renderer\components\plans\PlanList.tsx:402:            <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+src\renderer\components\plans\PlanList.tsx:403:              <dl className="plan-reader-summary" aria-label="Plan 摘要">
+src\renderer\components\plans\PlanList.tsx:404:                <div className="plan-reader-summary-item">
+src\renderer\components\plans\PlanList.tsx:408:                <div className="plan-reader-summary-item">
+src\renderer\components\plans\PlanList.tsx:412:                <div className="plan-reader-summary-item">
+src\renderer\components\plans\PlanList.tsx:416:                <div className="plan-reader-summary-item">
+src\renderer\components\plans\PlanList.tsx:422:                <div className="plan-reader-summary-item">
+src\renderer\components\plans\PlanList.tsx:423:                  <dt>任务拆解</dt>
+src\renderer\components\plans\PlanList.tsx:431:                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+src\renderer\components\plans\PlanList.tsx:436:              {planReadError ? (
+src\renderer\components\plans\PlanList.tsx:437:                <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+src\renderer\components\plans\PlanList.tsx:438:                  <span>{planReadError}</span>
+src\renderer\components\plans\PlanList.tsx:439:                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+src\renderer\components\plans\PlanList.tsx:444:              {planReading ? (
+src\renderer\components\plans\PlanList.tsx:445:                <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+src\renderer\components\plans\PlanList.tsx:449:              {!planReading && !planReadError && planReadResult ? (
+src\renderer\components\plans\PlanList.tsx:450:                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+src\renderer\components\plans\PlanList.tsx:451:                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+src\renderer\components\plans\PlanList.tsx:468:              {!planReading && !planReadError ? (
+src\renderer\components\plans\PlanList.tsx:469:                <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+src\renderer\components\plans\PlanList.tsx:470:                  <MarkdownReader
+src\renderer\components\plans\PlanList.tsx:471:                    markdown={planReadResult?.markdown ?? ''}
+src\renderer\components\plans\PlanList.tsx:473:                    ariaLabel="Plan Markdown 正文内容"
+src\renderer\components\workspace\WorkspaceSettingsView.tsx:61:  const mcpTools = mcp?.tools?.length ? mcp.tools : window.autoplan.mcpToolNames;
+
+codex
+已定位到计划阅读组件；我再确认 Markdown 渲染和解析工具的文件名。
+exec
+powershell.exe -Command "rg -n \"function MarkdownReader|const MarkdownReader|MarkdownReader|react-markdown|remarkGfm|task-list|checkbox|plan-reader-task\" src\\renderer src\\main src\\shared" in D:\project\GitHub\autoplan
+2026-06-27T14:53:39.886782Z ERROR codex_core::tools::router: error={"output":"src\\renderer\\components\\Composer.tsx:225:                type=\"checkbox\"\nsrc\\renderer\\styles\\components.css:194:.task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }\nsrc\\renderer\\styles\\components.css:195:.task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 10px; }\nsrc\\renderer\\styles\\components.css:306:.markdown-reader .contains-task-list { list-style: none; padding-left: 1.2em; }\nsrc\\renderer\\styles\\components.css:307:.markdown-reader .task-list-item { margin-left: -1.2em; }\nsrc\\renderer\\styles\\components.css:308:.markdown-reader input[type=\"checkbox\"] { width: auto; margin: 0 7px 0 0; accent-color: var(--brand-600); vertical-align: -2px; }\nsrc\\renderer\\styles\\components.css:309:.markdown-reader .task-list-item > input[type=\"checkbox\"] { margin-top: 0.42em; }\nsrc\\renderer\\components\\PlanLists.tsx:144:    <div className=\"task-list-panel\">\nsrc\\renderer\\components\\MarkdownReader.tsx:2:import ReactMarkdown from 'react-markdown';\nsrc\\renderer\\components\\MarkdownReader.tsx:3:import remarkGfm from 'remark-gfm';\nsrc\\renderer\\components\\MarkdownReader.tsx:10:export type MarkdownReaderProps = {\nsrc\\renderer\\components\\MarkdownReader.tsx:92:    if (type !== 'checkbox') return <input {...props} type={type} />;\nsrc\\renderer\\components\\MarkdownReader.tsx:97:        type=\"checkbox\"\nsrc\\renderer\\components\\MarkdownReader.tsx:222:export function MarkdownReader({\nsrc\\renderer\\components\\MarkdownReader.tsx:228:}: MarkdownReaderProps) {\nsrc\\renderer\\components\\MarkdownReader.tsx:244:        remarkPlugins={[remarkGfm]}\nsrc\\renderer\\components\\MarkdownReader.tsx:253:export default MarkdownReader;\nsrc\\renderer\\components\\plans\\TaskList.tsx:61:    <div className=\"task-list-panel\">\nsrc\\renderer\\components\\plans\\PlanList.tsx:4:import { MarkdownReader } from '../MarkdownReader';\nsrc\\renderer\\components\\plans\\PlanList.tsx:450:                <section className=\"plan-reader-task-summary\" aria-label=\"任务拆解解析结果\">\nsrc\\renderer\\components\\plans\\PlanList.tsx:470:                  <MarkdownReader\nrg: src\\main: 系统找不到指定的文件。 (os error 2)\nrg: src\\shared: 系统找不到指定的文件。 (os error 2)\n","metadata":{"exit_code":1,"duration_seconds":0.2}}
+ exited 1 in 199ms:
+src\renderer\components\Composer.tsx:225:                type="checkbox"
+src\renderer\styles\components.css:194:.task-list-panel { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+src\renderer\styles\components.css:195:.task-list-panel .list { flex: 1 1 auto; min-height: 0; padding-top: 10px; }
+src\renderer\styles\components.css:306:.markdown-reader .contains-task-list { list-style: none; padding-left: 1.2em; }
+src\renderer\styles\components.css:307:.markdown-reader .task-list-item { margin-left: -1.2em; }
+src\renderer\styles\components.css:308:.markdown-reader input[type="checkbox"] { width: auto; margin: 0 7px 0 0; accent-color: var(--brand-600); vertical-align: -2px; }
+src\renderer\styles\components.css:309:.markdown-reader .task-list-item > input[type="checkbox"] { margin-top: 0.42em; }
+src\renderer\components\PlanLists.tsx:144:    <div className="task-list-panel">
+src\renderer\components\MarkdownReader.tsx:2:import ReactMarkdown from 'react-markdown';
+src\renderer\components\MarkdownReader.tsx:3:import remarkGfm from 'remark-gfm';
+src\renderer\components\MarkdownReader.tsx:10:export type MarkdownReaderProps = {
+src\renderer\components\MarkdownReader.tsx:92:    if (type !== 'checkbox') return <input {...props} type={type} />;
+src\renderer\components\MarkdownReader.tsx:97:        type="checkbox"
+src\renderer\components\MarkdownReader.tsx:222:export function MarkdownReader({
+src\renderer\components\MarkdownReader.tsx:228:}: MarkdownReaderProps) {
+src\renderer\components\MarkdownReader.tsx:244:        remarkPlugins={[remarkGfm]}
+src\renderer\components\MarkdownReader.tsx:253:export default MarkdownReader;
+src\renderer\components\plans\TaskList.tsx:61:    <div className="task-list-panel">
+src\renderer\components\plans\PlanList.tsx:4:import { MarkdownReader } from '../MarkdownReader';
+src\renderer\components\plans\PlanList.tsx:450:                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+src\renderer\components\plans\PlanList.tsx:470:                  <MarkdownReader
+rg: src\main: 系统找不到指定的文件。 (os error 2)
+rg: src\shared: 系统找不到指定的文件。 (os error 2)
+
+codex
+范围已经清楚，现在创建符合硬性格式的需求计划文档。
+exec
+powershell.exe -Command "@'
+# 需求 #37 开发计划：计划阅读隐藏任务拆解并修复 Markdown 预览任务列表
+
+## 背景
+
+需求 #37 指出：“计划阅读前文界面，不要显示任务拆解，在markdown预览里面显示，但是markdown预览任务列表有问题，是不是markdown格式冲突？处理一下”。当前计划阅读弹窗同时展示了任务拆解解析摘要和 Markdown 正文预览，容易在阅读前文时重复暴露任务拆解内容；同时 Markdown 预览中的 GFM checkbox 任务行可能与 AutoPlan 任务拆解格式 "'`- [ ] P001: ... <!-- scope: ... -->`、HTML 注释 scope、以及全局任务列表样式发生渲染或样式冲突，需要统一处理。
+
+## 设计约束
+
+- 本计划只处理计划阅读全文弹窗、MarkdownReader 对任务列表的渲染兼容、相关样式隔离和必要测试覆盖，不改动计划生成、任务执行、并发调度、数据库结构或任务解析规则。
+- “计划阅读前文界面”不再单独展示任务拆解解析结果或任务明细；任务拆解内容仅作为 Markdown 正文的一部分在预览区域展示。
+- Markdown 预览必须兼容 AutoPlan 任务拆解硬性格式，不能因为 `- [ ]`、`P001:` 或 `<!-- scope: ... -->` 导致任务行丢失、合并、嵌套错位或 checkbox 可交互误导。
+- MarkdownReader 的修复应保持通用 Markdown 阅读能力，避免影响普通列表、代码块、表格、引用块、链接和非任务 checkbox 的现有展示。
+- 不要把运行测试、回归、构建拆成普通开发任务；最终检查统一放入最后的“完整验收”节点。
+
+## 任务拆解
+
+- [ ] P001: 梳理计划阅读与预览冲突点 <!-- scope: src/renderer/components/plans/PlanList.tsx,src/renderer/components/MarkdownReader.tsx,src/renderer/styles/components.css -->
+  - 验收要点：确认计划阅读弹窗中“前文界面”、任务拆解解析摘要、Markdown 正文预览三者的当前层级、展示条件和数据来源。
+  - 验收要点：复核 AutoPlan 任务行在 `react-markdown` + `remark-gfm` 下的渲染结果，明确 HTML 注释 scope、checkbox、列表缩进和自定义 input 渲染之间的冲突点。
+  - 验收要点：确定本次改动边界，不修改任务解析器输出、不改变计划文件格式、不影响计划卡片列表的任务统计展示。
+
+- [ ] P002: 隐藏计划阅读任务拆解摘要 <!-- scope: src/renderer/components/plans/PlanList.tsx -->
+  - 验收要点：计划阅读全文弹窗不再在 Markdown 正文预览之前展示“任务拆解解析结果”区块、任务数量提示或解析警告的独立摘要。
+  - 验收要点：刷新、关闭、错误提示、加载态、文件路径、更新时间和计划摘要等阅读辅助信息继续正常显示。
+  - 验收要点：任务拆解内容仍保留在 Markdown 正文预览中，用户可以通过正文中的 `## 任务拆解` 章节阅读完整任务行。
+  - 验收要点：当计划文件缺少任务拆解或解析失败时，不再通过已隐藏区块打扰前文阅读，但读取错误仍通过原有错误区域呈现。
+
+- [ ] P003: 修复 Markdown 任务列表渲染 <!-- scope: src/renderer/components/MarkdownReader.tsx -->
+  - 验收要点：`- [ ] P001: 任务标题 <!-- scope: ... -->` 和 `- [x] P002: ...` 在 Markdown 预览中按独立任务列表项展示，不被合并为普通段落或丢失标题文本。
+  - 验收要点：scope HTML 注释不在预览中显示，但也不破坏任务行的 checkbox、编号、标题和后续缩进验收要点展示。
+  - 验收要点：预览内 checkbox 使用只读/禁用语义，避免用户误以为可在 Markdown 预览中直接勾选任务状态。
+  - 验收要点：普通无序列表、有序列表、嵌套列表、代码块里的 `- [ ]` 文本和表格内容不因本次任务列表修复而异常渲染。
+
+- [ ] P004: 隔离 Markdown 预览列表样式 <!-- scope: src/renderer/styles/components.css -->
+  - 验收要点：Markdown 预览中的 GFM task list 有稳定缩进、行高和 checkbox 对齐，长任务标题与中文验收要点换行后仍易读。
+  - 验收要点：`.markdown-reader` 内部样式不污染业务任务列表组件，现有任务面板、计划列表和弹窗按钮样式不被覆盖。
+  - 验收要点：任务拆解章节下的验收要点作为普通缩进 bullet 展示，不被渲染成嵌套 checkbox 或错误继承任务行样式。
+  - 验收要点：深色/浅色主题下 checkbox、链接、代码、注释被隐藏后的空白和列表间距保持可读。
+
+- [ ] P005: 补充 Markdown 阅读测试覆盖 <!-- scope: src/renderer/components/MarkdownReader.tsx,src/renderer/components/plans/PlanList.tsx,scripts/smoke-test.js -->
+  - 验收要点：覆盖计划阅读弹窗隐藏独立任务拆解摘要、但 Markdown 正文仍显示 `## 任务拆解` 章节的场景。
+  - 验收要点：覆盖 AutoPlan 标准任务行、已完成任务行、带 scope HTML 注释任务行和带缩进验收要点任务行的预览渲染场景。
+  - 验收要点：覆盖代码块中包含 `- [ ] P001` 文本时不被当作可视化任务 checkbox 处理的场景。
+  - 验收要点：测试代码只描述和校验阅读/预览行为，不在该任务内承担最终完整验收命令职责。
+
+- [ ] P006: 完整验收 <!-- scope: validation -->
+  - 验收要点：执行最终验收命令 `npm run check && npm run smoke`，范围覆盖 TypeScript 编译、MarkdownReader 渲染兼容、计划阅读弹窗展示逻辑和 smoke 主流程。
+  - 验收要点：手动打开包含标准 `## 任务拆解` 的计划文件，确认阅读弹窗前文区域不再出现独立任务拆解摘要，任务拆解仅在 Markdown 正文预览中出现。
+  - 验收要点：在 Markdown 预览中确认 `- [ ] P001: ... <!-- scope: ... -->` 每个任务独占一行、checkbox 对齐、scope 注释不显示、验收要点缩进正常。
+  - 验收要点：确认普通 Markdown 列表、表格、引用、代码块、链接和计划摘要信息没有明显回退。
+  - 验收要点：通过标准为最终验收命令退出码为 0，且手动验证计划阅读隐藏任务拆解摘要与 Markdown 预览任务列表修复均符合需求 #37。
+
+## 总体验收标准
+
+- 阅读聚焦：计划阅读全文弹窗不再在 Markdown 正文预览前单独展示任务拆解解析摘要或任务明细，前文阅读不被任务拆解区域打断。
+- 正文保留：计划文件中的 `## 任务拆解` 章节仍在 Markdown 预览中按原文结构展示，符合 AutoPlan 任务拆解硬性格式。
+- 列表正确：标准任务行 `- [ ] P001: 任务标题 <!-- scope: ... -->` 独占一行、编号连续可见、标题完整、scope 注释隐藏且不破坏渲染。
+- 样式隔离：Markdown 任务列表样式只作用于 `.markdown-reader`，不影响业务任务列表、计划列表和其他弹窗控件。
+- 兼容稳定：普通 Markdown 内容、代码块中的任务格式文本、嵌套验收要点和主题配色均保持可读且无明显回退。
+- 最终验收命令：执行 `npm run check && npm run smoke`；验收范围为计划阅读弹窗、MarkdownReader 任务列表渲染、样式隔离和现有 smoke 主流程；通过标准为命令退出码为 0，且手动验证需求 #37 描述的问题已修复。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：需求 #37 开发计划已创建，待执行。
+'"'@ | Set-Content -Path docs\\plan\\plan_requirement_37_20260627-225309.md -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 225ms:
+codex
+计划文件已写入；我会快速校验任务格式和文件内容。
+exec
+powershell.exe -Command '$path='"'docs\\plan\\plan_requirement_37_20260627-225309.md'; Get-Content "'$path -TotalCount 40; '"''; Select-String -Path "'$path -Pattern '"'"'^- '"\\[ \\] P\\d{3}: .*<"'!-- scope: .+ -->$'"' | ForEach-Object { "'$_.Line }; '"''; 'Task count: ' + ((Select-String -Path "'$path -Pattern '"'"'^- '"\\[ \\] P\\d{3}: .*<"'!-- scope: .+ -->$'"').Count)" in D:\project\GitHub\autoplan
+ succeeded in 286ms:
+# 需求 #37 开发计划：计划阅读隐藏任务拆解并修复 Markdown 预览任务列表
+
+## 背景
+
+需求 #37 指出：“计划阅读前文界面，不要显示任务拆解，在markdown预览里面显示，但是markdown预览任务列表有问题，是不是markdown格式冲突？处理一下”。当前计划阅读弹窗同时展示了任务拆解解析摘要和 Markdown 正文预览，容易在阅读前文时重复暴露任务拆解内容；同时 Markdown 预览中的 GFM checkbox 任务行可能与 AutoPlan 任务拆解格式 `- [ ] P001: ... <!-- scope: ... -->`、HTML 注释 scope、以及全局任务列表样式发生渲染或样式冲突，需要统一处理。
+
+## 设计约束
+
+- 本计划只处理计划阅读全文弹窗、MarkdownReader 对任务列表的渲染兼容、相关样式隔离和必要测试覆盖，不改动计划生成、任务执行、并发调度、数据库结构或任务解析规则。
+- “计划阅读前文界面”不再单独展示任务拆解解析结果或任务明细；任务拆解内容仅作为 Markdown 正文的一部分在预览区域展示。
+- Markdown 预览必须兼容 AutoPlan 任务拆解硬性格式，不能因为 `- [ ]`、`P001:` 或 `<!-- scope: ... -->` 导致任务行丢失、合并、嵌套错位或 checkbox 可交互误导。
+- MarkdownReader 的修复应保持通用 Markdown 阅读能力，避免影响普通列表、代码块、表格、引用块、链接和非任务 checkbox 的现有展示。
+- 不要把运行测试、回归、构建拆成普通开发任务；最终检查统一放入最后的“完整验收”节点。
+
+## 任务拆解
+
+- [ ] P001: 梳理计划阅读与预览冲突点 <!-- scope: src/renderer/components/plans/PlanList.tsx,src/renderer/components/MarkdownReader.tsx,src/renderer/styles/components.css -->
+  - 验收要点：确认计划阅读弹窗中“前文界面”、任务拆解解析摘要、Markdown 正文预览三者的当前层级、展示条件和数据来源。
+  - 验收要点：复核 AutoPlan 任务行在 `react-markdown` + `remark-gfm` 下的渲染结果，明确 HTML 注释 scope、checkbox、列表缩进和自定义 input 渲染之间的冲突点。
+  - 验收要点：确定本次改动边界，不修改任务解析器输出、不改变计划文件格式、不影响计划卡片列表的任务统计展示。
+
+- [ ] P002: 隐藏计划阅读任务拆解摘要 <!-- scope: src/renderer/components/plans/PlanList.tsx -->
+  - 验收要点：计划阅读全文弹窗不再在 Markdown 正文预览之前展示“任务拆解解析结果”区块、任务数量提示或解析警告的独立摘要。
+  - 验收要点：刷新、关闭、错误提示、加载态、文件路径、更新时间和计划摘要等阅读辅助信息继续正常显示。
+  - 验收要点：任务拆解内容仍保留在 Markdown 正文预览中，用户可以通过正文中的 `## 任务拆解` 章节阅读完整任务行。
+  - 验收要点：当计划文件缺少任务拆解或解析失败时，不再通过已隐藏区块打扰前文阅读，但读取错误仍通过原有错误区域呈现。
+
+- [ ] P003: 修复 Markdown 任务列表渲染 <!-- scope: src/renderer/components/MarkdownReader.tsx -->
+  - 验收要点：`- [ ] P001: 任务标题 <!-- scope: ... -->` 和 `- [x] P002: ...` 在 Markdown 预览中按独立任务列表项展示，不被合并为普通段落或丢失标题文本。
+  - 验收要点：scope HTML 注释不在预览中显示，但也不破坏任务行的 checkbox、编号、标题和后续缩进验收要点展示。
+  - 验收要点：预览内 checkbox 使用只读/禁用语义，避免用户误以为可在 Markdown 预览中直接勾选任务状态。
+  - 验收要点：普通无序列表、有序列表、嵌套列表、代码块里的 `- [ ]` 文本和表格内容不因本次任务列表修复而异常渲染。
+
+- [ ] P004: 隔离 Markdown 预览列表样式 <!-- scope: src/renderer/styles/components.css -->
+  - 验收要点：Markdown 预览中的 GFM task list 有稳定缩进、行高和 checkbox 对齐，长任务标题与中文验收要点换行后仍易读。
+  - 验收要点：`.markdown-reader` 内部样式不污染业务任务列表组件，现有任务面板、计划列表和弹窗按钮样式不被覆盖。
+  - 验收要点：任务拆解章节下的验收要点作为普通缩进 bullet 展示，不被渲染成嵌套 checkbox 或错误继承任务行样式。
+  - 验收要点：深色/浅色主题下 checkbox、链接、代码、注释被隐藏后的空白和列表间距保持可读。
+
+- [ ] P005: 补充 Markdown 阅读测试覆盖 <!-- scope: src/renderer/components/MarkdownReader.tsx,src/renderer/components/plans/PlanList.tsx,scripts/smoke-test.js -->
+
+- [ ] P001: 梳理计划阅读与预览冲突点 <!-- scope: src/renderer/components/plans/PlanList.tsx,src/renderer/components/MarkdownReader.tsx,src/renderer/styles/components.css -->
+- [ ] P002: 隐藏计划阅读任务拆解摘要 <!-- scope: src/renderer/components/plans/PlanList.tsx -->
+- [ ] P003: 修复 Markdown 任务列表渲染 <!-- scope: src/renderer/components/MarkdownReader.tsx -->
+- [ ] P004: 隔离 Markdown 预览列表样式 <!-- scope: src/renderer/styles/components.css -->
+- [ ] P005: 补充 Markdown 阅读测试覆盖 <!-- scope: src/renderer/components/MarkdownReader.tsx,src/renderer/components/plans/PlanList.tsx,scripts/smoke-test.js -->
+- [ ] P006: 完整验收 <!-- scope: validation -->
+
+Task count: 6
+
+**Finalizing plan details**
+
+I need to create a concise final version that includes the file line. So far, we only have a plan in place and might not need any tests for it. I should ensure that there's no mention of any business code, and I need to reference the final line correctly with the appropriate path. It's important to stay organized and clear!
+codex
+已按要求生成计划文件，未修改业务代码。
+
+- 文件：`docs/plan/plan_requirement_37_20260627-225309.md:1`
+- 已包含：`## 任务拆解`、6 个严格格式任务、每个任务验收要点、最后 `P006: 完整验收 <!-- scope: validation -->`
+- 已包含：总体验收标准与进度区
+- 最终验收命令写明为：`npm run check && npm run smoke`
+tokens used
+32,295
+已按要求生成计划文件，未修改业务代码。
+
+- 文件：`docs/plan/plan_requirement_37_20260627-225309.md:1`
+- 已包含：`## 任务拆解`、6 个严格格式任务、每个任务验收要点、最后 `P006: 完整验收 <!-- scope: validation -->`
+- 已包含：总体验收标准与进度区
+- 最终验收命令写明为：`npm run check && npm run smoke`

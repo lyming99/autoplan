@@ -172,10 +172,60 @@ const settingsIcon = (
   </>
 );
 
+const cliIcon = (
+  <>
+    <rect x="4.5" y="5.5" width="15" height="13" rx="2" />
+    <path d="m8 10 2.4 2L8 14" />
+    <path d="M12.5 14h3.5" />
+  </>
+);
+
+const thinkingIcon = (
+  <>
+    <path d="M9 18h6" />
+    <path d="M10 21h4" />
+    <path d="M8.2 14.2a6 6 0 1 1 7.6 0c-.8.6-1.2 1.3-1.3 2.3h-5c-.1-1-.5-1.7-1.3-2.3z" />
+    <path d="M12 8.5v3" />
+    <path d="M10.5 10h3" />
+  </>
+);
+
+const helpIcon = (
+  <>
+    <circle cx="12" cy="12" r="8.5" />
+    <path d="M9.8 9.4a2.3 2.3 0 0 1 4.4 1c0 1.7-2.2 1.9-2.2 3.6" />
+    <path d="M12 17h.01" />
+  </>
+);
+
 const fileIcon = (
   <>
     <path d="M6.5 3.5h8L18 7v13.5H6.5z" />
     <path d="M14.2 3.8v3.5h3.5" />
+  </>
+);
+
+const folderIcon = (
+  <>
+    <path d="M4 7.5h6l1.8 2H20v8.8a2.2 2.2 0 0 1-2.2 2.2H6.2A2.2 2.2 0 0 1 4 18.3z" />
+    <path d="M4 9.5V6.7A2.2 2.2 0 0 1 6.2 4.5h3.1l1.8 2H18a2 2 0 0 1 2 2v1" />
+  </>
+);
+
+const plugIcon = (
+  <>
+    <path d="M9 7V3.8" />
+    <path d="M15 7V3.8" />
+    <path d="M7 7h10v4.5a5 5 0 0 1-10 0z" />
+    <path d="M12 16.5v3.7" />
+  </>
+);
+
+const saveIcon = (
+  <>
+    <path d="M5 4.5h12.2L20 7.3v12.2H5z" />
+    <path d="M8 4.8v5h7v-5" />
+    <path d="M8 19.2v-5.5h8v5.5" />
   </>
 );
 
@@ -212,7 +262,17 @@ const ICONS = {
   open: enterIcon,
   back: backIcon,
   settings: settingsIcon,
+  cli: cliIcon,
+  terminal: cliIcon,
+  code: cliIcon,
+  thinking: thinkingIcon,
+  help: helpIcon,
   file: fileIcon,
+  folder: folderIcon,
+  plug: plugIcon,
+  mcp: plugIcon,
+  save: saveIcon,
+  check: completeIcon,
 } as const;
 
 export type IconName = keyof typeof ICONS;

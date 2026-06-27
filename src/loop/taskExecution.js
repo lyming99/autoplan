@@ -4,6 +4,7 @@ const { nowIso } = require('../database');
 const {
   DEFAULT_AGENT_CLI_PROVIDER,
   agentCliContextFields,
+  agentCliProviderDisplayName,
   codexSessionContextFields,
   normalizeCodexSessionId,
   operationCodexSessionId,
@@ -15,6 +16,9 @@ const {
   taskLifecycleEventRecorded,
 } = require('./taskEvents');
 const { classifyExecutionFailure } = require('./validation');
+const { MAX_PARALLEL_TASKS, taskParallelScopes } = require('./concurrency');
+const { taskScopeText } = require('./planParser');
+const { normalizeRelative } = require('./workspaceFiles');
 
 async function processPlan(service, helpers, workspace, plan) {
     plan = service.activateDraftPlan ? service.activateDraftPlan(plan) : plan;
@@ -272,6 +276,10 @@ function markTaskCompletedInPlan(service, helpers, workspace, planFile, task, re
     }
     fs.writeFileSync(planFile, content, 'utf8');
   }
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 module.exports = {
   completeTask,

@@ -1,0 +1,3474 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0980-dd3a-76c0-9f9a-471daf8d1c4f
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_36_20260627-221620.md
+指定任务：- [ ] P004: 对齐设置页表单交互与保存条 <!-- scope: src/renderer/components/workspace/WorkspaceSettingsView.tsx,src/renderer/utils/workspaceForms.ts,src/renderer/styles/components.css -->
+任务 scope：src/renderer/components/workspace/workspacesettingsview.tsx, src/renderer/utils/workspaceforms.ts, src/renderer/styles/components.css
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Planning workspace components**
+
+I need to focus on P004 and inspect the workspaceForms. It looks like I already have the component in place, but I need to implement things like segment controls, effort cards, and a sticky save feature. The scope includes some utilities, but luckily I don’t need any tests, and maybe I don’t even need to read a full plan for it. It might be worth checking P004 again, though, just to be sure!
+codex
+我会沿用 P003 的设置页结构，直接查看表单工具类型后补交互与保存条。
+exec
+powershell.exe -Command "Get-Content -Raw -Encoding UTF8 src/renderer/utils/workspaceForms.ts; '--- settings component key ranges'; "'$lines=Get-Content -Encoding UTF8 src/renderer/components/workspace/WorkspaceSettingsView.tsx; foreach($range in @(@(1,90),@(140,280),@(300,340))){'"'--- '+"'$range[0]+'"'-'+"'$range[1]; for($i=$range[0];$i -le [Math]::Min($range[1],$lines.Count);$i++){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] }}' in D:\project\GitHub\autoplan
+ succeeded in 596ms:
+import type { Dispatch, SetStateAction } from 'react';
+import {
+  DEFAULT_WORKSPACE_TAB,
+  PENDING_ATTACHMENT_SOURCES,
+} from '../types';
+import type {
+  AgentCliOption,
+  AgentCliProvider,
+  CodexReasoningEffort,
+  IntakeType,
+  LoopConfigInput,
+  PendingAttachment,
+  ProjectState,
+  WorkspacePlanReadState,
+  WorkspaceTab,
+} from '../types';
+import { getFilePath, toSafeFileUrl } from '../components/shared';
+
+const workspaceTabIds: WorkspaceTab[] = ['overview', 'requirement', 'feedback', 'tasks', 'events', 'settings'];
+
+export const emptyPendingAttachments: Record<IntakeType, PendingAttachment[]> = {
+  requirement: [],
+  feedback: [],
+};
+
+export const agentCliOptions: AgentCliOption[] = [
+  { value: 'codex', label: 'Codex CLI' },
+  { value: 'claude', label: 'Claude CLI' },
+];
+
+export const codexReasoningOptions: AgentCliOption[] = [
+  { value: 'low', label: '低 · 快速' },
+  { value: 'medium', label: '中 · 默认' },
+  { value: 'high', label: '高 · 深入' },
+  { value: 'xhigh', label: '超高 · 最深入' },
+];
+
+export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+
+export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+  requirement: 'codex',
+  feedback: 'codex',
+};
+
+export const defaultComposerCodexReasoning: Record<IntakeType, CodexReasoningEffort> = {
+  requirement: defaultCodexReasoningEffort,
+  feedback: defaultCodexReasoningEffort,
+};
+
+export type LoopFormState = {
+  workspacePath: string;
+  intervalSeconds: string;
+  validationCommand: string;
+  agentCliProvider: string;
+  agentCliCommand: string;
+  codexReasoningEffort: CodexReasoningEffort;
+};
+
+export type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+
+export type ScopeFileOpenSettings = {
+  mode: ScopeFileOpenMode;
+  command: string;
+};
+
+export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+
+export function createEmptyPlanReadState(): WorkspacePlanReadState {
+  return { plan: null, result: null, loading: false, error: null };
+}
+
+export function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === 'string' && error.trim()) return error.trim();
+  return fallback;
+}
+
+export function createPendingPathAttachment(file: File): PendingAttachment | null {
+  const path = getFilePath(file);
+  if (!path) return null;
+  const name = file.name || path.split(/[\\/]/).pop() || '附件';
+  const type = file.type || 'application/octet-stream';
+  return {
+    id: `${PENDING_ATTACHMENT_SOURCES.PATH}:${path}:${file.size}`,
+    source: PENDING_ATTACHMENT_SOURCES.PATH,
+    path,
+    name,
+    size: file.size,
+    type,
+    previewUrl: toSafeFileUrl(path),
+  };
+}
+
+export function getImageExtension(type: string) {
+  if (type === 'image/jpeg') return 'jpg';
+  const subtype = type.startsWith('image/') ? type.slice('image/'.length) : 'png';
+  return subtype.replace(/[^a-z0-9]+/gi, '').toLowerCase() || 'png';
+}
+
+export function readFileAsDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('读取剪贴板图片失败'));
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function createPendingClipboardImageAttachment(file: File, index: number): Promise<PendingAttachment | null> {
+  if (!file.type.startsWith('image/')) return null;
+  const type = file.type || 'image/png';
+  const extension = getImageExtension(type);
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const fallbackName = `pasted-image-${timestamp}-${index + 1}.${extension}`;
+  const name = file.name || fallbackName;
+  const dataUrl = await readFileAsDataUrl(file);
+  if (!dataUrl) return null;
+  const idSuffix = typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `${Date.now()}-${index}-${Math.random().toString(36).slice(2)}`;
+  return {
+    id: `${PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE}:${idSuffix}`,
+    source: PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE,
+    dataUrl,
+    name,
+    size: file.size,
+    type,
+    previewUrl: dataUrl,
+  };
+}
+
+export function appendPendingAttachments(
+  setPendingAttachments: Dispatch<SetStateAction<Record<IntakeType, PendingAttachment[]>>>,
+  type: IntakeType,
+  attachments: PendingAttachment[],
+) {
+  if (!attachments.length) return;
+  setPendingAttachments((current) => {
+    const nextItems = [...current[type]];
+    for (const attachment of attachments) {
+      if (!nextItems.some((item) => isSamePendingAttachment(item, attachment))) nextItems.push(attachment);
+    }
+    return nextItems.length === current[type].length ? current : { ...current, [type]: nextItems };
+  });
+}
+
+export function isSamePendingAttachment(current: PendingAttachment, next: PendingAttachment) {
+  if (current.source !== next.source) return false;
+  if (current.source === PENDING_ATTACHMENT_SOURCES.PATH && next.source === PENDING_ATTACHMENT_SOURCES.PATH) {
+    return current.path === next.path && current.size === next.size;
+  }
+  if (
+    current.source === PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE &&
+    next.source === PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE
+  ) {
+    return current.dataUrl === next.dataUrl && current.size === next.size;
+  }
+  return current.id === next.id;
+}
+
+export function resolveWorkspaceTab(tab: string | null): WorkspaceTab {
+  return workspaceTabIds.some((item) => item === tab) ? (tab as WorkspaceTab) : DEFAULT_WORKSPACE_TAB;
+}
+
+export function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEffort {
+  const effort = String(value || '').trim().toLowerCase();
+  if (effort === 'low' || effort === 'high' || effort === 'xhigh') return effort;
+  return defaultCodexReasoningEffort;
+}
+
+export function loopFormFromProjectState(state: ProjectState): LoopFormState {
+  return {
+    workspacePath: state.workspace_path || '',
+    intervalSeconds: String(state.interval_seconds || 5),
+    validationCommand: state.validation_command ?? '',
+    agentCliProvider: state.agent_cli_provider || 'codex',
+    agentCliCommand: state.agent_cli_command || '',
+    codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_effort),
+  };
+}
+
+export function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
+  const payload: LoopConfigInput = {
+    projectId,
+    workspacePath: form.workspacePath,
+    intervalSeconds: Number(form.intervalSeconds || 5),
+    validationCommand: form.validationCommand,
+    agentCliProvider: form.agentCliProvider || 'codex',
+    agentCliCommand: form.agentCliCommand.trim(),
+  };
+  if (form.agentCliProvider !== 'claude') {
+    payload.codexReasoningEffort = form.codexReasoningEffort;
+  }
+  return payload;
+}
+
+export function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
+  return left.workspacePath === right.workspacePath
+    && left.intervalSeconds === right.intervalSeconds
+    && left.validationCommand === right.validationCommand
+    && left.agentCliProvider === right.agentCliProvider
+    && left.agentCliCommand === right.agentCliCommand
+    && left.codexReasoningEffort === right.codexReasoningEffort;
+}
+
+--- settings component key ranges
+--- 1-90
+   1: import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+   2: import type { McpStatus } from '../../types';
+   3: import {
+   4:   codexReasoningOptions,
+   5:   normalizeCodexReasoningEffort,
+   6:   type LoopFormState,
+   7:   type ScopeFileOpenMode,
+   8:   type ScopeFileOpenSettings,
+   9: } from '../../utils/workspaceForms';
+  10: 
+  11: type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';
+  12: 
+  13: const SETTINGS_NAV: Array<{ id: SettingsPane; label: string; hint: string; icon: string }> = [
+  14:   { id: 'loop', label: '循环控制', hint: '路径、间隔、验收命令', icon: 'loop' },
+  15:   { id: 'cli', label: 'CLI 后端', hint: 'Provider 与 Codex 深度', icon: 'cli' },
+  16:   { id: 'scope', label: 'scope 文件', hint: '打开方式与编辑器命令', icon: 'scope' },
+  17:   { id: 'mcp', label: 'MCP 接入', hint: '服务状态与工具清单', icon: 'mcp' },
+  18: ];
+  19: 
+  20: function mcpStatusText(mcp?: McpStatus | null) {
+  21:   if (!mcp?.enabled) return '已禁用';
+  22:   if (mcp.lastError || mcp.status === 'error') return '启动失败';
+  23:   if (mcp.running) return '运行中';
+  24:   return '已配置，等待启动事件';
+  25: }
+  26: 
+  27: function mcpStatusTone(mcp?: McpStatus | null) {
+  28:   if (!mcp?.enabled || mcp.lastError || mcp.status === 'error') return 'warn';
+  29:   if (mcp.running) return 'ok';
+  30:   return '';
+  31: }
+  32: 
+  33: function scopeModeLabel(mode: ScopeFileOpenMode) {
+  34:   if (mode === 'folder') return '文件夹定位';
+  35:   if (mode === 'vscode') return 'VSCode';
+  36:   if (mode === 'command') return '第三方命令';
+  37:   return '系统默认';
+  38: }
+  39: 
+  40: export function WorkspaceSettingsView({
+  41:   loopForm,
+  42:   scopeFileOpenSettings,
+  43:   setLoopForm,
+  44:   setScopeFileOpenSettings,
+  45:   mcp,
+  46:   onSubmit,
+  47:   onToggleRun,
+  48:   running,
+  49: }: {
+  50:   loopForm: LoopFormState;
+  51:   scopeFileOpenSettings: ScopeFileOpenSettings;
+  52:   setLoopForm: Dispatch<SetStateAction<LoopFormState>>;
+  53:   setScopeFileOpenSettings: Dispatch<SetStateAction<ScopeFileOpenSettings>>;
+  54:   mcp?: McpStatus | null;
+  55:   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  56:   onToggleRun: () => void;
+  57:   running: boolean;
+  58: }) {
+  59:   const [activePane, setActivePane] = useState<SettingsPane>('loop');
+  60:   const isCodexProvider = loopForm.agentCliProvider !== 'claude';
+  61:   const mcpTools = mcp?.tools?.length ? mcp.tools : window.autoplan.mcpToolNames;
+  62:   const mcpStatus = mcpStatusText(mcp);
+  63: 
+  64:   const navMeta: Record<SettingsPane, { label: string; tone?: string }> = {
+  65:     loop: { label: running ? '运行中' : '已停止', tone: running ? 'ok' : '' },
+  66:     cli: { label: loopForm.agentCliProvider === 'claude' ? 'Claude' : 'Codex', tone: isCodexProvider ? 'ok' : '' },
+  67:     scope: { label: scopeModeLabel(scopeFileOpenSettings.mode) },
+  68:     mcp: { label: mcpStatus, tone: mcpStatusTone(mcp) },
+  69:   };
+  70: 
+  71:   return (
+  72:     <div className="settings-layout settings-view">
+  73:       <nav className="settings-nav" aria-label="设置分组导航">
+  74:         <div className="settings-nav-label">Settings</div>
+  75:         {SETTINGS_NAV.map((item) => {
+  76:           const active = activePane === item.id;
+  77:           const meta = navMeta[item.id];
+  78:           return (
+  79:             <button
+  80:               key={item.id}
+  81:               type="button"
+  82:               className={`settings-nav-item${active ? ' active' : ''}`}
+  83:               aria-current={active ? 'page' : undefined}
+  84:               onClick={() => setActivePane(item.id)}
+  85:             >
+  86:               <span className={`snav-ico snav-ico-${item.icon}`} aria-hidden="true" />
+  87:               <span className="snav-text">
+  88:                 <span>{item.label}</span>
+  89:                 <small>{item.hint}</small>
+  90:               </span>
+--- 140-280
+ 140:                       placeholder="留空则跳过外部验收命令"
+ 141:                     />
+ 142:                     <span className="field-hint">留空不会阻止需求、反馈、Plan 和任务流程继续运行。</span>
+ 143:                   </label>
+ 144:                 </div>
+ 145:               </div>
+ 146: 
+ 147:               <SettingsActions running={running} onToggleRun={onToggleRun} />
+ 148:             </section>
+ 149:           ) : null}
+ 150: 
+ 151:           {activePane === 'cli' ? (
+ 152:             <section className="settings-pane active" aria-labelledby="settings-cli-title">
+ 153:               <div className="pane-head">
+ 154:                 <h2 id="settings-cli-title"><span className="pane-ico" aria-hidden="true" />CLI 后端</h2>
+ 155:                 <p>选择执行任务时使用的 CLI 后端，并为 Codex 配置思考深度和命令路径。</p>
+ 156:               </div>
+ 157: 
+ 158:               <div className="set-card">
+ 159:                 <div className="set-card-head">
+ 160:                   <h3>后端与命令</h3>
+ 161:                   <div className="set-card-hint">Codex / Claude Provider、思考深度与可执行命令</div>
+ 162:                 </div>
+ 163:                 <div className="set-card-body">
+ 164:                   <label className="field">
+ 165:                     <span className="field-label">CLI 后端</span>
+ 166:                     <select
+ 167:                       className="field-select"
+ 168:                       value={loopForm.agentCliProvider}
+ 169:                       onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+ 170:                     >
+ 171:                       <option value="codex">Codex CLI</option>
+ 172:                       <option value="claude">Claude CLI</option>
+ 173:                     </select>
+ 174:                     {loopForm.agentCliProvider === 'claude' ? (
+ 175:                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+ 176:                     ) : null}
+ 177:                   </label>
+ 178:                   {isCodexProvider ? (
+ 179:                     <label className="field">
+ 180:                       <span className="field-label">Codex 思考深度</span>
+ 181:                       <select
+ 182:                         className="field-select"
+ 183:                         value={loopForm.codexReasoningEffort}
+ 184:                         onChange={(event) =>
+ 185:                           setLoopForm((current) => ({
+ 186:                             ...current,
+ 187:                             codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+ 188:                           }))
+ 189:                         }
+ 190:                       >
+ 191:                         {codexReasoningOptions.map((option) => (
+ 192:                           <option key={option.value} value={option.value}>
+ 193:                             {option.label}
+ 194:                           </option>
+ 195:                         ))}
+ 196:                       </select>
+ 197:                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+ 198:                     </label>
+ 199:                   ) : (
+ 200:                     <div className="field readonly-field">
+ 201:                       <span className="field-label">Codex 思考深度</span>
+ 202:                       <span>Claude CLI 不使用该配置</span>
+ 203:                     </div>
+ 204:                   )}
+ 205:                   <label className="field">
+ 206:                     <span className="field-label">CLI 命令路径 <span className="tag">可选</span></span>
+ 207:                     <input
+ 208:                       className="field-input mono"
+ 209:                       value={loopForm.agentCliCommand}
+ 210:                       onChange={(event) => setLoopForm((current) => ({ ...current, agentCliCommand: event.target.value }))}
+ 211:                       placeholder={loopForm.agentCliProvider === 'claude' ? 'claude' : 'codex'}
+ 212:                     />
+ 213:                     <span className="field-hint">后端在 PATH 中时留空即可，否则填写可执行文件完整路径。</span>
+ 214:                   </label>
+ 215:                 </div>
+ 216:               </div>
+ 217: 
+ 218:               <SettingsActions running={running} onToggleRun={onToggleRun} />
+ 219:             </section>
+ 220:           ) : null}
+ 221: 
+ 222:           {activePane === 'scope' ? (
+ 223:             <section className="settings-pane active" aria-labelledby="settings-scope-title">
+ 224:               <div className="pane-head">
+ 225:                 <h2 id="settings-scope-title"><span className="pane-ico" aria-hidden="true" />scope 文件</h2>
+ 226:                 <p>Plan 全文中 scope 文件链接以该方式打开，路径会限制在当前工作区内。</p>
+ 227:               </div>
+ 228: 
+ 229:               <div className="set-card">
+ 230:                 <div className="set-card-head">
+ 231:                   <h3>打开方式</h3>
+ 232:                   <div className="set-card-hint">系统默认、文件夹定位、VSCode 或第三方编辑器命令</div>
+ 233:                 </div>
+ 234:                 <div className="set-card-body">
+ 235:                   <label className="field">
+ 236:                     <span className="field-label">scope 文件打开方式</span>
+ 237:                     <select
+ 238:                       className="field-select"
+ 239:                       value={scopeFileOpenSettings.mode}
+ 240:                       onChange={(event) =>
+ 241:                         setScopeFileOpenSettings((current) => ({
+ 242:                           ...current,
+ 243:                           mode: event.target.value as ScopeFileOpenMode,
+ 244:                         }))
+ 245:                       }
+ 246:                     >
+ 247:                       <option value="system">系统默认方式</option>
+ 248:                       <option value="folder">系统文件夹定位</option>
+ 249:                       <option value="vscode">VSCode</option>
+ 250:                       <option value="command">第三方编辑器命令</option>
+ 251:                     </select>
+ 252:                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+ 253:                   </label>
+ 254:                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+ 255:                     <label className="field">
+ 256:                       <span className="field-label">编辑器命令 <span className="tag">可选</span></span>
+ 257:                       <input
+ 258:                         className="field-input mono"
+ 259:                         value={scopeFileOpenSettings.command}
+ 260:                         onChange={(event) => setScopeFileOpenSettings((current) => ({ ...current, command: event.target.value }))}
+ 261:                         placeholder={scopeFileOpenSettings.mode === 'vscode' ? 'code' : '编辑器命令，例如 cursor'}
+ 262:                       />
+ 263:                       <span className="field-hint">留空选择 VSCode 时默认使用 <code>code</code>；第三方命令可用 <code>{'{file}'}</code> 占位。</span>
+ 264:                     </label>
+ 265:                   ) : null}
+ 266:                   <div className="inline-banner info">
+ 267:                     <span>无法判断影响范围时使用 <b>unknown</b>，完整验收任务使用 <b>validation</b>；打开前会校验目标路径位于当前工作区内。</span>
+ 268:                   </div>
+ 269:                 </div>
+ 270:               </div>
+ 271: 
+ 272:               <SettingsActions running={running} onToggleRun={onToggleRun} />
+ 273:             </section>
+ 274:           ) : null}
+ 275: 
+ 276:           {activePane === 'mcp' ? (
+ 277:             <section className="settings-pane active" aria-labelledby="settings-mcp-title">
+ 278:               <div className="pane-head">
+ 279:                 <h2 id="settings-mcp-title"><span className="pane-ico" aria-hidden="true" />MCP 外部接入 <span className={`mcp-status ${mcpStatusTone(mcp)}`}>{mcpStatus}</span></h2>
+ 280:                 <p>本机客户端可通过 MCP 工具创建项目、提交需求和反馈。以下信息为只读。</p>
+--- 300-340
+ 300:                     <span>{mcp?.note || '默认仅监听本机地址，供本机 MCP 客户端连接。'} 可用环境变量 <code>AUTOPLAN_MCP_ENABLED=0</code> 禁用服务。</span>
+ 301:                   </div>
+ 302:                 </div>
+ 303:               </div>
+ 304:             </section>
+ 305:           ) : null}
+ 306:         </form>
+ 307:       </div>
+ 308:     </div>
+ 309:   );
+ 310: }
+ 311: 
+ 312: function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+ 313:   return (
+ 314:     <div className="settings-actions button-row">
+ 315:       <button type="submit">保存配置</button>
+ 316:       <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
+ 317:     </div>
+ 318:   );
+ 319: }
+ 320: 
+ 321: function InfoRow({ label, children }: { label: string; children: ReactNode }) {
+ 322:   return (
+ 323:     <div className="info-row">
+ 324:       <span className="info-key">{label}</span>
+ 325:       <span className="info-val">{children}</span>
+ 326:     </div>
+ 327:   );
+ 328: }
+
+codex
+需要补交互选项文案，我会定位 workspaceForms 中已有选项定义。
+exec
+powershell.exe -Command 'Select-String -Path src/renderer/utils/workspaceForms.ts -Pattern "codexReasoningOptions|agentCliOptions|ScopeFileOpenMode|defaultScope|normalizeCodex|LoopFormState" -Context 1,3' in D:\project\GitHub\autoplan
+ succeeded in 669ms:
+
+  src\renderer\utils\workspaceForms.ts:25:
+> src\renderer\utils\workspaceForms.ts:26:export const agentCliOptions: AgentCliOption[] = [
+  src\renderer\utils\workspaceForms.ts:27:  { value: 'codex', label: 'Codex CLI' },
+  src\renderer\utils\workspaceForms.ts:28:  { value: 'claude', label: 'Claude CLI' },
+  src\renderer\utils\workspaceForms.ts:29:];
+  src\renderer\utils\workspaceForms.ts:30:
+> src\renderer\utils\workspaceForms.ts:31:export const codexReasoningOptions: AgentCliOption[] = [
+  src\renderer\utils\workspaceForms.ts:32:  { value: 'low', label: '低 · 快速' },
+  src\renderer\utils\workspaceForms.ts:33:  { value: 'medium', label: '中 · 默认' },
+  src\renderer\utils\workspaceForms.ts:34:  { value: 'high', label: '高 · 深入' },
+  src\renderer\utils\workspaceForms.ts:49:
+> src\renderer\utils\workspaceForms.ts:50:export type LoopFormState = {
+  src\renderer\utils\workspaceForms.ts:51:  workspacePath: string;
+  src\renderer\utils\workspaceForms.ts:52:  intervalSeconds: string;
+  src\renderer\utils\workspaceForms.ts:53:  validationCommand: string;
+  src\renderer\utils\workspaceForms.ts:58:
+> src\renderer\utils\workspaceForms.ts:59:export type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+  src\renderer\utils\workspaceForms.ts:60:
+  src\renderer\utils\workspaceForms.ts:61:export type ScopeFileOpenSettings = {
+> src\renderer\utils\workspaceForms.ts:62:  mode: ScopeFileOpenMode;
+  src\renderer\utils\workspaceForms.ts:63:  command: string;
+  src\renderer\utils\workspaceForms.ts:64:};
+  src\renderer\utils\workspaceForms.ts:65:
+> src\renderer\utils\workspaceForms.ts:66:export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 's
+ystem', command: '' };
+  src\renderer\utils\workspaceForms.ts:67:
+  src\renderer\utils\workspaceForms.ts:68:export function createEmptyPlanReadState(): WorkspacePlanReadState {
+  src\renderer\utils\workspaceForms.ts:69:  return { plan: null, result: null, loading: false, error: null };
+  src\renderer\utils\workspaceForms.ts:164:
+> src\renderer\utils\workspaceForms.ts:165:export function normalizeCodexReasoningEffort(value?: string | null): CodexR
+easoningEffort {
+  src\renderer\utils\workspaceForms.ts:166:  const effort = String(value || '').trim().toLowerCase();
+  src\renderer\utils\workspaceForms.ts:167:  if (effort === 'low' || effort === 'high' || effort === 'xhigh') return ef
+fort;
+  src\renderer\utils\workspaceForms.ts:168:  return defaultCodexReasoningEffort;
+  src\renderer\utils\workspaceForms.ts:170:
+> src\renderer\utils\workspaceForms.ts:171:export function loopFormFromProjectState(state: ProjectState): LoopFormState
+ {
+  src\renderer\utils\workspaceForms.ts:172:  return {
+  src\renderer\utils\workspaceForms.ts:173:    workspacePath: state.workspace_path || '',
+  src\renderer\utils\workspaceForms.ts:174:    intervalSeconds: String(state.interval_seconds || 5),
+  src\renderer\utils\workspaceForms.ts:177:    agentCliCommand: state.agent_cli_command || '',
+> src\renderer\utils\workspaceForms.ts:178:    codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasonin
+g_effort),
+  src\renderer\utils\workspaceForms.ts:179:  };
+  src\renderer\utils\workspaceForms.ts:180:}
+  src\renderer\utils\workspaceForms.ts:181:
+> src\renderer\utils\workspaceForms.ts:182:export function loopConfigurePayloadFromForm(projectId: number, form: LoopFo
+rmState): LoopConfigInput {
+  src\renderer\utils\workspaceForms.ts:183:  const payload: LoopConfigInput = {
+  src\renderer\utils\workspaceForms.ts:184:    projectId,
+  src\renderer\utils\workspaceForms.ts:185:    workspacePath: form.workspacePath,
+  src\renderer\utils\workspaceForms.ts:196:
+> src\renderer\utils\workspaceForms.ts:197:export function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
+  src\renderer\utils\workspaceForms.ts:198:  return left.workspacePath === right.workspacePath
+  src\renderer\utils\workspaceForms.ts:199:    && left.intervalSeconds === right.intervalSeconds
+  src\renderer\utils\workspaceForms.ts:200:    && left.validationCommand === right.validationCommand
+
+
+
+**Evaluating normalization of options**
+
+I’m considering whether I need to normalize the medium. It looks like it’s returning a default for medium, so maybe I should update the options to include descriptions. I notice that AgentCliOption only has a value and label. Could I extend it to include more types? I definitely need to inspect this further to figure out the best way to proceed. Let's see what options I have!
+codex
+我会查看选项类型，决定是否可加入说明字段用于卡片式选项。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/renderer/types.ts; for($i=19;$i -le 30;$i++){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] }; $wf=Get-Content -Encoding UTF8 src/renderer/utils/workspaceForms.ts; for($i=160;$i -le 205;$i++){ '"'{0,4}: {1}' -f "'$i,$wf[$i-1] }' in D:\project\GitHub\autoplan
+ succeeded in 570ms:
+  19: export interface AgentCliOption {
+  20:   value: AgentCliProvider;
+  21:   label: string;
+  22: }
+  23: 
+  24: export interface AgentCliDisplaySource {
+  25:   agent_cli_provider?: AgentCliProvider | null;
+  26:   agentCliProvider?: AgentCliProvider | null;
+  27:   cli_provider?: AgentCliProvider | null;
+  28:   cliProvider?: AgentCliProvider | null;
+  29:   cli_backend?: AgentCliProvider | null;
+  30:   cliBackend?: AgentCliProvider | null;
+ 160: 
+ 161: export function resolveWorkspaceTab(tab: string | null): WorkspaceTab {
+ 162:   return workspaceTabIds.some((item) => item === tab) ? (tab as WorkspaceTab) : DEFAULT_WORKSPACE_TAB;
+ 163: }
+ 164: 
+ 165: export function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEffort {
+ 166:   const effort = String(value || '').trim().toLowerCase();
+ 167:   if (effort === 'low' || effort === 'high' || effort === 'xhigh') return effort;
+ 168:   return defaultCodexReasoningEffort;
+ 169: }
+ 170: 
+ 171: export function loopFormFromProjectState(state: ProjectState): LoopFormState {
+ 172:   return {
+ 173:     workspacePath: state.workspace_path || '',
+ 174:     intervalSeconds: String(state.interval_seconds || 5),
+ 175:     validationCommand: state.validation_command ?? '',
+ 176:     agentCliProvider: state.agent_cli_provider || 'codex',
+ 177:     agentCliCommand: state.agent_cli_command || '',
+ 178:     codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_effort),
+ 179:   };
+ 180: }
+ 181: 
+ 182: export function loopConfigurePayloadFromForm(projectId: number, form: LoopFormState): LoopConfigInput {
+ 183:   const payload: LoopConfigInput = {
+ 184:     projectId,
+ 185:     workspacePath: form.workspacePath,
+ 186:     intervalSeconds: Number(form.intervalSeconds || 5),
+ 187:     validationCommand: form.validationCommand,
+ 188:     agentCliProvider: form.agentCliProvider || 'codex',
+ 189:     agentCliCommand: form.agentCliCommand.trim(),
+ 190:   };
+ 191:   if (form.agentCliProvider !== 'claude') {
+ 192:     payload.codexReasoningEffort = form.codexReasoningEffort;
+ 193:   }
+ 194:   return payload;
+ 195: }
+ 196: 
+ 197: export function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
+ 198:   return left.workspacePath === right.workspacePath
+ 199:     && left.intervalSeconds === right.intervalSeconds
+ 200:     && left.validationCommand === right.validationCommand
+ 201:     && left.agentCliProvider === right.agentCliProvider
+ 202:     && left.agentCliCommand === right.agentCliCommand
+ 203:     && left.codexReasoningEffort === right.codexReasoningEffort;
+ 204: }
+ 205: 
+
+codex
+我会先在表单工具里补充可复用的 CLI、思考深度和 scope 选项描述。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\utils\workspaceForms.ts
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+**Looking into component imports**
+
+I need to import something in the component, so I'll make sure to use segments properly. Patching the imports seems crucial, and I want to ensure everything aligns correctly. It's a bit of a puzzle, but I'm sure I can figure it out with the right steps. If I double-check everything and follow the guidelines, I should manage to make it work smoothly without any hiccups. Let's see how this goes!
+codex
+选项描述已补，接着把设置页 select 改为分段控件/思考深度卡片。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..ab4d99a10ebcd5f15d83913eeb265eaa1bccd2f8
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,11 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
++  agentCliOptionDetails,
+   codexReasoningOptions,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..ab4d99a10ebcd5f15d83913eeb265eaa1bccd2f8
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,11 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
++  agentCliOptionDetails,
+   codexReasoningOptions,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+codex
+我会替换 CLI 后端和 Codex 深度字段，保持原状态更新逻辑不变。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..97d07f80695fed74d0822bca11059339334d06a7
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,11 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
++  agentCliOptionDetails,
+   codexReasoningOptions,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +166,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..97d07f80695fed74d0822bca11059339334d06a7
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,11 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
++  agentCliOptionDetails,
+   codexReasoningOptions,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +166,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+codex
+CLI 交互已替换；接着把 scope 打开方式改为四项分段控件。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..db477cb9ddef7cae057c6a3bce1d0f45485bbd3e
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,11 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
++  agentCliOptionDetails,
+   codexReasoningOptions,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +166,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +252,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..db477cb9ddef7cae057c6a3bce1d0f45485bbd3e
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,11 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
++  agentCliOptionDetails,
+   codexReasoningOptions,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +166,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +252,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+**Reviewing code imports**
+
+I'm noticing that I need to remove the unnecessary `codexReasoningOptions` import. It seems fine to do so, even if it might have been included for a reason before. Simplifying code is usually a good move. I want to ensure that everything I keep is essential, so I’ll review other imports too, just in case there are any more that can be stripped away for clarity and efficiency. Let's keep things clean!
+codex
+分段控件已补，我会清理不再使用的导入并调整保存条文案。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..b98039a6dee25432fe5c0f22c3ade287aae3ecc3
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,10 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
+-  codexReasoningOptions,
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +165,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +251,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+@@ -311,9 +335,12 @@
+ 
+ function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+   return (
+-    <div className="settings-actions button-row">
+-      <button type="submit">保存配置</button>
+-      <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++    <div className="settings-footer settings-actions">
++      <span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
++      <div className="spacer">
++        <button type="button" className="btn btn-sm" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++        <button type="submit" className="btn btn-sm btn-primary">保存配置</button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..b98039a6dee25432fe5c0f22c3ade287aae3ecc3
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,10 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
+-  codexReasoningOptions,
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +165,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +251,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+@@ -311,9 +335,12 @@
+ 
+ function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+   return (
+-    <div className="settings-actions button-row">
+-      <button type="submit">保存配置</button>
+-      <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++    <div className="settings-footer settings-actions">
++      <span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
++      <div className="spacer">
++        <button type="button" className="btn btn-sm" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++        <button type="submit" className="btn btn-sm btn-primary">保存配置</button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+**Planning CSS Segmented Footer**
+
+I'm thinking about creating a CSS segmented footer. I noticed that P003 doesn't have the .segmented class included, so I need to add that. It's also essential to ensure that the footer stays sticky. For P004, I should focus specifically on components.css as part of the scope. I want to get this right, as a well-structured footer will improve the overall design and user experience!
+codex
+现在补表单交互样式：分段控件、思考深度卡片和 sticky 保存条。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\styles\components.css
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..b98039a6dee25432fe5c0f22c3ade287aae3ecc3
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,10 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
+-  codexReasoningOptions,
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +165,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +251,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+@@ -311,9 +335,12 @@
+ 
+ function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+   return (
+-    <div className="settings-actions button-row">
+-      <button type="submit">保存配置</button>
+-      <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++    <div className="settings-footer settings-actions">
++      <span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
++      <div className="spacer">
++        <button type="button" className="btn btn-sm" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++        <button type="submit" className="btn btn-sm btn-primary">保存配置</button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/renderer/styles/components.css b/src/renderer/styles/components.css
+index 18584c9f2d2d4c3e4cdfaa7432b18fc52e67df35..1562902c5325034be61b99dcf6d06aeb312dc398
+--- a/src/renderer/styles/components.css
++++ b/src/renderer/styles/components.css
+@@ -71,7 +71,24 @@
+ .input-affix { display: flex; align-items: stretch; }
+ .input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+ .input-affix .affix { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 700; }
+-.settings-actions { justify-content: flex-end; margin-top: 10px; padding: 12px 0 0; }
++.segmented { display: inline-flex; gap: 2px; flex-wrap: wrap; max-width: 100%; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
++.seg-opt { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 700; white-space: nowrap; transition: background 0.14s, color 0.14s, box-shadow 0.14s; }
++.seg-opt:hover { color: var(--text-1); }
++.seg-opt.active { background: var(--bg-elevated); color: var(--brand-700); box-shadow: var(--shadow-sm); }
++.seg-note { color: var(--text-3); font-size: 11px; font-weight: 500; }
++.scope-segmented .seg-opt { flex-direction: column; align-items: flex-start; white-space: normal; }
++.effort-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
++.effort-opt { position: relative; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); text-align: left; cursor: pointer; transition: border-color 0.14s, box-shadow 0.14s, background 0.14s; }
++.effort-opt:hover { border-color: #c6d1e3; background: var(--bg-soft); }
++.effort-opt.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: 0 0 0 3px var(--brand-50); }
++.eff-name { display: flex; align-items: center; gap: 8px; color: var(--text-1); font-size: 13px; font-weight: 800; }
++.eff-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
++.effort-opt.active .eff-dot { background: var(--brand-600); }
++.eff-desc { display: block; margin-top: 5px; color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
++.settings-footer { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 0; border-top: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(255,255,255,0.74), var(--bg-elevated) 42%); backdrop-filter: blur(8px); }
++.settings-footer .spacer { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
++.dirty-note { min-width: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
++.settings-actions { justify-content: flex-end; }
+ .info-row { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+ .info-row:last-of-type { border-bottom: 0; }
+ .info-key { color: var(--text-3); font-size: 12px; font-weight: 700; }
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..b98039a6dee25432fe5c0f22c3ade287aae3ecc3
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,10 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
+-  codexReasoningOptions,
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +165,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +251,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+@@ -311,9 +335,12 @@
+ 
+ function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+   return (
+-    <div className="settings-actions button-row">
+-      <button type="submit">保存配置</button>
+-      <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++    <div className="settings-footer settings-actions">
++      <span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
++      <div className="spacer">
++        <button type="button" className="btn btn-sm" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++        <button type="submit" className="btn btn-sm btn-primary">保存配置</button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/renderer/styles/components.css b/src/renderer/styles/components.css
+index 18584c9f2d2d4c3e4cdfaa7432b18fc52e67df35..1562902c5325034be61b99dcf6d06aeb312dc398
+--- a/src/renderer/styles/components.css
++++ b/src/renderer/styles/components.css
+@@ -71,7 +71,24 @@
+ .input-affix { display: flex; align-items: stretch; }
+ .input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+ .input-affix .affix { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 700; }
+-.settings-actions { justify-content: flex-end; margin-top: 10px; padding: 12px 0 0; }
++.segmented { display: inline-flex; gap: 2px; flex-wrap: wrap; max-width: 100%; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
++.seg-opt { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 700; white-space: nowrap; transition: background 0.14s, color 0.14s, box-shadow 0.14s; }
++.seg-opt:hover { color: var(--text-1); }
++.seg-opt.active { background: var(--bg-elevated); color: var(--brand-700); box-shadow: var(--shadow-sm); }
++.seg-note { color: var(--text-3); font-size: 11px; font-weight: 500; }
++.scope-segmented .seg-opt { flex-direction: column; align-items: flex-start; white-space: normal; }
++.effort-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
++.effort-opt { position: relative; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); text-align: left; cursor: pointer; transition: border-color 0.14s, box-shadow 0.14s, background 0.14s; }
++.effort-opt:hover { border-color: #c6d1e3; background: var(--bg-soft); }
++.effort-opt.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: 0 0 0 3px var(--brand-50); }
++.eff-name { display: flex; align-items: center; gap: 8px; color: var(--text-1); font-size: 13px; font-weight: 800; }
++.eff-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
++.effort-opt.active .eff-dot { background: var(--brand-600); }
++.eff-desc { display: block; margin-top: 5px; color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
++.settings-footer { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 0; border-top: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(255,255,255,0.74), var(--bg-elevated) 42%); backdrop-filter: blur(8px); }
++.settings-footer .spacer { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
++.dirty-note { min-width: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
++.settings-actions { justify-content: flex-end; }
+ .info-row { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+ .info-row:last-of-type { border-bottom: 0; }
+ .info-key { color: var(--text-3); font-size: 12px; font-weight: 700; }
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+**Considering responsive design**
+
+I'm thinking about how to make the effort grid responsive. Should I include the scope? It might be beneficial to add media queries to the existing components. I could look at P005 later, but maybe we should mention P004. I also see a note about the button not being cropped — perhaps that relates to P003. I’ll add a media query for max-width 760, with an effort level of 2 for the footer column.
+codex
+我会补窄屏下选项卡与保存条换行，避免按钮被裁切。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\styles\components.css
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..b98039a6dee25432fe5c0f22c3ade287aae3ecc3
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,10 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
+-  codexReasoningOptions,
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +165,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +251,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+@@ -311,9 +335,12 @@
+ 
+ function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+   return (
+-    <div className="settings-actions button-row">
+-      <button type="submit">保存配置</button>
+-      <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++    <div className="settings-footer settings-actions">
++      <span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
++      <div className="spacer">
++        <button type="button" className="btn btn-sm" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++        <button type="submit" className="btn btn-sm btn-primary">保存配置</button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/renderer/styles/components.css b/src/renderer/styles/components.css
+index 18584c9f2d2d4c3e4cdfaa7432b18fc52e67df35..84f3aca35cb2fd8a82edd42d4dbd972f830d4367
+--- a/src/renderer/styles/components.css
++++ b/src/renderer/styles/components.css
+@@ -71,7 +71,24 @@
+ .input-affix { display: flex; align-items: stretch; }
+ .input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+ .input-affix .affix { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 700; }
+-.settings-actions { justify-content: flex-end; margin-top: 10px; padding: 12px 0 0; }
++.segmented { display: inline-flex; gap: 2px; flex-wrap: wrap; max-width: 100%; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
++.seg-opt { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 700; white-space: nowrap; transition: background 0.14s, color 0.14s, box-shadow 0.14s; }
++.seg-opt:hover { color: var(--text-1); }
++.seg-opt.active { background: var(--bg-elevated); color: var(--brand-700); box-shadow: var(--shadow-sm); }
++.seg-note { color: var(--text-3); font-size: 11px; font-weight: 500; }
++.scope-segmented .seg-opt { flex-direction: column; align-items: flex-start; white-space: normal; }
++.effort-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
++.effort-opt { position: relative; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); text-align: left; cursor: pointer; transition: border-color 0.14s, box-shadow 0.14s, background 0.14s; }
++.effort-opt:hover { border-color: #c6d1e3; background: var(--bg-soft); }
++.effort-opt.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: 0 0 0 3px var(--brand-50); }
++.eff-name { display: flex; align-items: center; gap: 8px; color: var(--text-1); font-size: 13px; font-weight: 800; }
++.eff-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
++.effort-opt.active .eff-dot { background: var(--brand-600); }
++.eff-desc { display: block; margin-top: 5px; color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
++.settings-footer { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 0; border-top: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(255,255,255,0.74), var(--bg-elevated) 42%); backdrop-filter: blur(8px); }
++.settings-footer .spacer { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
++.dirty-note { min-width: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
++.settings-actions { justify-content: flex-end; }
+ .info-row { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+ .info-row:last-of-type { border-bottom: 0; }
+ .info-key { color: var(--text-3); font-size: 12px; font-weight: 700; }
+@@ -87,6 +104,16 @@
+ .inline-banner.info { border-color: rgba(45,126,255,0.22); background: var(--info-bg); }
+ .dim { color: var(--text-4); }
+ 
++@media (max-width: 760px) {
++  .segmented { display: flex; }
++  .seg-opt { flex: 1 1 180px; justify-content: center; }
++  .scope-segmented .seg-opt { align-items: center; }
++  .effort-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
++  .settings-footer { align-items: stretch; flex-direction: column; }
++  .settings-footer .spacer { width: 100%; margin-left: 0; }
++  .settings-footer .btn { flex: 1 1 auto; }
++}
++
+ /* 表单型卡片（如循环控制）：head 之后给 body 留内边距 */
+ .editor.card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+ .editor > .card-head { flex: 0 0 auto; }
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..b98039a6dee25432fe5c0f22c3ade287aae3ecc3
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,10 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
+-  codexReasoningOptions,
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +165,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +251,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+@@ -311,9 +335,12 @@
+ 
+ function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+   return (
+-    <div className="settings-actions button-row">
+-      <button type="submit">保存配置</button>
+-      <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++    <div className="settings-footer settings-actions">
++      <span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
++      <div className="spacer">
++        <button type="button" className="btn btn-sm" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++        <button type="submit" className="btn btn-sm btn-primary">保存配置</button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/renderer/styles/components.css b/src/renderer/styles/components.css
+index 18584c9f2d2d4c3e4cdfaa7432b18fc52e67df35..84f3aca35cb2fd8a82edd42d4dbd972f830d4367
+--- a/src/renderer/styles/components.css
++++ b/src/renderer/styles/components.css
+@@ -71,7 +71,24 @@
+ .input-affix { display: flex; align-items: stretch; }
+ .input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+ .input-affix .affix { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 700; }
+-.settings-actions { justify-content: flex-end; margin-top: 10px; padding: 12px 0 0; }
++.segmented { display: inline-flex; gap: 2px; flex-wrap: wrap; max-width: 100%; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
++.seg-opt { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 700; white-space: nowrap; transition: background 0.14s, color 0.14s, box-shadow 0.14s; }
++.seg-opt:hover { color: var(--text-1); }
++.seg-opt.active { background: var(--bg-elevated); color: var(--brand-700); box-shadow: var(--shadow-sm); }
++.seg-note { color: var(--text-3); font-size: 11px; font-weight: 500; }
++.scope-segmented .seg-opt { flex-direction: column; align-items: flex-start; white-space: normal; }
++.effort-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
++.effort-opt { position: relative; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); text-align: left; cursor: pointer; transition: border-color 0.14s, box-shadow 0.14s, background 0.14s; }
++.effort-opt:hover { border-color: #c6d1e3; background: var(--bg-soft); }
++.effort-opt.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: 0 0 0 3px var(--brand-50); }
++.eff-name { display: flex; align-items: center; gap: 8px; color: var(--text-1); font-size: 13px; font-weight: 800; }
++.eff-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
++.effort-opt.active .eff-dot { background: var(--brand-600); }
++.eff-desc { display: block; margin-top: 5px; color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
++.settings-footer { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 0; border-top: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(255,255,255,0.74), var(--bg-elevated) 42%); backdrop-filter: blur(8px); }
++.settings-footer .spacer { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
++.dirty-note { min-width: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
++.settings-actions { justify-content: flex-end; }
+ .info-row { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+ .info-row:last-of-type { border-bottom: 0; }
+ .info-key { color: var(--text-3); font-size: 12px; font-weight: 700; }
+@@ -87,6 +104,16 @@
+ .inline-banner.info { border-color: rgba(45,126,255,0.22); background: var(--info-bg); }
+ .dim { color: var(--text-4); }
+ 
++@media (max-width: 760px) {
++  .segmented { display: flex; }
++  .seg-opt { flex: 1 1 180px; justify-content: center; }
++  .scope-segmented .seg-opt { align-items: center; }
++  .effort-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
++  .settings-footer { align-items: stretch; flex-direction: column; }
++  .settings-footer .spacer { width: 100%; margin-left: 0; }
++  .settings-footer .btn { flex: 1 1 auto; }
++}
++
+ /* 表单型卡片（如循环控制）：head 之后给 body 留内边距 */
+ .editor.card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+ .editor > .card-head { flex: 0 0 auto; }
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+codex
+我会做最后静态确认：关键选择器、导入使用与 scope 文件状态。
+exec
+powershell.exe -Command 'Select-String -Path src/renderer/components/workspace/WorkspaceSettingsView.tsx,src/renderer/utils/workspaceForms.ts,src/renderer/styles/components.css -Pattern "agentCliOptionDetails|codexReasoningOptionDetails|scopeFileOpenModeOptions|segmented|effort-grid|settings-footer|dirty-note|scope-segmented|SettingsActions" | ForEach-Object { $_.Path + '"':' + "'$_.LineNumber + '"':' + "'$_.Line.Trim() }; '"'--- status'; git status --short -- src/renderer/components/workspace/WorkspaceSettingsView.tsx src/renderer/utils/workspaceForms.ts src/renderer/styles/components.css docs/plan/plan_requirement_36_20260627-221620.md" in D:\project\GitHub\autoplan
+ succeeded in 574ms:
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:4:agentCliOptionDetails,
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:5:codexReasoningOptionDetails,
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:7:scopeFileOpenModeOptions,
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:149:<SettingsActions running={running} onToggleRun={onToggleRun} />
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:168:<div className="segmented" role="radiogroup" aria-label="CLI 后端">
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:169:{agentCliOptionDetails.map((option) => {
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:192:<div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:193:{codexReasoningOptionDetails.map((option) => {
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:235:<SettingsActions running={running} onToggleRun={onToggleRun} />
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:254:<div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:255:{scopeFileOpenModeOptions.map((option) => {
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:296:<SettingsActions running={running} onToggleRun={onToggleRun} />
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:336:function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:338:<div className="settings-footer settings-actions">
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSettingsView.tsx:339:<span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
+D:\project\GitHub\autoplan\src\renderer\utils\workspaceForms.ts:44:export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
+D:\project\GitHub\autoplan\src\renderer\utils\workspaceForms.ts:49:export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
+D:\project\GitHub\autoplan\src\renderer\utils\workspaceForms.ts:86:export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:74:.segmented { display: inline-flex; gap: 2px; flex-wrap: wrap; max-width: 100%; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:79:.scope-segmented .seg-opt { flex-direction: column; align-items: flex-start; white-space: normal; }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:80:.effort-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:88:.settings-footer { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 0; border-top: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(255,255,255,0.74), var(--bg-elevated) 42%); backdrop-filter: blur(8px); }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:89:.settings-footer .spacer { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:90:.dirty-note { min-width: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:108:.segmented { display: flex; }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:110:.scope-segmented .seg-opt { align-items: center; }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:111:.effort-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:112:.settings-footer { align-items: stretch; flex-direction: column; }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:113:.settings-footer .spacer { width: 100%; margin-left: 0; }
+D:\project\GitHub\autoplan\src\renderer\styles\components.css:114:.settings-footer .btn { flex: 1 1 auto; }
+--- status
+ M src/renderer/components/workspace/WorkspaceSettingsView.tsx
+ M src/renderer/styles/components.css
+ M src/renderer/utils/workspaceForms.ts
+?? docs/plan/plan_requirement_36_20260627-221620.md
+
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..b98039a6dee25432fe5c0f22c3ade287aae3ecc3
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,10 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
+-  codexReasoningOptions,
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +165,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +251,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+@@ -311,9 +335,12 @@
+ 
+ function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+   return (
+-    <div className="settings-actions button-row">
+-      <button type="submit">保存配置</button>
+-      <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++    <div className="settings-footer settings-actions">
++      <span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
++      <div className="spacer">
++        <button type="button" className="btn btn-sm" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++        <button type="submit" className="btn btn-sm btn-primary">保存配置</button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/renderer/styles/components.css b/src/renderer/styles/components.css
+index 18584c9f2d2d4c3e4cdfaa7432b18fc52e67df35..84f3aca35cb2fd8a82edd42d4dbd972f830d4367
+--- a/src/renderer/styles/components.css
++++ b/src/renderer/styles/components.css
+@@ -71,7 +71,24 @@
+ .input-affix { display: flex; align-items: stretch; }
+ .input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+ .input-affix .affix { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 700; }
+-.settings-actions { justify-content: flex-end; margin-top: 10px; padding: 12px 0 0; }
++.segmented { display: inline-flex; gap: 2px; flex-wrap: wrap; max-width: 100%; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
++.seg-opt { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 700; white-space: nowrap; transition: background 0.14s, color 0.14s, box-shadow 0.14s; }
++.seg-opt:hover { color: var(--text-1); }
++.seg-opt.active { background: var(--bg-elevated); color: var(--brand-700); box-shadow: var(--shadow-sm); }
++.seg-note { color: var(--text-3); font-size: 11px; font-weight: 500; }
++.scope-segmented .seg-opt { flex-direction: column; align-items: flex-start; white-space: normal; }
++.effort-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
++.effort-opt { position: relative; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); text-align: left; cursor: pointer; transition: border-color 0.14s, box-shadow 0.14s, background 0.14s; }
++.effort-opt:hover { border-color: #c6d1e3; background: var(--bg-soft); }
++.effort-opt.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: 0 0 0 3px var(--brand-50); }
++.eff-name { display: flex; align-items: center; gap: 8px; color: var(--text-1); font-size: 13px; font-weight: 800; }
++.eff-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
++.effort-opt.active .eff-dot { background: var(--brand-600); }
++.eff-desc { display: block; margin-top: 5px; color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
++.settings-footer { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 0; border-top: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(255,255,255,0.74), var(--bg-elevated) 42%); backdrop-filter: blur(8px); }
++.settings-footer .spacer { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
++.dirty-note { min-width: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
++.settings-actions { justify-content: flex-end; }
+ .info-row { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+ .info-row:last-of-type { border-bottom: 0; }
+ .info-key { color: var(--text-3); font-size: 12px; font-weight: 700; }
+@@ -87,6 +104,16 @@
+ .inline-banner.info { border-color: rgba(45,126,255,0.22); background: var(--info-bg); }
+ .dim { color: var(--text-4); }
+ 
++@media (max-width: 760px) {
++  .segmented { display: flex; }
++  .seg-opt { flex: 1 1 180px; justify-content: center; }
++  .scope-segmented .seg-opt { align-items: center; }
++  .effort-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
++  .settings-footer { align-items: stretch; flex-direction: column; }
++  .settings-footer .spacer { width: 100%; margin-left: 0; }
++  .settings-footer .btn { flex: 1 1 auto; }
++}
++
+ /* 表单型卡片（如循环控制）：head 之后给 body 留内边距 */
+ .editor.card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+ .editor > .card-head { flex: 0 0 auto; }
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+codex
+已完成 P004，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint/analyze。
+
+**完成内容**
+- CLI 后端改为 Codex/Claude 分段控件，保留原配置更新逻辑：`src/renderer/components/workspace/WorkspaceSettingsView.tsx:168`
+- Codex 思考深度改为选项卡式卡片，Claude 时继续隐藏并展示说明：`src/renderer/components/workspace/WorkspaceSettingsView.tsx:192`
+- scope 文件打开方式改为四项分段控件，仅 VSCode/第三方命令时显示编辑器命令字段，并保留 `unknown`/`validation` 提示：`src/renderer/components/workspace/WorkspaceSettingsView.tsx:254`
+- 为循环控制、CLI、scope 三个可编辑分组添加独立 sticky 保存条；MCP 分组保持只读无保存条：`src/renderer/components/workspace/WorkspaceSettingsView.tsx:336`
+- 补充设置选项描述数据：`src/renderer/utils/workspaceForms.ts:44`
+- 补充分段控件、思考深度卡片、保存条和窄屏换行样式：`src/renderer/styles/components.css:74`
+
+**说明**
+- 只改了 P004 scope 内的 3 个文件。
+- 验证命令按要求留给最终验收阶段统一执行。
+diff --git a/src/renderer/components/workspace/WorkspaceSettingsView.tsx b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+index 70abf6d3f38e8dd4910e78d42ed253eb83e873a7..b98039a6dee25432fe5c0f22c3ade287aae3ecc3
+--- a/src/renderer/components/workspace/WorkspaceSettingsView.tsx
++++ b/src/renderer/components/workspace/WorkspaceSettingsView.tsx
+@@ -1,8 +1,10 @@
+ import { useState, type Dispatch, type FormEvent, type ReactNode, type SetStateAction } from 'react';
+ import type { McpStatus } from '../../types';
+ import {
+-  codexReasoningOptions,
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
+   normalizeCodexReasoningEffort,
++  scopeFileOpenModeOptions,
+   type LoopFormState,
+   type ScopeFileOpenMode,
+   type ScopeFileOpenSettings,
+@@ -163,39 +165,54 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">CLI 后端</span>
+-                    <select
+-                      className="field-select"
+-                      value={loopForm.agentCliProvider}
+-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliProvider: event.target.value }))}
+-                    >
+-                      <option value="codex">Codex CLI</option>
+-                      <option value="claude">Claude CLI</option>
+-                    </select>
++                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
++                      {agentCliOptionDetails.map((option) => {
++                        const active = loopForm.agentCliProvider === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     {loopForm.agentCliProvider === 'claude' ? (
+                       <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
+                     ) : null}
+                   </label>
+                   {isCodexProvider ? (
+-                    <label className="field">
++                    <div className="field">
+                       <span className="field-label">Codex 思考深度</span>
+-                      <select
+-                        className="field-select"
+-                        value={loopForm.codexReasoningEffort}
+-                        onChange={(event) =>
+-                          setLoopForm((current) => ({
+-                            ...current,
+-                            codexReasoningEffort: normalizeCodexReasoningEffort(event.target.value),
+-                          }))
+-                        }
+-                      >
+-                        {codexReasoningOptions.map((option) => (
+-                          <option key={option.value} value={option.value}>
+-                            {option.label}
+-                          </option>
+-                        ))}
+-                      </select>
++                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
++                        {codexReasoningOptionDetails.map((option) => {
++                          const active = loopForm.codexReasoningEffort === option.value;
++                          return (
++                            <button
++                              key={option.value}
++                              type="button"
++                              className={`effort-opt${active ? ' active' : ''}`}
++                              aria-pressed={active}
++                              onClick={() =>
++                                setLoopForm((current) => ({
++                                  ...current,
++                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
++                                }))
++                              }
++                            >
++                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
++                              <span className="eff-desc">{option.description}</span>
++                            </button>
++                          );
++                        })}
++                      </div>
+                       <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
+-                    </label>
++                    </div>
+                   ) : (
+                     <div className="field readonly-field">
+                       <span className="field-label">Codex 思考深度</span>
+@@ -234,21 +251,28 @@
+                 <div className="set-card-body">
+                   <label className="field">
+                     <span className="field-label">scope 文件打开方式</span>
+-                    <select
+-                      className="field-select"
+-                      value={scopeFileOpenSettings.mode}
+-                      onChange={(event) =>
+-                        setScopeFileOpenSettings((current) => ({
+-                          ...current,
+-                          mode: event.target.value as ScopeFileOpenMode,
+-                        }))
+-                      }
+-                    >
+-                      <option value="system">系统默认方式</option>
+-                      <option value="folder">系统文件夹定位</option>
+-                      <option value="vscode">VSCode</option>
+-                      <option value="command">第三方编辑器命令</option>
+-                    </select>
++                    <div className="segmented scope-segmented" role="radiogroup" aria-label="scope 文件打开方式">
++                      {scopeFileOpenModeOptions.map((option) => {
++                        const active = scopeFileOpenSettings.mode === option.value;
++                        return (
++                          <button
++                            key={option.value}
++                            type="button"
++                            className={`seg-opt${active ? ' active' : ''}`}
++                            aria-pressed={active}
++                            onClick={() =>
++                              setScopeFileOpenSettings((current) => ({
++                                ...current,
++                                mode: option.value as ScopeFileOpenMode,
++                              }))
++                            }
++                          >
++                            <span>{option.label}</span>
++                            <span className="seg-note">{option.description}</span>
++                          </button>
++                        );
++                      })}
++                    </div>
+                     <span className="field-hint">用于 Plan 全文中 scope 文件链接，路径会限制在当前工作区内。</span>
+                   </label>
+                   {scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command' ? (
+@@ -311,9 +335,12 @@
+ 
+ function SettingsActions({ running, onToggleRun }: { running: boolean; onToggleRun: () => void }) {
+   return (
+-    <div className="settings-actions button-row">
+-      <button type="submit">保存配置</button>
+-      <button type="button" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++    <div className="settings-footer settings-actions">
++      <span className="dirty-note">配置修改后请保存；运行状态可独立切换。</span>
++      <div className="spacer">
++        <button type="button" className="btn btn-sm" onClick={onToggleRun}>{running ? '停止' : '启动'}</button>
++        <button type="submit" className="btn btn-sm btn-primary">保存配置</button>
++      </div>
+     </div>
+   );
+ }
+diff --git a/src/renderer/styles/components.css b/src/renderer/styles/components.css
+index 18584c9f2d2d4c3e4cdfaa7432b18fc52e67df35..84f3aca35cb2fd8a82edd42d4dbd972f830d4367
+--- a/src/renderer/styles/components.css
++++ b/src/renderer/styles/components.css
+@@ -71,7 +71,24 @@
+ .input-affix { display: flex; align-items: stretch; }
+ .input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+ .input-affix .affix { display: grid; place-items: center; padding: 0 12px; border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0; background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 700; }
+-.settings-actions { justify-content: flex-end; margin-top: 10px; padding: 12px 0 0; }
++.segmented { display: inline-flex; gap: 2px; flex-wrap: wrap; max-width: 100%; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft); }
++.seg-opt { display: inline-flex; align-items: center; gap: 8px; min-width: 0; padding: 7px 14px; border: 0; border-radius: 7px; background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 700; white-space: nowrap; transition: background 0.14s, color 0.14s, box-shadow 0.14s; }
++.seg-opt:hover { color: var(--text-1); }
++.seg-opt.active { background: var(--bg-elevated); color: var(--brand-700); box-shadow: var(--shadow-sm); }
++.seg-note { color: var(--text-3); font-size: 11px; font-weight: 500; }
++.scope-segmented .seg-opt { flex-direction: column; align-items: flex-start; white-space: normal; }
++.effort-grid { display: grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 10px; }
++.effort-opt { position: relative; min-width: 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); text-align: left; cursor: pointer; transition: border-color 0.14s, box-shadow 0.14s, background 0.14s; }
++.effort-opt:hover { border-color: #c6d1e3; background: var(--bg-soft); }
++.effort-opt.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: 0 0 0 3px var(--brand-50); }
++.eff-name { display: flex; align-items: center; gap: 8px; color: var(--text-1); font-size: 13px; font-weight: 800; }
++.eff-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
++.effort-opt.active .eff-dot { background: var(--brand-600); }
++.eff-desc { display: block; margin-top: 5px; color: var(--text-3); font-size: 11.5px; line-height: 1.5; }
++.settings-footer { position: sticky; bottom: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; padding: 12px 0 0; border-top: 1px solid var(--line-soft); background: linear-gradient(180deg, rgba(255,255,255,0.74), var(--bg-elevated) 42%); backdrop-filter: blur(8px); }
++.settings-footer .spacer { display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; }
++.dirty-note { min-width: 0; color: var(--text-3); font-size: 12px; line-height: 1.45; }
++.settings-actions { justify-content: flex-end; }
+ .info-row { display: grid; grid-template-columns: 130px minmax(0,1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+ .info-row:last-of-type { border-bottom: 0; }
+ .info-key { color: var(--text-3); font-size: 12px; font-weight: 700; }
+@@ -87,6 +104,16 @@
+ .inline-banner.info { border-color: rgba(45,126,255,0.22); background: var(--info-bg); }
+ .dim { color: var(--text-4); }
+ 
++@media (max-width: 760px) {
++  .segmented { display: flex; }
++  .seg-opt { flex: 1 1 180px; justify-content: center; }
++  .scope-segmented .seg-opt { align-items: center; }
++  .effort-grid { grid-template-columns: repeat(2, minmax(0,1fr)); }
++  .settings-footer { align-items: stretch; flex-direction: column; }
++  .settings-footer .spacer { width: 100%; margin-left: 0; }
++  .settings-footer .btn { flex: 1 1 auto; }
++}
++
+ /* 表单型卡片（如循环控制）：head 之后给 body 留内边距 */
+ .editor.card { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+ .editor > .card-head { flex: 0 0 auto; }
+diff --git a/src/renderer/utils/workspaceForms.ts b/src/renderer/utils/workspaceForms.ts
+index 19368c1f418aef1cefb31f18bbe9046148651630..b6e117f9f304ad4d0d4c65a864e962c112d8da2f
+--- a/src/renderer/utils/workspaceForms.ts
++++ b/src/renderer/utils/workspaceForms.ts
+@@ -35,6 +35,24 @@
+   { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
++export type SettingsChoiceOption<T extends string = string> = {
++  value: T;
++  label: string;
++  description: string;
++};
++
++export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>> = [
++  { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
++  { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
++];
++
++export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
++  { value: 'low', label: '低', description: '快速响应，适合小范围改动。' },
++  { value: 'medium', label: '中', description: '默认平衡速度与质量。' },
++  { value: 'high', label: '高', description: '更深入分析复杂代码。' },
++  { value: 'xhigh', label: '超高', description: '最充分推理，适合高风险任务。' },
++];
++
+ export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+ 
+ export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
+@@ -65,6 +83,13 @@
+ 
+ export const defaultScopeFileOpenSettings: ScopeFileOpenSettings = { mode: 'system', command: '' };
+ 
++export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenMode>> = [
++  { value: 'system', label: '系统默认', description: '交给系统默认应用打开。' },
++  { value: 'folder', label: '文件夹定位', description: '打开所在目录并定位文件。' },
++  { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
++  { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
++];
++
+ export function createEmptyPlanReadState(): WorkspacePlanReadState {
+   return { plan: null, result: null, loading: false, error: null };
+ }
+
+tokens used
+385,139
+已完成 P004，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint/analyze。
+
+**完成内容**
+- CLI 后端改为 Codex/Claude 分段控件，保留原配置更新逻辑：`src/renderer/components/workspace/WorkspaceSettingsView.tsx:168`
+- Codex 思考深度改为选项卡式卡片，Claude 时继续隐藏并展示说明：`src/renderer/components/workspace/WorkspaceSettingsView.tsx:192`
+- scope 文件打开方式改为四项分段控件，仅 VSCode/第三方命令时显示编辑器命令字段，并保留 `unknown`/`validation` 提示：`src/renderer/components/workspace/WorkspaceSettingsView.tsx:254`
+- 为循环控制、CLI、scope 三个可编辑分组添加独立 sticky 保存条；MCP 分组保持只读无保存条：`src/renderer/components/workspace/WorkspaceSettingsView.tsx:336`
+- 补充设置选项描述数据：`src/renderer/utils/workspaceForms.ts:44`
+- 补充分段控件、思考深度卡片、保存条和窄屏换行样式：`src/renderer/styles/components.css:74`
+
+**说明**
+- 只改了 P004 scope 内的 3 个文件。
+- 验证命令按要求留给最终验收阶段统一执行。

@@ -24,6 +24,7 @@ export function WorkspaceOverviewView({
   const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
   const doneTasks = snapshot.tasks.filter((task) => task.status === 'completed').length;
   const totalTasks = snapshot.tasks.length;
+  const recentEvents = snapshot.events.filter((event) => !String(event.type || '').startsWith('scan.')).slice(0, 8);
 
   const phases = ['scan', 'generate-plan', 'execute-task', 'validate', 'completed'];
   const currentPhase = state?.phase || 'idle';
@@ -152,7 +153,7 @@ export function WorkspaceOverviewView({
               </span>
             </div>
             <div className="card-body">
-              <EventList events={snapshot.events.slice(0, 8)} />
+              <EventList events={recentEvents} />
             </div>
           </section>
         </div>

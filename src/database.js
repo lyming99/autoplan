@@ -1,6 +1,10 @@
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const path = require('node:path');
 const initSqlJs = require('sql.js');
+
+const PERSIST_RETRY_DELAYS_MS = [20, 50, 100, 200, 400];
+const RETRYABLE_FS_ERROR_CODES = new Set(['EACCES', 'EBUSY', 'EPERM']);
 
 class AppDatabase {
   constructor(dbPath) {
@@ -13,10 +17,27 @@ class AppDatabase {
     const SQL = await initSqlJs({
       locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file),
     });
-    const bytes = fs.existsSync(this.dbPath) ? fs.readFileSync(this.dbPath) : undefined;
+    const bytes = this.readPersistedBytes();
     this.db = new SQL.Database(bytes);
     this.migrate();
     this.persist();
+  }
+
+  readPersistedBytes() {
+    const candidates = [this.dbPath, `${this.dbPath}.mirror`, `${this.dbPath}.bak`];
+    for (const candidate of candidates) {
+      if (!fs.existsSync(candidate)) continue;
+      const bytes = fs.readFileSync(candidate);
+      if (candidate !== this.dbPath) {
+        try {
+          retryFileOperation(() => fs.copyFileSync(candidate, this.dbPath));
+        } catch (error) {
+          console.warn(`[database] restore failed for ${this.dbPath}:`, error);
+        }
+      }
+      return bytes;
+    }
+    return undefined;
   }
 
   migrate() {
@@ -262,6 +283,7 @@ class AppDatabase {
       'mcp.host': '127.0.0.1',
       'mcp.port': '43847',
       'mcp.path': '/mcp',
+      'mcp.authToken': generateSecretToken(),
     };
     for (const [key, value] of Object.entries(defaults)) {
       this.db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
@@ -353,19 +375,55 @@ class AppDatabase {
 
   persist() {
     const data = Buffer.from(this.db.export());
-    const tmp = `${this.dbPath}.tmp`;
+    const tmp = `${this.dbPath}.${process.pid}.${Date.now()}.tmp`;
     const mirror = `${this.dbPath}.mirror`;
-    fs.writeFileSync(tmp, data);
-    fs.writeFileSync(mirror, data);
-    if (fs.existsSync(this.dbPath)) {
-      fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`);
-      fs.unlinkSync(this.dbPath);
+    try {
+      fs.mkdirSync(path.dirname(this.dbPath), { recursive: true });
+      retryFileOperation(() => fs.writeFileSync(tmp, data));
+      retryFileOperation(() => fs.writeFileSync(mirror, data));
+      if (fs.existsSync(this.dbPath)) {
+        try {
+          retryFileOperation(() => fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`));
+        } catch (error) {
+          console.warn(`[database] backup failed for ${this.dbPath}:`, error);
+        }
+      }
+      if (process.platform === 'win32') {
+        retryFileOperation(() => fs.copyFileSync(tmp, this.dbPath));
+        tryUnlink(tmp);
+      } else {
+        retryFileOperation(() => fs.renameSync(tmp, this.dbPath));
+      }
+      this.lastPersistError = null;
+    } catch (error) {
+      this.lastPersistError = error;
+      tryUnlink(tmp);
+      console.error(`[database] persist failed for ${this.dbPath}:`, error);
     }
-    fs.renameSync(tmp, this.dbPath);
   }
 
   run(sql, params = []) {
     this.db.run(sql, params);
+    this.persist();
+  }
+
+  runBatch(statements = []) {
+    if (!Array.isArray(statements) || statements.length === 0) return;
+    this.db.run('BEGIN TRANSACTION');
+    try {
+      for (const statement of statements) {
+        if (!statement?.sql) continue;
+        this.db.run(statement.sql, statement.params || []);
+      }
+      this.db.run('COMMIT');
+    } catch (error) {
+      try {
+        this.db.run('ROLLBACK');
+      } catch {
+        // Keep the original database error as the failure reason.
+      }
+      throw error;
+    }
     this.persist();
   }
 
@@ -396,6 +454,40 @@ class AppDatabase {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function generateSecretToken() {
+  return crypto.randomBytes(32).toString('base64url');
+}
+
+function retryFileOperation(operation) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= PERSIST_RETRY_DELAYS_MS.length; attempt += 1) {
+    try {
+      return operation();
+    } catch (error) {
+      lastError = error;
+      if (!RETRYABLE_FS_ERROR_CODES.has(error?.code) || attempt >= PERSIST_RETRY_DELAYS_MS.length) {
+        throw error;
+      }
+      sleepSync(PERSIST_RETRY_DELAYS_MS[attempt]);
+    }
+  }
+  throw lastError;
+}
+
+function sleepSync(milliseconds) {
+  const buffer = new SharedArrayBuffer(4);
+  const view = new Int32Array(buffer);
+  Atomics.wait(view, 0, 0, milliseconds);
+}
+
+function tryUnlink(filePath) {
+  try {
+    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+  } catch {
+    // Temporary files are best-effort cleanup only.
+  }
 }
 
 module.exports = { AppDatabase, nowIso };

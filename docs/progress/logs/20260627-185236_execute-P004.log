@@ -1,0 +1,2687 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f07a4-dac9-7322-aede-cb62f7d9f8bb
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_19_20260627-134658.md
+指定任务：
+- [ ] P004: 联动过滤任务列表数据 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/PlanLists.tsx -->
+任务 scope：src/renderer/pages/workspacepage.tsx, src/renderer/components/planlists.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Evaluating project structure**
+
+I need to focus on getting P004 set up using only the WorkspacePage and PlanLists. I think I should filter tasks with a wire selection, but I also need to check the existing state in WorkspacePage and the props in PlanLists. Inspecting the current state is crucial, and I can reference previous setups. It might be useful to import a helper from the types, but modifying WorkspacePage could be an option. I’ll need to consider whether to import the `isTaskAssociatedWithPlan` type too. Let's take a closer look!
+codex
+我会沿用前序的选择态和关联 helper，只查看 P004 需要接线的位置。
+  → 定位选择和任务数据
+  • 接入 PlanList 控制态
+  • 按选中 Plan 过滤任务
+  • 补充任务提示空态
+  • 复查范围不跑测试
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\pages\\WorkspacePage.tsx' 1 105; Show 'src\\renderer\\pages\\WorkspacePage.tsx' 303 55; Show 'src\\renderer\\components\\PlanLists.tsx' 62 75; Show 'src\\renderer\\components\\PlanLists.tsx' 422 70" in D:\project\GitHub\autoplan
+ succeeded in 508ms:
+--- src\renderer\pages\WorkspacePage.tsx 1 ---
+    1: import { useEffect, useRef, useState } from 'react';
+    2: import type {
+    3:   AppSnapshot,
+    4:   Plan,
+    5:   Project,
+    6:   WorkspacePlanSelectionState,
+    7:   WorkspaceSearchResult,
+    8:   WorkspaceTab,
+    9: } from '../types';
+   10: import { useWorkspaceController } from '../hooks/useWorkspaceController';
+   11: import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
+   12: import { IntakePanel } from '../components/IntakePanel';
+   13: import { EventList, PlanList, TaskList } from '../components/PlanLists';
+   14: import { SearchResults } from '../components/SearchResults';
+   15: import { Icon } from '../components/icons';
+   16: import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+   17: import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+   18: import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+   19: import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+   20: 
+   21: export function WorkspacePage() {
+   22:   const {
+   23:     activeTab,
+   24:     addPendingFiles,
+   25:     appendIntakeTask,
+   26:     closePlanReader,
+   27:     composerCliSelection,
+   28:     createFeedback,
+   29:     createRequirement,
+   30:     deleteFeedback,
+   31:     deleteRequirement,
+   32:     displayTasks,
+   33:     error,
+   34:     filteredEmptyText,
+   35:     filteredItems,
+   36:     interruptIntake,
+   37:     latestReadingPlan,
+   38:     loopForm,
+   39:     navigate,
+   40:     openPlanReader,
+   41:     openTaskPlanReader,
+   42:     pendingAttachments,
+   43:     planReadState,
+   44:     project,
+   45:     projectId,
+   46:     projects,
+   47:     refreshPlanReader,
+   48:     removePendingAttachment,
+   49:     resumeIntake,
+   50:     runLoopAction,
+   51:     scopeFileOpenSettings,
+   52:     searchHitCount,
+   53:     searchQuery,
+   54:     selectSearchResult,
+   55:     selectTab,
+   56:     setScopeFileOpenSettings,
+   57:     setSearchQuery,
+   58:     snapshot,
+   59:     state,
+   60:     submitLoopConfig,
+   61:     switchProject,
+   62:     updateFeedback,
+   63:     updateLoopForm,
+   64:     updateRequirement,
+   65:     workspaceSearch,
+   66:   } = useWorkspaceController();
+   67:   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   68:   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   69:   const [searchLocateNotice, setSearchLocateNotice] = useState('');
+   70:   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   71:   const searchPopupRef = useRef<HTMLDivElement>(null);
+   72:   const hasSearchQuery = !workspaceSearch.query.isEmpty;
+   73:   const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
+   74: 
+   75:   const planSelectionState: WorkspacePlanSelectionState = {
+   76:     selectedPlanId,
+   77:     selectedPlan,
+   78:     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+   79:     clearSelection: () => setSelectedPlanId(null),
+   80:   };
+   81: 
+   82:   useEffect(() => {
+   83:     setSearchPopupOpen(hasSearchQuery);
+   84:   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+   85: 
+   86:   useEffect(() => {
+   87:     setSelectedPlanId((current) => {
+   88:       if (current === null) return current;
+   89:       if (!snapshot) return null;
+   90:       return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
+   91:     });
+   92:   }, [projectId, snapshot]);
+   93: 
+   94:   useEffect(() => {
+   95:     if (!searchPopupOpen) return undefined;
+   96: 
+   97:     function handlePointerDown(event: MouseEvent) {
+   98:       if (!searchPopupRef.current || !(event.target instanceof Node)) return;
+   99:       if (!searchPopupRef.current.contains(event.target)) {
+  100:         setSearchPopupOpen(false);
+  101:       }
+  102:     }
+  103: 
+  104:     function handleKeyDown(event: KeyboardEvent) {
+  105:       if (event.key === 'Escape') {
+--- src\renderer\pages\WorkspacePage.tsx 303 ---
+  303:         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+  304:           {activeTab === 'tasks' ? (
+  305:             <div
+  306:               className="task-main"
+  307:               data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
+  308:               data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
+  309:             >
+  310:               <div className="task-status-grid">
+  311:                 <section className="card">
+  312:                   <div className="card-head">
+  313:                     <h2>Plan</h2>
+  314:                   </div>
+  315:                   <PlanList
+  316:                     emptyText={filteredEmptyText}
+  317:                     latestReadingPlan={latestReadingPlan}
+  318:                     onCloseReader={closePlanReader}
+  319:                     onOpenReader={openPlanReader}
+  320:                     onRunParallel={({ plan, batches }) =>
+  321:                       runLoopAction(() =>
+  322:                         (window.autoplan as typeof window.autoplan & {
+  323:                           runTaskBatches: (input: {
+  324:                             projectId: number;
+  325:                             planId: number;
+  326:                             batches: Array<{ taskIds: number[] }>;
+  327:                             manual: true;
+  328:                           }) => Promise<AppSnapshot>;
+  329:                         }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+  330:                       )
+  331:                     }
+  332:                     onRefreshReader={refreshPlanReader}
+  333:                     onReorderPlans={reorderPlansFromList}
+  334:                     plans={filteredItems.plans}
+  335:                     readerState={planReadState}
+  336:                     tasks={snapshot.tasks}
+  337:                     totalPlanCount={snapshot.plans.length}
+  338:                   />
+  339:                 </section>
+  340:                 <section className="card">
+  341:                   <div className="card-head">
+  342:                     <h2>任务</h2>
+  343:                   </div>
+  344:                   <TaskList
+  345:                     emptyText={filteredEmptyText}
+  346:                     locateTarget={pendingSearchTarget}
+  347:                     tasks={displayTasks}
+  348:                     onOpenPlan={openTaskPlanReader}
+  349:                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+  350:                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+  351:                   />
+  352:                 </section>
+  353:               </div>
+  354:             </div>
+  355:           ) : null}
+  356:         </section>
+  357: 
+--- src\renderer\components\PlanLists.tsx 62 ---
+   62:   { key: 'completed', label: '已完成' },
+   63:   { key: 'draft', label: '草稿' },
+   64: ];
+   65: 
+   66: export function TaskList({
+   67:   emptyText = '暂无任务。',
+   68:   tasks,
+   69:   onOpenPlan,
+   70:   onRun,
+   71:   onStop,
+   72:   locateTarget,
+   73: }: {
+   74:   emptyText?: string;
+   75:   tasks: PlanTask[];
+   76:   onOpenPlan?: (task: PlanTask) => void;
+   77:   onRun?: (task: PlanTask) => void;
+   78:   onStop?: (task: PlanTask) => void;
+   79:   locateTarget?: WorkspaceSearchResult | null;
+   80: }) {
+   81:   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   82:   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+   83:   const visibleTasks = useMemo(
+   84:     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+   85:     [activeFilter, tasks],
+   86:   );
+   87:   const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+   88:   const defaultExpandedKeys = useMemo(() => getDefaultExpandedTaskGroupKeys(taskGroups), [taskGroups]);
+   89:   const filterCounts = useMemo(
+   90:     () =>
+   91:       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+   92:         (counts, filter) => ({
+   93:           ...counts,
+   94:           [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+   95:         }),
+   96:         { all: 0, running: 0, queued: 0, completed: 0 },
+   97:       ),
+   98:     [tasks],
+   99:   );
+  100:   const activeFilterConfig =
+  101:     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+  102:   const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+  103: 
+  104:   useEffect(() => {
+  105:     if (locateTarget?.targetTab === 'tasks') {
+  106:       setActiveFilter('all');
+  107:     }
+  108:   }, [locateTarget]);
+  109: 
+  110:   useEffect(() => {
+  111:     if (!locateTarget) return;
+  112:     const locatedGroup = findTaskGroupForSearchTarget(taskGroups, locateTarget);
+  113:     if (!locatedGroup) return;
+  114:     setExpandedOverrides((current) => (current[locatedGroup.key] ? current : { ...current, [locatedGroup.key]: true }));
+  115:   }, [locateTarget, taskGroups]);
+  116: 
+  117:   function toggleTaskGroup(groupKey: string) {
+  118:     const currentlyExpanded = expandedOverrides[groupKey] ?? defaultExpandedKeys.has(groupKey);
+  119:     setExpandedOverrides((current) => ({ ...current, [groupKey]: !currentlyExpanded }));
+  120:   }
+  121: 
+  122:   return (
+  123:     <div className="task-list-panel">
+  124:       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+  125:         {TASK_STATUS_FILTERS.map((filter) => {
+  126:           const active = activeFilter === filter.id;
+  127:           return (
+  128:             <button
+  129:               key={filter.id}
+  130:               type="button"
+  131:               role="tab"
+  132:               aria-selected={active}
+  133:               className={`task-filter-tab${active ? ' active' : ''}`}
+  134:               onClick={() => setActiveFilter(filter.id)}
+  135:             >
+  136:               <span>{filter.label}</span>
+--- src\renderer\components\PlanLists.tsx 422 ---
+  422:         <span className="plan-selection-summary">
+  423:           {effectiveSelectedPlan
+  424:             ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
+  425:             : '未选择 Plan，当前任务列表可查看全部任务'}
+  426:         </span>
+  427:         <button
+  428:           type="button"
+  429:           className="btn-link plan-selection-clear"
+  430:           disabled={!effectiveSelectedPlan}
+  431:           onClick={clearPlanSelection}
+  432:         >
+  433:           查看全部任务
+  434:         </button>
+  435:       </div>
+  436: 
+  437:       {visiblePlans.length ? (
+  438:         <div className="list compact plan-selection-list" aria-label="计划选择与执行顺序调整">
+  439:           {draftRunError ? <div className="error-banner">{draftRunError}</div> : null}
+  440:           {visiblePlans.map((plan) => {
+  441:             const currentIndex = orderedPlans.findIndex((item) => item.id === plan.id);
+  442:             const previousPlan = orderedPlans[currentIndex - 1];
+  443:             const nextPlan = orderedPlans[currentIndex + 1];
+  444:             const disabledReason = reorderDisabledReason(plan);
+  445:             const draftRunDisabledReason = isDraftPlan(plan) ? draftPlanRunDisabledReason(plan, props.tasks || []) : '';
+  446:             const selected = effectiveSelectedPlanId === plan.id;
+  447:             return (
+  448:               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+  449:                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+  450:                 <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
+  451:                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+  452:                 <small>{disabledReason || '可调整'}</small>
+  453:                 <button
+  454:                   type="button"
+  455:                   className={`btn-link plan-select-button${selected ? ' active' : ''}`}
+  456:                   aria-pressed={selected}
+  457:                   onClick={() => selectPlan(plan)}
+  458:                 >
+  459:                   {selected ? '取消选择' : '查看任务'}
+  460:                 </button>
+  461:                 <button
+  462:                   type="button"
+  463:                   className="btn-link"
+  464:                   disabled={reordering || Boolean(disabledReason) || !previousPlan || !canReorderPlan(previousPlan)}
+  465:                   onClick={() => movePlan(plan, -1)}
+  466:                 >
+  467:                   上移
+  468:                 </button>
+  469:                 <button
+  470:                   type="button"
+  471:                   className="btn-link"
+  472:                   disabled={reordering || Boolean(disabledReason) || !nextPlan || !canReorderPlan(nextPlan)}
+  473:                   onClick={() => movePlan(plan, 1)}
+  474:                 >
+  475:                   下移
+  476:                 </button>
+  477:                 {isDraftPlan(plan) ? (
+  478:                   <button
+  479:                     type="button"
+  480:                     className="btn-link"
+  481:                     disabled={draftRunningPlanId === plan.id || Boolean(draftRunDisabledReason)}
+  482:                     title={draftRunDisabledReason || undefined}
+  483:                     onClick={() => runDraftPlan(plan)}
+  484:                   >
+  485:                     {draftRunningPlanId === plan.id ? '启动中…' : '执行草稿'}
+  486:                   </button>
+  487:                 ) : null}
+  488:               </div>
+  489:             );
+  490:           })}
+  491:         </div>
+
+codex
+接下来把 TaskList 增加 Plan 过滤提示和清空入口，并复用 Plan 显示名。
+  ✓ 定位选择和任务数据
+  • 接入 PlanList 控制态
+  • 按选中 Plan 过滤任务
+  → 补充任务提示空态
+  • 复查范围不跑测试
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..7a4bb88d02dfc7759868553d5dad97ac7e425203
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -70,6 +76,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +84,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +107,12 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +134,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..7a4bb88d02dfc7759868553d5dad97ac7e425203
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -70,6 +76,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +84,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +107,12 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +134,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+
+codex
+TaskList 提示已加；我补一个共享的 Plan 名称 helper，避免文案分叉。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..68a9e7992afe6c773d87aea158301a5716704250
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,12 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +138,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +449,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +475,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..68a9e7992afe6c773d87aea158301a5716704250
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,12 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +138,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +449,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +475,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+
+**Patching workspace details**
+
+I need to make a patch for the WorkspacePage. First, I’ll add an import value, placing it before the type import. Then, I should compute `selectedPlanDisplayTasks`, ensuring that `displayTasks` includes the provider title while still being filtered by search. I plan to use `selectedPlan` for `displayTasks` and count everything from `snapshot.tasks`. I’ll also rename to `taskListTasks` to avoid conflict and consider an `emptyText` if `selectedPlan` is selected. We’ll keep that in mind for the TaskList.
+codex
+现在把页面的选中 Plan 接到 PlanList，并按关联规则过滤传给 TaskList 的任务。
+  ✓ 定位选择和任务数据
+  → 接入 PlanList 控制态
+  • 按选中 Plan 过滤任务
+  ✓ 补充任务提示空态
+  • 复查范围不跑测试
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..68a9e7992afe6c773d87aea158301a5716704250
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,12 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +138,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +449,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +475,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..68a9e7992afe6c773d87aea158301a5716704250
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,12 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +138,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +449,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +475,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..68a9e7992afe6c773d87aea158301a5716704250
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,12 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +138,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +449,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +475,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+**Updating plan steps**
+
+I’m thinking that I need to refine the steps of my current plan. It’s important to make sure everything flows logically and that I haven’t overlooked any critical details. I want to be clear about what's required at each stage to keep everything on track. Maybe I should list the steps out and evaluate them one by one. I really want the plan to be effective and actionable! Let's make sure to double-check everything.
+codex
+页面接线完成；我会检查类型形状和关键片段，避免越界修改。
+  ✓ 定位选择和任务数据
+  ✓ 接入 PlanList 控制态
+  → 按选中 Plan 过滤任务
+  ✓ 补充任务提示空态
+  • 复查范围不跑测试
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..68a9e7992afe6c773d87aea158301a5716704250
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,12 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +138,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +449,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +475,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+codex
+我补强状态筛选下的 Plan 空态文案，让过滤原因更明确。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..a70c9ee3485872e7dcf670be0b34b8096a66d582
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,16 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length
++    ? planFilter
++      ? `该 Plan 暂无${activeFilterConfig.label}任务。`
++      : activeFilterConfig.emptyText
++    : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +142,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +453,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +479,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..a70c9ee3485872e7dcf670be0b34b8096a66d582
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,16 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length
++    ? planFilter
++      ? `该 Plan 暂无${activeFilterConfig.label}任务。`
++      : activeFilterConfig.emptyText
++    : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +142,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +453,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +479,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+codex
+过滤和空态已补齐；最后复查关键行和文件范围，不执行测试。
+  ✓ 定位选择和任务数据
+  ✓ 接入 PlanList 控制态
+  ✓ 按选中 Plan 过滤任务
+  ✓ 补充任务提示空态
+  → 复查范围不跑测试
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..a70c9ee3485872e7dcf670be0b34b8096a66d582
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,16 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length
++    ? planFilter
++      ? `该 Plan 暂无${activeFilterConfig.label}任务。`
++      : activeFilterConfig.emptyText
++    : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +142,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +453,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +479,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\pages\\WorkspacePage.tsx' 1 25; Show 'src\\renderer\\pages\\WorkspacePage.tsx' 70 35; Show 'src\\renderer\\pages\\WorkspacePage.tsx' 322 42; Show 'src\\renderer\\components\\PlanLists.tsx' 49 35; Show 'src\\renderer\\components\\PlanLists.tsx' 95 55; Write-Host '--- plan diff ---'; git diff --name-only -- docs/plan/plan_feedback_19_20260627-134658.md; Write-Host '--- scoped files diff ---'; git diff --name-only -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/PlanLists.tsx" in D:\project\GitHub\autoplan
+ succeeded in 572ms:
+--- src\renderer\pages\WorkspacePage.tsx 1 ---
+    1: import { useEffect, useRef, useState } from 'react';
+    2: import { isTaskAssociatedWithPlan } from '../types';
+    3: import type {
+    4:   AppSnapshot,
+    5:   Plan,
+    6:   Project,
+    7:   WorkspacePlanSelectionState,
+    8:   WorkspaceSearchResult,
+    9:   WorkspaceTab,
+   10: } from '../types';
+   11: import { useWorkspaceController } from '../hooks/useWorkspaceController';
+   12: import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
+   13: import { IntakePanel } from '../components/IntakePanel';
+   14: import { EventList, PlanList, TaskList } from '../components/PlanLists';
+   15: import { SearchResults } from '../components/SearchResults';
+   16: import { Icon } from '../components/icons';
+   17: import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+   18: import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+   19: import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+   20: import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+   21: 
+   22: export function WorkspacePage() {
+   23:   const {
+   24:     activeTab,
+   25:     addPendingFiles,
+--- src\renderer\pages\WorkspacePage.tsx 70 ---
+   70:   const [searchLocateNotice, setSearchLocateNotice] = useState('');
+   71:   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   72:   const searchPopupRef = useRef<HTMLDivElement>(null);
+   73:   const hasSearchQuery = !workspaceSearch.query.isEmpty;
+   74:   const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
+   75: 
+   76:   const planSelectionState: WorkspacePlanSelectionState = {
+   77:     selectedPlanId,
+   78:     selectedPlan,
+   79:     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+   80:     clearSelection: () => setSelectedPlanId(null),
+   81:   };
+   82:   const selectedPlanAllTasks = selectedPlan
+   83:     ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
+   84:     : [];
+   85:   const taskListTasks = selectedPlan
+   86:     ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
+   87:     : displayTasks;
+   88:   const selectedPlanTaskFilter = selectedPlan
+   89:     ? {
+   90:         plan: selectedPlan,
+   91:         totalTaskCount: selectedPlanAllTasks.length,
+   92:         visibleTaskCount: taskListTasks.length,
+   93:         onClear: planSelectionState.clearSelection,
+   94:       }
+   95:     : null;
+   96: 
+   97:   useEffect(() => {
+   98:     setSearchPopupOpen(hasSearchQuery);
+   99:   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+  100: 
+  101:   useEffect(() => {
+  102:     setSelectedPlanId((current) => {
+  103:       if (current === null) return current;
+  104:       if (!snapshot) return null;
+--- src\renderer\pages\WorkspacePage.tsx 322 ---
+  322:               data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
+  323:               data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
+  324:             >
+  325:               <div className="task-status-grid">
+  326:                 <section className="card">
+  327:                   <div className="card-head">
+  328:                     <h2>Plan</h2>
+  329:                   </div>
+  330:                   <PlanList
+  331:                     emptyText={filteredEmptyText}
+  332:                     latestReadingPlan={latestReadingPlan}
+  333:                     onCloseReader={closePlanReader}
+  334:                     onOpenReader={openPlanReader}
+  335:                     onRunParallel={({ plan, batches }) =>
+  336:                       runLoopAction(() =>
+  337:                         (window.autoplan as typeof window.autoplan & {
+  338:                           runTaskBatches: (input: {
+  339:                             projectId: number;
+  340:                             planId: number;
+  341:                             batches: Array<{ taskIds: number[] }>;
+  342:                             manual: true;
+  343:                           }) => Promise<AppSnapshot>;
+  344:                         }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+  345:                       )
+  346:                     }
+  347:                     onRefreshReader={refreshPlanReader}
+  348:                     onReorderPlans={reorderPlansFromList}
+  349:                     onClearPlanSelection={planSelectionState.clearSelection}
+  350:                     onSelectPlan={planSelectionState.selectPlan}
+  351:                     plans={filteredItems.plans}
+  352:                     readerState={planReadState}
+  353:                     selectedPlan={planSelectionState.selectedPlan}
+  354:                     selectedPlanId={planSelectionState.selectedPlanId}
+  355:                     tasks={snapshot.tasks}
+  356:                     totalPlanCount={snapshot.plans.length}
+  357:                   />
+  358:                 </section>
+  359:                 <section className="card">
+  360:                   <div className="card-head">
+  361:                     <h2>任务</h2>
+  362:                   </div>
+  363:                   <TaskList
+--- src\renderer\components\PlanLists.tsx 49 ---
+   49: type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+   50: type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+   51: type TaskListPlanFilter = {
+   52:   plan: Plan;
+   53:   totalTaskCount: number;
+   54:   visibleTaskCount: number;
+   55:   onClear: () => void;
+   56: };
+   57: type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   58:   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   59:   selectedPlanId?: number | null;
+   60:   selectedPlan?: Plan | null;
+   61:   onSelectPlan?: (plan: Plan) => void;
+   62:   onClearPlanSelection?: () => void;
+   63: };
+   64: 
+   65: const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [
+   66:   { key: 'all', label: '全部' },
+   67:   { key: 'running', label: '执行中' },
+   68:   { key: 'completed', label: '已完成' },
+   69:   { key: 'draft', label: '草稿' },
+   70: ];
+   71: 
+   72: function planDisplayName(plan: Plan) {
+   73:   return plan.title || plan.file_path || `Plan #${plan.id}`;
+   74: }
+   75: 
+   76: export function TaskList({
+   77:   emptyText = '暂无任务。',
+   78:   tasks,
+   79:   onOpenPlan,
+   80:   onRun,
+   81:   onStop,
+   82:   locateTarget,
+   83:   planFilter,
+--- src\renderer\components\PlanLists.tsx 95 ---
+   95:   const visibleTasks = useMemo(
+   96:     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+   97:     [activeFilter, tasks],
+   98:   );
+   99:   const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+  100:   const defaultExpandedKeys = useMemo(() => getDefaultExpandedTaskGroupKeys(taskGroups), [taskGroups]);
+  101:   const filterCounts = useMemo(
+  102:     () =>
+  103:       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+  104:         (counts, filter) => ({
+  105:           ...counts,
+  106:           [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+  107:         }),
+  108:         { all: 0, running: 0, queued: 0, completed: 0 },
+  109:       ),
+  110:     [tasks],
+  111:   );
+  112:   const activeFilterConfig =
+  113:     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+  114:   const planFilterEmptyText = planFilter
+  115:     ? planFilter.totalTaskCount
+  116:       ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
+  117:       : '该 Plan 暂无关联任务。'
+  118:     : emptyText;
+  119:   const currentEmptyText = tasks.length
+  120:     ? planFilter
+  121:       ? `该 Plan 暂无${activeFilterConfig.label}任务。`
+  122:       : activeFilterConfig.emptyText
+  123:     : planFilterEmptyText;
+  124: 
+  125:   useEffect(() => {
+  126:     if (locateTarget?.targetTab === 'tasks') {
+  127:       setActiveFilter('all');
+  128:     }
+  129:   }, [locateTarget]);
+  130: 
+  131:   useEffect(() => {
+  132:     if (!locateTarget) return;
+  133:     const locatedGroup = findTaskGroupForSearchTarget(taskGroups, locateTarget);
+  134:     if (!locatedGroup) return;
+  135:     setExpandedOverrides((current) => (current[locatedGroup.key] ? current : { ...current, [locatedGroup.key]: true }));
+  136:   }, [locateTarget, taskGroups]);
+  137: 
+  138:   function toggleTaskGroup(groupKey: string) {
+  139:     const currentlyExpanded = expandedOverrides[groupKey] ?? defaultExpandedKeys.has(groupKey);
+  140:     setExpandedOverrides((current) => ({ ...current, [groupKey]: !currentlyExpanded }));
+  141:   }
+  142: 
+  143:   return (
+  144:     <div className="task-list-panel">
+  145:       {planFilter ? (
+  146:         <div className="search-locate-notice">
+  147:           <span>
+  148:             正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
+  149:             {planFilter.totalTaskCount}
+--- plan diff ---
+--- scoped files diff ---
+src/renderer/components/PlanLists.tsx
+src/renderer/pages/WorkspacePage.tsx
+warning: in the working copy of 'src/renderer/components/PlanLists.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..a70c9ee3485872e7dcf670be0b34b8096a66d582
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,16 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length
++    ? planFilter
++      ? `该 Plan 暂无${activeFilterConfig.label}任务。`
++      : activeFilterConfig.emptyText
++    : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +142,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +453,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +479,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+codex
+关键逻辑看起来正确；再确认 TaskList 的传参片段。
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\pages\\WorkspacePage.tsx' 363 18; Show 'src\\renderer\\components\\PlanLists.tsx' 145 15" in D:\project\GitHub\autoplan
+ succeeded in 496ms:
+--- src\renderer\pages\WorkspacePage.tsx 363 ---
+  363:                   <TaskList
+  364:                     emptyText={filteredEmptyText}
+  365:                     locateTarget={pendingSearchTarget}
+  366:                     planFilter={selectedPlanTaskFilter}
+  367:                     tasks={taskListTasks}
+  368:                     onOpenPlan={openTaskPlanReader}
+  369:                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+  370:                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+  371:                   />
+  372:                 </section>
+  373:               </div>
+  374:             </div>
+  375:           ) : null}
+  376:         </section>
+  377: 
+  378:         <section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>
+  379:           {activeTab === 'settings' ? (
+  380:             <WorkspaceSettingsView
+--- src\renderer\components\PlanLists.tsx 145 ---
+  145:       {planFilter ? (
+  146:         <div className="search-locate-notice">
+  147:           <span>
+  148:             正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
+  149:             {planFilter.totalTaskCount}
+  150:           </span>
+  151:           <button type="button" className="btn-link" onClick={planFilter.onClear}>
+  152:             查看全部任务
+  153:           </button>
+  154:         </div>
+  155:       ) : null}
+  156:       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+  157:         {TASK_STATUS_FILTERS.map((filter) => {
+  158:           const active = activeFilter === filter.id;
+  159:           return (
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..a70c9ee3485872e7dcf670be0b34b8096a66d582
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,16 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length
++    ? planFilter
++      ? `该 Plan 暂无${activeFilterConfig.label}任务。`
++      : activeFilterConfig.emptyText
++    : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +142,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +453,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +479,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+**Evaluating plan visibility issues**
+
+I'm thinking about a potential issue with plan visibility in a filtered search. If the PlanList is filtered, a selected plan might not show up, which could be problematic. So, if the selected plan isn't in that filtered list, there won't be a corresponding row, but the selection bar could still indicate it's selected. That's tricky! I need to ensure that the count of visible tasks adjusts properly after the search and when considering the status.
+**Identifying filtering issues**
+
+I'm analyzing a potential issue with the `planFilterEmptyText`, which says "任务状态过滤条件排除" when tasks.length=0 before accounting for status. This could be misleading, as it might only apply to the search. I wonder if the user's view includes the current status, but actually, the current status doesn't affect tasks.length. If the active status excludes all tasks and there are still tasks, the empty text should reflect that correctly. I also need to check on some TypeScript properties and validations to ensure everything syncs well.
+codex
+P004 范围和传参确认完成，plan 文件未改动；我标记任务收尾。
+  ✓ 定位选择和任务数据
+  ✓ 接入 PlanList 控制态
+  ✓ 按选中 Plan 过滤任务
+  ✓ 补充任务提示空态
+  ✓ 复查范围不跑测试
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..a70c9ee3485872e7dcf670be0b34b8096a66d582
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,16 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length
++    ? planFilter
++      ? `该 Plan 暂无${activeFilterConfig.label}任务。`
++      : activeFilterConfig.emptyText
++    : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +142,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +453,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +479,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+codex
+已完成 P004，未修改 plan 文件，也未运行测试/构建/lint。
+
+- 在 `src/renderer/pages/WorkspacePage.tsx:2` 接入 `isTaskAssociatedWithPlan`，复用 P001 的 Plan-Task 关联规则。
+- 在 `src/renderer/pages/WorkspacePage.tsx:82` 计算选中 Plan 的全部关联任务、当前搜索后的可见任务，并传给任务列表。
+- 在 `src/renderer/pages/WorkspacePage.tsx:330` 将 P002/P003 的选择态接入 `PlanList`，支持受控选中和清空。
+- 在 `src/renderer/pages/WorkspacePage.tsx:363` 将 `TaskList` 的任务集合改为选中 Plan 过滤后的任务；未选中时保持原 `displayTasks` 行为。
+- 在 `src/renderer/components/PlanLists.tsx:145` 增加任务列表顶部的 Plan 过滤说明、计数和“查看全部任务”清空入口，并补充对应空态文案。
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 1b18a7b279375f03cd9d5f13c43ec6b8e65c1b5e..a70c9ee3485872e7dcf670be0b34b8096a66d582
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -48,6 +48,12 @@
+ 
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type TaskListPlanFilter = {
++  plan: Plan;
++  totalTaskCount: number;
++  visibleTaskCount: number;
++  onClear: () => void;
++};
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   selectedPlanId?: number | null;
+@@ -63,6 +69,10 @@
+   { key: 'draft', label: '草稿' },
+ ];
+ 
++function planDisplayName(plan: Plan) {
++  return plan.title || plan.file_path || `Plan #${plan.id}`;
++}
++
+ export function TaskList({
+   emptyText = '暂无任务。',
+   tasks,
+@@ -70,6 +80,7 @@
+   onRun,
+   onStop,
+   locateTarget,
++  planFilter,
+ }: {
+   emptyText?: string;
+   tasks: PlanTask[];
+@@ -77,6 +88,7 @@
+   onRun?: (task: PlanTask) => void;
+   onStop?: (task: PlanTask) => void;
+   locateTarget?: WorkspaceSearchResult | null;
++  planFilter?: TaskListPlanFilter | null;
+ }) {
+   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+@@ -99,7 +111,16 @@
+   );
+   const activeFilterConfig =
+     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+-  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
++  const planFilterEmptyText = planFilter
++    ? planFilter.totalTaskCount
++      ? '该 Plan 的任务已被当前搜索或任务状态过滤条件排除。'
++      : '该 Plan 暂无关联任务。'
++    : emptyText;
++  const currentEmptyText = tasks.length
++    ? planFilter
++      ? `该 Plan 暂无${activeFilterConfig.label}任务。`
++      : activeFilterConfig.emptyText
++    : planFilterEmptyText;
+ 
+   useEffect(() => {
+     if (locateTarget?.targetTab === 'tasks') {
+@@ -121,6 +142,17 @@
+ 
+   return (
+     <div className="task-list-panel">
++      {planFilter ? (
++        <div className="search-locate-notice">
++          <span>
++            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
++            {planFilter.totalTaskCount}
++          </span>
++          <button type="button" className="btn-link" onClick={planFilter.onClear}>
++            查看全部任务
++          </button>
++        </div>
++      ) : null}
+       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+         {TASK_STATUS_FILTERS.map((filter) => {
+           const active = activeFilter === filter.id;
+@@ -421,7 +453,7 @@
+       <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
+         <span className="plan-selection-summary">
+           {effectiveSelectedPlan
+-            ? `已选择：${effectiveSelectedPlan.title || effectiveSelectedPlan.file_path || `Plan #${effectiveSelectedPlan.id}`}`
++            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
+             : '未选择 Plan，当前任务列表可查看全部任务'}
+         </span>
+         <button
+@@ -447,7 +479,7 @@
+             return (
+               <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
+                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+-                <span className="plan-select-row-title">{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
++                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
+                 {selected ? <span className="plan-selected-badge">已选中</span> : null}
+                 <small>{disabledReason || '可调整'}</small>
+                 <button
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2e8c64953b8abf2256c7d828f7f6948ee5c5af4c..c24eea028d4436cf831dcea5747aa128550e8279
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,4 +1,5 @@
+ import { useEffect, useRef, useState } from 'react';
++import { isTaskAssociatedWithPlan } from '../types';
+ import type {
+   AppSnapshot,
+   Plan,
+@@ -78,6 +79,20 @@
+     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+     clearSelection: () => setSelectedPlanId(null),
+   };
++  const selectedPlanAllTasks = selectedPlan
++    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : [];
++  const taskListTasks = selectedPlan
++    ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
++    : displayTasks;
++  const selectedPlanTaskFilter = selectedPlan
++    ? {
++        plan: selectedPlan,
++        totalTaskCount: selectedPlanAllTasks.length,
++        visibleTaskCount: taskListTasks.length,
++        onClear: planSelectionState.clearSelection,
++      }
++    : null;
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+@@ -331,11 +346,15 @@
+                     }
+                     onRefreshReader={refreshPlanReader}
+                     onReorderPlans={reorderPlansFromList}
++                    onClearPlanSelection={planSelectionState.clearSelection}
++                    onSelectPlan={planSelectionState.selectPlan}
+                     plans={filteredItems.plans}
+-                    readerState={planReadState}
+-                    tasks={snapshot.tasks}
+-                    totalPlanCount={snapshot.plans.length}
+-                  />
++                    readerState={planReadState}
++                    selectedPlan={planSelectionState.selectedPlan}
++                    selectedPlanId={planSelectionState.selectedPlanId}
++                    tasks={snapshot.tasks}
++                    totalPlanCount={snapshot.plans.length}
++                  />
+                 </section>
+                 <section className="card">
+                   <div className="card-head">
+@@ -344,7 +363,8 @@
+                   <TaskList
+                     emptyText={filteredEmptyText}
+                     locateTarget={pendingSearchTarget}
+-                    tasks={displayTasks}
++                    planFilter={selectedPlanTaskFilter}
++                    tasks={taskListTasks}
+                     onOpenPlan={openTaskPlanReader}
+                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+
+tokens used
+310,254
+已完成 P004，未修改 plan 文件，也未运行测试/构建/lint。
+
+- 在 `src/renderer/pages/WorkspacePage.tsx:2` 接入 `isTaskAssociatedWithPlan`，复用 P001 的 Plan-Task 关联规则。
+- 在 `src/renderer/pages/WorkspacePage.tsx:82` 计算选中 Plan 的全部关联任务、当前搜索后的可见任务，并传给任务列表。
+- 在 `src/renderer/pages/WorkspacePage.tsx:330` 将 P002/P003 的选择态接入 `PlanList`，支持受控选中和清空。
+- 在 `src/renderer/pages/WorkspacePage.tsx:363` 将 `TaskList` 的任务集合改为选中 Plan 过滤后的任务；未选中时保持原 `displayTasks` 行为。
+- 在 `src/renderer/components/PlanLists.tsx:145` 增加任务列表顶部的 Plan 过滤说明、计数和“查看全部任务”清空入口，并补充对应空态文案。

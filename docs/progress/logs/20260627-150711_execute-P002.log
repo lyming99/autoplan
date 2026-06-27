@@ -1,0 +1,2657 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f076d-511c-7ce2-919b-652c2692c336
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_30_20260627-125155.md
+指定任务：
+- [ ] P002: 拆分计划生成与任务执行流程 <!-- scope: src/loopService.js,src/loop/planGeneration.js,src/loop/taskExecution.js,src/loop/validation.js -->
+任务 scope：src/loopservice.js, src/loop/plangeneration.js, src/loop/taskexecution.js, src/loop/validation.js
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用 P001 的拆分背景，只查看 P002 相关流程边界。
+  → 定位 P002 流程边界
+  • 抽出计划生成模块
+  • 抽出任务执行模块
+  • 抽出验收流程模块
+  • 确认改动范围
+codex
+先读取 `loopService.js` 中计划生成、任务执行、验收函数片段。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; foreach($r in @(@(720,1285),@(1280,1455),@(1905,2085))){'"'--- lines '+"'$r[0]+'"'-'+"'$r[1]+'"' ---'; for("'$i=$r[0]-1;$i -lt $r[1] -and $i -lt $lines.Count;$i++){ if($lines[$i] -match '"'"'^(  async |  [a-zA-Z].*'"\\{|function |  /\\*\\*)' -or ("'$i+1 -ge $r[0] -and $i+1 -le $r[0]+8)){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] } }}' in D:\project\GitHub\autoplan
+ succeeded in 467ms:
+--- lines 720-1285 ---
+  720:          (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+  721:          VALUES (?, ?, ?, ?, ?, ?, ?)`,
+  722:         [projectId, type, file.path, file.hash, file.size, file.modifiedAt, scannedAt],
+  723:       );
+  724:     }
+  725:   }
+  726: 
+  727:   hasPlanForIssueHash(projectId, issueHash) {
+  728:     return Boolean(
+  733:   nextRunnablePlan(projectId) {
+  743:   nextPlanSortOrder(projectId) {
+  748:   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+  777:   planAgentCliConfig(plan) {
+  788:   planSnapshotAgentCliConfig(plan) {
+  792:   planAgentCliEventSnapshot(projectId, planId) {
+  808:   planSourceAgentCliSnapshot(projectId, planId) {
+  819:   async generatePlan(projectId, workspace, issueScan) {
+  887:   /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+  888:   async generatePlanForIntake(projectId, workspace, intake) {
+  958:   intakeAttachmentPrompt(projectId, workspace, intake, sourceName) {
+  997:   async processPlan(workspace, plan) {
+ 1024:   isFinalAcceptanceTask(planId, task) {
+ 1033:   hasFinalAcceptanceTask(planId) {
+ 1041:   previousPlanCodexSessionId(planId, task) {
+ 1058:   parallelTaskBatch(tasks) {
+ 1075:   async executeTaskBatch(workspace, plan, tasks, options = {}) {
+ 1113:   async executeTask(workspace, plan, task, options = {}) {
+ 1210:   completeTask(workspace, plan, task, result) {
+ 1228:   completeAcceptanceTask(workspace, plan, task, result) {
+ 1257:   refreshPlanProgress(planId, planFile) {
+ 1275:   markTaskCompletedInPlan(workspace, planFile, task, result) {
+--- lines 1280-1455 ---
+ 1280:     let content = fs.readFileSync(planFile, 'utf8');
+ 1281:     if (checkboxRe.test(content)) {
+ 1282:       content = content.replace(checkboxRe, '$1x$3');
+ 1283:     }
+ 1284: 
+ 1285:     const note = `- ${task.task_key} AutoPlan 完成：${nowIso()}${relativeLog ? `；日志：${relativeLog}` : ''}`;
+ 1286:     const noteRe = new RegExp(`^\\s*-\\s+${key}\\s+AutoPlan 完成：.*$`, 'm');
+ 1287:     if (noteRe.test(content)) {
+ 1288:       content = content.replace(noteRe, note);
+ 1297:   async validatePlan(workspace, plan, options = {}) {
+ 1396:   syncPlanTasks(planId, planFile) {
+--- lines 1905-2085 ---
+ 1905:     ...sessionContext,
+ 1906:   };
+ 1907: }
+ 1908: 
+ 1909: function mcpStatusSnapshot(db) {
+ 1910:   const settings = db?.getSettings ? db.getSettings('mcp.') : {};
+ 1911:   const enabled = normalizeMcpBoolean(process.env.AUTOPLAN_MCP_ENABLED ?? settings['mcp.enabled'], MCP_DEFAULT_CONFIG.enabled);
+ 1912:   const transport = normalizeMcpTransport(process.env.AUTOPLAN_MCP_TRANSPORT ?? settings['mcp.transport']);
+ 1913:   const host = normalizeMcpHost(process.env.AUTOPLAN_MCP_HOST ?? settings['mcp.host']);
+ 1926:   const url = transport === 'http' ? `http://${host}:${port}${mcpPath}` : null;
+ 1932:   return {
+ 1958: function mcpStatusLabel({ enabled, running, lastError }) {
+ 1964: function normalizeMcpBoolean(value, fallback) {
+ 1972: function normalizeMcpTransport(value) {
+ 1976: function normalizeMcpHost(value) {
+ 1980: function normalizeMcpPort(value) {
+ 1985: function normalizeMcpPath(value) {
+ 1988:   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+ 1991: function emptySnapshot(projects, mcp = null) {
+ 1992:   return {
+ 2011: function eventSnapshotRow(event) {
+ 2013:   return {
+ 2019: function parseEventMeta(meta) {
+ 2022:   try {
+ 2032: function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
+ 2034:   const planAgentCliConfig = agentCliConfig || effectiveAgentCliConfig({}, plan);
+ 2036:   return {
+ 2049: function normalizePlanSortOrder(value) {
+ 2054: function groupPlanTasksByPlanId(tasks) {
+ 2056:   for (const task of tasks) {
+ 2066: function readPlanMarkdownTitle(workspace, filePath) {
+ 2070:   try {
+ 2078: function resolveWorkspaceChildPath(workspace, filePath) {
+
+codex
+函数边界已定位；接下来读取具体实现以做等价搬迁。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; function Show($a,$b){'"'--- lines '+"'$a+'"'-'+"'$b+'"' ---'; for("'$i=$a-1;$i -lt $b -and $i -lt $lines.Count;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }}; Show 727 997; Show 997 1296; Show 1297 1395;' in D:\project\GitHub\autoplan
+ succeeded in 474ms:
+--- lines 727-997 ---
+  727:   hasPlanForIssueHash(projectId, issueHash) {
+  728:     return Boolean(
+  729:       this.db.get('SELECT id FROM plans WHERE project_id = ? AND issue_hash = ? LIMIT 1', [projectId, issueHash]),
+  730:     );
+  731:   }
+  732: 
+  733:   nextRunnablePlan(projectId) {
+  734:     return this.db.get(
+  735:       `SELECT * FROM plans
+  736:        WHERE project_id = ? AND status NOT IN ('completed', 'interrupted')
+  737:        ORDER BY sort_order ASC, created_at ASC, id ASC
+  738:        LIMIT 1`,
+  739:       [projectId],
+  740:     );
+  741:   }
+  742: 
+  743:   nextPlanSortOrder(projectId) {
+  744:     const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
+  745:     return Number(row?.sort_order || 0) + 1;
+  746:   }
+  747: 
+  748:   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+  749:     const createdAt = nowIso();
+  750:     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+  751:       ? Number(sortOrder)
+  752:       : this.nextPlanSortOrder(projectId);
+  753:     const columns = [
+  754:       'project_id',
+  755:       'issue_hash',
+  756:       'file_path',
+  757:       'hash',
+  758:       'status',
+  759:       'sort_order',
+  760:       'total_tasks',
+  761:       'completed_tasks',
+  762:       'validation_passed',
+  763:       'created_at',
+  764:       'updated_at',
+  765:     ];
+  766:     const values = [projectId, issueHash, filePath, hash, status, normalizedSortOrder, 0, 0, 0, createdAt, createdAt];
+  767:     for (const [column, value] of planAgentCliColumnValues(this.planColumns(), agentCliConfig)) {
+  768:       columns.push(column);
+  769:       values.push(value);
+  770:     }
+  771:     return this.db.insert(
+  772:       `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+  773:       values,
+  774:     );
+  775:   }
+  776: 
+  777:   planAgentCliConfig(plan) {
+  778:     const projectDefaults = this.status(plan.project_id);
+  779:     const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+  780:     const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+  781:     const snapshotDefaults = eventSnapshot || sourceSnapshot || projectDefaults;
+  782:     if (hasAgentCliOverride(plan)) return effectiveAgentCliConfig(snapshotDefaults, plan);
+  783:     if (eventSnapshot) return effectiveAgentCliConfig(projectDefaults, eventSnapshot);
+  784:     if (sourceSnapshot) return effectiveAgentCliConfig(projectDefaults, sourceSnapshot);
+  785:     return effectiveAgentCliConfig(projectDefaults);
+  786:   }
+  787: 
+  788:   planSnapshotAgentCliConfig(plan) {
+  789:     return this.planAgentCliConfig(plan);
+  790:   }
+  791: 
+  792:   planAgentCliEventSnapshot(projectId, planId) {
+  793:     const rows = this.db.all(
+  794:       `SELECT meta FROM events
+  795:        WHERE project_id = ? AND type = 'plan.generated' AND meta IS NOT NULL
+  796:        ORDER BY id DESC
+  797:        LIMIT 40`,
+  798:       [projectId],
+  799:     );
+  800:     for (const row of rows) {
+  801:       const meta = parseEventMeta(row.meta);
+  802:       if (!meta || typeof meta !== 'object') continue;
+  803:       if (Number(meta.planId ?? meta.plan_id) === Number(planId) && hasAgentCliOverride(meta)) return meta;
+  804:     }
+  805:     return null;
+  806:   }
+  807: 
+  808:   planSourceAgentCliSnapshot(projectId, planId) {
+  809:     const requirement = this.db.get('SELECT * FROM requirements WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [
+  810:       projectId,
+  811:       planId,
+  812:     ]);
+  813:     if (requirement && hasAgentCliOverride(requirement)) return requirement;
+  814:     const feedback = this.db.get('SELECT * FROM feedback WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [projectId, planId]);
+  815:     if (feedback && hasAgentCliOverride(feedback)) return feedback;
+  816:     return null;
+  817:   }
+  818: 
+  819:   async generatePlan(projectId, workspace, issueScan) {
+  820:     this.setPhase(projectId, 'generate-plan');
+  821:     const planAgentCliConfig = effectiveAgentCliConfig(this.status(projectId));
+  822:     const planFile = path.join(
+  823:       workspace,
+  824:       'docs',
+  825:       'plan',
+  826:       `plan_${timestampForPath()}_${issueScan.aggregateHash.slice(0, 8)}.md`,
+  827:     );
+  828:     const issueBundle = issueScan.files
+  829:       .map((file) => {
+  830:         const full = path.join(workspace, file.path);
+  831:         return ['---', `path: ${file.path}`, `hash: ${file.hash}`, 'content:', readSnippet(full, 20000)].join('\n');
+  832:       })
+  833:       .join('\n');
+  834: 
+  835:     const prompt = [
+  836:       '你是需求整理与开发计划生成者。',
+  837:       '请根据 docs/issues 收集到的反馈和需求，生成一个开发计划和验收标准。',
+  838:       '',
+  839:       `输出文件：${planFile}`,
+  840:       '',
+  841:       '格式要求：',
+  842:       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+  843:       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
+  844:       '- 每个任务要有验收要点',
+  845:       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+  846:       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+  847:       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+  848:       '- 必须包含总体验收标准和进度区',
+  849:       '- 只写 plan 文件，不要改业务代码',
+  850:       '',
+  851:       '需求快照：',
+  852:       issueBundle,
+  853:     ].join('\n');
+  854: 
+  855:     const result = await this.runCodex(workspace, prompt, 'generate-plan', {
+  856:       projectId,
+  857:       ...agentCliOperationFields(planAgentCliConfig),
+  858:     });
+  859:     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+  860:     const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+  861:     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
+  862:     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+  863:       this.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, agentContext);
+  864:       return;
+  865:     }
+  866: 
+  867:     const id = this.insertPlan({
+  868:       projectId,
+  869:       issueHash: issueScan.aggregateHash,
+  870:       filePath: normalizeRelative(workspace, planFile),
+  871:       hash: hashFile(planFile),
+  872:       status: 'pending',
+  873:       agentCliConfig: planAgentCliSnapshot,
+  874:     });
+  875:     this.syncPlanTasks(id, planFile);
+  876:     this.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
+  877:       issueScan.aggregateHash,
+  878:       nowIso(),
+  879:       projectId,
+  880:     ]);
+  881:     this.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+  882:       ...agentContext,
+  883:       planId: id,
+  884:     });
+  885:   }
+  886: 
+  887:   /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+  888:   async generatePlanForIntake(projectId, workspace, intake) {
+  889:     const table = intake.__type === 'feedback' ? 'feedback' : 'requirements';
+  890:     const sourceName = intake.__type === 'feedback' ? '反馈' : '需求';
+  891:     this.setPhase(projectId, 'generate-plan');
+  892:     const planAgentCliConfig = effectiveAgentCliConfig(this.status(projectId), intake);
+  893:     const safeId = String(intake.id).replace(/[^0-9a-zA-Z_-]/g, '');
+  894:     const planFile = path.join(
+  895:       workspace,
+  896:       'docs',
+  897:       'plan',
+  898:       `plan_${intake.__type}_${safeId}_${timestampForPath()}.md`,
+  899:     );
+  900:     const attachmentPrompt = this.intakeAttachmentPrompt(projectId, workspace, intake, sourceName);
+  901:     const promptParts = [
+  902:       '你是需求整理与开发计划生成者。',
+  903:       `请根据以下${sourceName}，生成一个开发计划和验收标准。`,
+  904:       '',
+  905:       `输出文件：${planFile}`,
+  906:       '',
+  907:       '格式要求：',
+  908:       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+  909:       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
+  910:       '- 每个任务要有验收要点',
+  911:       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+  912:       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+  913:       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+  914:       '- 必须包含总体验收标准和进度区',
+  915:       '- 只写 plan 文件，不要改业务代码',
+  916:       '',
+  917:       `${sourceName} #${intake.id} 内容：`,
+  918:       String(intake.body || '').trim() || '（正文为空）',
+  919:     ];
+  920:     if (attachmentPrompt) promptParts.push('', attachmentPrompt);
+  921:     const prompt = promptParts.join('\n');
+  922: 
+  923:     const result = await this.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, {
+  924:       projectId,
+  925:       intakeType: intake.__type,
+  926:       intakeId: intake.id,
+  927:       ...agentCliOperationFields(planAgentCliConfig),
+  928:     });
+  929:     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+  930:     const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+  931:     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
+  932:     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+  933:       this.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`, agentContext);
+  934:       return null;
+  935:     }
+  936: 
+  937:     const issueHash = `${intake.__type}-${intake.id}-${hashText(String(intake.body || '')).slice(0, 16)}`;
+  938:     const id = this.insertPlan({
+  939:       projectId,
+  940:       issueHash,
+  941:       filePath: normalizeRelative(workspace, planFile),
+  942:       hash: hashFile(planFile),
+  943:       status: 'pending',
+  944:       agentCliConfig: planAgentCliSnapshot,
+  945:     });
+  946:     this.syncPlanTasks(id, planFile);
+  947:     // 回写关联
+  948:     this.db.run(`UPDATE ${table} SET linked_plan_id = ?, updated_at = ? WHERE id = ?`, [id, nowIso(), intake.id]);
+  949:     this.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+  950:       ...agentContext,
+  951:       planId: id,
+  952:       intakeType: intake.__type,
+  953:       intakeId: intake.id,
+  954:     });
+  955:     return id;
+  956:   }
+  957: 
+  958:   intakeAttachmentPrompt(projectId, workspace, intake, sourceName) {
+  959:     const ownerTypes = intakeAttachmentOwnerTypes(intake.__type);
+  960:     const placeholders = ownerTypes.map(() => '?').join(', ');
+  961:     const attachments = this.db.all(
+  962:       `SELECT * FROM attachments
+  963:        WHERE project_id = ? AND owner_id = ? AND owner_type IN (${placeholders})
+  964:        ORDER BY created_at ASC, id ASC`,
+  965:       [projectId, intake.id, ...ownerTypes],
+  966:     );
+  967:     if (!attachments.length) return '';
+  968: 
+  969:     const entries = attachments.map((attachment, index) => describeIntakeAttachment(workspace, attachment, index));
+  970:     const failed = entries.filter((entry) => !entry.readable);
+  971:     if (failed.length) {
+  972:       this.addEvent(
+  973:         projectId,
+  974:         'attachment.read.failed',
+  975:         `${sourceName} #${intake.id} 存在不可读附件：${failed.map((entry) => `${entry.name}（${entry.readError}）`).join('；')}`,
+  976:         {
+  977:           intakeType: intake.__type,
+  978:           intakeId: intake.id,
+  979:           attachments: failed.map((entry) => ({
+  980:             id: entry.id,
+  981:             name: entry.name,
+  982:             path: entry.path,
+  983:             error: entry.readError,
+  984:           })),
+  985:         },
+  986:       );
+  987:     }
+  988: 
+  989:     return [
+  990:       '附件清单：',
+  991:       '以下附件已持久化到本地文件系统；不要将图片二进制内联进 plan，工具可以通过“持久化本地路径”读取附件内容。',
+  992:       '生成 plan 时，如任务理解或后续执行依赖附件内容，请在计划、验收要点或任务说明中保留必要的附件路径或引用。',
+  993:       ...entries.flatMap((entry) => formatIntakeAttachmentEntry(entry)),
+  994:     ].join('\n');
+  995:   }
+  996: 
+  997:   async processPlan(workspace, plan) {
+--- lines 997-1296 ---
+  997:   async processPlan(workspace, plan) {
+  998:     const planFile = path.join(workspace, plan.file_path);
+  999:     this.syncPlanTasks(plan.id, planFile);
+ 1000:     const pendingTasks = this.db.all(
+ 1001:       `SELECT * FROM plan_tasks WHERE plan_id = ? AND status = 'pending'
+ 1002:        ORDER BY sort_order ASC`,
+ 1003:       [plan.id],
+ 1004:     );
+ 1005:     if (pendingTasks.length) {
+ 1006:       const firstPendingTask = pendingTasks[0];
+ 1007:       if (this.isFinalAcceptanceTask(plan.id, firstPendingTask)) {
+ 1008:         await this.validatePlan(workspace, plan, { task: firstPendingTask });
+ 1009:         return;
+ 1010:       }
+ 1011:       const result = await this.executeTask(workspace, plan, firstPendingTask);
+ 1012:       if (result.exitCode === 0) {
+ 1013:         this.completeTask(workspace, plan, firstPendingTask, result);
+ 1014:       }
+ 1015:       return;
+ 1016:     }
+ 1017:     if (this.hasFinalAcceptanceTask(plan.id)) {
+ 1018:       const currentPlan = this.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [plan.id]);
+ 1019:       if (currentPlan?.validation_passed || currentPlan?.status === 'completed') return;
+ 1020:     }
+ 1021:     await this.validatePlan(workspace, plan);
+ 1022:   }
+ 1023: 
+ 1024:   isFinalAcceptanceTask(planId, task) {
+ 1025:     if (!task) return false;
+ 1026:     const lastTask = this.db.get(
+ 1027:       'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+ 1028:       [planId],
+ 1029:     );
+ 1030:     return Number(lastTask?.id) === Number(task.id) && isAcceptanceTask(task);
+ 1031:   }
+ 1032: 
+ 1033:   hasFinalAcceptanceTask(planId) {
+ 1034:     const lastTask = this.db.get(
+ 1035:       'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+ 1036:       [planId],
+ 1037:     );
+ 1038:     return isAcceptanceTask(lastTask);
+ 1039:   }
+ 1040: 
+ 1041:   previousPlanCodexSessionId(planId, task) {
+ 1042:     if (!task) return '';
+ 1043:     const previousTask = this.db.get(
+ 1044:       `SELECT codex_session_id
+ 1045:        FROM plan_tasks
+ 1046:        WHERE plan_id = ?
+ 1047:          AND status = ?
+ 1048:          AND codex_session_id IS NOT NULL
+ 1049:          AND codex_session_id != ''
+ 1050:          AND (sort_order < ? OR (sort_order = ? AND id < ?))
+ 1051:        ORDER BY sort_order DESC, id DESC
+ 1052:        LIMIT 1`,
+ 1053:       [planId, TASK_EVENT_STATUS.COMPLETED, task.sort_order || 0, task.sort_order || 0, task.id || 0],
+ 1054:     );
+ 1055:     return normalizeCodexSessionId(previousTask?.codex_session_id);
+ 1056:   }
+ 1057: 
+ 1058:   parallelTaskBatch(tasks) {
+ 1059:     const selected = [];
+ 1060:     const usedScopes = new Set();
+ 1061:     for (const task of tasks) {
+ 1062:       if (selected.length >= MAX_PARALLEL_TASKS) break;
+ 1063:       const scopes = taskParallelScopes(task);
+ 1064:       if (!scopes.length) {
+ 1065:         if (!selected.length) return [task];
+ 1066:         continue;
+ 1067:       }
+ 1068:       if (scopes.some((scope) => usedScopes.has(scope))) continue;
+ 1069:       selected.push(task);
+ 1070:       for (const scope of scopes) usedScopes.add(scope);
+ 1071:     }
+ 1072:     return selected.length > 1 ? selected : [tasks[0]];
+ 1073:   }
+ 1074: 
+ 1075:   async executeTaskBatch(workspace, plan, tasks, options = {}) {
+ 1076:     this.setPhase(plan.project_id, 'execute-task');
+ 1077:     const agentContext = agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true });
+ 1078:     this.addEvent(
+ 1079:       plan.project_id,
+ 1080:       'tasks.parallel.started',
+ 1081:       `${agentCliProviderDisplayName(agentContext.agentCliProvider)} 并发执行 ${tasks.map((task) => task.task_key).join(', ')}`,
+ 1082:       {
+ 1083:         ...agentContext,
+ 1084:         planId: plan.id,
+ 1085:         taskIds: tasks.map((task) => task.id),
+ 1086:         batchIndex: options.batchIndex,
+ 1087:         batchCount: options.batchCount,
+ 1088:       },
+ 1089:     );
+ 1090:     const results = await Promise.all(
+ 1091:       tasks.map(async (task) => {
+ 1092:         let result;
+ 1093:         try {
+ 1094:           result = await this.executeTask(workspace, plan, task, { parallel: true });
+ 1095:         } catch (error) {
+ 1096:           const finishedAt = nowIso();
+ 1097:           if (!taskLifecycleEventRecorded(error)) {
+ 1098:             this.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+ 1099:               error: error?.message || String(error),
+ 1100:             });
+ 1101:           }
+ 1102:           return { task, result: { exitCode: -1, finishedAt } };
+ 1103:         }
+ 1104:         if (result.exitCode === 0) {
+ 1105:           this.completeTask(workspace, plan, task, result);
+ 1106:         }
+ 1107:         return { task, result };
+ 1108:       }),
+ 1109:     );
+ 1110:     return results;
+ 1111:   }
+ 1112: 
+ 1113:   async executeTask(workspace, plan, task, options = {}) {
+ 1114:     this.setPhase(plan.project_id, 'execute-task');
+ 1115:     const startedAt = nowIso();
+ 1116:     const startedTask = this.startTaskRun(task.id, startedAt) || task;
+ 1117:     const taskAgentCliContext = agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true });
+ 1118:     const isTaskCodexProvider = taskAgentCliContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
+ 1119:     const taskSessionId = isTaskCodexProvider ? operationCodexSessionId(startedTask) : '';
+ 1120:     const planSessionId = isTaskCodexProvider && !options.parallel
+ 1121:       ? this.previousPlanCodexSessionId(plan.id, startedTask)
+ 1122:       : '';
+ 1123:     const existingSessionId = taskSessionId || planSessionId;
+ 1124:     const inheritedPlanSession = Boolean(!taskSessionId && planSessionId);
+ 1125:     const startedSessionContext = isTaskCodexProvider
+ 1126:       ? codexSessionContextFields({
+ 1127:           codexSessionId: existingSessionId,
+ 1128:           codexSessionMode: existingSessionId ? 'resume' : 'new',
+ 1129:           codexSessionState: inheritedPlanSession ? 'plan-resume' : undefined,
+ 1130:         })
+ 1131:       : {};
+ 1132:     this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedTask, {
+ 1133:       ...taskAgentCliContext,
+ 1134:       planId: plan.id,
+ 1135:       status: TASK_EVENT_STATUS.RUNNING,
+ 1136:       startedAt,
+ 1137:       ...startedSessionContext,
+ 1138:     });
+ 1139:     const planFile = path.join(workspace, plan.file_path);
+ 1140:     const completionRules = [
+ 1141:       '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
+ 1142:       '- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区',
+ 1143:       '- 只修改当前任务 scope 直接相关的业务文件',
+ 1144:       '- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令',
+ 1145:       '- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”',
+ 1146:       '- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze',
+ 1147:       '- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段',
+ 1148:       '- 不输出完整 diff、源码全文或长文件列表',
+ 1149:       '- 中文文件读写使用 UTF-8',
+ 1150:     ];
+ 1151:     if (inheritedPlanSession) {
+ 1152:       completionRules.unshift('- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理');
+ 1153:     }
+ 1154:     if (options.parallel) {
+ 1155:       completionRules.unshift('- 当前为并发执行模式，不要读写其它任务的 scope');
+ 1156:     }
+ 1157:     const prompt = [
+ 1158:       '你是开发执行者。',
+ 1159:       `请只执行指定任务 ${task.task_key}，不要提前执行其它任务，也不要顺手处理其它 checkbox。`,
+ 1160:       '',
+ 1161:       `plan 文件（只读）：${planFile}`,
+ 1162:       `指定任务：${task.raw_line}`,
+ 1163:       `任务 scope：${task.scope || taskScopeText(task) || 'unknown'}`,
+ 1164:       '',
+ 1165:       '完成后必须：',
+ 1166:       ...completionRules,
+ 1167:     ].join('\n');
+ 1168:     let result;
+ 1169:     try {
+ 1170:       result = await this.runCodexWithPlanGuard(workspace, prompt, `execute-${task.task_key}`, {
+ 1171:         projectId: plan.project_id,
+ 1172:         planId: plan.id,
+ 1173:         taskId: task.id,
+ 1174:         parallel: Boolean(options.parallel),
+ 1175:         ...taskAgentCliContext,
+ 1176:         ...(isTaskCodexProvider && existingSessionId ? { codexSessionId: existingSessionId } : {}),
+ 1177:         ...(inheritedPlanSession ? { codexSessionState: 'plan-resume' } : {}),
+ 1178:       }, planFile);
+ 1179:     } catch (error) {
+ 1180:       const finishedAt = nowIso();
+ 1181:       const errorMessage = error?.message || String(error);
+ 1182:       const failure = classifyExecutionFailure({ exitCode: -1, errorMessage });
+ 1183:       const failedTask = this.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+ 1184:         ...taskAgentCliContext,
+ 1185:         error: errorMessage,
+ 1186:         ...failure,
+ 1187:         ...startedSessionContext,
+ 1188:       });
+ 1189:       if (failedTask) markTaskLifecycleEventRecorded(error);
+ 1190:       throw error;
+ 1191:     }
+ 1192:     const finishedAt = nowIso();
+ 1193:     result.finishedAt = finishedAt;
+ 1194:     const capturedSessionId = operationCodexSessionId(result);
+ 1195:     if (capturedSessionId) this.updateTaskCodexSession(task.id, capturedSessionId, finishedAt);
+ 1196:     const succeeded = result.exitCode === 0;
+ 1197:     if (!succeeded) {
+ 1198:       const failure = classifyExecutionFailure(result);
+ 1199:       this.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+ 1200:         ...agentCliContextFields(result, { defaultProvider: true }),
+ 1201:         exitCode: result.exitCode,
+ 1202:         log: result.logFile,
+ 1203:         ...failure,
+ 1204:         ...(result.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
+ 1205:       });
+ 1206:     }
+ 1207:     return result;
+ 1208:   }
+ 1209: 
+ 1210:   completeTask(workspace, plan, task, result) {
+ 1211:     const planFile = path.join(workspace, plan.file_path);
+ 1212:     const finishedAt = result?.finishedAt || nowIso();
+ 1213:     this.markTaskCompletedInPlan(workspace, planFile, task, result);
+ 1214:     const completedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+ 1215:     this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+ 1216:       ...agentCliContextFields(result, { defaultProvider: true }),
+ 1217:       planId: plan.id,
+ 1218:       status: TASK_EVENT_STATUS.COMPLETED,
+ 1219:       finishedAt,
+ 1220:       exitCode: result?.exitCode,
+ 1221:       log: result?.logFile,
+ 1222:       ...(result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
+ 1223:     });
+ 1224:     this.refreshPlanProgress(plan.id, planFile);
+ 1225:     this.emitUpdate(plan.project_id);
+ 1226:   }
+ 1227: 
+ 1228:   completeAcceptanceTask(workspace, plan, task, result) {
+ 1229:     const planFile = path.join(workspace, plan.file_path);
+ 1230:     const finishedAt = result?.finishedAt || nowIso();
+ 1231:     this.markTaskCompletedInPlan(workspace, planFile, task, result);
+ 1232:     const completedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+ 1233:     const totals = this.db.get(
+ 1234:       `SELECT COUNT(*) AS total,
+ 1235:               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+ 1236:        FROM plan_tasks
+ 1237:        WHERE plan_id = ?`,
+ 1238:       [plan.id],
+ 1239:     ) || { total: 0, completed: 0 };
+ 1240:     const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+ 1241:     this.db.run(
+ 1242:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+ 1243:       [hash, 'completed', Number(totals.total || 0), Number(totals.completed || 0), nowIso(), plan.id],
+ 1244:     );
+ 1245:     this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+ 1246:       ...agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true }),
+ 1247:       planId: plan.id,
+ 1248:       status: TASK_EVENT_STATUS.COMPLETED,
+ 1249:       finishedAt,
+ 1250:       exitCode: result?.exitCode,
+ 1251:       log: result?.logFile,
+ 1252:       acceptanceTask: true,
+ 1253:     });
+ 1254:     this.emitUpdate(plan.project_id);
+ 1255:   }
+ 1256: 
+ 1257:   refreshPlanProgress(planId, planFile) {
+ 1258:     const totals = this.db.get(
+ 1259:       `SELECT COUNT(*) AS total,
+ 1260:               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+ 1261:        FROM plan_tasks
+ 1262:        WHERE plan_id = ?`,
+ 1263:       [planId],
+ 1264:     ) || { total: 0, completed: 0 };
+ 1265:     const total = Number(totals.total || 0);
+ 1266:     const completed = Number(totals.completed || 0);
+ 1267:     const status = total > 0 && completed === total ? 'ready_for_validation' : 'running';
+ 1268:     const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+ 1269:     this.db.run(
+ 1270:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+ 1271:       [hash, status, total, completed, nowIso(), planId],
+ 1272:     );
+ 1273:   }
+ 1274: 
+ 1275:   markTaskCompletedInPlan(workspace, planFile, task, result) {
+ 1276:     if (!fs.existsSync(planFile)) return;
+ 1277:     const relativeLog = result?.logFile ? normalizeRelative(workspace, result.logFile) : '';
+ 1278:     const key = escapeRegExp(String(task.task_key || ''));
+ 1279:     const checkboxRe = new RegExp(`(^\\s*[-*]\\s+\\[)([ xX])(\\]\\s+${key}(?:\\b|[:：\\s-]))`, 'm');
+ 1280:     let content = fs.readFileSync(planFile, 'utf8');
+ 1281:     if (checkboxRe.test(content)) {
+ 1282:       content = content.replace(checkboxRe, '$1x$3');
+ 1283:     }
+ 1284: 
+ 1285:     const note = `- ${task.task_key} AutoPlan 完成：${nowIso()}${relativeLog ? `；日志：${relativeLog}` : ''}`;
+ 1286:     const noteRe = new RegExp(`^\\s*-\\s+${key}\\s+AutoPlan 完成：.*$`, 'm');
+ 1287:     if (noteRe.test(content)) {
+ 1288:       content = content.replace(noteRe, note);
+ 1289:     } else if (/##\s*进度区/.test(content)) {
+ 1290:       content = `${content.trimEnd()}\n${note}\n`;
+ 1291:     } else {
+ 1292:       content = `${content.trimEnd()}\n\n## 进度区\n${note}\n`;
+ 1293:     }
+ 1294:     fs.writeFileSync(planFile, content, 'utf8');
+ 1295:   }
+ 1296: 
+--- lines 1297-1395 ---
+ 1297:   async validatePlan(workspace, plan, options = {}) {
+ 1298:     this.setPhase(plan.project_id, 'validate');
+ 1299:     const planFile = path.join(workspace, plan.file_path);
+ 1300:     const planAgentCliContext = agentCliContextFields(this.planAgentCliConfig(plan), { defaultProvider: true });
+ 1301:     const acceptanceTask = options.task || null;
+ 1302:     let startedAcceptanceTask = acceptanceTask;
+ 1303:     if (acceptanceTask) {
+ 1304:       const startedAt = nowIso();
+ 1305:       startedAcceptanceTask = this.startTaskRun(acceptanceTask.id, startedAt) || acceptanceTask;
+ 1306:       this.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedAcceptanceTask, {
+ 1307:         ...planAgentCliContext,
+ 1308:         planId: plan.id,
+ 1309:         status: TASK_EVENT_STATUS.RUNNING,
+ 1310:         startedAt,
+ 1311:         acceptanceTask: true,
+ 1312:       });
+ 1313:     }
+ 1314:     const command = String(this.status(plan.project_id)?.validation_command || '').trim();
+ 1315:     if (!command) {
+ 1316:       // 验收命令为空：跳过校验，直接标记完成。
+ 1317:       const validation = { exitCode: 0, output: '', logFile: null, finishedAt: nowIso() };
+ 1318:       this.db.run(
+ 1319:         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+ 1320:         ['completed', validation.finishedAt, plan.id],
+ 1321:       );
+ 1322:       this.addEvent(plan.project_id, 'plan.completed', '任务全部完成（验收命令为空，已跳过校验）', {
+ 1323:         ...planAgentCliContext,
+ 1324:         planId: plan.id,
+ 1325:       });
+ 1326:       if (startedAcceptanceTask) this.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
+ 1327:       return validation;
+ 1328:     }
+ 1329:     let validation = await this.runShell(workspace, command, `validate-${plan.id}`, { projectId: plan.project_id });
+ 1330:     let validationFailure = classifyExecutionFailure(validation);
+ 1331:     for (
+ 1332:       let attempt = 1;
+ 1333:       validation.exitCode !== 0 && attempt <= 2 && !isEnvironmentBlockingFailure(validationFailure);
+ 1334:       attempt += 1
+ 1335:     ) {
+ 1336:       this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+ 1337:         'validation_failed',
+ 1338:         nowIso(),
+ 1339:         plan.id,
+ 1340:       ]);
+ 1341:       const prompt = [
+ 1342:         'plan 已完成，但宿主项目验收失败。请只修复验证错误。',
+ 1343:         `plan 文件（只读）：${planFile}`,
+ 1344:         '不要修改 plan 文件、checkbox 或进度区。',
+ 1345:         `失败命令：${command}`,
+ 1346:         '失败输出摘要：',
+ 1347:         tailText(validation.output, 12000),
+ 1348:       ].join('\n');
+ 1349:       await this.runCodexWithPlanGuard(workspace, prompt, `repair-${plan.id}-${attempt}`, {
+ 1350:         projectId: plan.project_id,
+ 1351:         planId: plan.id,
+ 1352:         ...planAgentCliContext,
+ 1353:       }, planFile);
+ 1354:       validation = await this.runShell(workspace, command, `validate-${plan.id}-repair-${attempt}`, {
+ 1355:         projectId: plan.project_id,
+ 1356:       });
+ 1357:       validationFailure = classifyExecutionFailure(validation);
+ 1358:     }
+ 1359: 
+ 1360:     if (validation.exitCode === 0) {
+ 1361:       validation.finishedAt = nowIso();
+ 1362:       this.db.run(
+ 1363:         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+ 1364:         ['completed', validation.finishedAt, plan.id],
+ 1365:       );
+ 1366:       this.addEvent(plan.project_id, 'plan.completed', plan.file_path, { ...planAgentCliContext, planId: plan.id });
+ 1367:       if (startedAcceptanceTask) this.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
+ 1368:     } else {
+ 1369:       validation.finishedAt = nowIso();
+ 1370:       this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+ 1371:         'validation_failed',
+ 1372:         validation.finishedAt,
+ 1373:         plan.id,
+ 1374:       ]);
+ 1375:       const eventType = isEnvironmentBlockingFailure(validationFailure) ? 'validation.blocked' : 'validation.failed';
+ 1376:       this.addEvent(plan.project_id, eventType, validation.logFile || validationFailure.failureSummary || command, {
+ 1377:         ...planAgentCliContext,
+ 1378:         planId: plan.id,
+ 1379:         exitCode: validation.exitCode,
+ 1380:         log: validation.logFile,
+ 1381:         ...validationFailure,
+ 1382:       });
+ 1383:       if (startedAcceptanceTask) {
+ 1384:         this.recordTaskFailure(plan.project_id, plan, startedAcceptanceTask, validation.finishedAt, {
+ 1385:           ...planAgentCliContext,
+ 1386:           exitCode: validation.exitCode,
+ 1387:           log: validation.logFile,
+ 1388:           acceptanceTask: true,
+ 1389:           ...validationFailure,
+ 1390:         });
+ 1391:       }
+ 1392:     }
+ 1393:     return validation;
+ 1394:   }
+ 1395: 
+
+codex
+我会用“模块函数接收 service 上下文”的方式，保持外部接口不变。
+exec
+powershell.exe -Command "rg -n \"classifyExecutionFailure|isEnvironmentBlockingFailure|summarizeFailure|formatDurationMs|completeTask\\(|completeAcceptanceTask\\(|generatePlan\\(|generatePlanForIntake\\(|intakeAttachmentPrompt\\(|processPlan\\(|executeTaskBatch\\(|executeTask\\(|validatePlan\\(\" src/loopService.js" in D:\project\GitHub\autoplan
+2026-06-27T07:07:51.281697Z ERROR codex_core::tools::router: error={"output":"rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 1\r\n+ rg -n \"classifyExecutionFailure|isEnvironmentBlockingFailure|summariz ...\r\n+ ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.3}}
+ exited 1 in 1273ms:
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 1
++ rg -n "classifyExecutionFailure|isEnvironmentBlockingFailure|summariz ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+**Troubleshooting command issues**
+
+I'm encountering an issue where "rg" is not found, even though it was working before. I'm wondering if it might be a PATH issue or if "rg" is absent in the new sandbox environment. That seems a bit odd. So, maybe I should use Select-String as an alternative. It's interesting how these command line tools can sometimes act up unexpectedly, but it's good to have backup options available!
+codex
+`rg` 当前不可用，我改用 PowerShell 原生命令做只读搜索。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern 'classifyExecutionFailure|isEnvironmentBlockingFailure|summarizeFailure|formatDurationMs|completeTask\\(|completeAcceptanceTask\\(|generatePlan\\(|generatePlanForIntake\\(|intakeAttachmentPrompt\\(|processPlan\\(|executeTaskBatch\\(|executeTask\\(|validatePlan\\(' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 473ms:
+D:\project\GitHub\autoplan\src\loopService.js:317: generatedPlanId = await this.generatePlanForIntake(projectId, workspace, pendingIntakes[0]);
+D:\project\GitHub\autoplan\src\loopService.js:335: await this.processPlan(workspace, nextPlan);
+D:\project\GitHub\autoplan\src\loopService.js:365: await this.validatePlan(workspace, plan, { task });
+D:\project\GitHub\autoplan\src\loopService.js:367: const result = await this.executeTask(workspace, plan, task);
+D:\project\GitHub\autoplan\src\loopService.js:369: this.completeTask(workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:403: const results = await this.executeTaskBatch(workspace, plan, tasks, {
+D:\project\GitHub\autoplan\src\loopService.js:819: async generatePlan(projectId, workspace, issueScan) {
+D:\project\GitHub\autoplan\src\loopService.js:888: async generatePlanForIntake(projectId, workspace, intake) {
+D:\project\GitHub\autoplan\src\loopService.js:900: const attachmentPrompt = this.intakeAttachmentPrompt(projectId, workspace, intake, sourceName);
+D:\project\GitHub\autoplan\src\loopService.js:958: intakeAttachmentPrompt(projectId, workspace, intake, sourceName) {
+D:\project\GitHub\autoplan\src\loopService.js:997: async processPlan(workspace, plan) {
+D:\project\GitHub\autoplan\src\loopService.js:1008: await this.validatePlan(workspace, plan, { task: firstPendingTask });
+D:\project\GitHub\autoplan\src\loopService.js:1011: const result = await this.executeTask(workspace, plan, firstPendingTask);
+D:\project\GitHub\autoplan\src\loopService.js:1013: this.completeTask(workspace, plan, firstPendingTask, result);
+D:\project\GitHub\autoplan\src\loopService.js:1021: await this.validatePlan(workspace, plan);
+D:\project\GitHub\autoplan\src\loopService.js:1075: async executeTaskBatch(workspace, plan, tasks, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:1094: result = await this.executeTask(workspace, plan, task, { parallel: true });
+D:\project\GitHub\autoplan\src\loopService.js:1105: this.completeTask(workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:1113: async executeTask(workspace, plan, task, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:1182: const failure = classifyExecutionFailure({ exitCode: -1, errorMessage });
+D:\project\GitHub\autoplan\src\loopService.js:1198: const failure = classifyExecutionFailure(result);
+D:\project\GitHub\autoplan\src\loopService.js:1210: completeTask(workspace, plan, task, result) {
+D:\project\GitHub\autoplan\src\loopService.js:1228: completeAcceptanceTask(workspace, plan, task, result) {
+D:\project\GitHub\autoplan\src\loopService.js:1297: async validatePlan(workspace, plan, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:1326: if (startedAcceptanceTask) this.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
+D:\project\GitHub\autoplan\src\loopService.js:1330: let validationFailure = classifyExecutionFailure(validation);
+D:\project\GitHub\autoplan\src\loopService.js:1333: validation.exitCode !== 0 && attempt <= 2 && !isEnvironmentBlockingFailure(validationFailure);
+D:\project\GitHub\autoplan\src\loopService.js:1357: validationFailure = classifyExecutionFailure(validation);
+D:\project\GitHub\autoplan\src\loopService.js:1367: if (startedAcceptanceTask) this.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
+D:\project\GitHub\autoplan\src\loopService.js:1375: const eventType = isEnvironmentBlockingFailure(validationFailure) ? 'validation.blocked' : 'validation.failed';
+D:\project\GitHub\autoplan\src\loopService.js:1728: const errorMessage = timedOut ? `Shell command timed out after ${formatDurationMs(SHELL_COMMAND_TIMEOUT_MS)}` : '';
+D:\project\GitHub\autoplan\src\loopService.js:2135: function classifyExecutionFailure(result = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:2174: failureSummary: summarizeFailure(text, exitCode, failureKind),
+D:\project\GitHub\autoplan\src\loopService.js:2181: function isEnvironmentBlockingFailure(failure = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:2185: function summarizeFailure(text, exitCode, failureKind) {
+D:\project\GitHub\autoplan\src\loopService.js:2195: function formatDurationMs(milliseconds) {
+
+codex
+为避免改动 P003 工具函数，我会把它们作为 helper 传入新模块。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; function Show($a,$b){'"'--- '+"'$a+'"'-'+"'$b+'"' ---'; for("'$i=$a-1;$i -lt $b -and $i -lt $lines.Count;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }}; Show 819 996;' in D:\project\GitHub\autoplan
+ succeeded in 448ms:
+--- 819-996 ---
+  819:   async generatePlan(projectId, workspace, issueScan) {
+  820:     this.setPhase(projectId, 'generate-plan');
+  821:     const planAgentCliConfig = effectiveAgentCliConfig(this.status(projectId));
+  822:     const planFile = path.join(
+  823:       workspace,
+  824:       'docs',
+  825:       'plan',
+  826:       `plan_${timestampForPath()}_${issueScan.aggregateHash.slice(0, 8)}.md`,
+  827:     );
+  828:     const issueBundle = issueScan.files
+  829:       .map((file) => {
+  830:         const full = path.join(workspace, file.path);
+  831:         return ['---', `path: ${file.path}`, `hash: ${file.hash}`, 'content:', readSnippet(full, 20000)].join('\n');
+  832:       })
+  833:       .join('\n');
+  834: 
+  835:     const prompt = [
+  836:       '你是需求整理与开发计划生成者。',
+  837:       '请根据 docs/issues 收集到的反馈和需求，生成一个开发计划和验收标准。',
+  838:       '',
+  839:       `输出文件：${planFile}`,
+  840:       '',
+  841:       '格式要求：',
+  842:       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+  843:       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
+  844:       '- 每个任务要有验收要点',
+  845:       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+  846:       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+  847:       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+  848:       '- 必须包含总体验收标准和进度区',
+  849:       '- 只写 plan 文件，不要改业务代码',
+  850:       '',
+  851:       '需求快照：',
+  852:       issueBundle,
+  853:     ].join('\n');
+  854: 
+  855:     const result = await this.runCodex(workspace, prompt, 'generate-plan', {
+  856:       projectId,
+  857:       ...agentCliOperationFields(planAgentCliConfig),
+  858:     });
+  859:     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+  860:     const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+  861:     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
+  862:     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+  863:       this.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, agentContext);
+  864:       return;
+  865:     }
+  866: 
+  867:     const id = this.insertPlan({
+  868:       projectId,
+  869:       issueHash: issueScan.aggregateHash,
+  870:       filePath: normalizeRelative(workspace, planFile),
+  871:       hash: hashFile(planFile),
+  872:       status: 'pending',
+  873:       agentCliConfig: planAgentCliSnapshot,
+  874:     });
+  875:     this.syncPlanTasks(id, planFile);
+  876:     this.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
+  877:       issueScan.aggregateHash,
+  878:       nowIso(),
+  879:       projectId,
+  880:     ]);
+  881:     this.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+  882:       ...agentContext,
+  883:       planId: id,
+  884:     });
+  885:   }
+  886: 
+  887:   /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+  888:   async generatePlanForIntake(projectId, workspace, intake) {
+  889:     const table = intake.__type === 'feedback' ? 'feedback' : 'requirements';
+  890:     const sourceName = intake.__type === 'feedback' ? '反馈' : '需求';
+  891:     this.setPhase(projectId, 'generate-plan');
+  892:     const planAgentCliConfig = effectiveAgentCliConfig(this.status(projectId), intake);
+  893:     const safeId = String(intake.id).replace(/[^0-9a-zA-Z_-]/g, '');
+  894:     const planFile = path.join(
+  895:       workspace,
+  896:       'docs',
+  897:       'plan',
+  898:       `plan_${intake.__type}_${safeId}_${timestampForPath()}.md`,
+  899:     );
+  900:     const attachmentPrompt = this.intakeAttachmentPrompt(projectId, workspace, intake, sourceName);
+  901:     const promptParts = [
+  902:       '你是需求整理与开发计划生成者。',
+  903:       `请根据以下${sourceName}，生成一个开发计划和验收标准。`,
+  904:       '',
+  905:       `输出文件：${planFile}`,
+  906:       '',
+  907:       '格式要求：',
+  908:       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+  909:       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
+  910:       '- 每个任务要有验收要点',
+  911:       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+  912:       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+  913:       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+  914:       '- 必须包含总体验收标准和进度区',
+  915:       '- 只写 plan 文件，不要改业务代码',
+  916:       '',
+  917:       `${sourceName} #${intake.id} 内容：`,
+  918:       String(intake.body || '').trim() || '（正文为空）',
+  919:     ];
+  920:     if (attachmentPrompt) promptParts.push('', attachmentPrompt);
+  921:     const prompt = promptParts.join('\n');
+  922: 
+  923:     const result = await this.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, {
+  924:       projectId,
+  925:       intakeType: intake.__type,
+  926:       intakeId: intake.id,
+  927:       ...agentCliOperationFields(planAgentCliConfig),
+  928:     });
+  929:     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+  930:     const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+  931:     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
+  932:     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+  933:       this.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`, agentContext);
+  934:       return null;
+  935:     }
+  936: 
+  937:     const issueHash = `${intake.__type}-${intake.id}-${hashText(String(intake.body || '')).slice(0, 16)}`;
+  938:     const id = this.insertPlan({
+  939:       projectId,
+  940:       issueHash,
+  941:       filePath: normalizeRelative(workspace, planFile),
+  942:       hash: hashFile(planFile),
+  943:       status: 'pending',
+  944:       agentCliConfig: planAgentCliSnapshot,
+  945:     });
+  946:     this.syncPlanTasks(id, planFile);
+  947:     // 回写关联
+  948:     this.db.run(`UPDATE ${table} SET linked_plan_id = ?, updated_at = ? WHERE id = ?`, [id, nowIso(), intake.id]);
+  949:     this.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+  950:       ...agentContext,
+  951:       planId: id,
+  952:       intakeType: intake.__type,
+  953:       intakeId: intake.id,
+  954:     });
+  955:     return id;
+  956:   }
+  957: 
+  958:   intakeAttachmentPrompt(projectId, workspace, intake, sourceName) {
+  959:     const ownerTypes = intakeAttachmentOwnerTypes(intake.__type);
+  960:     const placeholders = ownerTypes.map(() => '?').join(', ');
+  961:     const attachments = this.db.all(
+  962:       `SELECT * FROM attachments
+  963:        WHERE project_id = ? AND owner_id = ? AND owner_type IN (${placeholders})
+  964:        ORDER BY created_at ASC, id ASC`,
+  965:       [projectId, intake.id, ...ownerTypes],
+  966:     );
+  967:     if (!attachments.length) return '';
+  968: 
+  969:     const entries = attachments.map((attachment, index) => describeIntakeAttachment(workspace, attachment, index));
+  970:     const failed = entries.filter((entry) => !entry.readable);
+  971:     if (failed.length) {
+  972:       this.addEvent(
+  973:         projectId,
+  974:         'attachment.read.failed',
+  975:         `${sourceName} #${intake.id} 存在不可读附件：${failed.map((entry) => `${entry.name}（${entry.readError}）`).join('；')}`,
+  976:         {
+  977:           intakeType: intake.__type,
+  978:           intakeId: intake.id,
+  979:           attachments: failed.map((entry) => ({
+  980:             id: entry.id,
+  981:             name: entry.name,
+  982:             path: entry.path,
+  983:             error: entry.readError,
+  984:           })),
+  985:         },
+  986:       );
+  987:     }
+  988: 
+  989:     return [
+  990:       '附件清单：',
+  991:       '以下附件已持久化到本地文件系统；不要将图片二进制内联进 plan，工具可以通过“持久化本地路径”读取附件内容。',
+  992:       '生成 plan 时，如任务理解或后续执行依赖附件内容，请在计划、验收要点或任务说明中保留必要的附件路径或引用。',
+  993:       ...entries.flatMap((entry) => formatIntakeAttachmentEntry(entry)),
+  994:     ].join('\n');
+  995:   }
+  996: 
+
+**Considering module functions**
+
+Alright, I'm looking into module functions and how they can be exact with service and helper destructuring. For plan generation, I’ll focus on functions like generatePlan, generatePlanForIntake, and intakeAttachmentPrompt. I need to import fs and path, as well as nowIso and agent functions. I should also think about destructuring helpers in each context. One transformation to consider is changing `this.` to `service.` for consistency in the function signatures.
+codex
+我会用脚本按方法块抽取，减少人工复制出错。
+exec
+powershell.exe -Command "@'
+"'$sourcePath = '"'src/loopService.js'
+"'$source = Get-Content -Raw -Encoding UTF8 $sourcePath
+function Get-MethodBlock([string]$name) {
+  $pattern = "(?m)''^  (async )?$([regex]::Escape($name))'"\\(["'^'"\\n]*\\) \\{\"
+  "'$match = [regex]::Match($source, $pattern)
+  if (-not $match.Success) { throw "method not found: $name" }
+  $start = $match.Index
+  $brace = 0
+  $inString = $false
+  $quote = '"''
+  "'$escape = $false
+  for ($i = $match.Index; $i -lt $source.Length; $i++) {
+    $ch = $source[$i]
+    if ($inString) {
+      if ($escape) { $escape = $false; continue }
+      if ($ch -eq '"'\\') { "'$escape = $true; continue }
+      if ($ch -eq $quote) { $inString = $false; $quote = '"'' }
+      continue
+    }
+    if ("'$ch -eq '"'\"' -or "'$ch -eq "'"'\" -or "'$ch -eq '"'"'`'"') { "'$inString = $true; $quote = $ch; continue }
+    if ($ch -eq '"'{') { "'$brace++ }
+    elseif ($ch -eq '"'}') {
+      "'$brace--
+      if ($brace -eq 0) { return $source.Substring($start, $i - $start + 1) }
+    }
+  }
+  throw "method end not found: $name"
+}
+function Convert-Method([string]$block, [string]$name, [string]$prefix, [string]$helpers = '"'') {
+  "'$converted = $block -replace "(?m)''^  async $([regex]::Escape($name))'"\\((["'^'"\\n]*)\\) \\{\", \"async function "'$name(service, helpers, `$1) {"
+  $converted = $converted -replace "(?m)''^  $([regex]::Escape($name))'"\\((["'^'"\\n]*)\\) \\{\", \"function "'$name(service, helpers, `$1) {"
+  $converted = $converted -replace '"'this\\.', 'service.'
+  if ("'$helpers) {
+    $converted = $converted -replace "'"\\{\\r?\\n\", \"{"'`r`n  const { $helpers } = helpers;`r`n", 1
+  }
+  return $converted
+}
+$planBlocks = @(
+  Convert-Method (Get-MethodBlock '"'generatePlan') 'generatePlan' '' 'timestampForPath, readSnippet, normalizeRelative, hashFile',
+  Convert-Method (Get-MethodBlock 'generatePlanForIntake') 'generatePlanForIntake' '' 'timestampForPath, normalizeRelative, hashFile, hashText',
+  Convert-Method (Get-MethodBlock 'intakeAttachmentPrompt') 'intakeAttachmentPrompt' '' 'intakeAttachmentOwnerTypes, describeIntakeAttachment, formatIntakeAttachmentEntry'
+) -join \""'`r`n`r`n"
+$planHeader = @'"'
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  agentCliContextFields,
+  agentCliOperationFields,
+  agentCliProviderDisplayName,
+  effectiveAgentCliConfig,
+} = require('./agentCliConfig');
+
+'@
+"'$planFooter = @'"'
+
+module.exports = {
+  generatePlan,
+  generatePlanForIntake,
+  intakeAttachmentPrompt,
+};
+'@
+[System.IO.File]::WriteAllText((Resolve-Path 'src/loop/planGeneration.js'), "'$planHeader + $planBlocks + $planFooter, [System.Text.UTF8Encoding]::new($false))
+
+taskBlocks = $null
+'"'@ | powershell.exe -NoProfile -Command -" in D:\project\GitHub\autoplan
+2026-06-27T07:08:57.219812Z ERROR codex_core::tools::router: error={"output":"字符串缺少终止符: '。\r\n    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException\r\n    + FullyQualifiedErrorId : TerminatorExpectedAtEndOfString\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":0.3}}
+ exited 1 in 295ms:
+字符串缺少终止符: '。
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : TerminatorExpectedAtEndOfString
+ 
+
+**Creating a plan for extraction**
+
+I need an extraction method that’s brace-aware. It seems Python may handle JS template literals incorrectly. So, I need to ensure that when looking for brace matching, I'm skipping over strings that include backticks and `${}`. If I skip everything inside backticks, I might miss braces in placeholders. I should match the outer braces while being careful with backtick templates. I might also consider including Chinese punctuation in the plan. Time to flesh out the plan generation!
+codex
+抽取脚本转义冲突，我改用更稳的本地脚本生成模块。
+exec
+powershell.exe -Command "@'
+from pathlib import Path
+import re
+source_path = Path('src/loopService.js')
+source = source_path.read_text(encoding='utf-8')
+
+def get_method(name):
+    match = re.search(rf'"'^  (?:async )?{re.escape(name)}'"\\(["'^'"\\n]*\\) \\{{', source, re.M)
+    if not match:
+        raise RuntimeError(f'method not found: {name}')
+    i = match.start()
+    brace = 0
+    in_string = None
+    escape = False
+    for pos in range(match.start(), len(source)):
+        ch = source[pos]
+        if in_string:
+            if escape:
+                escape = False
+                continue
+            if ch == '\\\\':
+                escape = True
+                continue
+            if ch == in_string:
+                in_string = None
+            continue
+        if ch in ('\"', \"'\", '"'`'"'):
+            in_string = ch
+            continue
+        if ch == '{':
+            brace += 1
+        elif ch == '}':
+            brace -= 1
+            if brace == 0:
+                return source[i:pos + 1]
+    raise RuntimeError(f'end not found: {name}')
+
+def convert(block, name, helpers=''):
+    block = re.sub(rf'"'^  async {re.escape(name)}'"\\((["'^'"\\n]*)\\) \\{{', rf'async function {name}(service, helpers, \\1) {{', block, count=1, flags=re.M)
+    block = re.sub(rf'"'^  {re.escape(name)}'"\\((["'^'"\\n]*)\\) \\{{', rf'function {name}(service, helpers, \\1) {{', block, count=1, flags=re.M)
+    block = block.replace('this.', 'service.')
+    if helpers:
+        block = block.replace('{\\n', '{\\n  const { ' + helpers + ' } = helpers;\\n', 1)
+    return block
+plan_blocks = '\\n\\n'.join([
+    convert(get_method('generatePlan'), 'generatePlan', 'timestampForPath, readSnippet, normalizeRelative, hashFile'),
+    convert(get_method('generatePlanForIntake'), 'generatePlanForIntake', 'timestampForPath, normalizeRelative, hashFile, hashText'),
+    convert(get_method('intakeAttachmentPrompt'), 'intakeAttachmentPrompt', 'intakeAttachmentOwnerTypes, describeIntakeAttachment, formatIntakeAttachmentEntry'),
+])
+plan_header = \"\"\"const fs = require('node:fs');\\nconst path = require('node:path');\\nconst { nowIso } = require('../database');\\nconst {\\n  agentCliContextFields,\\n  agentCliOperationFields,\\n  agentCliProviderDisplayName,\\n  effectiveAgentCliConfig,\\n} = require('./agentCliConfig');\\n\\n\"\"\"
+plan_footer = \"\"\"\\n\\nmodule.exports = {\\n  generatePlan,\\n  generatePlanForIntake,\\n  intakeAttachmentPrompt,\\n};\\n\"\"\"
+Path('src/loop/planGeneration.js').write_text(plan_header + plan_blocks + plan_footer, encoding='utf-8')
+
+task_blocks = '\\n\\n'.join([
+    convert(get_method('processPlan'), 'processPlan'),
+    convert(get_method('previousPlanCodexSessionId'), 'previousPlanCodexSessionId'),
+    convert(get_method('parallelTaskBatch'), 'parallelTaskBatch'),
+    convert(get_method('executeTaskBatch'), 'executeTaskBatch'),
+    convert(get_method('executeTask'), 'executeTask', 'tailText'),
+    convert(get_method('completeTask'), 'completeTask'),
+    convert(get_method('refreshPlanProgress'), 'refreshPlanProgress'),
+    convert(get_method('markTaskCompletedInPlan'), 'markTaskCompletedInPlan', 'normalizeRelative, escapeRegExp'),
+])
+task_header = \"\"\"const fs = require('node:fs');\\nconst path = require('node:path');\\nconst { nowIso } = require('../database');\\nconst { DEFAULT_AGENT_CLI_PROVIDER, agentCliContextFields, codexSessionContextFields, operationCodexSessionId } = require('./agentCliConfig');\\nconst { TASK_EVENT_STATUS, TASK_EVENT_TYPES, markTaskLifecycleEventRecorded, taskLifecycleEventRecorded } = require('./taskEvents');\\nconst { classifyExecutionFailure } = require('./validation');\\n\\n\"\"\"
+task_footer = \"\"\"\\n\\nmodule.exports = {\\n  completeTask,\\n  executeTask,\\n  executeTaskBatch,\\n  markTaskCompletedInPlan,\\n  parallelTaskBatch,\\n  previousPlanCodexSessionId,\\n  processPlan,\\n  refreshPlanProgress,\\n};\\n\"\"\"
+Path('src/loop/taskExecution.js').write_text(task_header + task_blocks + task_footer, encoding='utf-8')
+
+validation_blocks = '\\n\\n'.join([
+    convert(get_method('isFinalAcceptanceTask'), 'isFinalAcceptanceTask'),
+    convert(get_method('hasFinalAcceptanceTask'), 'hasFinalAcceptanceTask'),
+    convert(get_method('completeAcceptanceTask'), 'completeAcceptanceTask'),
+    convert(get_method('validatePlan'), 'validatePlan', 'tailText'),
+])
+for name in ['classifyExecutionFailure', 'isEnvironmentBlockingFailure', 'summarizeFailure', 'formatDurationMs']:
+    m = re.search(rf'"'^function {name}'"\\(["'^'"\\n]*\\) \\{{', source, re.M)
+    if not m:
+        raise RuntimeError(f'function not found: {name}')
+    # Reuse brace matcher on standalone function by temporary pattern logic.
+    brace = 0; in_string = None; escape = False
+    for pos in range(m.start(), len(source)):
+        ch = source[pos]
+        if in_string:
+            if escape:
+                escape = False; continue
+            if ch == '\\\\':
+                escape = True; continue
+            if ch == in_string:
+                in_string = None
+            continue
+        if ch in ('\"', \"'\", '"'`'"'):
+            in_string = ch; continue
+        if ch == '{': brace += 1
+        elif ch == '}':
+            brace -= 1
+            if brace == 0:
+                validation_blocks += '\\n\\n' + source[m.start():pos + 1]
+                break
+validation_header = \"\"\"const path = require('node:path');\\nconst { nowIso } = require('../database');\\nconst { agentCliContextFields } = require('./agentCliConfig');\\nconst { TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');\\n\\n\"\"\"
+validation_footer = \"\"\"\\n\\nmodule.exports = {\\n  classifyExecutionFailure,\\n  completeAcceptanceTask,\\n  formatDurationMs,\\n  hasFinalAcceptanceTask,\\n  isEnvironmentBlockingFailure,\\n  isFinalAcceptanceTask,\\n  validatePlan,\\n};\\n\"\"\"
+Path('src/loop/validation.js').write_text(validation_header + validation_blocks + validation_footer, encoding='utf-8')
+'@ | python -" in D:\project\GitHub\autoplan
+2026-06-27T07:09:38.695082Z ERROR codex_core::tools::router: error={"output":"python : 无法将“python”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:102 字符: 6\r\n+ '@ | python -\r\n+      ~~~~~~\r\n    + CategoryInfo          : ObjectNotFound: (python:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.5}}
+ exited 1 in 1458ms:
+python : 无法将“python”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:102 字符: 6
++ '@ | python -
++      ~~~~~~
+    + CategoryInfo          : ObjectNotFound: (python:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+codex
+`python` 不在 PATH；改用项目已有 Node 来生成同样的模块文件。
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+const { Path } = require('node:path');
+const sourcePath = 'src/loopService.js';
+const source = fs.readFileSync(sourcePath, 'utf8');
+function blockFrom(index) {
+  let brace = 0;
+  let inString = '';
+  let escape = false;
+  for (let pos = index; pos < source.length; pos += 1) {
+    const ch = source[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) { inString = ''; }
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace === 0) return source.slice(index, pos + 1);
+    }
+  }
+  throw new Error('block end not found');
+}
+function getMethod(name) {
+  const re = new RegExp("'`''^  (?:async )?${name.replace(/[.*+?''^${}()|['"\\]\\\\]/g, '\\\\"'$&'"')}\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = source.match(re);
+  if ("'!match) throw new Error(`method not found: ${name}`);
+  return blockFrom(match.index);
+}
+function getFunction(name) {
+  const re = new RegExp(`''^function ${name.replace(/[.*+?''^${}()|['"\\]\\\\]/g, '\\\\"'$&'"')}\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = source.match(re);
+  if ("'!match) throw new Error(`function not found: ${name}`);
+  return blockFrom(match.index);
+}
+function convert(block, name, helpers = '"'') {
+  const escaped = name.replace(/[.*+?"'^${}()|['"\\]\\\\]/g, '\\\\"'$&'"');
+  let converted = block
+    .replace(new RegExp("'`''^  async ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`async function ${name}(service, helpers, $1) {`)
+    .replace(new RegExp(`''^  ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`function ${name}(service, helpers, $1) {`)
+    .replace(/this'"\\./g, 'service.');
+  if (helpers) converted = converted.replace('{\\n', "'`{'"\\n  const { "'${helpers} } = helpers;'"\\n"'`);
+  return converted;
+}
+const planBlocks = [
+  convert(getMethod('"'generatePlan'), 'generatePlan', 'timestampForPath, readSnippet, normalizeRelative, hashFile'),
+  convert(getMethod('generatePlanForIntake'), 'generatePlanForIntake', 'timestampForPath, normalizeRelative, hashFile, hashText'),
+  convert(getMethod('intakeAttachmentPrompt'), 'intakeAttachmentPrompt', 'intakeAttachmentOwnerTypes, describeIntakeAttachment, formatIntakeAttachmentEntry'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/planGeneration.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  agentCliContextFields,
+  agentCliOperationFields,
+  agentCliProviderDisplayName,
+  effectiveAgentCliConfig,
+} = require('./agentCliConfig');
+
+"'${planBlocks}
+
+module.exports = {
+  generatePlan,
+  generatePlanForIntake,
+  intakeAttachmentPrompt,
+};
+`, '"'utf8');
+const taskBlocks = [
+  convert(getMethod('processPlan'), 'processPlan'),
+  convert(getMethod('previousPlanCodexSessionId'), 'previousPlanCodexSessionId'),
+  convert(getMethod('parallelTaskBatch'), 'parallelTaskBatch'),
+  convert(getMethod('executeTaskBatch'), 'executeTaskBatch'),
+  convert(getMethod('executeTask'), 'executeTask', 'tailText'),
+  convert(getMethod('completeTask'), 'completeTask'),
+  convert(getMethod('refreshPlanProgress'), 'refreshPlanProgress'),
+  convert(getMethod('markTaskCompletedInPlan'), 'markTaskCompletedInPlan', 'normalizeRelative, escapeRegExp'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/taskExecution.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  agentCliContextFields,
+  codexSessionContextFields,
+  operationCodexSessionId,
+} = require('./agentCliConfig');
+const {
+  TASK_EVENT_STATUS,
+  TASK_EVENT_TYPES,
+  markTaskLifecycleEventRecorded,
+  taskLifecycleEventRecorded,
+} = require('./taskEvents');
+const { classifyExecutionFailure } = require('./validation');
+
+"'${taskBlocks}
+
+module.exports = {
+  completeTask,
+  executeTask,
+  executeTaskBatch,
+  markTaskCompletedInPlan,
+  parallelTaskBatch,
+  previousPlanCodexSessionId,
+  processPlan,
+  refreshPlanProgress,
+};
+`, '"'utf8');
+const validationBlocks = [
+  convert(getMethod('isFinalAcceptanceTask'), 'isFinalAcceptanceTask'),
+  convert(getMethod('hasFinalAcceptanceTask'), 'hasFinalAcceptanceTask'),
+  convert(getMethod('completeAcceptanceTask'), 'completeAcceptanceTask'),
+  convert(getMethod('validatePlan'), 'validatePlan', 'tailText'),
+  getFunction('classifyExecutionFailure'),
+  getFunction('isEnvironmentBlockingFailure'),
+  getFunction('summarizeFailure'),
+  getFunction('formatDurationMs'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/validation.js', "'`const path = require('"'node:path');
+const { nowIso } = require('../database');
+const { agentCliContextFields } = require('./agentCliConfig');
+const { TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
+
+"'${validationBlocks}
+
+module.exports = {
+  classifyExecutionFailure,
+  completeAcceptanceTask,
+  formatDurationMs,
+  hasFinalAcceptanceTask,
+  isEnvironmentBlockingFailure,
+  isFinalAcceptanceTask,
+  validatePlan,
+};
+`, '"'utf8');
+'@ | node -" in D:\project\GitHub\autoplan
+ succeeded in 474ms:
+**Inspecting code modules**
+
+I need to look at the modules for any syntax issues in the function signatures, especially checking for trailing commas when there are no arguments, like in `function parallelTaskBatch(service, helpers, tasks)`. I’ll also modify the `loopService` imports to include new modules and eliminate old methods, but I have to remember that `fs` and `path` are still needed in other places. Maybe I can remove the classify functions from `loopService` later. Time to get working on that import!
+codex
+三个 P002 模块已生成；现在把 `LoopService` 中对应方法替换为薄封装。
+exec
+powershell.exe -Command 'Get-Content -Encoding UTF8 src/loop/planGeneration.js -TotalCount 80; Get-Content -Encoding UTF8 src/loop/taskExecution.js -TotalCount 60; Get-Content -Encoding UTF8 src/loop/validation.js -TotalCount 60' in D:\project\GitHub\autoplan
+ succeeded in 502ms:
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  agentCliContextFields,
+  agentCliOperationFields,
+  agentCliProviderDisplayName,
+  effectiveAgentCliConfig,
+} = require('./agentCliConfig');
+
+async function generatePlan(service, helpers, projectId, workspace, issueScan) {
+  const { timestampForPath, readSnippet, normalizeRelative, hashFile } = helpers;
+    service.setPhase(projectId, 'generate-plan');
+    const planAgentCliConfig = effectiveAgentCliConfig(service.status(projectId));
+    const planFile = path.join(
+      workspace,
+      'docs',
+      'plan',
+      `plan_${timestampForPath()}_${issueScan.aggregateHash.slice(0, 8)}.md`,
+    );
+    const issueBundle = issueScan.files
+      .map((file) => {
+        const full = path.join(workspace, file.path);
+        return ['---', `path: ${file.path}`, `hash: ${file.hash}`, 'content:', readSnippet(full, 20000)].join('\n');
+      })
+      .join('\n');
+
+    const prompt = [
+      '你是需求整理与开发计划生成者。',
+      '请根据 docs/issues 收集到的反馈和需求，生成一个开发计划和验收标准。',
+      '',
+      `输出文件：${planFile}`,
+      '',
+      '格式要求：',
+      '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+      '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
+      '- 每个任务要有验收要点',
+      '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+      '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+      '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+      '- 必须包含总体验收标准和进度区',
+      '- 只写 plan 文件，不要改业务代码',
+      '',
+      '需求快照：',
+      issueBundle,
+    ].join('\n');
+
+    const result = await service.runCodex(workspace, prompt, 'generate-plan', {
+      projectId,
+      ...agentCliOperationFields(planAgentCliConfig),
+    });
+    const agentContext = agentCliContextFields(result, { defaultProvider: true });
+    const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+    const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
+    if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+      service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, agentContext);
+      return;
+    }
+
+    const id = service.insertPlan({
+      projectId,
+      issueHash: issueScan.aggregateHash,
+      filePath: normalizeRelative(workspace, planFile),
+      hash: hashFile(planFile),
+      status: 'pending',
+      agentCliConfig: planAgentCliSnapshot,
+    });
+    service.syncPlanTasks(id, planFile);
+    service.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
+      issueScan.aggregateHash,
+      nowIso(),
+      projectId,
+    ]);
+    service.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+      ...agentContext,
+      planId: id,
+    });
+  }
+
+async function generatePlanForIntake(service, helpers, projectId, workspace, intake) {
+const fs = require('node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  agentCliContextFields,
+  codexSessionContextFields,
+  operationCodexSessionId,
+} = require('./agentCliConfig');
+const {
+  TASK_EVENT_STATUS,
+  TASK_EVENT_TYPES,
+  markTaskLifecycleEventRecorded,
+  taskLifecycleEventRecorded,
+} = require('./taskEvents');
+const { classifyExecutionFailure } = require('./validation');
+
+async function processPlan(service, helpers, workspace, plan) {
+    const planFile = path.join(workspace, plan.file_path);
+    service.syncPlanTasks(plan.id, planFile);
+    const pendingTasks = service.db.all(
+      `SELECT * FROM plan_tasks WHERE plan_id = ? AND status = 'pending'
+       ORDER BY sort_order ASC`,
+      [plan.id],
+    );
+    if (pendingTasks.length) {
+      const firstPendingTask = pendingTasks[0];
+      if (service.isFinalAcceptanceTask(plan.id, firstPendingTask)) {
+        await service.validatePlan(workspace, plan, { task: firstPendingTask });
+        return;
+      }
+      const result = await service.executeTask(workspace, plan, firstPendingTask);
+      if (result.exitCode === 0) {
+        service.completeTask(workspace, plan, firstPendingTask, result);
+      }
+      return;
+    }
+    if (service.hasFinalAcceptanceTask(plan.id)) {
+      const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [plan.id]);
+      if (currentPlan?.validation_passed || currentPlan?.status === 'completed') return;
+    }
+    await service.validatePlan(workspace, plan);
+  }
+
+function previousPlanCodexSessionId(service, helpers, planId, task) {
+    if (!task) return '';
+    const previousTask = service.db.get(
+      `SELECT codex_session_id
+       FROM plan_tasks
+       WHERE plan_id = ?
+         AND status = ?
+         AND codex_session_id IS NOT NULL
+         AND codex_session_id != ''
+         AND (sort_order < ? OR (sort_order = ? AND id < ?))
+       ORDER BY sort_order DESC, id DESC
+       LIMIT 1`,
+      [planId, TASK_EVENT_STATUS.COMPLETED, task.sort_order || 0, task.sort_order || 0, task.id || 0],
+    );
+    return normalizeCodexSessionId(previousTask?.codex_session_id);
+  }
+const path = require('node:path');
+const { nowIso } = require('../database');
+const { agentCliContextFields } = require('./agentCliConfig');
+const { TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
+
+function isFinalAcceptanceTask(service, helpers, planId, task) {
+    if (!task) return false;
+    const lastTask = service.db.get(
+      'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+      [planId],
+    );
+    return Number(lastTask?.id) === Number(task.id) && isAcceptanceTask(task);
+  }
+
+function hasFinalAcceptanceTask(service, helpers, planId) {
+    const lastTask = service.db.get(
+      'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
+      [planId],
+    );
+    return isAcceptanceTask(lastTask);
+  }
+
+function completeAcceptanceTask(service, helpers, workspace, plan, task, result) {
+    const planFile = path.join(workspace, plan.file_path);
+    const finishedAt = result?.finishedAt || nowIso();
+    service.markTaskCompletedInPlan(workspace, planFile, task, result);
+    const completedTask = service.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+    const totals = service.db.get(
+      `SELECT COUNT(*) AS total,
+              SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+       FROM plan_tasks
+       WHERE plan_id = ?`,
+      [plan.id],
+    ) || { total: 0, completed: 0 };
+    const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+    service.db.run(
+      'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
+      [hash, 'completed', Number(totals.total || 0), Number(totals.completed || 0), nowIso(), plan.id],
+    );
+    service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+      ...agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true }),
+      planId: plan.id,
+      status: TASK_EVENT_STATUS.COMPLETED,
+      finishedAt,
+      exitCode: result?.exitCode,
+      log: result?.logFile,
+      acceptanceTask: true,
+    });
+    service.emitUpdate(plan.project_id);
+  }
+
+  async validatePlan(workspace, plan, options = {}
+
+function classifyExecutionFailure(result = {}
+
+function isEnvironmentBlockingFailure(failure = {}
+
+function summarizeFailure(text, exitCode, failureKind) {
+  const fallback = exitCode === null ? failureKind : `${failureKind}; exitCode=${exitCode}`;
+  const line = String(text || '')
+
+**Adjusting imports for functions**
+
+I need to validate that completeAcceptance uses fs/hashFile and that we haven’t imported the necessary helpers for it. Also, I see that isFinalAcceptance uses the isAcceptanceTask helper, which also isn’t destructured. I’ll need to add those helpers in. Plus, the previousPlan in TaskExecution uses normalizeCodexSessionId, which isn’t imported either. So, I will need to adjust the imports and regenerate everything with these fixes in place.
+codex
+发现默认参数里的 `{}` 会干扰抽取；我会修正抽取器并重生成模块。
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+const source = fs.readFileSync('src/loopService.js', 'utf8');
+function escapeRegExp(value) {
+  return value.replace(/[.*+?"'^${}()|['"\\]\\\\]/g, '\\\\"'$&'"');
+}
+function blockFrom(signatureIndex, bodyStart) {
+  let brace = 0;
+  let inString = '';
+  let escape = false;
+  for (let pos = bodyStart; pos < source.length; pos += 1) {
+    const ch = source[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) { inString = ''; }
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace === 0) return source.slice(signatureIndex, pos + 1);
+    }
+  }
+  throw new Error('block end not found');
+}
+function findBodyStart(index) {
+  let inString = '';
+  let escape = false;
+  for (let pos = index; pos < source.length; pos += 1) {
+    const ch = source[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) { inString = ''; }
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') return pos;
+  }
+  throw new Error('body start not found');
+}
+function getMethod(name) {
+  const re = new RegExp("'`''^  (?:async )?${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*"'`, '"'m');
+  const match = source.match(re);
+  if ("'!match) throw new Error(`method not found: ${name}`);
+  return blockFrom(match.index, findBodyStart(match.index));
+}
+function getFunction(name) {
+  const re = new RegExp(`''^function ${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*"'`, '"'m');
+  const match = source.match(re);
+  if ("'!match) throw new Error(`function not found: ${name}`);
+  return blockFrom(match.index, findBodyStart(match.index));
+}
+function convert(block, name, helpers = '"'') {
+  const escaped = escapeRegExp(name);
+  let converted = block
+    .replace(new RegExp("'`''^  async ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`async function ${name}(service, helpers, $1) {`)
+    .replace(new RegExp(`''^  ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`function ${name}(service, helpers, $1) {`)
+    .replace(/this'"\\./g, 'service.');
+  if (helpers) converted = converted.replace('{\\n', "'`{'"\\n  const { "'${helpers} } = helpers;'"\\n"'`);
+  return converted;
+}
+const planBlocks = [
+  convert(getMethod('"'generatePlan'), 'generatePlan', 'timestampForPath, readSnippet, normalizeRelative, hashFile'),
+  convert(getMethod('generatePlanForIntake'), 'generatePlanForIntake', 'timestampForPath, normalizeRelative, hashFile, hashText'),
+  convert(getMethod('intakeAttachmentPrompt'), 'intakeAttachmentPrompt', 'intakeAttachmentOwnerTypes, describeIntakeAttachment, formatIntakeAttachmentEntry'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/planGeneration.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  agentCliContextFields,
+  agentCliOperationFields,
+  agentCliProviderDisplayName,
+  effectiveAgentCliConfig,
+} = require('./agentCliConfig');
+
+"'${planBlocks}
+
+module.exports = {
+  generatePlan,
+  generatePlanForIntake,
+  intakeAttachmentPrompt,
+};
+`, '"'utf8');
+const taskBlocks = [
+  convert(getMethod('processPlan'), 'processPlan'),
+  convert(getMethod('previousPlanCodexSessionId'), 'previousPlanCodexSessionId'),
+  convert(getMethod('parallelTaskBatch'), 'parallelTaskBatch'),
+  convert(getMethod('executeTaskBatch'), 'executeTaskBatch'),
+  convert(getMethod('executeTask'), 'executeTask', 'tailText'),
+  convert(getMethod('completeTask'), 'completeTask'),
+  convert(getMethod('refreshPlanProgress'), 'refreshPlanProgress'),
+  convert(getMethod('markTaskCompletedInPlan'), 'markTaskCompletedInPlan', 'normalizeRelative, escapeRegExp'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/taskExecution.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  agentCliContextFields,
+  codexSessionContextFields,
+  normalizeCodexSessionId,
+  operationCodexSessionId,
+} = require('./agentCliConfig');
+const {
+  TASK_EVENT_STATUS,
+  TASK_EVENT_TYPES,
+  markTaskLifecycleEventRecorded,
+  taskLifecycleEventRecorded,
+} = require('./taskEvents');
+const { classifyExecutionFailure } = require('./validation');
+
+"'${taskBlocks}
+
+module.exports = {
+  completeTask,
+  executeTask,
+  executeTaskBatch,
+  markTaskCompletedInPlan,
+  parallelTaskBatch,
+  previousPlanCodexSessionId,
+  processPlan,
+  refreshPlanProgress,
+};
+`, '"'utf8');
+const validationBlocks = [
+  convert(getMethod('isFinalAcceptanceTask'), 'isFinalAcceptanceTask', 'isAcceptanceTask'),
+  convert(getMethod('hasFinalAcceptanceTask'), 'hasFinalAcceptanceTask', 'isAcceptanceTask'),
+  convert(getMethod('completeAcceptanceTask'), 'completeAcceptanceTask', 'hashFile'),
+  convert(getMethod('validatePlan'), 'validatePlan', 'tailText'),
+  getFunction('classifyExecutionFailure'),
+  getFunction('isEnvironmentBlockingFailure'),
+  getFunction('summarizeFailure'),
+  getFunction('formatDurationMs'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/validation.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const { agentCliContextFields, normalizeOptionalNumber } = require('./agentCliConfig');
+const { compactEventMeta, TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
+
+"'${validationBlocks}
+
+module.exports = {
+  classifyExecutionFailure,
+  completeAcceptanceTask,
+  formatDurationMs,
+  hasFinalAcceptanceTask,
+  isEnvironmentBlockingFailure,
+  isFinalAcceptanceTask,
+  validatePlan,
+};
+`, '"'utf8');
+'@ | node -" in D:\project\GitHub\autoplan
+ succeeded in 470ms:
+codex
+模块重新生成完成；我会快速查看关键签名和依赖。
+exec
+powershell.exe -Command "Select-String -Path src/loop/planGeneration.js,src/loop/taskExecution.js,src/loop/validation.js -Pattern '"'^async function|''^function |module'"\\.exports|require' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 483ms:
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:1: const fs = require('node:fs');
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:2: const path = require('node:path');
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:3: const { nowIso } = require('../database');
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:9: } = require('./agentCliConfig');
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:11: async function generatePlan(service, helpers, projectId, workspace, issueScan) {
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:80: async function generatePlanForIntake(service, helpers, projectId, workspace, intake) {
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:82: const table = intake.__type === 'feedback' ? 'feedback' : 'requirements';
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:151: function intakeAttachmentPrompt(service, helpers, projectId, workspace, intake, sourceName) {
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:191: module.exports = {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:1: const fs = require('node:fs');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:2: const path = require('node:path');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:3: const { nowIso } = require('../database');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:10: } = require('./agentCliConfig');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:16: } = require('./taskEvents');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:17: const { classifyExecutionFailure } = require('./validation');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:19: async function processPlan(service, helpers, workspace, plan) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:46: function previousPlanCodexSessionId(service, helpers, planId, task) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:63: function parallelTaskBatch(service, helpers, tasks) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:84: function completeTask(service, helpers, workspace, plan, task, result) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:102: function refreshPlanProgress(service, helpers, planId, planFile) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:120: function markTaskCompletedInPlan(service, helpers, workspace, planFile, task, result) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:142: module.exports = {
+D:\project\GitHub\autoplan\src\loop\validation.js:1: const fs = require('node:fs');
+D:\project\GitHub\autoplan\src\loop\validation.js:2: const path = require('node:path');
+D:\project\GitHub\autoplan\src\loop\validation.js:3: const { nowIso } = require('../database');
+D:\project\GitHub\autoplan\src\loop\validation.js:4: const { agentCliContextFields, normalizeOptionalNumber } = require('./agentCliConfig');
+D:\project\GitHub\autoplan\src\loop\validation.js:5: const { compactEventMeta, TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
+D:\project\GitHub\autoplan\src\loop\validation.js:7: function isFinalAcceptanceTask(service, helpers, planId, task) {
+D:\project\GitHub\autoplan\src\loop\validation.js:17: function hasFinalAcceptanceTask(service, helpers, planId) {
+D:\project\GitHub\autoplan\src\loop\validation.js:26: function completeAcceptanceTask(service, helpers, workspace, plan, task, result) {
+D:\project\GitHub\autoplan\src\loop\validation.js:58: function classifyExecutionFailure(result = {}
+D:\project\GitHub\autoplan\src\loop\validation.js:60: function isEnvironmentBlockingFailure(failure = {}
+D:\project\GitHub\autoplan\src\loop\validation.js:62: function summarizeFailure(text, exitCode, failureKind) {
+D:\project\GitHub\autoplan\src\loop\validation.js:72: function formatDurationMs(milliseconds) {
+D:\project\GitHub\autoplan\src\loop\validation.js:78: module.exports = {
+
+**Investigating validation issues**
+
+I'm noticing that the validation is still broken for classify. It seems like getFunction found some old, truncated information. I wonder if there was a previous removal during loopService that might have corrupted classify. To figure this out, I should take a closer look at the source lines, particularly around line 2135, to see what’s going on and hopefully identify the root cause of the issue.
+codex
+发现 `validation.js` 的 standalone 函数抽取仍异常；现在定位源文件对应块。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; for($i=2128;$i -lt 2205 -and $i -lt $lines.Count;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 446ms:
+ 2129:   };
+ 2130:   if (!env.APPDATA) env.APPDATA = dirs.appData;
+ 2131:   if (!env.LOCALAPPDATA) env.LOCALAPPDATA = dirs.localAppData;
+ 2132:   return env;
+ 2133: }
+ 2134: 
+ 2135: function classifyExecutionFailure(result = {}) {
+ 2136:   const exitCode = typeof result.exitCode === 'number' ? result.exitCode : null;
+ 2137:   if (exitCode === 0) return {};
+ 2138: 
+ 2139:   const text = [result.errorMessage, result.output].filter(Boolean).join('\n');
+ 2140:   const timedOut = Boolean(result.timedOut) || /(?:timed\s*out|timeout|ETIMEDOUT)/i.test(text);
+ 2141:   let failureKind = 'command_failed';
+ 2142:   let failureCategory = 'execution';
+ 2143:   let environmentBlocked = false;
+ 2144: 
+ 2145:   if (/(?:PathAccessException|Permission\s+denied|Access\s+is\s+denied|EACCES|EPERM|errno\s*=\s*5|拒绝访问|存取被拒)/i.test(text)) {
+ 2146:     failureKind = 'environment_permission';
+ 2147:     failureCategory = 'environment';
+ 2148:     environmentBlocked = true;
+ 2149:   } else if (timedOut) {
+ 2150:     failureKind = 'timeout';
+ 2151:     failureCategory = 'environment';
+ 2152:     environmentBlocked = true;
+ 2153:   } else if (/(?:command not found|not recognized as (?:an internal|a cmdlet)|ENOENT|spawn .* ENOENT)/i.test(text)) {
+ 2154:     failureKind = 'tool_missing';
+ 2155:     failureCategory = 'environment';
+ 2156:     environmentBlocked = true;
+ 2157:   } else if (/(?:No tests? (?:match|matched|were found)|does not match any tests?)/i.test(text)) {
+ 2158:     failureKind = 'test_filter';
+ 2159:     failureCategory = 'test';
+ 2160:   } else if (/(?:Some tests failed|Test failed|TestFailure|Failed assertion|Expected:|Actual:|EXCEPTION CAUGHT BY FLUTTER TEST FRAMEWORK)/i.test(text)) {
+ 2161:     failureKind = 'test_failure';
+ 2162:     failureCategory = 'test';
+ 2163:   } else if (/(?:Compilation failed|Dart compiler exited|Error: The Dart compiler|Failed to compile|Target kernel_snapshot failed|SyntaxError)/i.test(text)) {
+ 2164:     failureKind = 'compile_failure';
+ 2165:     failureCategory = 'compile';
+ 2166:   } else if (/(?:Agent CLI|Codex CLI|Claude CLI)/i.test(text)) {
+ 2167:     failureKind = 'agent_failure';
+ 2168:     failureCategory = 'agent';
+ 2169:   }
+ 2170: 
+ 2171:   return compactEventMeta({
+ 2172:     failureKind,
+ 2173:     failureCategory,
+ 2174:     failureSummary: summarizeFailure(text, exitCode, failureKind),
+ 2175:     environmentBlocked,
+ 2176:     timedOut,
+ 2177:     timeoutMs: normalizeOptionalNumber(result.timeoutMs),
+ 2178:   });
+ 2179: }
+ 2180: 
+ 2181: function isEnvironmentBlockingFailure(failure = {}) {
+ 2182:   return Boolean(failure.environmentBlocked || failure.failureCategory === 'environment');
+ 2183: }
+ 2184: 
+ 2185: function summarizeFailure(text, exitCode, failureKind) {
+ 2186:   const fallback = exitCode === null ? failureKind : `${failureKind}; exitCode=${exitCode}`;
+ 2187:   const line = String(text || '')
+ 2188:     .split(/\r?\n/)
+ 2189:     .map((entry) => entry.trim())
+ 2190:     .find(Boolean);
+ 2191:   if (!line) return fallback;
+ 2192:   return line.length > 240 ? `${line.slice(0, 237)}...` : line;
+ 2193: }
+ 2194: 
+ 2195: function formatDurationMs(milliseconds) {
+ 2196:   const seconds = Math.max(1, Math.round(Number(milliseconds || 0) / 1000));
+ 2197:   if (seconds < 60) return `${seconds}s`;
+ 2198:   return `${Math.round(seconds / 60)}m`;
+ 2199: }
+ 2200: 
+ 2201: function hashFile(filePath) {
+ 2202:   return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+ 2203: }
+ 2204: 
+ 2205: function hashText(text) {
+
+codex
+问题来自默认参数对象；我会让抽取器使用签名末尾的函数体 `{`。
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+const source = fs.readFileSync('src/loopService.js', 'utf8');
+function escapeRegExp(value) {
+  return value.replace(/[.*+?"'^${}()|['"\\]\\\\]/g, '\\\\"'$&'"');
+}
+function blockFrom(signatureIndex, bodyStart) {
+  let brace = 0;
+  let inString = '';
+  let escape = false;
+  for (let pos = bodyStart; pos < source.length; pos += 1) {
+    const ch = source[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) { inString = ''; }
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace === 0) return source.slice(signatureIndex, pos + 1);
+    }
+  }
+  throw new Error('block end not found');
+}
+function getMethod(name) {
+  const re = new RegExp("'`''^  (?:async )?${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`method not found: ${name}`);
+  return blockFrom(match.index, match.index + match[0].lastIndexOf('"'{'));
+}
+function getFunction(name) {
+  const re = new RegExp("'`''^function ${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`function not found: ${name}`);
+  return blockFrom(match.index, match.index + match[0].lastIndexOf('"'{'));
+}
+function convert(block, name, helpers = '') {
+  const escaped = escapeRegExp(name);
+  let converted = block
+    .replace(new RegExp("'`''^  async ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`async function ${name}(service, helpers, $1) {`)
+    .replace(new RegExp(`''^  ${escaped}'"\\\\((["'^'"\\\\n]*)\\\\) \\\\{"'`, '"'m'), "'`function ${name}(service, helpers, $1) {`)
+    .replace(/this'"\\./g, 'service.');
+  if (helpers) converted = converted.replace('{\\n', "'`{'"\\n  const { "'${helpers} } = helpers;'"\\n"'`);
+  return converted;
+}
+const planBlocks = [
+  convert(getMethod('"'generatePlan'), 'generatePlan', 'timestampForPath, readSnippet, normalizeRelative, hashFile'),
+  convert(getMethod('generatePlanForIntake'), 'generatePlanForIntake', 'timestampForPath, normalizeRelative, hashFile, hashText'),
+  convert(getMethod('intakeAttachmentPrompt'), 'intakeAttachmentPrompt', 'intakeAttachmentOwnerTypes, describeIntakeAttachment, formatIntakeAttachmentEntry'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/planGeneration.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  agentCliContextFields,
+  agentCliOperationFields,
+  agentCliProviderDisplayName,
+  effectiveAgentCliConfig,
+} = require('./agentCliConfig');
+
+"'${planBlocks}
+
+module.exports = {
+  generatePlan,
+  generatePlanForIntake,
+  intakeAttachmentPrompt,
+};
+`, '"'utf8');
+const taskBlocks = [
+  convert(getMethod('processPlan'), 'processPlan'),
+  convert(getMethod('previousPlanCodexSessionId'), 'previousPlanCodexSessionId'),
+  convert(getMethod('parallelTaskBatch'), 'parallelTaskBatch'),
+  convert(getMethod('executeTaskBatch'), 'executeTaskBatch'),
+  convert(getMethod('executeTask'), 'executeTask', 'tailText'),
+  convert(getMethod('completeTask'), 'completeTask'),
+  convert(getMethod('refreshPlanProgress'), 'refreshPlanProgress'),
+  convert(getMethod('markTaskCompletedInPlan'), 'markTaskCompletedInPlan', 'normalizeRelative, escapeRegExp'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/taskExecution.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  agentCliContextFields,
+  codexSessionContextFields,
+  normalizeCodexSessionId,
+  operationCodexSessionId,
+} = require('./agentCliConfig');
+const {
+  TASK_EVENT_STATUS,
+  TASK_EVENT_TYPES,
+  markTaskLifecycleEventRecorded,
+  taskLifecycleEventRecorded,
+} = require('./taskEvents');
+const { classifyExecutionFailure } = require('./validation');
+
+"'${taskBlocks}
+
+module.exports = {
+  completeTask,
+  executeTask,
+  executeTaskBatch,
+  markTaskCompletedInPlan,
+  parallelTaskBatch,
+  previousPlanCodexSessionId,
+  processPlan,
+  refreshPlanProgress,
+};
+`, '"'utf8');
+const validationBlocks = [
+  convert(getMethod('isFinalAcceptanceTask'), 'isFinalAcceptanceTask', 'isAcceptanceTask'),
+  convert(getMethod('hasFinalAcceptanceTask'), 'hasFinalAcceptanceTask', 'isAcceptanceTask'),
+  convert(getMethod('completeAcceptanceTask'), 'completeAcceptanceTask', 'hashFile'),
+  convert(getMethod('validatePlan'), 'validatePlan', 'tailText'),
+  getFunction('classifyExecutionFailure'),
+  getFunction('isEnvironmentBlockingFailure'),
+  getFunction('summarizeFailure'),
+  getFunction('formatDurationMs'),
+].join('\\n\\n');
+fs.writeFileSync('src/loop/validation.js', "'`const fs = require('"'node:fs');
+const path = require('node:path');
+const { nowIso } = require('../database');
+const { agentCliContextFields, normalizeOptionalNumber } = require('./agentCliConfig');
+const { compactEventMeta, TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
+
+"'${validationBlocks}
+
+module.exports = {
+  classifyExecutionFailure,
+  completeAcceptanceTask,
+  formatDurationMs,
+  hasFinalAcceptanceTask,
+  isEnvironmentBlockingFailure,
+  isFinalAcceptanceTask,
+  validatePlan,
+};
+`, '"'utf8');
+'@ | node -" in D:\project\GitHub\autoplan
+ succeeded in 468ms:
+codex
+重新生成后再做一次文本级签名检查。
+exec
+powershell.exe -Command "Select-String -Path src/loop/planGeneration.js,src/loop/taskExecution.js,src/loop/validation.js -Pattern '"'^async function|''^function |module'"\\.exports|require' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 486ms:
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:1: const fs = require('node:fs');
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:2: const path = require('node:path');
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:3: const { nowIso } = require('../database');
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:9: } = require('./agentCliConfig');
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:11: async function generatePlan(service, helpers, projectId, workspace, issueScan) {
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:80: async function generatePlanForIntake(service, helpers, projectId, workspace, intake) {
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:82: const table = intake.__type === 'feedback' ? 'feedback' : 'requirements';
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:151: function intakeAttachmentPrompt(service, helpers, projectId, workspace, intake, sourceName) {
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:191: module.exports = {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:1: const fs = require('node:fs');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:2: const path = require('node:path');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:3: const { nowIso } = require('../database');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:10: } = require('./agentCliConfig');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:16: } = require('./taskEvents');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:17: const { classifyExecutionFailure } = require('./validation');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:19: async function processPlan(service, helpers, workspace, plan) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:46: function previousPlanCodexSessionId(service, helpers, planId, task) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:63: function parallelTaskBatch(service, helpers, tasks) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:80: async function executeTaskBatch(service, helpers, workspace, plan, tasks, options = {}) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:118: async function executeTask(service, helpers, workspace, plan, task, options = {}) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:216: function completeTask(service, helpers, workspace, plan, task, result) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:234: function refreshPlanProgress(service, helpers, planId, planFile) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:252: function markTaskCompletedInPlan(service, helpers, workspace, planFile, task, result) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:274: module.exports = {
+D:\project\GitHub\autoplan\src\loop\validation.js:1: const fs = require('node:fs');
+D:\project\GitHub\autoplan\src\loop\validation.js:2: const path = require('node:path');
+D:\project\GitHub\autoplan\src\loop\validation.js:3: const { nowIso } = require('../database');
+D:\project\GitHub\autoplan\src\loop\validation.js:4: const { agentCliContextFields, normalizeOptionalNumber } = require('./agentCliConfig');
+D:\project\GitHub\autoplan\src\loop\validation.js:5: const { compactEventMeta, TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
+D:\project\GitHub\autoplan\src\loop\validation.js:7: function isFinalAcceptanceTask(service, helpers, planId, task) {
+D:\project\GitHub\autoplan\src\loop\validation.js:17: function hasFinalAcceptanceTask(service, helpers, planId) {
+D:\project\GitHub\autoplan\src\loop\validation.js:26: function completeAcceptanceTask(service, helpers, workspace, plan, task, result) {
+D:\project\GitHub\autoplan\src\loop\validation.js:56: async function validatePlan(service, helpers, workspace, plan, options = {}) {
+D:\project\GitHub\autoplan\src\loop\validation.js:156: function classifyExecutionFailure(result = {}) {
+D:\project\GitHub\autoplan\src\loop\validation.js:202: function isEnvironmentBlockingFailure(failure = {}) {
+D:\project\GitHub\autoplan\src\loop\validation.js:206: function summarizeFailure(text, exitCode, failureKind) {
+D:\project\GitHub\autoplan\src\loop\validation.js:216: function formatDurationMs(milliseconds) {
+D:\project\GitHub\autoplan\src\loop\validation.js:222: module.exports = {
+
+codex
+现在替换 `LoopService` 内的大段实现为模块委托。
+exec
+powershell.exe -Command "@'
+const fs = require('node:fs');
+const path = 'src/loopService.js';
+let source = fs.readFileSync(path, 'utf8');
+function escapeRegExp(value) {
+  return value.replace(/[.*+?"'^${}()|['"\\]\\\\]/g, '\\\\"'$&'"');
+}
+function findMethod(name) {
+  const re = new RegExp("'`''^  (?:async )?${escapeRegExp(name)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const match = re.exec(source);
+  if ("'!match) throw new Error(`method not found: ${name}`);
+  let brace = 0;
+  let inString = '"'';
+  let escape = false;
+  const bodyStart = match.index + match[0].lastIndexOf('{');
+  for (let pos = bodyStart; pos < source.length; pos += 1) {
+    const ch = source[pos];
+    if (inString) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\\\') { escape = true; continue; }
+      if (ch === inString) inString = '';
+      continue;
+    }
+    if (ch === '\"' || ch === \"'\" || ch === '"'`'"') { inString = ch; continue; }
+    if (ch === '{') brace += 1;
+    else if (ch === '}') {
+      brace -= 1;
+      if (brace === 0) return { start: match.index, end: pos + 1 };
+    }
+  }
+  throw new Error("'`method end not found: ${name}`);
+}
+function replaceMethod(name, wrapper) {
+  const range = findMethod(name);
+  source = source.slice(0, range.start) + wrapper + source.slice(range.end);
+}
+const wrappers = {
+  generatePlan: `  async generatePlan(projectId, workspace, issueScan) {'"\\n    return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);\\n  }"'`,
+  generatePlanForIntake: `  async generatePlanForIntake(projectId, workspace, intake) {'"\\n    return planGeneration.generatePlanForIntake(this, loopFlowHelpers(), projectId, workspace, intake);\\n  }"'`,
+  intakeAttachmentPrompt: `  intakeAttachmentPrompt(projectId, workspace, intake, sourceName) {'"\\n    return planGeneration.intakeAttachmentPrompt(this, loopFlowHelpers(), projectId, workspace, intake, sourceName);\\n  }"'`,
+  processPlan: `  async processPlan(workspace, plan) {'"\\n    return taskExecution.processPlan(this, loopFlowHelpers(), workspace, plan);\\n  }"'`,
+  isFinalAcceptanceTask: `  isFinalAcceptanceTask(planId, task) {'"\\n    return validationFlow.isFinalAcceptanceTask(this, loopFlowHelpers(), planId, task);\\n  }"'`,
+  hasFinalAcceptanceTask: `  hasFinalAcceptanceTask(planId) {'"\\n    return validationFlow.hasFinalAcceptanceTask(this, loopFlowHelpers(), planId);\\n  }"'`,
+  previousPlanCodexSessionId: `  previousPlanCodexSessionId(planId, task) {'"\\n    return taskExecution.previousPlanCodexSessionId(this, loopFlowHelpers(), planId, task);\\n  }"'`,
+  parallelTaskBatch: `  parallelTaskBatch(tasks) {'"\\n    return taskExecution.parallelTaskBatch(this, loopFlowHelpers(), tasks);\\n  }"'`,
+  executeTaskBatch: `  async executeTaskBatch(workspace, plan, tasks, options = {}) {'"\\n    return taskExecution.executeTaskBatch(this, loopFlowHelpers(), workspace, plan, tasks, options);\\n  }"'`,
+  executeTask: `  async executeTask(workspace, plan, task, options = {}) {'"\\n    return taskExecution.executeTask(this, loopFlowHelpers(), workspace, plan, task, options);\\n  }"'`,
+  completeTask: `  completeTask(workspace, plan, task, result) {'"\\n    return taskExecution.completeTask(this, loopFlowHelpers(), workspace, plan, task, result);\\n  }"'`,
+  completeAcceptanceTask: `  completeAcceptanceTask(workspace, plan, task, result) {'"\\n    return validationFlow.completeAcceptanceTask(this, loopFlowHelpers(), workspace, plan, task, result);\\n  }"'`,
+  refreshPlanProgress: `  refreshPlanProgress(planId, planFile) {'"\\n    return taskExecution.refreshPlanProgress(this, loopFlowHelpers(), planId, planFile);\\n  }"'`,
+  markTaskCompletedInPlan: `  markTaskCompletedInPlan(workspace, planFile, task, result) {'"\\n    return taskExecution.markTaskCompletedInPlan(this, loopFlowHelpers(), workspace, planFile, task, result);\\n  }"'`,
+  validatePlan: `  async validatePlan(workspace, plan, options = {}) {'"\\n    return validationFlow.validatePlan(this, loopFlowHelpers(), workspace, plan, options);\\n  }"'`,
+};
+for (const [name, wrapper] of Object.entries(wrappers)) replaceMethod(name, wrapper);
+source = source.replace("const {'"\\n  LEGACY_TASK_EVENT_TYPES,\", \"const planGeneration = require('./loop/planGeneration');\\nconst taskExecution = require('./loop/taskExecution');\\nconst validationFlow = require('./loop/validation');\\nconst {\\n  LEGACY_TASK_EVENT_TYPES,\");
+source = source.replace('formatDurationMs(SHELL_COMMAND_TIMEOUT_MS)', 'validationFlow.formatDurationMs(SHELL_COMMAND_TIMEOUT_MS)');
+function removeFunctionRange(startName, endName) {
+  const startRe = new RegExp("'`''^function ${escapeRegExp(startName)}'"\\\\(["'^'"\\\\n]*\\\\) \\\\{"'`, '"'m');
+  const endRe = new RegExp("'`''^function ${escapeRegExp(endName)}'"\\\\("'`, '"'m');
+  const start = startRe.exec(source);
+  const end = endRe.exec(source);
+  if ("'!start || !end || end.index <= start.index) throw new Error(`range not found: ${startName}-${endName}`);
+  source = source.slice(0, start.index) + source.slice(end.index);
+}
+removeFunctionRange('"'classifyExecutionFailure', 'hashFile');
+const helperFunction = "'`function loopFlowHelpers() {'"\\n  return {\\n    describeIntakeAttachment,\\n    escapeRegExp,\\n    formatIntakeAttachmentEntry,\\n    hashFile,\\n    hashText,\\n    intakeAttachmentOwnerTypes,\\n    isAcceptanceTask,\\n    normalizeRelative,\\n    readSnippet,\\n    tailText,\\n    timestampForPath,\\n  };\\n}\\n\\n"'`;
+source = source.replace('"'\\nmodule.exports = {', "'`'"\\n"'${helperFunction}module.exports = {`);
+fs.writeFileSync(path, source, '"'utf8');
+'@ | node -" in D:\project\GitHub\autoplan
+ succeeded in 490ms:
+**Inspecting imports and wrappers**
+
+I need to inspect the imports and client wrapper locations carefully. It’s important to ensure everything is set up correctly. When I look through the imports, I'll check for any inconsistencies or potential issues. I'll also want to pay attention to how the wrapper locations interact with the rest of my code. It’s all about making sure that everything functions as it should. I want to set myself up for success!
+codex
+服务方法已委托；现在检查引用、未迁移旧函数和明显缺失依赖。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern \"planGeneration|taskExecution|validationFlow|async generatePlan|async executeTask|async validatePlan|function classifyExecutionFailure|function loopFlowHelpers|formatDurationMs\" | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 501ms:
+D:\project\GitHub\autoplan\src\loopService.js:62: const planGeneration = require('./loop/planGeneration');
+D:\project\GitHub\autoplan\src\loopService.js:63: const taskExecution = require('./loop/taskExecution');
+D:\project\GitHub\autoplan\src\loopService.js:64: const validationFlow = require('./loop/validation');
+D:\project\GitHub\autoplan\src\loopService.js:822: async generatePlan(projectId, workspace, issueScan) {
+D:\project\GitHub\autoplan\src\loopService.js:823: return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);
+D:\project\GitHub\autoplan\src\loopService.js:827: async generatePlanForIntake(projectId, workspace, intake) {
+D:\project\GitHub\autoplan\src\loopService.js:828: return planGeneration.generatePlanForIntake(this, loopFlowHelpers(), projectId, workspace, intake);
+D:\project\GitHub\autoplan\src\loopService.js:832: return planGeneration.intakeAttachmentPrompt(this, loopFlowHelpers(), projectId, workspace, intake, sourceName);
+D:\project\GitHub\autoplan\src\loopService.js:836: return taskExecution.processPlan(this, loopFlowHelpers(), workspace, plan);
+D:\project\GitHub\autoplan\src\loopService.js:840: return validationFlow.isFinalAcceptanceTask(this, loopFlowHelpers(), planId, task);
+D:\project\GitHub\autoplan\src\loopService.js:844: return validationFlow.hasFinalAcceptanceTask(this, loopFlowHelpers(), planId);
+D:\project\GitHub\autoplan\src\loopService.js:848: return taskExecution.previousPlanCodexSessionId(this, loopFlowHelpers(), planId, task);
+D:\project\GitHub\autoplan\src\loopService.js:852: return taskExecution.parallelTaskBatch(this, loopFlowHelpers(), tasks);
+D:\project\GitHub\autoplan\src\loopService.js:855: async executeTaskBatch(workspace, plan, tasks, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:856: return taskExecution.executeTaskBatch(this, loopFlowHelpers(), workspace, plan, tasks, options);
+D:\project\GitHub\autoplan\src\loopService.js:859: async executeTask(workspace, plan, task, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:860: return taskExecution.executeTask(this, loopFlowHelpers(), workspace, plan, task, options);
+D:\project\GitHub\autoplan\src\loopService.js:864: return taskExecution.completeTask(this, loopFlowHelpers(), workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:868: return validationFlow.completeAcceptanceTask(this, loopFlowHelpers(), workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:872: return taskExecution.refreshPlanProgress(this, loopFlowHelpers(), planId, planFile);
+D:\project\GitHub\autoplan\src\loopService.js:876: return taskExecution.markTaskCompletedInPlan(this, loopFlowHelpers(), workspace, planFile, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:879: async validatePlan(workspace, plan, options = {}) {
+D:\project\GitHub\autoplan\src\loopService.js:880: return validationFlow.validatePlan(this, loopFlowHelpers(), workspace, plan, options);
+D:\project\GitHub\autoplan\src\loopService.js:1215: const errorMessage = timedOut ? `Shell command timed out after ${validationFlow.formatDurationMs(SHELL_COMMAND_TIMEOUT_MS)}` : '';
+D:\project\GitHub\autoplan\src\loopService.js:2008: function loopFlowHelpers() {
+
+**Inspecting code placement**
+
+I need to check lines 800 to 890 to ensure that the wrappers are placed correctly. It’s important to get this right, as any mistakes could affect how the code functions. So, I'll take my time to look through those lines carefully, making sure everything looks okay. It’s all about making sure the foundations are strong! Let’s see if I can spot any issues or if everything is as it should be.
+codex
+委托位置正常；我会扫描新模块中未定义标识风险。
+exec
+powershell.exe -Command '$files='"'src/loop/planGeneration.js','src/loop/taskExecution.js','src/loop/validation.js'; foreach("'$f in $files){ '"'--- '+"'$f; Select-String -Path $f -Pattern '"'\\b(normalizeCodexSessionId|hashFile|isAcceptanceTask|tailText|normalizeRelative|escapeRegExp|classifyExecutionFailure|isEnvironmentBlockingFailure|fs\\.|path\\.|nowIso\\()\\b' | ForEach-Object { '{0}: {1}' -f "'$_.LineNumber,$_.Line.Trim() } }' in D:\project\GitHub\autoplan
+ succeeded in 466ms:
+--- src/loop/planGeneration.js
+12: const { timestampForPath, readSnippet, normalizeRelative, hashFile } = helpers;
+15: const planFile = path.join(
+23: const full = path.join(workspace, file.path);
+55: if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+63: filePath: normalizeRelative(workspace, planFile),
+64: hash: hashFile(planFile),
+74: service.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+81: const { timestampForPath, normalizeRelative, hashFile, hashText } = helpers;
+87: const planFile = path.join(
+125: if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+134: filePath: normalizeRelative(workspace, planFile),
+135: hash: hashFile(planFile),
+142: service.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+--- src/loop/taskExecution.js
+8: normalizeCodexSessionId,
+17: const { classifyExecutionFailure } = require('./validation');
+20: const planFile = path.join(workspace, plan.file_path);
+60: return normalizeCodexSessionId(previousTask?.codex_session_id);
+119: const { tailText } = helpers;
+145: const planFile = path.join(workspace, plan.file_path);
+188: const failure = classifyExecutionFailure({ exitCode: -1, errorMessage });
+204: const failure = classifyExecutionFailure(result);
+217: const planFile = path.join(workspace, plan.file_path);
+245: const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+253: if (!fs.existsSync(planFile)) return;
+254: const relativeLog = result?.logFile ? normalizeRelative(workspace, result.logFile) : '';
+255: const key = escapeRegExp(String(task.task_key || ''));
+257: let content = fs.readFileSync(planFile, 'utf8');
+271: fs.writeFileSync(planFile, content, 'utf8');
+--- src/loop/validation.js
+8: const { isAcceptanceTask } = helpers;
+14: return Number(lastTask?.id) === Number(task.id) && isAcceptanceTask(task);
+18: const { isAcceptanceTask } = helpers;
+23: return isAcceptanceTask(lastTask);
+27: const { hashFile } = helpers;
+28: const planFile = path.join(workspace, plan.file_path);
+39: const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+57: const { tailText } = helpers;
+59: const planFile = path.join(workspace, plan.file_path);
+90: let validationFailure = classifyExecutionFailure(validation);
+93: validation.exitCode !== 0 && attempt <= 2 && !isEnvironmentBlockingFailure(validationFailure);
+107: tailText(validation.output, 12000),
+117: validationFailure = classifyExecutionFailure(validation);
+135: const eventType = isEnvironmentBlockingFailure(validationFailure) ? 'validation.blocked' : 'validation.failed';
+156: function classifyExecutionFailure(result = {}) {
+202: function isEnvironmentBlockingFailure(failure = {}) {
+223: classifyExecutionFailure,
+227: isEnvironmentBlockingFailure,
+
+**Evaluating function usage**
+
+It seems like I'm noticing an issue with the `completeTask` function. It uses `hashFile`, but it's not utilizing destructured helpers. I realize that the `completeTask` actually copied its use of `hashFile` instead of integrating the helpers properly. I'll need to add the helper to `completeTask`. Plus, there might be helpers involved in `markTaskCompleted` too, so it's worth inspecting `completeTask` more closely to ensure everything's in order!
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loop/taskExecution.js; for($i=210;$i -lt 250;$i++){ '"'{0,4}: {1}' -f ("'$i+1),$lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 440ms:
+ 211:       });
+ 212:     }
+ 213:     return result;
+ 214:   }
+ 215: 
+ 216: function completeTask(service, helpers, workspace, plan, task, result) {
+ 217:     const planFile = path.join(workspace, plan.file_path);
+ 218:     const finishedAt = result?.finishedAt || nowIso();
+ 219:     service.markTaskCompletedInPlan(workspace, planFile, task, result);
+ 220:     const completedTask = service.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+ 221:     service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
+ 222:       ...agentCliContextFields(result, { defaultProvider: true }),
+ 223:       planId: plan.id,
+ 224:       status: TASK_EVENT_STATUS.COMPLETED,
+ 225:       finishedAt,
+ 226:       exitCode: result?.exitCode,
+ 227:       log: result?.logFile,
+ 228:       ...(result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(result) : {}),
+ 229:     });
+ 230:     service.refreshPlanProgress(plan.id, planFile);
+ 231:     service.emitUpdate(plan.project_id);
+ 232:   }
+ 233: 
+ 234: function refreshPlanProgress(service, helpers, planId, planFile) {
+ 235:     const totals = service.db.get(
+ 236:       `SELECT COUNT(*) AS total,
+ 237:               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
+ 238:        FROM plan_tasks
+ 239:        WHERE plan_id = ?`,
+ 240:       [planId],
+ 241:     ) || { total: 0, completed: 0 };
+ 242:     const total = Number(totals.total || 0);
+ 243:     const completed = Number(totals.completed || 0);
+ 244:     const status = total > 0 && completed === total ? 'ready_for_validation' : 'running';
+ 245:     const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+ 246:     service.db.run(
+ 247:       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
+ 248:       [hash, status, total, completed, nowIso(), planId],
+ 249:     );
+ 250:   }
+
+codex
+发现任务完成进度刷新还需要哈希 helper，我会补上模块内解构。
+exec
+powershell.exe -Command '$path='"'src/loop/taskExecution.js'; "'$text=Get-Content -Raw -Encoding UTF8 $path; $text=$text -replace '"'function refreshPlanProgress\\(service, helpers, planId, planFile\\) \\{\\r?\\n', \"function refreshPlanProgress(service, helpers, planId, planFile) {"'`r`n  const { hashFile } = helpers;`r`n"; [System.IO.File]::WriteAllText((Resolve-Path $path), $text, [System.Text.UTF8Encoding]::new($false))' in D:\project\GitHub\autoplan
+ succeeded in 434ms:
+codex
+继续检查 `loopService.js` 中是否还残留 P002 大段实现。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; for($i=812;$i -lt 888;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }; Select-String -Path src/loopService.js -Pattern '"'function classifyExecutionFailure|function isEnvironmentBlockingFailure|function summarizeFailure|function formatDurationMs|async function|async validatePlan\\(|async executeTask\\('" in D:\project\GitHub\autoplan
+ succeeded in 497ms:
+  813:       projectId,
+  814:       planId,
+  815:     ]);
+  816:     if (requirement && hasAgentCliOverride(requirement)) return requirement;
+  817:     const feedback = this.db.get('SELECT * FROM feedback WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [projectId, planId]);
+  818:     if (feedback && hasAgentCliOverride(feedback)) return feedback;
+  819:     return null;
+  820:   }
+  821: 
+  822:   async generatePlan(projectId, workspace, issueScan) {
+  823:     return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);
+  824:   }
+  825: 
+  826:   /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+  827:   async generatePlanForIntake(projectId, workspace, intake) {
+  828:     return planGeneration.generatePlanForIntake(this, loopFlowHelpers(), projectId, workspace, intake);
+  829:   }
+  830: 
+  831:   intakeAttachmentPrompt(projectId, workspace, intake, sourceName) {
+  832:     return planGeneration.intakeAttachmentPrompt(this, loopFlowHelpers(), projectId, workspace, intake, sourceName);
+  833:   }
+  834: 
+  835:   async processPlan(workspace, plan) {
+  836:     return taskExecution.processPlan(this, loopFlowHelpers(), workspace, plan);
+  837:   }
+  838: 
+  839:   isFinalAcceptanceTask(planId, task) {
+  840:     return validationFlow.isFinalAcceptanceTask(this, loopFlowHelpers(), planId, task);
+  841:   }
+  842: 
+  843:   hasFinalAcceptanceTask(planId) {
+  844:     return validationFlow.hasFinalAcceptanceTask(this, loopFlowHelpers(), planId);
+  845:   }
+  846: 
+  847:   previousPlanCodexSessionId(planId, task) {
+  848:     return taskExecution.previousPlanCodexSessionId(this, loopFlowHelpers(), planId, task);
+  849:   }
+  850: 
+  851:   parallelTaskBatch(tasks) {
+  852:     return taskExecution.parallelTaskBatch(this, loopFlowHelpers(), tasks);
+  853:   }
+  854: 
+  855:   async executeTaskBatch(workspace, plan, tasks, options = {}) {
+  856:     return taskExecution.executeTaskBatch(this, loopFlowHelpers(), workspace, plan, tasks, options);
+  857:   }
+  858: 
+  859:   async executeTask(workspace, plan, task, options = {}) {
+  860:     return taskExecution.executeTask(this, loopFlowHelpers(), workspace, plan, task, options);
+  861:   }
+  862: 
+  863:   completeTask(workspace, plan, task, result) {
+  864:     return taskExecution.completeTask(this, loopFlowHelpers(), workspace, plan, task, result);
+  865:   }
+  866: 
+  867:   completeAcceptanceTask(workspace, plan, task, result) {
+  868:     return validationFlow.completeAcceptanceTask(this, loopFlowHelpers(), workspace, plan, task, result);
+  869:   }
+  870: 
+  871:   refreshPlanProgress(planId, planFile) {
+  872:     return taskExecution.refreshPlanProgress(this, loopFlowHelpers(), planId, planFile);
+  873:   }
+  874: 
+  875:   markTaskCompletedInPlan(workspace, planFile, task, result) {
+  876:     return taskExecution.markTaskCompletedInPlan(this, loopFlowHelpers(), workspace, planFile, task, result);
+  877:   }
+  878: 
+  879:   async validatePlan(workspace, plan, options = {}) {
+  880:     return validationFlow.validatePlan(this, loopFlowHelpers(), workspace, plan, options);
+  881:   }
+  882: 
+  883:   syncPlanTasks(planId, planFile) {
+  884:     if (!fs.existsSync(planFile)) return;
+  885:     normalizePlanTaskScopes(planFile);
+  886:     const text = fs.readFileSync(planFile, 'utf8');
+  887:     const regex = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/gm;
+  888:     const tasks = [];
+
+src\loopService.js:859:  async executeTask(workspace, plan, task, options = {}) {
+src\loopService.js:879:  async validatePlan(workspace, plan, options = {}) {
+
+
+
+**Reviewing code imports**
+
+I'm confirming that everything looks good. I think I might need to check for any top imports that are unused, particularly those from moved functions like `DEFAULT_AGENT_CLI_PROVIDER`, which could still be used in the `loopService` for `runCodex/taskSnapshot`. I need to ensure that we have the `loopFlowHelpers` line before `module.exports`. I'll make sure there's no issue with this setup.
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/loopService.js; for($i=1998;$i -lt 2035 -and $i -lt $lines.Count;$i++){ '"'{0,5}: {1}' -f ("'$i+1),$lines[$i] }' in D:\project\GitHub\autoplan
+ succeeded in 448ms:
+ 1999: 
+ 2000: function tailText(text, maxChars) {
+ 2001:   return text.length > maxChars ? text.slice(text.length - maxChars) : text;
+ 2002: }
+ 2003: 
+ 2004: function safePart(value) {
+ 2005:   return String(value).replace(/[^A-Za-z0-9_.-]+/g, '_');
+ 2006: }
+ 2007: 
+ 2008: function loopFlowHelpers() {
+ 2009:   return {
+ 2010:     describeIntakeAttachment,
+ 2011:     escapeRegExp,
+ 2012:     formatIntakeAttachmentEntry,
+ 2013:     hashFile,
+ 2014:     hashText,
+ 2015:     intakeAttachmentOwnerTypes,
+ 2016:     isAcceptanceTask,
+ 2017:     normalizeRelative,
+ 2018:     readSnippet,
+ 2019:     tailText,
+ 2020:     timestampForPath,
+ 2021:   };
+ 2022: }
+ 2023: 
+ 2024: module.exports = {
+ 2025:   LoopService,
+ 2026:   LEGACY_TASK_EVENT_TYPES,
+ 2027:   normalizeIntakeAgentCliConfig,
+ 2028:   nextIntakeAgentCliConfig,
+ 2029:   TASK_EVENT_COMPATIBILITY,
+ 2030:   TASK_EVENT_SEMANTICS,
+ 2031:   TASK_EVENT_STATUS,
+ 2032:   TASK_EVENT_TYPES,
+ 2033: };
+ 2034: 
+
+codex
+不运行校验命令；我只做文本级依赖扫描和范围确认。
+exec
+powershell.exe -Command "Select-String -Path src/loop/taskExecution.js -Pattern 'hashFile|normalizeCodexSessionId|classifyExecutionFailure' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Select-String -Path src/loop/validation.js -Pattern '"'hashFile|isAcceptanceTask|tailText|compactEventMeta|normalizeOptionalNumber' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 451ms:
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:8: normalizeCodexSessionId,
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:17: const { classifyExecutionFailure } = require('./validation');
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:60: return normalizeCodexSessionId(previousTask?.codex_session_id);
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:188: const failure = classifyExecutionFailure({ exitCode: -1, errorMessage });
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:204: const failure = classifyExecutionFailure(result);
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:235: const { hashFile } = helpers;
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:246: const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+D:\project\GitHub\autoplan\src\loop\validation.js:4: const { agentCliContextFields, normalizeOptionalNumber } = require('./agentCliConfig');
+D:\project\GitHub\autoplan\src\loop\validation.js:5: const { compactEventMeta, TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
+D:\project\GitHub\autoplan\src\loop\validation.js:8: const { isAcceptanceTask } = helpers;
+D:\project\GitHub\autoplan\src\loop\validation.js:14: return Number(lastTask?.id) === Number(task.id) && isAcceptanceTask(task);
+D:\project\GitHub\autoplan\src\loop\validation.js:18: const { isAcceptanceTask } = helpers;
+D:\project\GitHub\autoplan\src\loop\validation.js:23: return isAcceptanceTask(lastTask);
+D:\project\GitHub\autoplan\src\loop\validation.js:27: const { hashFile } = helpers;
+D:\project\GitHub\autoplan\src\loop\validation.js:39: const hash = fs.existsSync(planFile) ? hashFile(planFile) : '';
+D:\project\GitHub\autoplan\src\loop\validation.js:57: const { tailText } = helpers;
+D:\project\GitHub\autoplan\src\loop\validation.js:107: tailText(validation.output, 12000),
+D:\project\GitHub\autoplan\src\loop\validation.js:192: return compactEventMeta({
+D:\project\GitHub\autoplan\src\loop\validation.js:198: timeoutMs: normalizeOptionalNumber(result.timeoutMs),
+
+**Inspecting function order**
+
+I think I need to check for undefined in the `planGeneration`. That seems good. There's a potential issue in `taskExecution` with `executeTaskBatch`, where the generated script converts to a method after executing `executeTask`. It looks fine, but I should inspect the order around `executeTaskBatch` to make sure `executeTask` appears afterward. The function declaration is hoisted, so that might save it, but I want to be thorough.
+codex
+模块依赖文本扫描通过；最后确认 Git 范围未包含 plan 文件。
+exec
+powershell.exe -Command 'git status --short; git diff --stat -- src/loopService.js src/loop/planGeneration.js src/loop/taskExecution.js src/loop/validation.js docs/plan/plan_requirement_30_20260627-125155.md' in D:\project\GitHub\autoplan
+ succeeded in 319ms:
+ M README.md
+ M package.json
+ M scripts/smoke-test.js
+ M src/agentCli.js
+ M src/database.js
+ M src/loopService.js
+ M src/main.js
+ M src/preload.js
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/components/SearchResults.tsx
+ M src/renderer/components/shared.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+ M src/renderer/types.ts
+ M src/renderer/utils/search.ts
+ M ui/README.md
+?? .claude/
+?? docs/plan/plan_feedback_14_20260627-131553.md
+?? docs/plan/plan_feedback_15_20260627-132045.md
+?? docs/plan/plan_feedback_16_20260627-133130.md
+?? docs/plan/plan_feedback_17_20260627-133901.md
+?? docs/plan/plan_feedback_18_20260627-134350.md
+?? docs/plan/plan_feedback_19_20260627-134658.md
+?? docs/plan/plan_requirement_28_20260627-123944.md
+?? docs/plan/plan_requirement_29_20260627-124433.md
+?? docs/plan/plan_requirement_30_20260627-125155.md
+?? docs/plan/plan_requirement_31_20260627-130629.md
+?? docs/plan/plan_requirement_32_20260627-131242.md
+?? docs/progress/logs/20260627-123944_gen-requirement-28.last.txt
+?? docs/progress/logs/20260627-123944_gen-requirement-28.log
+?? docs/progress/logs/20260627-124103_execute-P001.last.txt
+?? docs/progress/logs/20260627-124103_execute-P001.log
+?? docs/progress/logs/20260627-124250_gen-requirement-29.log
+?? docs/progress/logs/20260627-124254_execute-P002.last.txt
+?? docs/progress/logs/20260627-124254_execute-P002.log
+?? docs/progress/logs/20260627-124433_gen-requirement-29.last.txt
+?? docs/progress/logs/20260627-124433_gen-requirement-29.log
+?? docs/progress/logs/20260627-124649_execute-P001.last.txt
+?? docs/progress/logs/20260627-124649_execute-P001.log
+?? docs/progress/logs/20260627-125155_gen-requirement-30.last.txt
+?? docs/progress/logs/20260627-125155_gen-requirement-30.log
+?? docs/progress/logs/20260627-125352_execute-P001.last.txt
+?? docs/progress/logs/20260627-125352_execute-P001.log
+?? docs/progress/logs/20260627-130629_gen-requirement-31.last.txt
+?? docs/progress/logs/20260627-130629_gen-requirement-31.log
+?? docs/progress/logs/20260627-130829_execute-P001.log
+?? docs/progress/logs/20260627-131242_gen-requirement-32.last.txt
+?? docs/progress/logs/20260627-131242_gen-requirement-32.log
+?? docs/progress/logs/20260627-131420_execute-P001.last.txt
+?? docs/progress/logs/20260627-131420_execute-P001.log
+?? docs/progress/logs/20260627-131553_gen-feedback-14.last.txt
+?? docs/progress/logs/20260627-131553_gen-feedback-14.log
+?? docs/progress/logs/20260627-131731_execute-P001.last.txt
+?? docs/progress/logs/20260627-131731_execute-P001.log
+?? docs/progress/logs/20260627-132045_gen-feedback-15.last.txt
+?? docs/progress/logs/20260627-132045_gen-feedback-15.log
+?? docs/progress/logs/20260627-132245_execute-P001.last.txt
+?? docs/progress/logs/20260627-132245_execute-P001.log
+?? docs/progress/logs/20260627-133130_gen-feedback-16.last.txt
+?? docs/progress/logs/20260627-133130_gen-feedback-16.log
+?? docs/progress/logs/20260627-133331_execute-P001.last.txt
+?? docs/progress/logs/20260627-133331_execute-P001.log
+?? docs/progress/logs/20260627-133901_gen-feedback-17.last.txt
+?? docs/progress/logs/20260627-133901_gen-feedback-17.log
+?? docs/progress/logs/20260627-134112_execute-P001.last.txt
+?? docs/progress/logs/20260627-134112_execute-P001.log
+?? docs/progress/logs/20260627-134350_gen-feedback-18.last.txt
+?? docs/progress/logs/20260627-134350_gen-feedback-18.log
+?? docs/progress/logs/20260627-134516_execute-P001.last.txt
+?? docs/progress/logs/20260627-134516_execute-P001.log
+?? docs/progress/logs/20260627-134658_gen-feedback-19.last.txt
+?? docs/progress/logs/20260627-134658_gen-feedback-19.log
+?? docs/progress/logs/20260627-134821_execute-P001.last.txt
+?? docs/progress/logs/20260627-134821_execute-P001.log
+?? docs/progress/logs/20260627-140008_execute-P003.last.txt
+?? docs/progress/logs/20260627-140008_execute-P003.log
+?? docs/progress/logs/20260627-140436_execute-P004.last.txt
+?? docs/progress/logs/20260627-140436_execute-P004.log
+?? docs/progress/logs/20260627-140759_execute-P002.last.txt
+?? docs/progress/logs/20260627-140759_execute-P002.log
+?? docs/progress/logs/20260627-144802_execute-P003.log
+?? docs/progress/logs/20260627-144809_execute-P003.last.txt
+?? docs/progress/logs/20260627-144809_execute-P003.log
+?? docs/progress/logs/20260627-145456_execute-P004.last.txt
+?? docs/progress/logs/20260627-145456_execute-P004.log
+?? docs/progress/logs/20260627-150046_execute-P005.last.txt
+?? docs/progress/logs/20260627-150046_execute-P005.log
+?? docs/progress/logs/20260627-150711_execute-P002.log
+?? src/agentCli.test.js
+?? src/intakeService.js
+?? src/loop/
+?? src/mcpServer.js
+?? src/mcpTools.js
+?? src/renderer/components/shared.test.tsx
+?? src/renderer/pages/WorkspacePage.test.tsx
+ src/loopService.js | 1666 ++++++++--------------------------------------------
+ 1 file changed, 256 insertions(+), 1410 deletions(-)
+warning: in the working copy of 'src/loopService.js', LF will be replaced by CRLF the next time Git touches it
+
+**Evaluating project changes**
+
+I realize that Git stat doesn’t track untracked files, so I need to remember that there were pre-existing changes from previous tasks. Our task generated new files in src/loop related to P001 and P002. It’s good to note that we may not need to touch the P001 files, as our node script only wrote P002 files. I need to check if we added imports to loopService for the new modules. Finally, I want to confirm there are no unwanted modifications beyond the intended scope.
+codex
+范围确认显示仓库已有大量既有变更；我只继续检查 P002 文件内引用。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js -Pattern 'markTaskLifecycleEventRecorded|taskLifecycleEventRecorded|TASK_EVENT_TYPES|TASK_EVENT_STATUS|classifyExecutionFailure|isEnvironmentBlockingFailure|summarizeFailure|validationFlow\\.formatDurationMs' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 441ms:
+D:\project\GitHub\autoplan\src\loopService.js:66: LEGACY_TASK_EVENT_TYPES,
+D:\project\GitHub\autoplan\src\loopService.js:69: TASK_EVENT_STATUS,
+D:\project\GitHub\autoplan\src\loopService.js:70: TASK_EVENT_TYPES,
+D:\project\GitHub\autoplan\src\loopService.js:72: markTaskLifecycleEventRecorded,
+D:\project\GitHub\autoplan\src\loopService.js:77: taskLifecycleEventRecorded,
+D:\project\GitHub\autoplan\src\loopService.js:453: if (task.status !== TASK_EVENT_STATUS.PENDING) {
+D:\project\GitHub\autoplan\src\loopService.js:503: [TASK_EVENT_STATUS.RUNNING, TASK_EVENT_STATUS.RUNNING, startedAt, startedAt, taskId],
+D:\project\GitHub\autoplan\src\loopService.js:523: const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+D:\project\GitHub\autoplan\src\loopService.js:553: if (currentTask.status !== TASK_EVENT_STATUS.RUNNING) return null;
+D:\project\GitHub\autoplan\src\loopService.js:554: const failedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || currentTask;
+D:\project\GitHub\autoplan\src\loopService.js:555: this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.FAILED, failedTask, {
+D:\project\GitHub\autoplan\src\loopService.js:557: status: TASK_EVENT_STATUS.FAILED,
+D:\project\GitHub\autoplan\src\loopService.js:583: this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.INTERRUPTED, eventTask, {
+D:\project\GitHub\autoplan\src\loopService.js:587: status: TASK_EVENT_STATUS.INTERRUPTED,
+D:\project\GitHub\autoplan\src\loopService.js:671: status: TASK_EVENT_STATUS.PENDING,
+D:\project\GitHub\autoplan\src\loopService.js:1215: const errorMessage = timedOut ? `Shell command timed out after ${validationFlow.formatDurationMs(SHELL_COMMAND_TIMEOUT_MS)}` : '';
+D:\project\GitHub\autoplan\src\loopService.js:1371: const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+D:\project\GitHub\autoplan\src\loopService.js:1773: if (task.status !== TASK_EVENT_STATUS.PENDING) continue;
+D:\project\GitHub\autoplan\src\loopService.js:2026: LEGACY_TASK_EVENT_TYPES,
+D:\project\GitHub\autoplan\src\loopService.js:2031: TASK_EVENT_STATUS,
+D:\project\GitHub\autoplan\src\loopService.js:2032: TASK_EVENT_TYPES,
+
+**Evaluating imports**
+
+I’m wondering if the `mark/taskLifecycle` is imported but unused now. It seems like I'm only importing lines. Should I remove that from the `loopService` to improve linter performance? There's no lint error, but the syntax is okay. I also think about the `taskEvent` types being used. Maybe I should remove the `mark/taskLifecycle` and consider if `taskEventRecorded` is necessary since it's not being used. I'll do a patch to clean things up.
+codex
+清理因搬迁留下的未用事件导入，保持主服务更薄。
+exec
+powershell.exe -Command '$path='"'src/loopService.js'; "'$text=Get-Content -Raw -Encoding UTF8 $path; $text=$text -replace "'"\\r?\\n  markTaskLifecycleEventRecorded,\", ''; "'$text=$text -replace "'"\\r?\\n  taskLifecycleEventRecorded,\", ''; [System.IO.File]::WriteAllText((Resolve-Path "'$path), $text, [System.Text.UTF8Encoding]::new($false))' in D:\project\GitHub\autoplan
+ succeeded in 438ms:
+**Evaluating task execution**
+
+I need to check the task execution for any unused paths, but it seems the path is in use. That's fine. I might also want to look into whether the loopService is importing active modules correctly — no plan changes there, it looks like. One thing to consider is whether the "function classify..." needs to be included in the loopService; it seems like it might not be necessary.
+codex
+最后做一次只读范围和关键符号检查，不启动任何测试/构建。
+exec
+powershell.exe -Command "Select-String -Path src/loopService.js,src/loop/planGeneration.js,src/loop/taskExecution.js,src/loop/validation.js -Pattern '"'^function classifyExecutionFailure|''^async function validatePlan|''^async function executeTask|''^async function generatePlan|planGeneration|taskExecution|validationFlow|function loopFlowHelpers'"' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }
+'"'--- scoped diff stat ---'
+git diff --stat -- src/loopService.js src/loop/planGeneration.js src/loop/taskExecution.js src/loop/validation.js docs/plan/plan_requirement_30_20260627-125155.md" in D:\project\GitHub\autoplan
+ succeeded in 472ms:
+D:\project\GitHub\autoplan\src\loopService.js:62: const planGeneration = require('./loop/planGeneration');
+D:\project\GitHub\autoplan\src\loopService.js:63: const taskExecution = require('./loop/taskExecution');
+D:\project\GitHub\autoplan\src\loopService.js:64: const validationFlow = require('./loop/validation');
+D:\project\GitHub\autoplan\src\loopService.js:821: return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);
+D:\project\GitHub\autoplan\src\loopService.js:826: return planGeneration.generatePlanForIntake(this, loopFlowHelpers(), projectId, workspace, intake);
+D:\project\GitHub\autoplan\src\loopService.js:830: return planGeneration.intakeAttachmentPrompt(this, loopFlowHelpers(), projectId, workspace, intake, sourceName);
+D:\project\GitHub\autoplan\src\loopService.js:834: return taskExecution.processPlan(this, loopFlowHelpers(), workspace, plan);
+D:\project\GitHub\autoplan\src\loopService.js:838: return validationFlow.isFinalAcceptanceTask(this, loopFlowHelpers(), planId, task);
+D:\project\GitHub\autoplan\src\loopService.js:842: return validationFlow.hasFinalAcceptanceTask(this, loopFlowHelpers(), planId);
+D:\project\GitHub\autoplan\src\loopService.js:846: return taskExecution.previousPlanCodexSessionId(this, loopFlowHelpers(), planId, task);
+D:\project\GitHub\autoplan\src\loopService.js:850: return taskExecution.parallelTaskBatch(this, loopFlowHelpers(), tasks);
+D:\project\GitHub\autoplan\src\loopService.js:854: return taskExecution.executeTaskBatch(this, loopFlowHelpers(), workspace, plan, tasks, options);
+D:\project\GitHub\autoplan\src\loopService.js:858: return taskExecution.executeTask(this, loopFlowHelpers(), workspace, plan, task, options);
+D:\project\GitHub\autoplan\src\loopService.js:862: return taskExecution.completeTask(this, loopFlowHelpers(), workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:866: return validationFlow.completeAcceptanceTask(this, loopFlowHelpers(), workspace, plan, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:870: return taskExecution.refreshPlanProgress(this, loopFlowHelpers(), planId, planFile);
+D:\project\GitHub\autoplan\src\loopService.js:874: return taskExecution.markTaskCompletedInPlan(this, loopFlowHelpers(), workspace, planFile, task, result);
+D:\project\GitHub\autoplan\src\loopService.js:878: return validationFlow.validatePlan(this, loopFlowHelpers(), workspace, plan, options);
+D:\project\GitHub\autoplan\src\loopService.js:1213: const errorMessage = timedOut ? `Shell command timed out after ${validationFlow.formatDurationMs(SHELL_COMMAND_TIMEOUT_MS)}` : '';
+D:\project\GitHub\autoplan\src\loopService.js:2006: function loopFlowHelpers() {
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:11: async function generatePlan(service, helpers, projectId, workspace, issueScan) {
+D:\project\GitHub\autoplan\src\loop\planGeneration.js:80: async function generatePlanForIntake(service, helpers, projectId, workspace, intake) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:80: async function executeTaskBatch(service, helpers, workspace, plan, tasks, options = {}) {
+D:\project\GitHub\autoplan\src\loop\taskExecution.js:118: async function executeTask(service, helpers, workspace, plan, task, options = {}) {
+D:\project\GitHub\autoplan\src\loop\validation.js:56: async function validatePlan(service, helpers, workspace, plan, options = {}) {
+D:\project\GitHub\autoplan\src\loop\validation.js:156: function classifyExecutionFailure(result = {}) {
+--- scoped diff stat ---
+ src/loopService.js | 1666 ++++++++--------------------------------------------
+ 1 file changed, 255 insertions(+), 1411 deletions(-)
+warning: in the working copy of 'src/loopService.js', LF will be replaced by CRLF the next time Git touches it
+
+**Updating tracking plan**
+
+I’ve been thinking that the stat tool doesn’t include untracked modules, which might be okay. However, I might need line numbers for any new modules that come up. It feels like I should ensure that the update plan is complete. Making sure everything's accounted for will help avoid confusion later on. Let’s keep refining and checking to get this all sorted out!
+codex
+P002 开发修改完成；按要求跳过运行测试和验收命令。
+  ✓ 定位 P002 流程边界
+  ✓ 抽出计划生成模块
+  ✓ 抽出任务执行模块
+  ✓ 抽出验收流程模块
+  ✓ 确认改动范围
+codex
+**完成**
+- 已完成 P002 拆分，新增 `src/loop/planGeneration.js:11`、`src/loop/taskExecution.js:80`、`src/loop/validation.js:56`。
+- `src/loopService.js:62` 引入三个流程模块，原计划生成、任务执行、验收相关方法已改为薄封装。
+- `src/loopService.js:821` 起保留原对外方法名与调用方式，继续兼容现有 `LoopService` 调用方。
+- `src/loop/validation.js:156` 集中失败分类、环境阻塞识别和超时文案格式化；`runShell` 改为复用该模块。
+- plan 文件未修改，未勾选 checkbox，未更新进度区。
+- 按任务要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark 命令。
+- 工作区已有大量既有变更/未跟踪文件，我未处理 P002 scope 之外内容。
+**完成**
+- 已完成 P002 拆分，新增 `src/loop/planGeneration.js:11`、`src/loop/taskExecution.js:80`、`src/loop/validation.js:56`。
+- `src/loopService.js:62` 引入三个流程模块，原计划生成、任务执行、验收相关方法已改为薄封装。
+- `src/loopService.js:821` 起保留原对外方法名与调用方式，继续兼容现有 `LoopService` 调用方。
+- `src/loop/validation.js:156` 集中失败分类、环境阻塞识别和超时文案格式化；`runShell` 改为复用该模块。
+- plan 文件未修改，未勾选 checkbox，未更新进度区。
+- 按任务要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark 命令。
+- 工作区已有大量既有变更/未跟踪文件，我未处理 P002 scope 之外内容。

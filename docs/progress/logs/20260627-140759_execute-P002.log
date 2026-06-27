@@ -1,0 +1,4885 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0766-dea8-7b73-b41f-88e3a3d856fb
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_29_20260627-124433.md
+指定任务：
+- [ ] P002: 新增 MCP 服务基础设施 <!-- scope: src/mcpServer.js,src/main.js,package.json -->
+任务 scope：src/mcpserver.js, src/main.js, package.json
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Evaluating dependency management**
+
+I'm considering whether adding a dependency without updating the lock file is okay. The P002 acceptance mentions updating the "package.json" with necessary dependencies and scripts. I think I need to check if the current package is installed, because if it's not, the lock file won’t update. But if npm install fails and the dependency isn’t in node_modules, it could cause issues. I should check if the package-lock already includes it.
+codex
+我会沿用 P001 的服务抽取结果，先只检查 P002 相关文件和依赖现状。
+  → 确认 P002 接入点
+  • 新增 MCP 服务模块
+  • 挂载主进程生命周期
+  • 更新 package 配置
+  • 核对范围不验收
+exec
+powershell.exe -Command "Select-String -Path docs/plan/plan_requirement_29_20260627-124433.md -Pattern 'P002' -Context 0,8 | ForEach-Object { "'$_.Line; $_.Context.PostContext }; '"'--- package ---'; Get-Content -Raw -Encoding UTF8 package.json; '--- mcp deps search ---'; rg -n \"modelcontextprotocol|MCP|mcp\" package.json package-lock.json node_modules -g package.json" in D:\project\GitHub\autoplan
+2026-06-27T06:08:20.257184Z ERROR codex_core::tools::router: error={"output":"- [ ] P002: 新增 MCP 服务基础设施 <!-- scope: src/mcpServer.js,src/main.js,package.json -->\r\n  - 验收要点：新增 MCP server 模块，能在主进程初始化数据库和 `LoopService` 后启动，并在应用退出或服务停止时释放资源。\r\n  - 验收要点：服务启动失败不会导致主窗口不可用，错误会写入事件日志或主进程日志，并能在快照或诊断信息中被定位。\r\n  - 验收要点：MCP 传输方式、监听地址或 stdio/http 模式有明确默认值；默认配置仅允许本机访问，不暴露公网。\r\n  - 验收要点：`package.json` 补充必要 MCP SDK 依赖和脚本/入口配置，且不破坏现有 `dev`、`build`、`check`、`smoke` 脚本。\r\n\r\n- [ ] P003: 暴露 MCP 工具契约 <!-- scope: src/mcpServer.js,src/mcpTools.js,src/renderer/types.ts -->\r\n  - 验收要点：提供 `create_project` 工具，入参覆盖项目名称、工作区路径、描述和可选 CLI 配置，返回创建后的项目标识与快照摘要。\r\n  - 验收要点：提供 `create_requirement` 工具，入参覆盖 `projectId`、需求标题、正文、附件占位信息、`autoRun` 和可选 CLI 配置，返回需求标识与快照摘要。\r\n| P002 | 未开始 | 新增 MCP 服务基础设施 |\r\n| P003 | 未开始 | 暴露 MCP 工具契约 |\r\n| P004 | 未开始 | 增加 MCP 配置与状态可见性 |\r\n| P005 | 未开始 | 补充测试代码与文档说明 |\r\n| P006 | 未开始 | 完整验收 |\r\n\r\n当前总体进度：0/6。\r\n- P001 AutoPlan 完成：2026-06-27T04:51:53.136Z；日志：docs/progress/logs/20260627-124649_execute-P001.log\r\n--- package ---\r\n{\n  \"name\": \"autoplan\",\n  \"version\": \"0.2.0\",\n  \"description\": \"Electron app for issue-driven autonomous planning and development loops.\",\n  \"author\": \"lyming99 <lyming99@users.noreply.github.com>\",\n  \"main\": \"src/main.js\",\n  \"private\": true,\n  \"scripts\": {\n    \"start\": \"npm run dev\",\n    \"dev\": \"node scripts/dev.js\",\n    \"build\": \"tsc --noEmit && vite build\",\n    \"package:win\": \"npm run build && electron-builder --win nsis --x64\",\n    \"package:mac\": \"npm run build && electron-builder --mac dmg zip --x64 --arm64\",\n    \"package:linux\": \"npm run build && electron-builder --linux AppImage deb --x64\",\n    \"package:all\": \"npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64\",\n    \"check\": \"tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js\",\n    \"smoke\": \"node scripts/smoke-test.js\"\n  },\n  \"build\": {\n    \"appId\": \"com.autoplan.desktop\",\n    \"productName\": \"AutoPlan\",\n    \"directories\": {\n      \"output\": \"release\"\n    },\n    \"files\": [\n      \"assets/**/*\",\n      \"dist/**/*\",\n      \"src/**/*\",\n      \"package.json\"\n    ],\n    \"asarUnpack\": [\n      \"node_modules/sql.js/dist/*.wasm\"\n    ],\n    \"toolsets\": {\n      \"appimage\": \"1.0.3\"\n    },\n    \"win\": {\n      \"icon\": \"assets/icon.ico\",\n      \"target\": [\n        {\n          \"target\": \"nsis\",\n          \"arch\": [\n            \"x64\"\n          ]\n        }\n      ],\n      \"artifactName\": \"${productName}-${version}-win-${arch}-Setup.${ext}\"\n    },\n    \"mac\": {\n      \"target\": [\n        {\n          \"target\": \"dmg\",\n          \"arch\": [\n            \"x64\",\n            \"arm64\"\n          ]\n        },\n        {\n          \"target\": \"zip\",\n          \"arch\": [\n            \"x64\",\n            \"arm64\"\n          ]\n        }\n      ],\n      \"artifactName\": \"${productName}-${version}-mac-${arch}.${ext}\"\n    },\n    \"linux\": {\n      \"icon\": \"assets/icon.png\",\n      \"target\": [\n        {\n          \"target\": \"AppImage\",\n          \"arch\": [\n            \"x64\"\n          ]\n        },\n        {\n          \"target\": \"deb\",\n          \"arch\": [\n            \"x64\"\n          ]\n        }\n      ],\n      \"category\": \"Utility\",\n      \"artifactName\": \"${productName}-${version}-linux-${arch}.${ext}\"\n    },\n    \"nsis\": {\n      \"oneClick\": false,\n      \"perMachine\": false,\n      \"allowToChangeInstallationDirectory\": true\n    }\n  },\n  \"dependencies\": {\n    \"react\": \"^19.2.7\",\n    \"react-dom\": \"^19.2.7\",\n    \"react-markdown\": \"^10.1.0\",\n    \"react-router-dom\": \"^7.18.0\",\n    \"remark-gfm\": \"^4.0.1\",\n    \"sql.js\": \"^1.13.0\"\n  },\n  \"devDependencies\": {\n    \"@types/react\": \"^19.2.17\",\n    \"@types/react-dom\": \"^19.2.3\",\n    \"@vitejs/plugin-react\": \"^6.0.3\",\n    \"electron\": \"^33.3.2\",\n    \"electron-builder\": \"^26.15.3\",\n    \"typescript\": \"^6.0.3\",\n    \"vite\": \"^8.1.0\"\n  }\n}\n\r\n--- mcp deps search ---\r\nrg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 245\r\n+ ... aw -Encoding UTF8 package.json; '--- mcp deps search ---'; rg -n \"mod ...\r\n+                                                                ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.4}}
+ exited 1 in 1381ms:
+- [ ] P002: 新增 MCP 服务基础设施 <!-- scope: src/mcpServer.js,src/main.js,package.json -->
+  - 验收要点：新增 MCP server 模块，能在主进程初始化数据库和 `LoopService` 后启动，并在应用退出或服务停止时释放资源。
+  - 验收要点：服务启动失败不会导致主窗口不可用，错误会写入事件日志或主进程日志，并能在快照或诊断信息中被定位。
+  - 验收要点：MCP 传输方式、监听地址或 stdio/http 模式有明确默认值；默认配置仅允许本机访问，不暴露公网。
+  - 验收要点：`package.json` 补充必要 MCP SDK 依赖和脚本/入口配置，且不破坏现有 `dev`、`build`、`check`、`smoke` 脚本。
+
+- [ ] P003: 暴露 MCP 工具契约 <!-- scope: src/mcpServer.js,src/mcpTools.js,src/renderer/types.ts -->
+  - 验收要点：提供 `create_project` 工具，入参覆盖项目名称、工作区路径、描述和可选 CLI 配置，返回创建后的项目标识与快照摘要。
+  - 验收要点：提供 `create_requirement` 工具，入参覆盖 `projectId`、需求标题、正文、附件占位信息、`autoRun` 和可选 CLI 配置，返回需求标识与快照摘要。
+| P002 | 未开始 | 新增 MCP 服务基础设施 |
+| P003 | 未开始 | 暴露 MCP 工具契约 |
+| P004 | 未开始 | 增加 MCP 配置与状态可见性 |
+| P005 | 未开始 | 补充测试代码与文档说明 |
+| P006 | 未开始 | 完整验收 |
+
+当前总体进度：0/6。
+- P001 AutoPlan 完成：2026-06-27T04:51:53.136Z；日志：docs/progress/logs/20260627-124649_execute-P001.log
+--- package ---
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+--- mcp deps search ---
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 245
++ ... aw -Encoding UTF8 package.json; '--- mcp deps search ---'; rg -n "mod ...
++                                                                ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+codex
+`rg` 当前不可用，我改用 PowerShell 原生命令继续检查依赖和接入点。
+exec
+powershell.exe -Command "Get-ChildItem -Path . -Recurse -Filter package.json -ErrorAction SilentlyContinue | Select-String -Pattern 'modelcontextprotocol|mcp' -CaseSensitive:"'$false -List | ForEach-Object { $_.Path }; '"'--- main relevant ---'; "'$i=0; Get-Content -Encoding UTF8 src/main.js | ForEach-Object { $i++; if (($i -le 35) -or ($i -ge 45 -and $i -le 70) -or ($i -ge 270 -and $i -le 290)) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 3496ms:
+--- main relevant ---
+   1: const fs = require('node:fs');
+   2: const path = require('node:path');
+   3: const { spawn } = require('node:child_process');
+   4: const { pathToFileURL } = require('node:url');
+   5: const { app, BrowserWindow, ipcMain, Menu, net, protocol, shell } = require('electron');
+   6: const { saveAttachments } = require('./attachments');
+   7: const { AppDatabase, nowIso } = require('./database');
+   8: const { createIntakeService, titleFromBody } = require('./intakeService');
+   9: const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
+  10: 
+  11: if (protocol?.registerSchemesAsPrivileged) {
+  12:   protocol.registerSchemesAsPrivileged([
+  13:     { scheme: 'autoplan-file', privileges: { standard: true, secure: true, supportFetchAPI: true } },
+  14:   ]);
+  15: }
+  16: 
+  17: let mainWindow;
+  18: let db;
+  19: let loop;
+  20: let fileProtocolRegistered = false;
+  21: 
+  22: async function createApp() {
+  23:   Menu.setApplicationMenu(null);
+  24:   db = new AppDatabase(path.join(app.getPath('userData'), 'data', 'autoplan.sqlite'));
+  25:   await db.init();
+  26:   registerFileProtocol();
+  27:   loop = new LoopService(db);
+  28:   loop.on('update', (snapshot) => {
+  29:     if (mainWindow && !mainWindow.isDestroyed()) {
+  30:       mainWindow.webContents.send('loop:update', snapshot);
+  31:     }
+  32:   });
+  33: 
+  34:   mainWindow = new BrowserWindow({
+  35:     width: 1220,
+  45:     },
+  46:   });
+  47:   await loadRenderer(mainWindow);
+  48: }
+  49: 
+  50: app.whenReady().then(createApp);
+  51: 
+  52: app.on('window-all-closed', () => {
+  53:   if (process.platform !== 'darwin') app.quit();
+  54: });
+  55: 
+  56: app.on('before-quit', () => {
+  57:   if (loop) loop.stop();
+  58: });
+  59: 
+  60: ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
+  61: 
+  62: ipcMain.handle('plans:read', async (_event, input = {}) => readPlan(input));
+  63: 
+  64: ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
+  65: 
+  66: ipcMain.handle('projects:create', (_event, input = {}) => {
+  67:   return intakeService().createProject(input);
+  68: });
+  69: 
+  70: ipcMain.handle('projects:update', (_event, input = {}) => {
+ 270:   if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
+ 271:   loop.appendTask(projectId, rec.linked_plan_id, input.title);
+ 272:   return loop.snapshot(projectId);
+ 273: });
+ 274: 
+ 275: function attachmentsRoot() {
+ 276:   return path.join(app.getPath('userData'), 'data', 'attachments');
+ 277: }
+ 278: 
+ 279: function intakeService() {
+ 280:   return createIntakeService({ db, loop, attachmentsRoot });
+ 281: }
+ 282: 
+ 283: function registerFileProtocol() {
+ 284:   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+ 285:   fileProtocolRegistered = true;
+ 286:   protocol.handle('autoplan-file', async (request) => {
+ 287:     try {
+ 288:       const filePath = decodeAttachmentFileUrl(request.url);
+ 289:       const root = attachmentsRoot();
+ 290:       if (!isInsidePath(root, filePath)) return new Response('Forbidden', { status: 403 });
+
+**Designing mcpServer**
+
+I'm figuring out the design for mcpServer. I might not need a package-lock, but I need to choose the SDK version. Since I don't have network access, I think the current version of @modelcontextprotocol/sdk is around 1.17 or 1.20+. While I haven't been asked for the latest version, I need to ensure the package dependency is clear. I could set it to "^1.13.3", but it may not need it if I implement HTTP JSON-RPC manually. I want to create a robust module that starts properly after the database loop.
+**Implementing Local HTTP**
+
+I'm thinking about how to implement the default local HTTP configuration. The acceptance criteria mention setting a default for the transport method, like using 127.0.0.1 on port 3899. I might need to utilize MCP SDK transports, possibly the StreamableHTTPServerTransport, but I need to understand the API since it can vary. I should avoid hard failures if the package or API differs. Implementing an HTTP server manually with MCP JSON-RPC could work, but I need the SDK for proper functionality. I'll ensure to check for tools, especially since P003 will include them.
+**Considering package dependencies**
+
+I'm thinking about adding `"@modelcontextprotocol/sdk": "^1.13.3"`, but perhaps I should stick with the ^1.17.0 version if that's the last published one. I know the SDK was at 1.17 by 2025, and I'm assuming it still exists. The package-lock is absent, which is a bit concerning. I’ll also check the ordering of dependencies. It seems adding scripts like `mcp:stdio` and `mcp:http` won't interfere with existing ones, but I’ll need to confirm that.
+**Considering package updates**
+
+I think I might need to check that "package.json" to include the necessary MCP SDK dependencies and scripts without disrupting the existing dev/build/check/smoke setup. Maybe I could add mcpServer to the check script; it seems like modifying the existing check might be alright since it's designed not to break anything. The user mentioned the current task isn't running the check, but adding "node --check src/mcpServer.js" would ensure future coverage for the new module. So, I’ll go ahead and do it, keeping in mind to apply any necessary patches, but I shouldn't update the package-lock.
+codex
+我会新增可独立启动的 MCP server 模块，默认 HTTP 仅绑定本机。
+  ✓ 确认 P002 接入点
+  → 新增 MCP 服务模块
+  • 挂载主进程生命周期
+  • 更新 package 配置
+  • 核对范围不验收
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\mcpServer.js
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+codex
+MCP 模块已就位；现在把它挂到主进程初始化和退出生命周期。
+  ✓ 确认 P002 接入点
+  ✓ 新增 MCP 服务模块
+  → 挂载主进程生命周期
+  • 更新 package 配置
+  • 核对范围不验收
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\main.js
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+**Deciding on package needs**
+
+I need to figure out if I should use a patch package. I'm considering not using a package-lock this time. Maybe skipping it could simplify things, but I wonder if it might lead to issues later. Balancing what I really need for this project is important. I want to make sure I'm making the best choice to keep everything running smoothly without unnecessary complications. Let's see what happens!
+codex
+主进程生命周期已接入；接下来只更新 `package.json` 的依赖和入口脚本。
+  ✓ 确认 P002 接入点
+  ✓ 新增 MCP 服务模块
+  ✓ 挂载主进程生命周期
+  → 更新 package 配置
+  • 核对范围不验收
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\package.json
+diff --git a/package.json b/package.json
+index 40cb400e8d676aac3b65044b87dd7cb08c83b461..487b03628a25d164437e932bfd333639194c772c
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,9 @@
+     "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+     "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+     "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+-    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "mcp:http": "node src/mcpServer.js --http",
++    "mcp:stdio": "node src/mcpServer.js --stdio",
+     "smoke": "node scripts/smoke-test.js"
+   },
+   "build": {
+@@ -91,6 +93,7 @@
+     }
+   },
+   "dependencies": {
++    "@modelcontextprotocol/sdk": "^1.17.0",
+     "react": "^19.2.7",
+     "react-dom": "^19.2.7",
+     "react-markdown": "^10.1.0",
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+diff --git a/package.json b/package.json
+index 40cb400e8d676aac3b65044b87dd7cb08c83b461..487b03628a25d164437e932bfd333639194c772c
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,9 @@
+     "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+     "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+     "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+-    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "mcp:http": "node src/mcpServer.js --http",
++    "mcp:stdio": "node src/mcpServer.js --stdio",
+     "smoke": "node scripts/smoke-test.js"
+   },
+   "build": {
+@@ -91,6 +93,7 @@
+     }
+   },
+   "dependencies": {
++    "@modelcontextprotocol/sdk": "^1.17.0",
+     "react": "^19.2.7",
+     "react-dom": "^19.2.7",
+     "react-markdown": "^10.1.0",
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+**Evaluating service startup failure logging**
+
+I need to ensure that for service startup failures, we write events to the logs and diagnostics. So, I’m thinking of using a loop for logging events to the console. That seems like a solid approach. If there's a failure due to a missing SDK, an event should be created. It’s also essential to log a success event whenever the app starts, which seems like a good practice to have.
+**Inspecting package changes**
+
+I'm reading through the package and feel like I should check relevant lines. I'll consider using Select-String for that purpose. It might also be useful to run `git diff --name-only -- src/mcpServer.js src/main.js package.json` to identify changes. I need to keep in mind that there are other existing changes that are already in play. It's all about ensuring I have the complete picture!
+codex
+我会做文本级范围核对，不启动任何测试、构建或 MCP 进程。
+  ✓ 确认 P002 接入点
+  ✓ 新增 MCP 服务模块
+  ✓ 挂载主进程生命周期
+  ✓ 更新 package 配置
+  → 核对范围不验收
+diff --git a/package.json b/package.json
+index 40cb400e8d676aac3b65044b87dd7cb08c83b461..487b03628a25d164437e932bfd333639194c772c
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,9 @@
+     "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+     "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+     "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+-    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "mcp:http": "node src/mcpServer.js --http",
++    "mcp:stdio": "node src/mcpServer.js --stdio",
+     "smoke": "node scripts/smoke-test.js"
+   },
+   "build": {
+@@ -91,6 +93,7 @@
+     }
+   },
+   "dependencies": {
++    "@modelcontextprotocol/sdk": "^1.17.0",
+     "react": "^19.2.7",
+     "react-dom": "^19.2.7",
+     "react-markdown": "^10.1.0",
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+exec
+powershell.exe -Command "'--- scoped status ---'; git status --short -- src/mcpServer.js src/main.js package.json docs/plan/plan_requirement_29_20260627-124433.md; '--- scoped diff names ---'; git diff --name-only -- src/main.js package.json; if (Test-Path src/mcpServer.js) { 'src/mcpServer.js' }; '--- key refs ---'; Select-String -Path src/mcpServer.js,src/main.js,package.json -Pattern 'DEFAULT_MCP_CONFIG|createMcpServer|startMcpServer|mcp.start.failed|mcp:http|@modelcontextprotocol/sdk|node --check src/mcpServer.js'" in D:\project\GitHub\autoplan
+ succeeded in 538ms:
+--- scoped status ---
+ M package.json
+ M src/main.js
+?? docs/plan/plan_requirement_29_20260627-124433.md
+?? src/mcpServer.js
+--- scoped diff names ---
+package.json
+src/main.js
+src/mcpServer.js
+--- key refs ---
+
+src\mcpServer.js:5:const DEFAULT_MCP_CONFIG = Object.freeze({
+src\mcpServer.js:109:    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
+src\mcpServer.js:144:    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/strea
+mableHttp.js');
+src\mcpServer.js:155:    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
+src\mcpServer.js:168:function createMcpServer(options = {}) {
+src\mcpServer.js:173:  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.tra
+nsport).toLowerCase();
+src\mcpServer.js:176:    ...DEFAULT_MCP_CONFIG,
+src\mcpServer.js:180:    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT
+_MCP_CONFIG.host,
+src\mcpServer.js:181:    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
+src\mcpServer.js:182:    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
+src\mcpServer.js:220:  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
+src\mcpServer.js:267:  const server = createMcpServer({
+src\mcpServer.js:296:  DEFAULT_MCP_CONFIG,
+src\mcpServer.js:297:  createMcpServer,
+src\main.js:10:const { createMcpServer } = require('./mcpServer');
+src\main.js:35:  startMcpServer().catch((error) => recordMcpStartupError(error));
+src\main.js:287:async function startMcpServer() {
+src\main.js:288:  mcpServer = createMcpServer({
+src\main.js:307:    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
+package.json:16:    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check 
+src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js 
+&& node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+package.json:17:    "mcp:http": "node src/mcpServer.js --http",
+package.json:96:    "@modelcontextprotocol/sdk": "^1.17.0",
+
+
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/main.js', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/package.json b/package.json
+index 40cb400e8d676aac3b65044b87dd7cb08c83b461..487b03628a25d164437e932bfd333639194c772c
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,9 @@
+     "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+     "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+     "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+-    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "mcp:http": "node src/mcpServer.js --http",
++    "mcp:stdio": "node src/mcpServer.js --stdio",
+     "smoke": "node scripts/smoke-test.js"
+   },
+   "build": {
+@@ -91,6 +93,7 @@
+     }
+   },
+   "dependencies": {
++    "@modelcontextprotocol/sdk": "^1.17.0",
+     "react": "^19.2.7",
+     "react-dom": "^19.2.7",
+     "react-markdown": "^10.1.0",
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+codex
+P002 改动范围已核对完毕，按要求未执行验收命令。
+  ✓ 确认 P002 接入点
+  ✓ 新增 MCP 服务模块
+  ✓ 挂载主进程生命周期
+  ✓ 更新 package 配置
+  ✓ 核对范围不验收
+diff --git a/package.json b/package.json
+index 40cb400e8d676aac3b65044b87dd7cb08c83b461..487b03628a25d164437e932bfd333639194c772c
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,9 @@
+     "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+     "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+     "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+-    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "mcp:http": "node src/mcpServer.js --http",
++    "mcp:stdio": "node src/mcpServer.js --stdio",
+     "smoke": "node scripts/smoke-test.js"
+   },
+   "build": {
+@@ -91,6 +93,7 @@
+     }
+   },
+   "dependencies": {
++    "@modelcontextprotocol/sdk": "^1.17.0",
+     "react": "^19.2.7",
+     "react-dom": "^19.2.7",
+     "react-markdown": "^10.1.0",
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+codex
+已完成 P002；未修改 plan 文件，也未运行测试、构建、lint、smoke 或 MCP 启动命令。
+
+- 新增 `src/mcpServer.js:5`，提供 MCP server 基础设施，默认 `http`、`127.0.0.1:43847`、路径 `/mcp`，并限制默认仅本机绑定。
+- 在 `src/main.js:35` 接入主进程启动流程：数据库和 `LoopService` 初始化后异步启动 MCP，不阻塞主窗口。
+- 在 `src/main.js:56` 接入退出释放，应用退出时停止 MCP 服务。
+- 在 `src/main.js:303` 记录 MCP 启动失败到事件流和主进程日志，避免启动失败影响 GUI。
+- 更新 `package.json:16`、`package.json:17`，加入 `src/mcpServer.js` 静态检查入口和 `mcp:http` / `mcp:stdio` 脚本。
+- 更新 `package.json:96`，添加 `@modelcontextprotocol/sdk` 依赖；未运行 `npm install`，因此未更新 lock 文件。
+diff --git a/package.json b/package.json
+index 40cb400e8d676aac3b65044b87dd7cb08c83b461..487b03628a25d164437e932bfd333639194c772c
+--- a/package.json
++++ b/package.json
+@@ -13,7 +13,9 @@
+     "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+     "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+     "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+-    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "mcp:http": "node src/mcpServer.js --http",
++    "mcp:stdio": "node src/mcpServer.js --stdio",
+     "smoke": "node scripts/smoke-test.js"
+   },
+   "build": {
+@@ -91,6 +93,7 @@
+     }
+   },
+   "dependencies": {
++    "@modelcontextprotocol/sdk": "^1.17.0",
+     "react": "^19.2.7",
+     "react-dom": "^19.2.7",
+     "react-markdown": "^10.1.0",
+diff --git a/src/main.js b/src/main.js
+index 4478e2e773550dba2034516fcb5f28676024715e..8562d7106df3963cdfed2f14283c45a33fe2b4dc
+--- a/src/main.js
++++ b/src/main.js
+@@ -7,6 +7,7 @@
+ const { AppDatabase, nowIso } = require('./database');
+ const { createIntakeService, titleFromBody } = require('./intakeService');
+ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
++const { createMcpServer } = require('./mcpServer');
+ 
+ if (protocol?.registerSchemesAsPrivileged) {
+   protocol.registerSchemesAsPrivileged([
+@@ -17,6 +18,7 @@
+ let mainWindow;
+ let db;
+ let loop;
++let mcpServer;
+ let fileProtocolRegistered = false;
+ 
+ async function createApp() {
+@@ -30,6 +32,7 @@
+       mainWindow.webContents.send('loop:update', snapshot);
+     }
+   });
++  startMcpServer().catch((error) => recordMcpStartupError(error));
+ 
+   mainWindow = new BrowserWindow({
+     width: 1220,
+@@ -54,6 +57,7 @@
+ });
+ 
+ app.on('before-quit', () => {
++  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+   if (loop) loop.stop();
+ });
+ 
+@@ -280,6 +284,38 @@
+   return createIntakeService({ db, loop, attachmentsRoot });
+ }
+ 
++async function startMcpServer() {
++  mcpServer = createMcpServer({
++    db,
++    loop,
++    intakeService: intakeService(),
++    logger: console,
++  });
++  const state = await mcpServer.start();
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId && state.enabled && state.running) {
++    loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
++  }
++  return state;
++}
++
++function recordMcpStartupError(error) {
++  const message = error?.message || String(error || '未知错误');
++  console.error('[mcp] start failed', error);
++  const projectId = loop?.defaultProjectId?.();
++  if (projectId) {
++    loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, {
++      mcp: mcpServer?.status?.() || null,
++      error: message,
++    });
++  }
++}
++
++function mcpStatusMessage(state = {}) {
++  if (state.transport === 'stdio') return 'MCP 服务已启动：stdio';
++  return `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`;
++}
++
+ function registerFileProtocol() {
+   if (fileProtocolRegistered || !protocol?.handle || !net?.fetch) return;
+   fileProtocolRegistered = true;
+diff --git a/src/mcpServer.js b/src/mcpServer.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..fcfb36bd75d4ba14812c88bc668fd48bfb2599c5
+--- /dev/null
++++ b/src/mcpServer.js
+@@ -0,0 +1,299 @@
++const http = require('node:http');
++const path = require('node:path');
++const { pathToFileURL } = require('node:url');
++
++const DEFAULT_MCP_CONFIG = Object.freeze({
++  enabled: true,
++  transport: 'http',
++  host: '127.0.0.1',
++  port: 43847,
++  path: '/mcp',
++  name: 'autoplan',
++  version: '0.2.0',
++});
++
++const LOCAL_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
++
++class AutoPlanMcpServer {
++  constructor(options = {}) {
++    this.db = options.db;
++    this.loop = options.loop;
++    this.intakeService = options.intakeService;
++    this.registerTools = options.registerTools;
++    this.logger = options.logger || console;
++    this.config = normalizeMcpConfig(options.config);
++    this.httpServer = null;
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++  }
++
++  async start() {
++    if (!this.config.enabled) {
++      this.state = { ...stoppedState(this.config), enabled: false };
++      return this.state;
++    }
++    if (this.state.running) return this.state;
++    validateSafeHost(this.config);
++
++    try {
++      if (this.config.transport === 'stdio') {
++        await this.startStdio();
++      } else {
++        await this.startHttp();
++      }
++      return this.state;
++    } catch (error) {
++      await this.stop().catch(() => undefined);
++      this.state = { ...stoppedState(this.config), lastError: errorMessage(error) };
++      throw error;
++    }
++  }
++
++  async stop() {
++    const closeHttpServer = this.httpServer
++      ? new Promise((resolve) => {
++          this.httpServer.close(() => resolve());
++        })
++      : Promise.resolve();
++
++    this.httpServer = null;
++    await closeHttpServer;
++
++    if (this.stdioTransport?.close) await this.stdioTransport.close();
++    if (this.stdioSdkServer?.close) await this.stdioSdkServer.close();
++    this.stdioTransport = null;
++    this.stdioSdkServer = null;
++    this.state = stoppedState(this.config);
++    return this.state;
++  }
++
++  status() {
++    return { ...this.state };
++  }
++
++  async startHttp() {
++    this.httpServer = http.createServer((request, response) => {
++      this.handleHttpRequest(request, response).catch((error) => {
++        this.logger.error?.('[mcp] request failed', error);
++        writeJson(response, 500, { error: 'MCP request failed', message: errorMessage(error) });
++      });
++    });
++
++    await new Promise((resolve, reject) => {
++      const onError = (error) => reject(error);
++      this.httpServer.once('error', onError);
++      this.httpServer.listen(this.config.port, this.config.host, () => {
++        this.httpServer.off('error', onError);
++        resolve();
++      });
++    });
++
++    const address = this.httpServer.address();
++    const port = typeof address === 'object' && address ? address.port : this.config.port;
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'http',
++      host: this.config.host,
++      port,
++      path: this.config.path,
++      url: `http://${this.config.host}:${port}${this.config.path}`,
++      localOnly: isLocalHost(this.config.host),
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async startStdio() {
++    const { StdioServerTransport } = await import('@modelcontextprotocol/sdk/server/stdio.js');
++    this.stdioSdkServer = await this.createSdkServer();
++    this.stdioTransport = new StdioServerTransport();
++    await this.stdioSdkServer.connect(this.stdioTransport);
++    this.state = {
++      enabled: true,
++      running: true,
++      transport: 'stdio',
++      host: null,
++      port: null,
++      path: null,
++      url: null,
++      localOnly: true,
++      startedAt: new Date().toISOString(),
++      lastError: null,
++    };
++  }
++
++  async handleHttpRequest(request, response) {
++    const requestUrl = new URL(request.url || '/', `http://${this.config.host}:${this.config.port}`);
++    if (request.method === 'GET' && requestUrl.pathname === '/health') {
++      writeJson(response, 200, this.status());
++      return;
++    }
++    if (requestUrl.pathname !== this.config.path) {
++      writeJson(response, 404, { error: 'Not found' });
++      return;
++    }
++    if (request.method !== 'POST') {
++      writeJson(response, 405, { error: 'Method not allowed' }, { Allow: 'POST' });
++      return;
++    }
++
++    const body = await readJsonBody(request);
++    const sdkServer = await this.createSdkServer();
++    const { StreamableHTTPServerTransport } = await import('@modelcontextprotocol/sdk/server/streamableHttp.js');
++    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
++    response.on('close', () => {
++      transport.close?.();
++      sdkServer.close?.();
++    });
++    await sdkServer.connect(transport);
++    await transport.handleRequest(request, response, body);
++  }
++
++  async createSdkServer() {
++    const { McpServer } = await import('@modelcontextprotocol/sdk/server/mcp.js');
++    const sdkServer = new McpServer({ name: this.config.name, version: this.config.version });
++    if (typeof this.registerTools === 'function') {
++      await this.registerTools(sdkServer, {
++        db: this.db,
++        loop: this.loop,
++        intakeService: this.intakeService,
++      });
++    }
++    return sdkServer;
++  }
++}
++
++function createMcpServer(options = {}) {
++  return new AutoPlanMcpServer(options);
++}
++
++function normalizeMcpConfig(input = {}, env = process.env) {
++  const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
++  const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
++  return {
++    ...DEFAULT_MCP_CONFIG,
++    ...input,
++    enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
++    transport: normalizedTransport,
++    host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
++    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
++    path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
++    allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
++  };
++}
++
++function validateSafeHost(config) {
++  if (config.transport !== 'http') return;
++  if (isLocalHost(config.host) || config.allowRemote) return;
++  throw new Error('MCP HTTP 服务默认仅允许绑定 localhost/127.0.0.1；如需远程访问请显式设置 AUTOPLAN_MCP_ALLOW_REMOTE=1');
++}
++
++function stoppedState(config) {
++  return {
++    enabled: Boolean(config.enabled),
++    running: false,
++    transport: config.transport,
++    host: config.transport === 'http' ? config.host : null,
++    port: config.transport === 'http' ? config.port : null,
++    path: config.transport === 'http' ? config.path : null,
++    url: config.transport === 'http' ? `http://${config.host}:${config.port}${config.path}` : null,
++    localOnly: config.transport !== 'http' || isLocalHost(config.host),
++    startedAt: null,
++    lastError: null,
++  };
++}
++
++function isLocalHost(host) {
++  return LOCAL_HOSTS.has(String(host || '').toLowerCase());
++}
++
++function normalizePort(value, fallback) {
++  const port = Number(value || fallback);
++  if (!Number.isInteger(port) || port < 1 || port > 65535) return fallback;
++  return port;
++}
++
++function normalizeHttpPath(value) {
++  const trimmed = String(value || '').trim();
++  if (!trimmed || trimmed === '/') return DEFAULT_MCP_CONFIG.path;
++  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
++}
++
++function readJsonBody(request) {
++  return new Promise((resolve, reject) => {
++    const chunks = [];
++    request.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
++    request.on('end', () => {
++      const text = Buffer.concat(chunks).toString('utf8').trim();
++      if (!text) {
++        resolve(undefined);
++        return;
++      }
++      try {
++        resolve(JSON.parse(text));
++      } catch (error) {
++        reject(new Error(`MCP 请求 JSON 解析失败：${errorMessage(error)}`));
++      }
++    });
++    request.on('error', reject);
++  });
++}
++
++function writeJson(response, statusCode, body, headers = {}) {
++  if (response.headersSent) return;
++  response.writeHead(statusCode, {
++    'content-type': 'application/json; charset=utf-8',
++    ...headers,
++  });
++  response.end(JSON.stringify(body));
++}
++
++function errorMessage(error) {
++  return error?.message || String(error || '未知错误');
++}
++
++async function startStandalone() {
++  const args = new Set(process.argv.slice(2));
++  const transport = args.has('--stdio') ? 'stdio' : 'http';
++  const dataDir = process.env.AUTOPLAN_DATA_DIR || path.join(process.cwd(), '.autoplan-runtime', 'mcp');
++  const { AppDatabase } = require('./database');
++  const { createIntakeService } = require('./intakeService');
++  const { LoopService } = require('./loopService');
++  const db = new AppDatabase(path.join(dataDir, 'autoplan.sqlite'));
++  await db.init();
++  const loop = new LoopService(db);
++  const server = createMcpServer({
++    db,
++    loop,
++    intakeService: createIntakeService({
++      db,
++      loop,
++      attachmentsRoot: () => path.join(dataDir, 'attachments'),
++    }),
++    config: normalizeMcpConfig({ transport }),
++  });
++  const state = await server.start();
++  process.stderr.write(`AutoPlan MCP ${state.transport} server started${state.url ? ` at ${state.url}` : ''}\n`);
++  for (const signal of ['SIGINT', 'SIGTERM']) {
++    process.on(signal, async () => {
++      await server.stop().catch(() => undefined);
++      process.exit(0);
++    });
++  }
++}
++
++if (require.main === module) {
++  startStandalone().catch((error) => {
++    process.stderr.write(`AutoPlan MCP server failed: ${errorMessage(error)}\n`);
++    process.exitCode = 1;
++  });
++}
++
++module.exports = {
++  AutoPlanMcpServer,
++  DEFAULT_MCP_CONFIG,
++  createMcpServer,
++  normalizeMcpConfig,
++};
+
+已完成 P002；未修改 plan 文件，也未运行测试、构建、lint、smoke 或 MCP 启动命令。
+
+- 新增 `src/mcpServer.js:5`，提供 MCP server 基础设施，默认 `http`、`127.0.0.1:43847`、路径 `/mcp`，并限制默认仅本机绑定。
+- 在 `src/main.js:35` 接入主进程启动流程：数据库和 `LoopService` 初始化后异步启动 MCP，不阻塞主窗口。
+- 在 `src/main.js:56` 接入退出释放，应用退出时停止 MCP 服务。
+- 在 `src/main.js:303` 记录 MCP 启动失败到事件流和主进程日志，避免启动失败影响 GUI。
+- 更新 `package.json:16`、`package.json:17`，加入 `src/mcpServer.js` 静态检查入口和 `mcp:http` / `mcp:stdio` 脚本。
+- 更新 `package.json:96`，添加 `@modelcontextprotocol/sdk` 依赖；未运行 `npm install`，因此未更新 lock 文件。

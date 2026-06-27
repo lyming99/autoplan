@@ -11,18 +11,33 @@ export function useSnapshot(projectId: number | null) {
 
   useEffect(() => {
     let disposed = false;
+    let frameId = 0;
+    let queuedSnapshot: AppSnapshot | null = null;
     const showError = (e: unknown) => {
       const msg = e instanceof Error ? e.message : String(e);
       if (!disposed) setError(msg);
     };
-
-    const unsubscribe = window.autoplan.onLoopUpdate((next) => {
-      if (disposed) return;
+    const applySnapshot = (next: AppSnapshot) => {
       if (projectId === null || Number(next.activeProjectId) === Number(projectId)) {
         setSnapshot(next);
         return;
       }
       setSnapshot((current) => (current ? { ...current, projects: next.projects } : current));
+    };
+    const scheduleSnapshot = (next: AppSnapshot) => {
+      queuedSnapshot = next;
+      if (frameId) return;
+      frameId = window.requestAnimationFrame(() => {
+        frameId = 0;
+        const latest = queuedSnapshot;
+        queuedSnapshot = null;
+        if (!disposed && latest) applySnapshot(latest);
+      });
+    };
+
+    const unsubscribe = window.autoplan.onLoopUpdate((next) => {
+      if (disposed) return;
+      scheduleSnapshot(next);
     });
 
     window.autoplan
@@ -34,6 +49,7 @@ export function useSnapshot(projectId: number | null) {
 
     return () => {
       disposed = true;
+      if (frameId) window.cancelAnimationFrame(frameId);
       unsubscribe();
     };
   }, [projectId]);

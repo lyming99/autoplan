@@ -16,7 +16,7 @@ const CODEX_REASONING_EFFORT_COLUMNS = Object.freeze([
   'thinking_depth',
   'thinkingDepth',
 ]);
-const CODEX_REASONING_EFFORTS = new Set(['low', 'medium', 'high']);
+const CODEX_REASONING_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh']);
 const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
 const AGENT_CLI_PROVIDER_INPUT_KEYS = Object.freeze([
   'agentCliProvider',

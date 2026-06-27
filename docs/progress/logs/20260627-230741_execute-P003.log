@@ -1,0 +1,2168 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0993-4d92-7d32-987f-fe648a26fca3
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_37_20260627-225309.md
+指定任务：- [ ] P003: 修复 Markdown 任务列表渲染 <!-- scope: src/renderer/components/MarkdownReader.tsx -->
+任务 scope：src/renderer/components/markdownreader.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Modifying the MarkdownReader**
+
+I'm thinking about how to modify the MarkdownReader. Testing seems unnecessary, so I’ll focus on using the `apply_patch` command via shell. The developer mentioned using the `apply_patch` tool, but it looks like only shell is available. I wonder if I might be able to work around the lack of `rg` by using `Select-String` instead. I also need to inspect the file to see what’s going on.
+codex
+我会沿用前序结论，只在 `MarkdownReader.tsx` 修复任务行与 scope 注释渲染。
+  → 查看 MarkdownReader 当前实现
+  • 调整注释预处理逻辑
+  • 强化只读 checkbox
+  • 检查限定改动
+exec
+powershell.exe -Command '$i=0; Get-Content -LiteralPath '"'src\\renderer\\components\\MarkdownReader.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; '"'{0,4}: {1}' -f "'$i, $_ }' in D:\project\GitHub\autoplan
+ succeeded in 532ms:
+   1: import type { ComponentProps, ReactNode } from 'react';
+   2: import ReactMarkdown from 'react-markdown';
+   3: import remarkGfm from 'remark-gfm';
+   4: 
+   5: type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+   6: type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+   7: type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+   8: type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+   9: 
+  10: export type MarkdownReaderProps = {
+  11:   markdown?: string | null;
+  12:   className?: string;
+  13:   emptyMessage?: string;
+  14:   ariaLabel?: string;
+  15:   onOpenScopeFile?: (filePath: string) => void;
+  16: };
+  17: 
+  18: const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+  19: const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+  20: const scopeSplitPattern = /[,，、;；]+/;
+  21: const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+  22: 
+  23: function normalizeSafeUrl(url: string): string | undefined {
+  24:   const trimmedUrl = url.trim();
+  25: 
+  26:   if (!trimmedUrl || trimmedUrl.startsWith('//')) {
+  27:     return undefined;
+  28:   }
+  29: 
+  30:   if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedUrl)) {
+  31:     try {
+  32:       const parsedUrl = new URL(trimmedUrl);
+  33:       return allowedUrlProtocols.has(parsedUrl.protocol) ? trimmedUrl : undefined;
+  34:     } catch {
+  35:       return undefined;
+  36:     }
+  37:   }
+  38: 
+  39:   return trimmedUrl;
+  40: }
+  41: 
+  42: const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+  43: 
+  44: function toVisibleHtmlComment(comment: string) {
+  45:   if (!comment.includes('`')) return `\`${comment}\``;
+  46:   return `\`\` ${comment} \`\``;
+  47: }
+  48: 
+  49: function exposeHtmlComments(markdown: string) {
+  50:   let fence: { char: string; length: number } | null = null;
+  51: 
+  52:   return markdown
+  53:     .split('\n')
+  54:     .map((line) => {
+  55:       const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+  56: 
+  57:       if (fence) {
+  58:         if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+  59:           fence = null;
+  60:         }
+  61:         return line;
+  62:       }
+  63: 
+  64:       const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+  65: 
+  66:       if (fenceMatch) {
+  67:         fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+  68:       }
+  69: 
+  70:       return visibleLine;
+  71:     })
+  72:     .join('\n');
+  73: }
+  74: 
+  75: const markdownComponents: MarkdownComponents = {
+  76:   a({ node: _node, href, children, ...props }) {
+  77:     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+  78:     const isExternalLink = Boolean(safeHref && /^https?:\/\//i.test(safeHref));
+  79: 
+  80:     return (
+  81:       <a
+  82:         {...props}
+  83:         href={safeHref}
+  84:         target={isExternalLink ? '_blank' : undefined}
+  85:         rel={isExternalLink ? 'noreferrer noopener' : undefined}
+  86:       >
+  87:         {children}
+  88:       </a>
+  89:     );
+  90:   },
+  91:   input({ node: _node, type, checked, ...props }) {
+  92:     if (type !== 'checkbox') return <input {...props} type={type} />;
+  93: 
+  94:     return (
+  95:       <input
+  96:         {...props}
+  97:         type="checkbox"
+  98:         checked={Boolean(checked)}
+  99:         readOnly
+ 100:         disabled
+ 101:         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+ 102:       />
+ 103:     );
+ 104:   },
+ 105:   pre({ node: _node, ...props }) {
+ 106:     return <pre {...props} tabIndex={0} aria-label="可滚动代码块" />;
+ 107:   },
+ 108:   table({ node: _node, ...props }) {
+ 109:     return (
+ 110:       <div className="markdown-reader-table" role="region" aria-label="可横向滚动表格" tabIndex={0}>
+ 111:         <table {...props} />
+ 112:       </div>
+ 113:     );
+ 114:   },
+ 115: };
+ 116: 
+ 117: function normalizeScopeFilePath(value: string) {
+ 118:   return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+ 119: }
+ 120: 
+ 121: function childrenText(children: ReactNode) {
+ 122:   if (typeof children === 'string') return children;
+ 123:   if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+ 124:   return '';
+ 125: }
+ 126: 
+ 127: function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+ 128:   const parts: ReactNode[] = [];
+ 129:   const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+ 130:   let lastIndex = 0;
+ 131:   for (const match of text.matchAll(scopeCommentPattern)) {
+ 132:     if (match.index === undefined) continue;
+ 133:     if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+ 134:     const files = String(match[1] || '')
+ 135:       .split(scopeSplitPattern)
+ 136:       .map((item) => normalizeScopeFilePath(item))
+ 137:       .filter(Boolean);
+ 138:     parts.push(
+ 139:       <span className="markdown-scope-files" key={`scope-${match.index}`}>
+ 140:         <span className="markdown-scope-label">scope</span>
+ 141:         {files.length ? files.map((filePath) => {
+ 142:           const special = filePath === 'unknown' || filePath === 'validation';
+ 143:           return (
+ 144:             <button
+ 145:               type="button"
+ 146:               key={`${match.index}-${filePath}`}
+ 147:               className={`markdown-scope-link mono${special ? ' special' : ''}`}
+ 148:               disabled={special}
+ 149:               title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+ 150:               onClick={() => openScopeFile(filePath)}
+ 151:             >
+ 152:               {filePath}
+ 153:             </button>
+ 154:           );
+ 155:         }) : <span className="markdown-scope-link special mono">unknown</span>}
+ 156:       </span>,
+ 157:     );
+ 158:     lastIndex = match.index + match[0].length;
+ 159:   }
+ 160:   if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+ 161:   return parts.length ? parts : text;
+ 162: }
+ 163: 
+ 164: function readProjectIdFromLocation() {
+ 165:   const match = window.location.pathname.match(/\/projects\/(\d+)/);
+ 166:   return match ? Number(match[1]) : 0;
+ 167: }
+ 168: 
+ 169: function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+ 170:   try {
+ 171:     const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+ 172:     const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+ 173:       ? parsed.mode
+ 174:       : 'system';
+ 175:     return { mode, command: String(parsed?.command || '') };
+ 176:   } catch {
+ 177:     return { mode: 'system', command: '' };
+ 178:   }
+ 179: }
+ 180: 
+ 181: async function openScopeFileFromReader(filePath: string) {
+ 182:   const projectId = readProjectIdFromLocation();
+ 183:   const settings = readScopeFileSettings();
+ 184:   try {
+ 185:     const result = await (window.autoplan as typeof window.autoplan & {
+ 186:       openWorkspaceFile?: (input: {
+ 187:         projectId: number;
+ 188:         filePath: string;
+ 189:         mode: ScopeFileOpenMode;
+ 190:         command?: string;
+ 191:       }) => Promise<{ ok: boolean; error: string | null }>;
+ 192:     }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+ 193:     if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+ 194:   } catch (error) {
+ 195:     window.alert(error instanceof Error ? error.message : String(error));
+ 196:   }
+ 197: }
+ 198: 
+ 199: function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+ 200:   return {
+ 201:     ...markdownComponents,
+ 202:     p({ node: _node, children, ...props }) {
+ 203:       const text = childrenText(children);
+ 204:       const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+ 205:       return <p {...props}>{nextChildren}</p>;
+ 206:     },
+ 207:     li({ node: _node, children, ...props }) {
+ 208:       const text = childrenText(children);
+ 209:       const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+ 210:       return <li {...props}>{nextChildren}</li>;
+ 211:     },
+ 212:     code({ node: _node, children, ...props }) {
+ 213:       const text = childrenText(children);
+ 214:       if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+ 215:         return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+ 216:       }
+ 217:       return <code {...props}>{children}</code>;
+ 218:     },
+ 219:   };
+ 220: }
+ 221: 
+ 222: export function MarkdownReader({
+ 223:   markdown,
+ 224:   className,
+ 225:   emptyMessage = '暂无计划正文',
+ 226:   ariaLabel = 'Markdown 正文',
+ 227:   onOpenScopeFile,
+ 228: }: MarkdownReaderProps) {
+ 229:   const content = markdown ?? '';
+ 230:   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+ 231: 
+ 232:   if (!content.trim()) {
+ 233:     return (
+ 234:       <div className={`${classes} markdown-reader-empty`} role="status" aria-live="polite">
+ 235:         {emptyMessage}
+ 236:       </div>
+ 237:     );
+ 238:   }
+ 239: 
+ 240:   return (
+ 241:     <div className={classes} role="region" aria-label={ariaLabel}>
+ 242:       <ReactMarkdown
+ 243:         components={createMarkdownComponents(onOpenScopeFile)}
+ 244:         remarkPlugins={[remarkGfm]}
+ 245:         urlTransform={safeUrlTransform}
+ 246:       >
+ 247:         {exposeHtmlComments(content)}
+ 248:       </ReactMarkdown>
+ 249:     </div>
+ 250:   );
+ 251: }
+ 252: 
+ 253: export default MarkdownReader;
+
+codex
+核心冲突是预处理把注释变可见 code；我会让 HTML 注释保持原生隐藏语义。
+exec
+powershell.exe -Command "Select-String -Path 'src\\renderer\\**\\*.tsx' -Pattern 'onOpenScopeFile|MarkdownReader' | ForEach-Object { '{0}:{1}:{2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 548ms:
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:10:export type MarkdownReaderProps = {
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:15:onOpenScopeFile?: (filePath: string) => void;
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:127:function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:129:const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:199:function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:204:const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:209:const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:215:return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:222:export function MarkdownReader({
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:227:onOpenScopeFile,
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:228:}: MarkdownReaderProps) {
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:243:components={createMarkdownComponents(onOpenScopeFile)}
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx:253:export default MarkdownReader;
+
+codex
+接下来删除 scope chip 预处理链路，使用 `skipHtml` 隐藏正文注释并保持代码块原文。
+  ✓ 查看 MarkdownReader 当前实现
+  → 调整注释预处理逻辑
+  • 强化只读 checkbox
+  • 检查限定改动
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\MarkdownReader.tsx
+diff --git a/src/renderer/components/MarkdownReader.tsx b/src/renderer/components/MarkdownReader.tsx
+index 07d4ad6f4a8ebbde1c7f80b1351396880f1d590f..b10a0220ead5258e7b6f21f12b9202bea058ab88
+--- a/src/renderer/components/MarkdownReader.tsx
++++ b/src/renderer/components/MarkdownReader.tsx
+@@ -1,11 +1,10 @@
+-import type { ComponentProps, ReactNode } from 'react';
++import type { ComponentProps } from 'react';
+ import ReactMarkdown from 'react-markdown';
+ import remarkGfm from 'remark-gfm';
+ 
+ type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+ type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+ type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ export type MarkdownReaderProps = {
+   markdown?: string | null;
+@@ -16,9 +15,6 @@
+ };
+ 
+ const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+-const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+-const scopeSplitPattern = /[,，、;；]+/;
+-const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+ 
+ function normalizeSafeUrl(url: string): string | undefined {
+   const trimmedUrl = url.trim();
+@@ -40,38 +36,7 @@
+ }
+ 
+ const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+-
+-function toVisibleHtmlComment(comment: string) {
+-  if (!comment.includes('`')) return `\`${comment}\``;
+-  return `\`\` ${comment} \`\``;
+-}
+-
+-function exposeHtmlComments(markdown: string) {
+-  let fence: { char: string; length: number } | null = null;
+-
+-  return markdown
+-    .split('\n')
+-    .map((line) => {
+-      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+ 
+-      if (fence) {
+-        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+-          fence = null;
+-        }
+-        return line;
+-      }
+-
+-      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+-
+-      if (fenceMatch) {
+-        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+-      }
+-
+-      return visibleLine;
+-    })
+-    .join('\n');
+-}
+-
+ const markdownComponents: MarkdownComponents = {
+   a({ node: _node, href, children, ...props }) {
+     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+@@ -98,6 +63,7 @@
+         checked={Boolean(checked)}
+         readOnly
+         disabled
++        tabIndex={-1}
+         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+       />
+     );
+@@ -114,117 +80,11 @@
+   },
+ };
+ 
+-function normalizeScopeFilePath(value: string) {
+-  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+-}
+-
+-function childrenText(children: ReactNode) {
+-  if (typeof children === 'string') return children;
+-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+-  return '';
+-}
+-
+-function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+-  const parts: ReactNode[] = [];
+-  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+-  let lastIndex = 0;
+-  for (const match of text.matchAll(scopeCommentPattern)) {
+-    if (match.index === undefined) continue;
+-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+-    const files = String(match[1] || '')
+-      .split(scopeSplitPattern)
+-      .map((item) => normalizeScopeFilePath(item))
+-      .filter(Boolean);
+-    parts.push(
+-      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+-        <span className="markdown-scope-label">scope</span>
+-        {files.length ? files.map((filePath) => {
+-          const special = filePath === 'unknown' || filePath === 'validation';
+-          return (
+-            <button
+-              type="button"
+-              key={`${match.index}-${filePath}`}
+-              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+-              disabled={special}
+-              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+-              onClick={() => openScopeFile(filePath)}
+-            >
+-              {filePath}
+-            </button>
+-          );
+-        }) : <span className="markdown-scope-link special mono">unknown</span>}
+-      </span>,
+-    );
+-    lastIndex = match.index + match[0].length;
+-  }
+-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+-  return parts.length ? parts : text;
+-}
+-
+-function readProjectIdFromLocation() {
+-  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+-  return match ? Number(match[1]) : 0;
+-}
+-
+-function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+-  try {
+-    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+-    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+-      ? parsed.mode
+-      : 'system';
+-    return { mode, command: String(parsed?.command || '') };
+-  } catch {
+-    return { mode: 'system', command: '' };
+-  }
+-}
+-
+-async function openScopeFileFromReader(filePath: string) {
+-  const projectId = readProjectIdFromLocation();
+-  const settings = readScopeFileSettings();
+-  try {
+-    const result = await (window.autoplan as typeof window.autoplan & {
+-      openWorkspaceFile?: (input: {
+-        projectId: number;
+-        filePath: string;
+-        mode: ScopeFileOpenMode;
+-        command?: string;
+-      }) => Promise<{ ok: boolean; error: string | null }>;
+-    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+-    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+-  } catch (error) {
+-    window.alert(error instanceof Error ? error.message : String(error));
+-  }
+-}
+-
+-function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+-  return {
+-    ...markdownComponents,
+-    p({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <p {...props}>{nextChildren}</p>;
+-    },
+-    li({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <li {...props}>{nextChildren}</li>;
+-    },
+-    code({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+-        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+-      }
+-      return <code {...props}>{children}</code>;
+-    },
+-  };
+-}
+-
+ export function MarkdownReader({
+   markdown,
+   className,
+   emptyMessage = '暂无计划正文',
+   ariaLabel = 'Markdown 正文',
+-  onOpenScopeFile,
+ }: MarkdownReaderProps) {
+   const content = markdown ?? '';
+   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+@@ -240,11 +100,12 @@
+   return (
+     <div className={classes} role="region" aria-label={ariaLabel}>
+       <ReactMarkdown
+-        components={createMarkdownComponents(onOpenScopeFile)}
++        components={markdownComponents}
+         remarkPlugins={[remarkGfm]}
++        skipHtml
+         urlTransform={safeUrlTransform}
+       >
+-        {exposeHtmlComments(content)}
++        {content}
+       </ReactMarkdown>
+     </div>
+   );
+
+diff --git a/src/renderer/components/MarkdownReader.tsx b/src/renderer/components/MarkdownReader.tsx
+index 07d4ad6f4a8ebbde1c7f80b1351396880f1d590f..b10a0220ead5258e7b6f21f12b9202bea058ab88
+--- a/src/renderer/components/MarkdownReader.tsx
++++ b/src/renderer/components/MarkdownReader.tsx
+@@ -1,11 +1,10 @@
+-import type { ComponentProps, ReactNode } from 'react';
++import type { ComponentProps } from 'react';
+ import ReactMarkdown from 'react-markdown';
+ import remarkGfm from 'remark-gfm';
+ 
+ type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+ type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+ type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ export type MarkdownReaderProps = {
+   markdown?: string | null;
+@@ -16,9 +15,6 @@
+ };
+ 
+ const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+-const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+-const scopeSplitPattern = /[,，、;；]+/;
+-const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+ 
+ function normalizeSafeUrl(url: string): string | undefined {
+   const trimmedUrl = url.trim();
+@@ -40,38 +36,7 @@
+ }
+ 
+ const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+-
+-function toVisibleHtmlComment(comment: string) {
+-  if (!comment.includes('`')) return `\`${comment}\``;
+-  return `\`\` ${comment} \`\``;
+-}
+-
+-function exposeHtmlComments(markdown: string) {
+-  let fence: { char: string; length: number } | null = null;
+-
+-  return markdown
+-    .split('\n')
+-    .map((line) => {
+-      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+ 
+-      if (fence) {
+-        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+-          fence = null;
+-        }
+-        return line;
+-      }
+-
+-      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+-
+-      if (fenceMatch) {
+-        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+-      }
+-
+-      return visibleLine;
+-    })
+-    .join('\n');
+-}
+-
+ const markdownComponents: MarkdownComponents = {
+   a({ node: _node, href, children, ...props }) {
+     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+@@ -98,6 +63,7 @@
+         checked={Boolean(checked)}
+         readOnly
+         disabled
++        tabIndex={-1}
+         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+       />
+     );
+@@ -114,117 +80,11 @@
+   },
+ };
+ 
+-function normalizeScopeFilePath(value: string) {
+-  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+-}
+-
+-function childrenText(children: ReactNode) {
+-  if (typeof children === 'string') return children;
+-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+-  return '';
+-}
+-
+-function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+-  const parts: ReactNode[] = [];
+-  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+-  let lastIndex = 0;
+-  for (const match of text.matchAll(scopeCommentPattern)) {
+-    if (match.index === undefined) continue;
+-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+-    const files = String(match[1] || '')
+-      .split(scopeSplitPattern)
+-      .map((item) => normalizeScopeFilePath(item))
+-      .filter(Boolean);
+-    parts.push(
+-      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+-        <span className="markdown-scope-label">scope</span>
+-        {files.length ? files.map((filePath) => {
+-          const special = filePath === 'unknown' || filePath === 'validation';
+-          return (
+-            <button
+-              type="button"
+-              key={`${match.index}-${filePath}`}
+-              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+-              disabled={special}
+-              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+-              onClick={() => openScopeFile(filePath)}
+-            >
+-              {filePath}
+-            </button>
+-          );
+-        }) : <span className="markdown-scope-link special mono">unknown</span>}
+-      </span>,
+-    );
+-    lastIndex = match.index + match[0].length;
+-  }
+-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+-  return parts.length ? parts : text;
+-}
+-
+-function readProjectIdFromLocation() {
+-  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+-  return match ? Number(match[1]) : 0;
+-}
+-
+-function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+-  try {
+-    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+-    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+-      ? parsed.mode
+-      : 'system';
+-    return { mode, command: String(parsed?.command || '') };
+-  } catch {
+-    return { mode: 'system', command: '' };
+-  }
+-}
+-
+-async function openScopeFileFromReader(filePath: string) {
+-  const projectId = readProjectIdFromLocation();
+-  const settings = readScopeFileSettings();
+-  try {
+-    const result = await (window.autoplan as typeof window.autoplan & {
+-      openWorkspaceFile?: (input: {
+-        projectId: number;
+-        filePath: string;
+-        mode: ScopeFileOpenMode;
+-        command?: string;
+-      }) => Promise<{ ok: boolean; error: string | null }>;
+-    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+-    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+-  } catch (error) {
+-    window.alert(error instanceof Error ? error.message : String(error));
+-  }
+-}
+-
+-function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+-  return {
+-    ...markdownComponents,
+-    p({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <p {...props}>{nextChildren}</p>;
+-    },
+-    li({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <li {...props}>{nextChildren}</li>;
+-    },
+-    code({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+-        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+-      }
+-      return <code {...props}>{children}</code>;
+-    },
+-  };
+-}
+-
+ export function MarkdownReader({
+   markdown,
+   className,
+   emptyMessage = '暂无计划正文',
+   ariaLabel = 'Markdown 正文',
+-  onOpenScopeFile,
+ }: MarkdownReaderProps) {
+   const content = markdown ?? '';
+   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+@@ -240,11 +100,12 @@
+   return (
+     <div className={classes} role="region" aria-label={ariaLabel}>
+       <ReactMarkdown
+-        components={createMarkdownComponents(onOpenScopeFile)}
++        components={markdownComponents}
+         remarkPlugins={[remarkGfm]}
++        skipHtml
+         urlTransform={safeUrlTransform}
+       >
+-        {exposeHtmlComments(content)}
++        {content}
+       </ReactMarkdown>
+     </div>
+   );
+
+**Checking file properties**
+
+I need to check the file since there are no tests. There might be a potential issue with the `onOpenScopeFile` property being unused, but what about the `noUnusedParameters`? The destructuring looks fine, so it might be okay. I also need to consider whether to skip the `skipHtml` prop type. I might need to search for removed names too. Also, should I check if the openScopeFile styles are orphaned in the CSS later? I think it’s not in scope.
+codex
+代码已改为原生 Markdown 解析路径；现在检查是否有残留预处理符号。
+  ✓ 查看 MarkdownReader 当前实现
+  ✓ 调整注释预处理逻辑
+  → 强化只读 checkbox
+  • 检查限定改动
+diff --git a/src/renderer/components/MarkdownReader.tsx b/src/renderer/components/MarkdownReader.tsx
+index 07d4ad6f4a8ebbde1c7f80b1351396880f1d590f..b10a0220ead5258e7b6f21f12b9202bea058ab88
+--- a/src/renderer/components/MarkdownReader.tsx
++++ b/src/renderer/components/MarkdownReader.tsx
+@@ -1,11 +1,10 @@
+-import type { ComponentProps, ReactNode } from 'react';
++import type { ComponentProps } from 'react';
+ import ReactMarkdown from 'react-markdown';
+ import remarkGfm from 'remark-gfm';
+ 
+ type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+ type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+ type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ export type MarkdownReaderProps = {
+   markdown?: string | null;
+@@ -16,9 +15,6 @@
+ };
+ 
+ const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+-const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+-const scopeSplitPattern = /[,，、;；]+/;
+-const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+ 
+ function normalizeSafeUrl(url: string): string | undefined {
+   const trimmedUrl = url.trim();
+@@ -40,38 +36,7 @@
+ }
+ 
+ const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+-
+-function toVisibleHtmlComment(comment: string) {
+-  if (!comment.includes('`')) return `\`${comment}\``;
+-  return `\`\` ${comment} \`\``;
+-}
+-
+-function exposeHtmlComments(markdown: string) {
+-  let fence: { char: string; length: number } | null = null;
+-
+-  return markdown
+-    .split('\n')
+-    .map((line) => {
+-      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+ 
+-      if (fence) {
+-        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+-          fence = null;
+-        }
+-        return line;
+-      }
+-
+-      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+-
+-      if (fenceMatch) {
+-        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+-      }
+-
+-      return visibleLine;
+-    })
+-    .join('\n');
+-}
+-
+ const markdownComponents: MarkdownComponents = {
+   a({ node: _node, href, children, ...props }) {
+     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+@@ -98,6 +63,7 @@
+         checked={Boolean(checked)}
+         readOnly
+         disabled
++        tabIndex={-1}
+         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+       />
+     );
+@@ -114,117 +80,11 @@
+   },
+ };
+ 
+-function normalizeScopeFilePath(value: string) {
+-  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+-}
+-
+-function childrenText(children: ReactNode) {
+-  if (typeof children === 'string') return children;
+-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+-  return '';
+-}
+-
+-function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+-  const parts: ReactNode[] = [];
+-  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+-  let lastIndex = 0;
+-  for (const match of text.matchAll(scopeCommentPattern)) {
+-    if (match.index === undefined) continue;
+-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+-    const files = String(match[1] || '')
+-      .split(scopeSplitPattern)
+-      .map((item) => normalizeScopeFilePath(item))
+-      .filter(Boolean);
+-    parts.push(
+-      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+-        <span className="markdown-scope-label">scope</span>
+-        {files.length ? files.map((filePath) => {
+-          const special = filePath === 'unknown' || filePath === 'validation';
+-          return (
+-            <button
+-              type="button"
+-              key={`${match.index}-${filePath}`}
+-              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+-              disabled={special}
+-              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+-              onClick={() => openScopeFile(filePath)}
+-            >
+-              {filePath}
+-            </button>
+-          );
+-        }) : <span className="markdown-scope-link special mono">unknown</span>}
+-      </span>,
+-    );
+-    lastIndex = match.index + match[0].length;
+-  }
+-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+-  return parts.length ? parts : text;
+-}
+-
+-function readProjectIdFromLocation() {
+-  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+-  return match ? Number(match[1]) : 0;
+-}
+-
+-function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+-  try {
+-    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+-    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+-      ? parsed.mode
+-      : 'system';
+-    return { mode, command: String(parsed?.command || '') };
+-  } catch {
+-    return { mode: 'system', command: '' };
+-  }
+-}
+-
+-async function openScopeFileFromReader(filePath: string) {
+-  const projectId = readProjectIdFromLocation();
+-  const settings = readScopeFileSettings();
+-  try {
+-    const result = await (window.autoplan as typeof window.autoplan & {
+-      openWorkspaceFile?: (input: {
+-        projectId: number;
+-        filePath: string;
+-        mode: ScopeFileOpenMode;
+-        command?: string;
+-      }) => Promise<{ ok: boolean; error: string | null }>;
+-    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+-    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+-  } catch (error) {
+-    window.alert(error instanceof Error ? error.message : String(error));
+-  }
+-}
+-
+-function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+-  return {
+-    ...markdownComponents,
+-    p({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <p {...props}>{nextChildren}</p>;
+-    },
+-    li({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <li {...props}>{nextChildren}</li>;
+-    },
+-    code({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+-        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+-      }
+-      return <code {...props}>{children}</code>;
+-    },
+-  };
+-}
+-
+ export function MarkdownReader({
+   markdown,
+   className,
+   emptyMessage = '暂无计划正文',
+   ariaLabel = 'Markdown 正文',
+-  onOpenScopeFile,
+ }: MarkdownReaderProps) {
+   const content = markdown ?? '';
+   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+@@ -240,11 +100,12 @@
+   return (
+     <div className={classes} role="region" aria-label={ariaLabel}>
+       <ReactMarkdown
+-        components={createMarkdownComponents(onOpenScopeFile)}
++        components={markdownComponents}
+         remarkPlugins={[remarkGfm]}
++        skipHtml
+         urlTransform={safeUrlTransform}
+       >
+-        {exposeHtmlComments(content)}
++        {content}
+       </ReactMarkdown>
+     </div>
+   );
+
+exec
+powershell.exe -Command "Select-String -LiteralPath 'src\\renderer\\components\\MarkdownReader.tsx' -Pattern 'exposeHtmlComments','toVisibleHtmlComment','scopeCommentPattern','renderScopeCommentParts','openScopeFileFromReader','createMarkdownComponents','childrenText','ScopeFileOpenMode' | ForEach-Object { '{0}:{1}' -f "'$_.LineNumber,$_.Line.Trim() }; $i=0; Get-Content -LiteralPath '"'src\\renderer\\components\\MarkdownReader.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if ($i -le 130) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 915ms:
+   1: import type { ComponentProps } from 'react';
+   2: import ReactMarkdown from 'react-markdown';
+   3: import remarkGfm from 'remark-gfm';
+   4: 
+   5: type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+   6: type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+   7: type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+   8: 
+   9: export type MarkdownReaderProps = {
+  10:   markdown?: string | null;
+  11:   className?: string;
+  12:   emptyMessage?: string;
+  13:   ariaLabel?: string;
+  14:   onOpenScopeFile?: (filePath: string) => void;
+  15: };
+  16: 
+  17: const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+  18: 
+  19: function normalizeSafeUrl(url: string): string | undefined {
+  20:   const trimmedUrl = url.trim();
+  21: 
+  22:   if (!trimmedUrl || trimmedUrl.startsWith('//')) {
+  23:     return undefined;
+  24:   }
+  25: 
+  26:   if (/^[a-zA-Z][a-zA-Z\d+.-]*:/.test(trimmedUrl)) {
+  27:     try {
+  28:       const parsedUrl = new URL(trimmedUrl);
+  29:       return allowedUrlProtocols.has(parsedUrl.protocol) ? trimmedUrl : undefined;
+  30:     } catch {
+  31:       return undefined;
+  32:     }
+  33:   }
+  34: 
+  35:   return trimmedUrl;
+  36: }
+  37: 
+  38: const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+  39: 
+  40: const markdownComponents: MarkdownComponents = {
+  41:   a({ node: _node, href, children, ...props }) {
+  42:     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+  43:     const isExternalLink = Boolean(safeHref && /^https?:\/\//i.test(safeHref));
+  44: 
+  45:     return (
+  46:       <a
+  47:         {...props}
+  48:         href={safeHref}
+  49:         target={isExternalLink ? '_blank' : undefined}
+  50:         rel={isExternalLink ? 'noreferrer noopener' : undefined}
+  51:       >
+  52:         {children}
+  53:       </a>
+  54:     );
+  55:   },
+  56:   input({ node: _node, type, checked, ...props }) {
+  57:     if (type !== 'checkbox') return <input {...props} type={type} />;
+  58: 
+  59:     return (
+  60:       <input
+  61:         {...props}
+  62:         type="checkbox"
+  63:         checked={Boolean(checked)}
+  64:         readOnly
+  65:         disabled
+  66:         tabIndex={-1}
+  67:         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+  68:       />
+  69:     );
+  70:   },
+  71:   pre({ node: _node, ...props }) {
+  72:     return <pre {...props} tabIndex={0} aria-label="可滚动代码块" />;
+  73:   },
+  74:   table({ node: _node, ...props }) {
+  75:     return (
+  76:       <div className="markdown-reader-table" role="region" aria-label="可横向滚动表格" tabIndex={0}>
+  77:         <table {...props} />
+  78:       </div>
+  79:     );
+  80:   },
+  81: };
+  82: 
+  83: export function MarkdownReader({
+  84:   markdown,
+  85:   className,
+  86:   emptyMessage = '暂无计划正文',
+  87:   ariaLabel = 'Markdown 正文',
+  88: }: MarkdownReaderProps) {
+  89:   const content = markdown ?? '';
+  90:   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+  91: 
+  92:   if (!content.trim()) {
+  93:     return (
+  94:       <div className={`${classes} markdown-reader-empty`} role="status" aria-live="polite">
+  95:         {emptyMessage}
+  96:       </div>
+  97:     );
+  98:   }
+  99: 
+ 100:   return (
+ 101:     <div className={classes} role="region" aria-label={ariaLabel}>
+ 102:       <ReactMarkdown
+ 103:         components={markdownComponents}
+ 104:         remarkPlugins={[remarkGfm]}
+ 105:         skipHtml
+ 106:         urlTransform={safeUrlTransform}
+ 107:       >
+ 108:         {content}
+ 109:       </ReactMarkdown>
+ 110:     </div>
+ 111:   );
+ 112: }
+ 113: 
+ 114: export default MarkdownReader;
+
+diff --git a/src/renderer/components/MarkdownReader.tsx b/src/renderer/components/MarkdownReader.tsx
+index 07d4ad6f4a8ebbde1c7f80b1351396880f1d590f..b10a0220ead5258e7b6f21f12b9202bea058ab88
+--- a/src/renderer/components/MarkdownReader.tsx
++++ b/src/renderer/components/MarkdownReader.tsx
+@@ -1,11 +1,10 @@
+-import type { ComponentProps, ReactNode } from 'react';
++import type { ComponentProps } from 'react';
+ import ReactMarkdown from 'react-markdown';
+ import remarkGfm from 'remark-gfm';
+ 
+ type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+ type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+ type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ export type MarkdownReaderProps = {
+   markdown?: string | null;
+@@ -16,9 +15,6 @@
+ };
+ 
+ const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+-const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+-const scopeSplitPattern = /[,，、;；]+/;
+-const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+ 
+ function normalizeSafeUrl(url: string): string | undefined {
+   const trimmedUrl = url.trim();
+@@ -40,38 +36,7 @@
+ }
+ 
+ const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+-
+-function toVisibleHtmlComment(comment: string) {
+-  if (!comment.includes('`')) return `\`${comment}\``;
+-  return `\`\` ${comment} \`\``;
+-}
+-
+-function exposeHtmlComments(markdown: string) {
+-  let fence: { char: string; length: number } | null = null;
+-
+-  return markdown
+-    .split('\n')
+-    .map((line) => {
+-      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+ 
+-      if (fence) {
+-        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+-          fence = null;
+-        }
+-        return line;
+-      }
+-
+-      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+-
+-      if (fenceMatch) {
+-        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+-      }
+-
+-      return visibleLine;
+-    })
+-    .join('\n');
+-}
+-
+ const markdownComponents: MarkdownComponents = {
+   a({ node: _node, href, children, ...props }) {
+     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+@@ -98,6 +63,7 @@
+         checked={Boolean(checked)}
+         readOnly
+         disabled
++        tabIndex={-1}
+         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+       />
+     );
+@@ -114,117 +80,11 @@
+   },
+ };
+ 
+-function normalizeScopeFilePath(value: string) {
+-  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+-}
+-
+-function childrenText(children: ReactNode) {
+-  if (typeof children === 'string') return children;
+-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+-  return '';
+-}
+-
+-function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+-  const parts: ReactNode[] = [];
+-  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+-  let lastIndex = 0;
+-  for (const match of text.matchAll(scopeCommentPattern)) {
+-    if (match.index === undefined) continue;
+-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+-    const files = String(match[1] || '')
+-      .split(scopeSplitPattern)
+-      .map((item) => normalizeScopeFilePath(item))
+-      .filter(Boolean);
+-    parts.push(
+-      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+-        <span className="markdown-scope-label">scope</span>
+-        {files.length ? files.map((filePath) => {
+-          const special = filePath === 'unknown' || filePath === 'validation';
+-          return (
+-            <button
+-              type="button"
+-              key={`${match.index}-${filePath}`}
+-              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+-              disabled={special}
+-              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+-              onClick={() => openScopeFile(filePath)}
+-            >
+-              {filePath}
+-            </button>
+-          );
+-        }) : <span className="markdown-scope-link special mono">unknown</span>}
+-      </span>,
+-    );
+-    lastIndex = match.index + match[0].length;
+-  }
+-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+-  return parts.length ? parts : text;
+-}
+-
+-function readProjectIdFromLocation() {
+-  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+-  return match ? Number(match[1]) : 0;
+-}
+-
+-function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+-  try {
+-    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+-    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+-      ? parsed.mode
+-      : 'system';
+-    return { mode, command: String(parsed?.command || '') };
+-  } catch {
+-    return { mode: 'system', command: '' };
+-  }
+-}
+-
+-async function openScopeFileFromReader(filePath: string) {
+-  const projectId = readProjectIdFromLocation();
+-  const settings = readScopeFileSettings();
+-  try {
+-    const result = await (window.autoplan as typeof window.autoplan & {
+-      openWorkspaceFile?: (input: {
+-        projectId: number;
+-        filePath: string;
+-        mode: ScopeFileOpenMode;
+-        command?: string;
+-      }) => Promise<{ ok: boolean; error: string | null }>;
+-    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+-    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+-  } catch (error) {
+-    window.alert(error instanceof Error ? error.message : String(error));
+-  }
+-}
+-
+-function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+-  return {
+-    ...markdownComponents,
+-    p({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <p {...props}>{nextChildren}</p>;
+-    },
+-    li({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <li {...props}>{nextChildren}</li>;
+-    },
+-    code({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+-        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+-      }
+-      return <code {...props}>{children}</code>;
+-    },
+-  };
+-}
+-
+ export function MarkdownReader({
+   markdown,
+   className,
+   emptyMessage = '暂无计划正文',
+   ariaLabel = 'Markdown 正文',
+-  onOpenScopeFile,
+ }: MarkdownReaderProps) {
+   const content = markdown ?? '';
+   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+@@ -240,11 +100,12 @@
+   return (
+     <div className={classes} role="region" aria-label={ariaLabel}>
+       <ReactMarkdown
+-        components={createMarkdownComponents(onOpenScopeFile)}
++        components={markdownComponents}
+         remarkPlugins={[remarkGfm]}
++        skipHtml
+         urlTransform={safeUrlTransform}
+       >
+-        {exposeHtmlComments(content)}
++        {content}
+       </ReactMarkdown>
+     </div>
+   );
+
+**Evaluating HTML handling**
+
+I'm concerned about the types in onOpenScopeFile being unused, but it seems P003 mentions that it won't affect links. Maybe removing scope clickable is fine since it’s explicitly hidden. There's a potential TypeScript error with the input checked prop that might need to be a string. I wonder about skipHtml removing all HTML instead of just comments. It looks like the task suggests preserving normal markdown, yet raw HTML isn't really listed, so I need to think carefully here.
+**Deciding on HTML comment handling**
+
+I’m considering that hiding comments while keeping other raw HTML behavior as defaults in ReactMarkdown might work, but the task specifies that HTML comments fall within scope. I wonder if removing skipHtml and instead using a function like stripHtmlComments could be better. This approach would only remove comments outside fenced code blocks, ensuring the code remains unaffected. For tasks with comments after list lines, those should be stripped too. This way, I wouldn't compromise the integrity of inline code while having clearer handling for comments.
+**Considering HTML comments and Markdown**
+
+I'm exploring whether stripping scope comments outside of code blocks is acceptable. The requirement is to hide these scope comments but leave code blocks like `- [ ]` unaffected. I wonder if we should remove skipHtml because if the default with comments stripped works without issues, that might be okay. However, raw HTML might still remain, which could display differently. I also must consider that skipHtml could hide HTML tables, even though remark-gfm supports those. This is a tricky balance!
+codex
+残留符号清理完成；最后确认当前任务文件处于已修改状态，不触碰其它 scope。 
+
+  ✓ 查看 MarkdownReader 当前实现
+  ✓ 调整注释预处理逻辑
+  ✓ 强化只读 checkbox
+  → 检查限定改动
+diff --git a/src/renderer/components/MarkdownReader.tsx b/src/renderer/components/MarkdownReader.tsx
+index 07d4ad6f4a8ebbde1c7f80b1351396880f1d590f..b10a0220ead5258e7b6f21f12b9202bea058ab88
+--- a/src/renderer/components/MarkdownReader.tsx
++++ b/src/renderer/components/MarkdownReader.tsx
+@@ -1,11 +1,10 @@
+-import type { ComponentProps, ReactNode } from 'react';
++import type { ComponentProps } from 'react';
+ import ReactMarkdown from 'react-markdown';
+ import remarkGfm from 'remark-gfm';
+ 
+ type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+ type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+ type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ export type MarkdownReaderProps = {
+   markdown?: string | null;
+@@ -16,9 +15,6 @@
+ };
+ 
+ const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+-const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+-const scopeSplitPattern = /[,，、;；]+/;
+-const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+ 
+ function normalizeSafeUrl(url: string): string | undefined {
+   const trimmedUrl = url.trim();
+@@ -40,38 +36,7 @@
+ }
+ 
+ const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+-
+-function toVisibleHtmlComment(comment: string) {
+-  if (!comment.includes('`')) return `\`${comment}\``;
+-  return `\`\` ${comment} \`\``;
+-}
+-
+-function exposeHtmlComments(markdown: string) {
+-  let fence: { char: string; length: number } | null = null;
+-
+-  return markdown
+-    .split('\n')
+-    .map((line) => {
+-      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+ 
+-      if (fence) {
+-        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+-          fence = null;
+-        }
+-        return line;
+-      }
+-
+-      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+-
+-      if (fenceMatch) {
+-        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+-      }
+-
+-      return visibleLine;
+-    })
+-    .join('\n');
+-}
+-
+ const markdownComponents: MarkdownComponents = {
+   a({ node: _node, href, children, ...props }) {
+     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+@@ -98,6 +63,7 @@
+         checked={Boolean(checked)}
+         readOnly
+         disabled
++        tabIndex={-1}
+         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+       />
+     );
+@@ -114,117 +80,11 @@
+   },
+ };
+ 
+-function normalizeScopeFilePath(value: string) {
+-  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+-}
+-
+-function childrenText(children: ReactNode) {
+-  if (typeof children === 'string') return children;
+-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+-  return '';
+-}
+-
+-function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+-  const parts: ReactNode[] = [];
+-  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+-  let lastIndex = 0;
+-  for (const match of text.matchAll(scopeCommentPattern)) {
+-    if (match.index === undefined) continue;
+-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+-    const files = String(match[1] || '')
+-      .split(scopeSplitPattern)
+-      .map((item) => normalizeScopeFilePath(item))
+-      .filter(Boolean);
+-    parts.push(
+-      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+-        <span className="markdown-scope-label">scope</span>
+-        {files.length ? files.map((filePath) => {
+-          const special = filePath === 'unknown' || filePath === 'validation';
+-          return (
+-            <button
+-              type="button"
+-              key={`${match.index}-${filePath}`}
+-              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+-              disabled={special}
+-              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+-              onClick={() => openScopeFile(filePath)}
+-            >
+-              {filePath}
+-            </button>
+-          );
+-        }) : <span className="markdown-scope-link special mono">unknown</span>}
+-      </span>,
+-    );
+-    lastIndex = match.index + match[0].length;
+-  }
+-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+-  return parts.length ? parts : text;
+-}
+-
+-function readProjectIdFromLocation() {
+-  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+-  return match ? Number(match[1]) : 0;
+-}
+-
+-function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+-  try {
+-    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+-    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+-      ? parsed.mode
+-      : 'system';
+-    return { mode, command: String(parsed?.command || '') };
+-  } catch {
+-    return { mode: 'system', command: '' };
+-  }
+-}
+-
+-async function openScopeFileFromReader(filePath: string) {
+-  const projectId = readProjectIdFromLocation();
+-  const settings = readScopeFileSettings();
+-  try {
+-    const result = await (window.autoplan as typeof window.autoplan & {
+-      openWorkspaceFile?: (input: {
+-        projectId: number;
+-        filePath: string;
+-        mode: ScopeFileOpenMode;
+-        command?: string;
+-      }) => Promise<{ ok: boolean; error: string | null }>;
+-    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+-    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+-  } catch (error) {
+-    window.alert(error instanceof Error ? error.message : String(error));
+-  }
+-}
+-
+-function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+-  return {
+-    ...markdownComponents,
+-    p({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <p {...props}>{nextChildren}</p>;
+-    },
+-    li({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <li {...props}>{nextChildren}</li>;
+-    },
+-    code({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+-        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+-      }
+-      return <code {...props}>{children}</code>;
+-    },
+-  };
+-}
+-
+ export function MarkdownReader({
+   markdown,
+   className,
+   emptyMessage = '暂无计划正文',
+   ariaLabel = 'Markdown 正文',
+-  onOpenScopeFile,
+ }: MarkdownReaderProps) {
+   const content = markdown ?? '';
+   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+@@ -240,11 +100,12 @@
+   return (
+     <div className={classes} role="region" aria-label={ariaLabel}>
+       <ReactMarkdown
+-        components={createMarkdownComponents(onOpenScopeFile)}
++        components={markdownComponents}
+         remarkPlugins={[remarkGfm]}
++        skipHtml
+         urlTransform={safeUrlTransform}
+       >
+-        {exposeHtmlComments(content)}
++        {content}
+       </ReactMarkdown>
+     </div>
+   );
+
+exec
+powershell.exe -Command "git diff --name-only -- src/renderer/components/MarkdownReader.tsx; Select-String -LiteralPath 'src\\renderer\\components\\MarkdownReader.tsx' -Pattern 'skipHtml','tabIndex=\\{-1\\}','\\{content\\}' | ForEach-Object { '{0}:{1}' -f "'$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 589ms:
+src/renderer/components/MarkdownReader.tsx
+66:tabIndex={-1}
+105:skipHtml
+108:{content}
+warning: in the working copy of 'src/renderer/components/MarkdownReader.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/MarkdownReader.tsx b/src/renderer/components/MarkdownReader.tsx
+index 07d4ad6f4a8ebbde1c7f80b1351396880f1d590f..b10a0220ead5258e7b6f21f12b9202bea058ab88
+--- a/src/renderer/components/MarkdownReader.tsx
++++ b/src/renderer/components/MarkdownReader.tsx
+@@ -1,11 +1,10 @@
+-import type { ComponentProps, ReactNode } from 'react';
++import type { ComponentProps } from 'react';
+ import ReactMarkdown from 'react-markdown';
+ import remarkGfm from 'remark-gfm';
+ 
+ type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+ type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+ type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ export type MarkdownReaderProps = {
+   markdown?: string | null;
+@@ -16,9 +15,6 @@
+ };
+ 
+ const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+-const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+-const scopeSplitPattern = /[,，、;；]+/;
+-const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+ 
+ function normalizeSafeUrl(url: string): string | undefined {
+   const trimmedUrl = url.trim();
+@@ -40,38 +36,7 @@
+ }
+ 
+ const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+-
+-function toVisibleHtmlComment(comment: string) {
+-  if (!comment.includes('`')) return `\`${comment}\``;
+-  return `\`\` ${comment} \`\``;
+-}
+-
+-function exposeHtmlComments(markdown: string) {
+-  let fence: { char: string; length: number } | null = null;
+-
+-  return markdown
+-    .split('\n')
+-    .map((line) => {
+-      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+ 
+-      if (fence) {
+-        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+-          fence = null;
+-        }
+-        return line;
+-      }
+-
+-      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+-
+-      if (fenceMatch) {
+-        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+-      }
+-
+-      return visibleLine;
+-    })
+-    .join('\n');
+-}
+-
+ const markdownComponents: MarkdownComponents = {
+   a({ node: _node, href, children, ...props }) {
+     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+@@ -98,6 +63,7 @@
+         checked={Boolean(checked)}
+         readOnly
+         disabled
++        tabIndex={-1}
+         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+       />
+     );
+@@ -114,117 +80,11 @@
+   },
+ };
+ 
+-function normalizeScopeFilePath(value: string) {
+-  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+-}
+-
+-function childrenText(children: ReactNode) {
+-  if (typeof children === 'string') return children;
+-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+-  return '';
+-}
+-
+-function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+-  const parts: ReactNode[] = [];
+-  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+-  let lastIndex = 0;
+-  for (const match of text.matchAll(scopeCommentPattern)) {
+-    if (match.index === undefined) continue;
+-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+-    const files = String(match[1] || '')
+-      .split(scopeSplitPattern)
+-      .map((item) => normalizeScopeFilePath(item))
+-      .filter(Boolean);
+-    parts.push(
+-      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+-        <span className="markdown-scope-label">scope</span>
+-        {files.length ? files.map((filePath) => {
+-          const special = filePath === 'unknown' || filePath === 'validation';
+-          return (
+-            <button
+-              type="button"
+-              key={`${match.index}-${filePath}`}
+-              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+-              disabled={special}
+-              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+-              onClick={() => openScopeFile(filePath)}
+-            >
+-              {filePath}
+-            </button>
+-          );
+-        }) : <span className="markdown-scope-link special mono">unknown</span>}
+-      </span>,
+-    );
+-    lastIndex = match.index + match[0].length;
+-  }
+-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+-  return parts.length ? parts : text;
+-}
+-
+-function readProjectIdFromLocation() {
+-  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+-  return match ? Number(match[1]) : 0;
+-}
+-
+-function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+-  try {
+-    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+-    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+-      ? parsed.mode
+-      : 'system';
+-    return { mode, command: String(parsed?.command || '') };
+-  } catch {
+-    return { mode: 'system', command: '' };
+-  }
+-}
+-
+-async function openScopeFileFromReader(filePath: string) {
+-  const projectId = readProjectIdFromLocation();
+-  const settings = readScopeFileSettings();
+-  try {
+-    const result = await (window.autoplan as typeof window.autoplan & {
+-      openWorkspaceFile?: (input: {
+-        projectId: number;
+-        filePath: string;
+-        mode: ScopeFileOpenMode;
+-        command?: string;
+-      }) => Promise<{ ok: boolean; error: string | null }>;
+-    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+-    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+-  } catch (error) {
+-    window.alert(error instanceof Error ? error.message : String(error));
+-  }
+-}
+-
+-function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+-  return {
+-    ...markdownComponents,
+-    p({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <p {...props}>{nextChildren}</p>;
+-    },
+-    li({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <li {...props}>{nextChildren}</li>;
+-    },
+-    code({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+-        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+-      }
+-      return <code {...props}>{children}</code>;
+-    },
+-  };
+-}
+-
+ export function MarkdownReader({
+   markdown,
+   className,
+   emptyMessage = '暂无计划正文',
+   ariaLabel = 'Markdown 正文',
+-  onOpenScopeFile,
+ }: MarkdownReaderProps) {
+   const content = markdown ?? '';
+   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+@@ -240,11 +100,12 @@
+   return (
+     <div className={classes} role="region" aria-label={ariaLabel}>
+       <ReactMarkdown
+-        components={createMarkdownComponents(onOpenScopeFile)}
++        components={markdownComponents}
+         remarkPlugins={[remarkGfm]}
++        skipHtml
+         urlTransform={safeUrlTransform}
+       >
+-        {exposeHtmlComments(content)}
++        {content}
+       </ReactMarkdown>
+     </div>
+   );
+
+codex
+限定检查完成；按要求没有启动测试、构建或 lint。
+仅修改 MarkdownReader.tsx，修复任务列表中 scope 注释显示/干扰问题，并保持 checkbox 只读不可交互。
+  ✓ 查看 MarkdownReader 当前实现
+  ✓ 调整注释预处理逻辑
+  ✓ 强化只读 checkbox
+  ✓ 检查限定改动
+diff --git a/src/renderer/components/MarkdownReader.tsx b/src/renderer/components/MarkdownReader.tsx
+index 07d4ad6f4a8ebbde1c7f80b1351396880f1d590f..b10a0220ead5258e7b6f21f12b9202bea058ab88
+--- a/src/renderer/components/MarkdownReader.tsx
++++ b/src/renderer/components/MarkdownReader.tsx
+@@ -1,11 +1,10 @@
+-import type { ComponentProps, ReactNode } from 'react';
++import type { ComponentProps } from 'react';
+ import ReactMarkdown from 'react-markdown';
+ import remarkGfm from 'remark-gfm';
+ 
+ type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+ type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+ type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ export type MarkdownReaderProps = {
+   markdown?: string | null;
+@@ -16,9 +15,6 @@
+ };
+ 
+ const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+-const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+-const scopeSplitPattern = /[,，、;；]+/;
+-const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+ 
+ function normalizeSafeUrl(url: string): string | undefined {
+   const trimmedUrl = url.trim();
+@@ -40,38 +36,7 @@
+ }
+ 
+ const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+-
+-function toVisibleHtmlComment(comment: string) {
+-  if (!comment.includes('`')) return `\`${comment}\``;
+-  return `\`\` ${comment} \`\``;
+-}
+-
+-function exposeHtmlComments(markdown: string) {
+-  let fence: { char: string; length: number } | null = null;
+-
+-  return markdown
+-    .split('\n')
+-    .map((line) => {
+-      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+ 
+-      if (fence) {
+-        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+-          fence = null;
+-        }
+-        return line;
+-      }
+-
+-      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+-
+-      if (fenceMatch) {
+-        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+-      }
+-
+-      return visibleLine;
+-    })
+-    .join('\n');
+-}
+-
+ const markdownComponents: MarkdownComponents = {
+   a({ node: _node, href, children, ...props }) {
+     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+@@ -98,6 +63,7 @@
+         checked={Boolean(checked)}
+         readOnly
+         disabled
++        tabIndex={-1}
+         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+       />
+     );
+@@ -114,117 +80,11 @@
+   },
+ };
+ 
+-function normalizeScopeFilePath(value: string) {
+-  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+-}
+-
+-function childrenText(children: ReactNode) {
+-  if (typeof children === 'string') return children;
+-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+-  return '';
+-}
+-
+-function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+-  const parts: ReactNode[] = [];
+-  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+-  let lastIndex = 0;
+-  for (const match of text.matchAll(scopeCommentPattern)) {
+-    if (match.index === undefined) continue;
+-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+-    const files = String(match[1] || '')
+-      .split(scopeSplitPattern)
+-      .map((item) => normalizeScopeFilePath(item))
+-      .filter(Boolean);
+-    parts.push(
+-      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+-        <span className="markdown-scope-label">scope</span>
+-        {files.length ? files.map((filePath) => {
+-          const special = filePath === 'unknown' || filePath === 'validation';
+-          return (
+-            <button
+-              type="button"
+-              key={`${match.index}-${filePath}`}
+-              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+-              disabled={special}
+-              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+-              onClick={() => openScopeFile(filePath)}
+-            >
+-              {filePath}
+-            </button>
+-          );
+-        }) : <span className="markdown-scope-link special mono">unknown</span>}
+-      </span>,
+-    );
+-    lastIndex = match.index + match[0].length;
+-  }
+-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+-  return parts.length ? parts : text;
+-}
+-
+-function readProjectIdFromLocation() {
+-  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+-  return match ? Number(match[1]) : 0;
+-}
+-
+-function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+-  try {
+-    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+-    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+-      ? parsed.mode
+-      : 'system';
+-    return { mode, command: String(parsed?.command || '') };
+-  } catch {
+-    return { mode: 'system', command: '' };
+-  }
+-}
+-
+-async function openScopeFileFromReader(filePath: string) {
+-  const projectId = readProjectIdFromLocation();
+-  const settings = readScopeFileSettings();
+-  try {
+-    const result = await (window.autoplan as typeof window.autoplan & {
+-      openWorkspaceFile?: (input: {
+-        projectId: number;
+-        filePath: string;
+-        mode: ScopeFileOpenMode;
+-        command?: string;
+-      }) => Promise<{ ok: boolean; error: string | null }>;
+-    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+-    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+-  } catch (error) {
+-    window.alert(error instanceof Error ? error.message : String(error));
+-  }
+-}
+-
+-function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+-  return {
+-    ...markdownComponents,
+-    p({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <p {...props}>{nextChildren}</p>;
+-    },
+-    li({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <li {...props}>{nextChildren}</li>;
+-    },
+-    code({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+-        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+-      }
+-      return <code {...props}>{children}</code>;
+-    },
+-  };
+-}
+-
+ export function MarkdownReader({
+   markdown,
+   className,
+   emptyMessage = '暂无计划正文',
+   ariaLabel = 'Markdown 正文',
+-  onOpenScopeFile,
+ }: MarkdownReaderProps) {
+   const content = markdown ?? '';
+   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+@@ -240,11 +100,12 @@
+   return (
+     <div className={classes} role="region" aria-label={ariaLabel}>
+       <ReactMarkdown
+-        components={createMarkdownComponents(onOpenScopeFile)}
++        components={markdownComponents}
+         remarkPlugins={[remarkGfm]}
++        skipHtml
+         urlTransform={safeUrlTransform}
+       >
+-        {exposeHtmlComments(content)}
++        {content}
+       </ReactMarkdown>
+     </div>
+   );
+
+codex
+已完成 P003，仅修改 `src/renderer/components/MarkdownReader.tsx`。
+
+**变更**
+- 移除了把 HTML 注释转换成可见 scope chip/code 的预处理链路，避免 `<!-- scope: ... -->` 干扰 GFM 任务列表解析。
+- `ReactMarkdown` 直接接收原始 Markdown 内容，并启用 `skipHtml`，让 scope 注释在预览中隐藏。
+- 保留 `remark-gfm`，标准 `- [ ] P001: ...` / `- [x] P002: ...` 继续按任务列表渲染。
+- checkbox 继续 `readOnly` + `disabled`，并增加 `tabIndex={-1}`，减少误以为可交互的可能。
+
+未修改 plan 文件，未运行测试/构建/lint。
+diff --git a/src/renderer/components/MarkdownReader.tsx b/src/renderer/components/MarkdownReader.tsx
+index 07d4ad6f4a8ebbde1c7f80b1351396880f1d590f..b10a0220ead5258e7b6f21f12b9202bea058ab88
+--- a/src/renderer/components/MarkdownReader.tsx
++++ b/src/renderer/components/MarkdownReader.tsx
+@@ -1,11 +1,10 @@
+-import type { ComponentProps, ReactNode } from 'react';
++import type { ComponentProps } from 'react';
+ import ReactMarkdown from 'react-markdown';
+ import remarkGfm from 'remark-gfm';
+ 
+ type ReactMarkdownProps = ComponentProps<typeof ReactMarkdown>;
+ type MarkdownComponents = NonNullable<ReactMarkdownProps['components']>;
+ type UrlTransform = NonNullable<ReactMarkdownProps['urlTransform']>;
+-type ScopeFileOpenMode = 'system' | 'folder' | 'vscode' | 'command';
+ 
+ export type MarkdownReaderProps = {
+   markdown?: string | null;
+@@ -16,9 +15,6 @@
+ };
+ 
+ const allowedUrlProtocols = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+-const scopeCommentPattern = /`<!--\s*(?:scope|scopes|files?|影响范围|并发键)\s*[:=：]\s*([^>`]+?)\s*-->`/gi;
+-const scopeSplitPattern = /[,，、;；]+/;
+-const scopeFileSettingsKey = 'autoplan.scopeFileOpenSettings';
+ 
+ function normalizeSafeUrl(url: string): string | undefined {
+   const trimmedUrl = url.trim();
+@@ -40,38 +36,7 @@
+ }
+ 
+ const safeUrlTransform: UrlTransform = (url) => normalizeSafeUrl(url) ?? '';
+-
+-function toVisibleHtmlComment(comment: string) {
+-  if (!comment.includes('`')) return `\`${comment}\``;
+-  return `\`\` ${comment} \`\``;
+-}
+-
+-function exposeHtmlComments(markdown: string) {
+-  let fence: { char: string; length: number } | null = null;
+-
+-  return markdown
+-    .split('\n')
+-    .map((line) => {
+-      const fenceMatch = line.match(/^ {0,3}(`{3,}|~{3,})/);
+ 
+-      if (fence) {
+-        if (fenceMatch && fenceMatch[1].startsWith(fence.char) && fenceMatch[1].length >= fence.length) {
+-          fence = null;
+-        }
+-        return line;
+-      }
+-
+-      const visibleLine = line.replace(/<!--.*?-->/g, toVisibleHtmlComment);
+-
+-      if (fenceMatch) {
+-        fence = { char: fenceMatch[1][0], length: fenceMatch[1].length };
+-      }
+-
+-      return visibleLine;
+-    })
+-    .join('\n');
+-}
+-
+ const markdownComponents: MarkdownComponents = {
+   a({ node: _node, href, children, ...props }) {
+     const safeHref = href ? normalizeSafeUrl(href) : undefined;
+@@ -98,6 +63,7 @@
+         checked={Boolean(checked)}
+         readOnly
+         disabled
++        tabIndex={-1}
+         aria-label={checked ? '已勾选任务' : '未勾选任务'}
+       />
+     );
+@@ -114,117 +80,11 @@
+   },
+ };
+ 
+-function normalizeScopeFilePath(value: string) {
+-  return value.trim().replace(/^['"`[{(]+|['"`\]})]+$/g, '').replace(/\\/g, '/');
+-}
+-
+-function childrenText(children: ReactNode) {
+-  if (typeof children === 'string') return children;
+-  if (Array.isArray(children)) return children.filter((child) => typeof child === 'string').join('');
+-  return '';
+-}
+-
+-function renderScopeCommentParts(text: string, onOpenScopeFile?: (filePath: string) => void) {
+-  const parts: ReactNode[] = [];
+-  const openScopeFile = onOpenScopeFile || openScopeFileFromReader;
+-  let lastIndex = 0;
+-  for (const match of text.matchAll(scopeCommentPattern)) {
+-    if (match.index === undefined) continue;
+-    if (match.index > lastIndex) parts.push(text.slice(lastIndex, match.index));
+-    const files = String(match[1] || '')
+-      .split(scopeSplitPattern)
+-      .map((item) => normalizeScopeFilePath(item))
+-      .filter(Boolean);
+-    parts.push(
+-      <span className="markdown-scope-files" key={`scope-${match.index}`}>
+-        <span className="markdown-scope-label">scope</span>
+-        {files.length ? files.map((filePath) => {
+-          const special = filePath === 'unknown' || filePath === 'validation';
+-          return (
+-            <button
+-              type="button"
+-              key={`${match.index}-${filePath}`}
+-              className={`markdown-scope-link mono${special ? ' special' : ''}`}
+-              disabled={special}
+-              title={special ? '该 scope 不是可打开文件' : `打开 ${filePath}`}
+-              onClick={() => openScopeFile(filePath)}
+-            >
+-              {filePath}
+-            </button>
+-          );
+-        }) : <span className="markdown-scope-link special mono">unknown</span>}
+-      </span>,
+-    );
+-    lastIndex = match.index + match[0].length;
+-  }
+-  if (lastIndex < text.length) parts.push(text.slice(lastIndex));
+-  return parts.length ? parts : text;
+-}
+-
+-function readProjectIdFromLocation() {
+-  const match = window.location.pathname.match(/\/projects\/(\d+)/);
+-  return match ? Number(match[1]) : 0;
+-}
+-
+-function readScopeFileSettings(): { mode: ScopeFileOpenMode; command: string } {
+-  try {
+-    const parsed = JSON.parse(window.localStorage.getItem(scopeFileSettingsKey) || 'null');
+-    const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+-      ? parsed.mode
+-      : 'system';
+-    return { mode, command: String(parsed?.command || '') };
+-  } catch {
+-    return { mode: 'system', command: '' };
+-  }
+-}
+-
+-async function openScopeFileFromReader(filePath: string) {
+-  const projectId = readProjectIdFromLocation();
+-  const settings = readScopeFileSettings();
+-  try {
+-    const result = await (window.autoplan as typeof window.autoplan & {
+-      openWorkspaceFile?: (input: {
+-        projectId: number;
+-        filePath: string;
+-        mode: ScopeFileOpenMode;
+-        command?: string;
+-      }) => Promise<{ ok: boolean; error: string | null }>;
+-    }).openWorkspaceFile?.({ projectId, filePath, mode: settings.mode, command: settings.command });
+-    if (!result?.ok) throw new Error(result?.error || '文件打开失败');
+-  } catch (error) {
+-    window.alert(error instanceof Error ? error.message : String(error));
+-  }
+-}
+-
+-function createMarkdownComponents(onOpenScopeFile?: (filePath: string) => void): MarkdownComponents {
+-  return {
+-    ...markdownComponents,
+-    p({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <p {...props}>{nextChildren}</p>;
+-    },
+-    li({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      const nextChildren = text ? renderScopeCommentParts(text, onOpenScopeFile) : children;
+-      return <li {...props}>{nextChildren}</li>;
+-    },
+-    code({ node: _node, children, ...props }) {
+-      const text = childrenText(children);
+-      if (!props.className && text.startsWith('<!--') && /scope|scopes|files?|影响范围|并发键/i.test(text)) {
+-        return <>{renderScopeCommentParts(`\`${text}\``, onOpenScopeFile)}</>;
+-      }
+-      return <code {...props}>{children}</code>;
+-    },
+-  };
+-}
+-
+ export function MarkdownReader({
+   markdown,
+   className,
+   emptyMessage = '暂无计划正文',
+   ariaLabel = 'Markdown 正文',
+-  onOpenScopeFile,
+ }: MarkdownReaderProps) {
+   const content = markdown ?? '';
+   const classes = ['markdown-reader', className].filter(Boolean).join(' ');
+@@ -240,11 +100,12 @@
+   return (
+     <div className={classes} role="region" aria-label={ariaLabel}>
+       <ReactMarkdown
+-        components={createMarkdownComponents(onOpenScopeFile)}
++        components={markdownComponents}
+         remarkPlugins={[remarkGfm]}
++        skipHtml
+         urlTransform={safeUrlTransform}
+       >
+-        {exposeHtmlComments(content)}
++        {content}
+       </ReactMarkdown>
+     </div>
+   );
+
+已完成 P003，仅修改 `src/renderer/components/MarkdownReader.tsx`。
+
+**变更**
+- 移除了把 HTML 注释转换成可见 scope chip/code 的预处理链路，避免 `<!-- scope: ... -->` 干扰 GFM 任务列表解析。
+- `ReactMarkdown` 直接接收原始 Markdown 内容，并启用 `skipHtml`，让 scope 注释在预览中隐藏。
+- 保留 `remark-gfm`，标准 `- [ ] P001: ...` / `- [x] P002: ...` 继续按任务列表渲染。
+- checkbox 继续 `readOnly` + `disabled`，并增加 `tabIndex={-1}`，减少误以为可交互的可能。
+
+未修改 plan 文件，未运行测试/构建/lint。
+tokens used
+124,084

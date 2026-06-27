@@ -1,0 +1,363 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f079c-5f82-72f3-84e6-a4cca86cfe4b
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_18_20260627-134350.md
+指定任务：
+- [ ] P004: 更新相关文档或样式约束 <!-- scope: ui/README.md,src/renderer/styles.css,src/renderer/pages/WorkspacePage.tsx -->
+任务 scope：ui/readme.md, src/renderer/styles.css, src/renderer/pages/workspacepage.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Reviewing update requirements**
+
+I need to check the P004 update documentation and style constraints, focusing on ui/README.md and styles.css for the WorkspacePage. Running tests isn't necessary right now, but I should inspect the styles and the readme. I might not need to modify the WorkspacePage itself. I also want to verify if the documentation refers to the searchable count, and it looks like the styles for .workspace-search-count are still being utilized for hit feedback, so those should be kept. Updating the documentation might be required.
+codex
+我会沿用前序结论，只检查并调整搜索栏相关文档/样式，不动 plan。
+  → 检查文档样式约束
+  • 更新必要说明样式
+  • 文本级范围自查
+codex
+先在 P004 scope 内查找搜索数量描述与 `.workspace-search-count` 样式。
+exec
+powershell.exe -Command '$files=@('"'ui\\README.md','src\\renderer\\styles.css','src\\renderer\\pages\\WorkspacePage.tsx'); foreach("'$p in $files){ if(Test-Path $p){ Write-Host "--- matches in $p ---"; Select-String -Path $p -Pattern '"'搜索|可搜索|命中|workspace-search-count|workspace-search|search-results' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() } } else { Write-Host "--- missing $p ---" } }' in D:\project\GitHub\autoplan
+ succeeded in 498ms:
+--- matches in ui\README.md ---
+D:\project\GitHub\autoplan\ui\README.md:17: - 工具栏：搜索框 + 状态分段筛选（全部/运行中/已停止/异常）
+--- missing src\renderer\styles.css ---
+--- matches in src\renderer\pages\WorkspacePage.tsx ---
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:180: <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+
+**Checking for missing CSS file**
+
+I see that the styles.css file is missing, which might mean the path has changed. I'll need to find the CSS file to ensure everything works properly. It's mentioned in the scope, but if it's not there, I have to look around and consider using the files I have access to. Hmm, this might involve digging a bit deeper to figure out what's going on!
+codex
+`styles.css` 在当前工作树中不存在，我会定位实际样式文件后只做必要更新。
+exec
+powershell.exe -Command "Get-ChildItem -Path src\\renderer -Recurse -Include *.css,*.scss,*.tsx | Select-Object -ExpandProperty FullName | ForEach-Object { "'$_.Replace((Get-Location).Path + '"'\\','') }; Write-Host '--- workspace search styles ---'; Get-ChildItem -Path src\\renderer -Recurse -Include *.css,*.scss | Select-String -Pattern 'workspace-search-count|workspace-search|search-results' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 499ms:
+src\renderer\components\plans\EventList.tsx
+src\renderer\components\plans\PlanList.tsx
+src\renderer\components\plans\TaskList.tsx
+src\renderer\components\workspace\WorkspaceOverviewView.tsx
+src\renderer\components\workspace\WorkspaceSearchBox.tsx
+src\renderer\components\workspace\WorkspaceSettingsView.tsx
+src\renderer\components\workspace\WorkspaceSidebar.tsx
+src\renderer\components\CodexLog.tsx
+src\renderer\components\Composer.tsx
+src\renderer\components\icons.tsx
+src\renderer\components\IntakePanel.tsx
+src\renderer\components\MarkdownReader.tsx
+src\renderer\components\PlanLists.tsx
+src\renderer\components\SearchResults.tsx
+src\renderer\components\shared.test.tsx
+src\renderer\components\shared.tsx
+src\renderer\pages\ProjectsPage.tsx
+src\renderer\pages\WorkspacePage.test.tsx
+src\renderer\pages\WorkspacePage.tsx
+src\renderer\styles\components.css
+src\renderer\styles\layout.css
+src\renderer\styles\workspace.css
+src\renderer\App.tsx
+src\renderer\main.tsx
+--- workspace search styles ---
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:29: .workspace-search { display: flex; align-items: center; gap: 10px; flex: 1 1 420px; max-width: 580px; min-width: 280px; margin-left: auto; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:30: .workspace-search + .topbar-actions { margin-left: 0; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:31: .workspace-search-field { position: relative; flex: 1 1 auto; min-width: 0; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:32: .workspace-search-input.search-input { max-width: none; padding: 9px 38px 9px 36px; color: var(--text-1); transition: background 0.14s, border-color 0.14s, box-shadow 0.14s; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:33: .workspace-search-input.search-input:hover:not(:disabled) { background: var(--bg-soft); border-color: #cdd8ea; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:34: .workspace-search-input.search-input:disabled { background: var(--bg-soft); color: var(--text-4); cursor: not-allowed; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:35: .workspace-search-icon { position: absolute; left: 13px; top: 50%; z-index: 1; color: var(--text-3); transform: translateY(-50%); pointer-events: none; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:36: .workspace-search-clear { position: absolute; right: 6px; top: 50%; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-3); transform: translateY(-50%); transition: background 0.14s, color 0.14s; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:37: .workspace-search-clear:hover { background: var(--bg-hover); color: var(--text-1); }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:38: .workspace-search-clear:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-50); color: var(--brand-600); }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:40: .workspace-search-clear:disabled { color: var(--text-4); cursor: not-allowed; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:41: .workspace-search-count { flex: 0 0 auto; color: var(--text-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:42: .workspace-search-count.is-empty { color: var(--warning); }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:43: .search-results { flex: 0 0 auto; margin: 14px 24px 0; overflow: hidden; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:44: .search-results-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:45: .search-results-head h2 { font-size: 14.5px; font-weight: 750; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:46: .search-results-head p { margin-top: 3px; color: var(--text-3); font-size: 12px; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:47: .search-results-head b { color: var(--text-1); }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:48: .search-results-clear { flex: 0 0 auto; padding: 6px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--brand-600); font-size: 12px; font-weight: 700; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:49: .search-results-clear:hover { background: var(--brand-50); border-color: #cdd8ea; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:56: .search-results-body { max-height: min(420px, 42vh); overflow: auto; padding: 14px 16px 16px; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:78: .search-results-empty { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 16px; color: var(--text-3); font-size: 13px; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:246: .workspace-search { order: 3; flex-basis: 100%; max-width: none; min-width: 0; margin-left: 0; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:247: .workspace-search + .topbar-actions { margin-left: auto; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:248: .search-results { margin: 14px 20px 0; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:259: .workspace-search { flex-direction: column; align-items: stretch; gap: 6px; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:260: .workspace-search-count { padding-left: 2px; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:261: .search-results { margin: 12px 14px 0; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:262: .search-results-head, .search-results-empty { align-items: stretch; flex-direction: column; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:263: .search-results-clear, .search-results-empty .btn { width: 100%; }
+
+**Confirming style paths**
+
+I need to figure out the actual scope of the style paths because the user mentioned that styles.css doesn't exist. Should I update to the actual `workspace.css` since it seems to be the direct style? I also need to check the README file to ensure everything is clear there. It’s essential to understand the context and ensure I’m working with the correct styles, so the user gets the expected results!
+codex
+样式已拆到 `src/renderer/styles/workspace.css`；我会只调整与搜索栏数量相关的实际样式/说明。
+exec
+powershell.exe -Command '$targets=@(@('"'ui\\README.md',1,45),@('src\\renderer\\styles\\workspace.css',24,45),@('src\\renderer\\styles\\workspace.css',238,265)); foreach("'$t in $targets){ $p=$t[0]; if(Test-Path $p){ $lines=Get-Content -Encoding UTF8 $p; $s=[int]$t[1]; $e=[int]$t[2]; Write-Host ("--- {0}:{1}-{2} ---" -f $p,$s,$e); for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 492ms:
+--- ui\README.md:1-45 ---
+    1: # AutoPlan UI 设计稿
+    2: 
+    3: 纯 HTML/CSS 设计稿，浏览器直接打开即可预览，无需依赖。
+    4: 
+    5: 项目和工作区是**两个独立的界面、各自不同的布局**，分属两个文件：
+    6: 
+    7: ## 文件
+    8: 
+    9: | 文件 | 界面 | 布局 |
+   10: |------|------|------|
+   11: | `projects.html` | **项目管理** | 顶部 header + 全宽内容区（项目卡片网格 + CRUD） |
+   12: | `workspace.html` | **工作区** | 左侧边栏导航 + 主区（概览/需求/反馈/任务/事件） |
+   13: 
+   14: ## projects.html · 项目管理
+   15: - 顶部 sticky header：品牌 + 「打开工作区」入口 + 「创建项目」
+   16: - 页面标题区 + 概览统计（项目总数 / 运行中 / 异常）
+   17: - 工具栏：搜索框 + 状态分段筛选（全部/运行中/已停止/异常）
+   18: - 项目卡片网格：头像、名称、路径、描述、计划/任务/间隔统计、状态指示灯、更新时间
+   19: - 卡片右键菜单：打开工作区 / 编辑 / 复制 / 删除
+   20: - 完整 CRUD：
+   21:   - **创建/编辑**：模态框（图标色 6 选 1、名称*、路径*、验收命令、CLI 后端、CLI 命令路径、间隔、描述）
+   22:   - **复制**：生成 `-copy`，状态置为已停止
+   23:   - **删除**：二次确认，提示不删磁盘文件
+   24: - 点击卡片 / 「打开工作区」→ 跳转 `workspace.html`
+   25: 
+   26: ## workspace.html · 工作区
+   27: 恢复为第一版的工作区布局（侧边栏导航），五个视图间切换：
+   28: - **概览** — 统计卡 + 渐变循环状态卡 + 阶段流水线 + 近期事件
+   29: - **需求 / 反馈** — 流式列表 + 悬浮圆角输入框 + 附件
+   30: - **任务与计划** — 循环控制（含 CLI 后端选择 Codex/Claude）+ 计划草稿 + Plan/Task 网格 + 并发建议入口
+   31: - **事件流** — 循环运行日志表格
+   32: - **设置** — 工作区 / CLI / scope 打开配置 + MCP 外部接入只读信息
+   33: - 侧边栏底部显示当前循环状态与 CLI 后端
+   34: 
+   35: ## 需求 / 反馈附件交互
+   36: - 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+   37: - 粘贴 PNG、JPEG、WebP 等图片后，图片进入待提交附件列表并显示缩略图、文件名和大小；提交前可移除。
+   38: - 正文和附件可以一起发送；正文为空时也可以只提交附件，适合快速提交截图类需求或反馈。
+   39: - 发送成功后会清空正文和待提交附件；发送失败时保留待提交附件，方便用户重试。
+   40: - 附件保存后会以本地文件路径、MIME、大小和 hash 进入计划生成上下文，供 AI 工具按需读取；图片二进制不会直接内联进 prompt。
+   41: 
+   42: ## CLI 后端选择说明
+   43: - 设计稿覆盖项目级 CLI 后端切换：创建/编辑项目与工作区「循环控制」均提供 Codex/Claude 选择。
+   44: - 默认仍为 Codex，历史项目未配置 CLI 后端时按 Codex 兼容处理，不改变旧链路交互预期。
+   45: - Claude 仅覆盖非交互 `claude -p` 调用链路；使用前需本机已安装 `claude` CLI 并完成认证，必要时在 CLI 命令路径填写完整路径。
+--- src\renderer\styles\workspace.css:24-45 ---
+   24: .topbar { display: flex; align-items: center; gap: 16px; padding: 14px 24px; background: var(--bg-elevated); border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+   25: .topbar-title { min-width: 0; }
+   26: .topbar-title h1 { font-size: 18px; font-weight: 700; }
+   27: .topbar-title p { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+   28: .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+   29: .workspace-search { display: flex; align-items: center; gap: 10px; flex: 1 1 420px; max-width: 580px; min-width: 280px; margin-left: auto; }
+   30: .workspace-search + .topbar-actions { margin-left: 0; }
+   31: .workspace-search-field { position: relative; flex: 1 1 auto; min-width: 0; }
+   32: .workspace-search-input.search-input { max-width: none; padding: 9px 38px 9px 36px; color: var(--text-1); transition: background 0.14s, border-color 0.14s, box-shadow 0.14s; }
+   33: .workspace-search-input.search-input:hover:not(:disabled) { background: var(--bg-soft); border-color: #cdd8ea; }
+   34: .workspace-search-input.search-input:disabled { background: var(--bg-soft); color: var(--text-4); cursor: not-allowed; }
+   35: .workspace-search-icon { position: absolute; left: 13px; top: 50%; z-index: 1; color: var(--text-3); transform: translateY(-50%); pointer-events: none; }
+   36: .workspace-search-clear { position: absolute; right: 6px; top: 50%; display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--text-3); transform: translateY(-50%); transition: background 0.14s, color 0.14s; }
+   37: .workspace-search-clear:hover { background: var(--bg-hover); color: var(--text-1); }
+   38: .workspace-search-clear:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--brand-50); color: var(--brand-600); }
+   39: 
+   40: .workspace-search-clear:disabled { color: var(--text-4); cursor: not-allowed; }
+   41: .workspace-search-count { flex: 0 0 auto; color: var(--text-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
+   42: .workspace-search-count.is-empty { color: var(--warning); }
+   43: .search-results { flex: 0 0 auto; margin: 14px 24px 0; overflow: hidden; }
+   44: .search-results-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 14px 16px; border-bottom: 1px solid var(--line-soft); }
+   45: .search-results-head h2 { font-size: 14.5px; font-weight: 750; }
+--- src\renderer\styles\workspace.css:238-265 ---
+  238: textarea { min-height: 80px; resize: vertical; }
+  239: 
+  240: @media (max-width: 1080px) {
+  241:   body { overflow: auto; }
+  242:   .workspace-shell { grid-template-columns: 1fr; height: auto; }
+  243:   .sidebar { height: auto; }
+  244:   .workspace-main { height: auto; min-height: 100vh; }
+  245:   .topbar { flex-wrap: wrap; align-items: flex-start; }
+  246:   .workspace-search { order: 3; flex-basis: 100%; max-width: none; min-width: 0; margin-left: 0; }
+  247:   .workspace-search + .topbar-actions { margin-left: auto; }
+  248:   .search-results { margin: 14px 20px 0; }
+  249:   .task-main { grid-template-rows: auto auto; }
+  250:   .task-status-grid { grid-template-columns: 1fr; }
+  251:   .overview-grid { grid-template-columns: 1fr; }
+  252:   .overview-main-column > .live-log-card { height: 360px; }
+  253: }
+  254: 
+  255: @media (max-width: 640px) {
+  256:   .view { padding: 18px 14px 24px; }
+  257:   .topbar { padding: 14px; }
+  258:   .topbar-actions { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+  259:   .workspace-search { flex-direction: column; align-items: stretch; gap: 6px; }
+  260:   .workspace-search-count { padding-left: 2px; }
+  261:   .search-results { margin: 12px 14px 0; }
+  262:   .search-results-head, .search-results-empty { align-items: stretch; flex-direction: column; }
+  263:   .search-results-clear, .search-results-empty .btn { width: 100%; }
+  264:   .search-result-groups { grid-template-columns: 1fr; }
+  265:   .search-result-meta { flex-direction: column; gap: 3px; }
+
+**Considering CSS updates**
+
+I'm thinking about a minor update to `workspace.css` to reflect hit feedback since there are no comments. I wonder if changing the style to `color: var(--text-2);` is necessary though. The task P004 suggests updating documentation or style constraints, but there's no clear mention about count in the UI README. I might leave the CSS as is, focusing on modifying the documents instead. But perhaps addressing the CSS rule for width and padding could be beneficial, even if modifications seem limited.
+codex
+文档没有旧总量描述；我会补充工作区搜索的新展示约束，样式保留命中反馈用途。
+  ✓ 检查文档样式约束
+  → 更新必要说明样式
+  • 文本级范围自查
+codex
+开始更新 `ui/README.md` 的工作区搜索说明。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\ui\README.md
+diff --git a/ui/README.md b/ui/README.md
+index b684a46885f85d784bddfe8e54a2bad621b79857..86247844fd2e4738e5f35882b4d8b9c129cc6a72
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,7 @@
+ - **事件流** — 循环运行日志表格
+ - **设置** — 工作区 / CLI / scope 打开配置 + MCP 外部接入只读信息
+ - 侧边栏底部显示当前循环状态与 CLI 后端
++- 顶部搜索框支持跨需求、反馈、任务、Plan 和事件检索；未输入关键字时不展示可搜索总数，输入后由命中反馈和结果概览展示统计。
+ 
+ ## 需求 / 反馈附件交互
+ - 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+
+diff --git a/ui/README.md b/ui/README.md
+index b684a46885f85d784bddfe8e54a2bad621b79857..86247844fd2e4738e5f35882b4d8b9c129cc6a72
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,7 @@
+ - **事件流** — 循环运行日志表格
+ - **设置** — 工作区 / CLI / scope 打开配置 + MCP 外部接入只读信息
+ - 侧边栏底部显示当前循环状态与 CLI 后端
++- 顶部搜索框支持跨需求、反馈、任务、Plan 和事件检索；未输入关键字时不展示可搜索总数，输入后由命中反馈和结果概览展示统计。
+ 
+ ## 需求 / 反馈附件交互
+ - 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+
+codex
+文档已更新；现在做文本级自查，确认没有误引入旧文案。
+  ✓ 检查文档样式约束
+  ✓ 更新必要说明样式
+  → 文本级范围自查
+diff --git a/ui/README.md b/ui/README.md
+index b684a46885f85d784bddfe8e54a2bad621b79857..86247844fd2e4738e5f35882b4d8b9c129cc6a72
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,7 @@
+ - **事件流** — 循环运行日志表格
+ - **设置** — 工作区 / CLI / scope 打开配置 + MCP 外部接入只读信息
+ - 侧边栏底部显示当前循环状态与 CLI 后端
++- 顶部搜索框支持跨需求、反馈、任务、Plan 和事件检索；未输入关键字时不展示可搜索总数，输入后由命中反馈和结果概览展示统计。
+ 
+ ## 需求 / 反馈附件交互
+ - 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+
+exec
+powershell.exe -Command "Write-Host '--- README search lines ---'; Select-String -Path ui\\README.md -Pattern '搜索|可搜索总数|命中反馈|结果概览' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- style usage ---'; Select-String -Path src\\renderer\\styles\\workspace.css -Pattern 'workspace-search-count|workspace-search \\{' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- old wording in scope ---'; "'$scope=@('"'ui\\README.md','src\\renderer\\styles\\workspace.css','src\\renderer\\pages\\WorkspacePage.tsx'); Select-String -Path "'$scope -Pattern '"'可搜索 [0-9Nn]+ 条|可搜索 \\"'$|totalCount|searchableItemCount|countSearchableItems'"' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- status relevant ---'; git status --short -- docs\\plan\\plan_feedback_18_20260627-134350.md ui\\README.md src\\renderer\\styles.css src\\renderer\\styles\\workspace.css src\\renderer\\pages\\WorkspacePage.tsx" in D:\project\GitHub\autoplan
+ succeeded in 502ms:
+--- README search lines ---
+D:\project\GitHub\autoplan\ui\README.md:17: - 工具栏：搜索框 + 状态分段筛选（全部/运行中/已停止/异常）
+D:\project\GitHub\autoplan\ui\README.md:34: - 顶部搜索框支持跨需求、反馈、任务、Plan 和事件检索；未输入关键字时不展示可搜索总数，输入后由命中反馈和结果概览展示统计。
+--- style usage ---
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:29: .workspace-search { display: flex; align-items: center; gap: 10px; flex: 1 1 420px; max-width: 580px; min-width: 280px; margin-left: auto; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:41: .workspace-search-count { flex: 0 0 auto; color: var(--text-3); font-size: 12px; font-weight: 600; white-space: nowrap; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:42: .workspace-search-count.is-empty { color: var(--warning); }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:246: .workspace-search { order: 3; flex-basis: 100%; max-width: none; min-width: 0; margin-left: 0; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:259: .workspace-search { flex-direction: column; align-items: stretch; gap: 6px; }
+D:\project\GitHub\autoplan\src\renderer\styles\workspace.css:260: .workspace-search-count { padding-left: 2px; }
+--- old wording in scope ---
+--- status relevant ---
+ M src/renderer/pages/WorkspacePage.tsx
+ M ui/README.md
+?? docs/plan/plan_feedback_18_20260627-134350.md
+?? src/renderer/styles/workspace.css
+
+diff --git a/ui/README.md b/ui/README.md
+index b684a46885f85d784bddfe8e54a2bad621b79857..86247844fd2e4738e5f35882b4d8b9c129cc6a72
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,7 @@
+ - **事件流** — 循环运行日志表格
+ - **设置** — 工作区 / CLI / scope 打开配置 + MCP 外部接入只读信息
+ - 侧边栏底部显示当前循环状态与 CLI 后端
++- 顶部搜索框支持跨需求、反馈、任务、Plan 和事件检索；未输入关键字时不展示可搜索总数，输入后由命中反馈和结果概览展示统计。
+ 
+ ## 需求 / 反馈附件交互
+ - 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+
+codex
+P004 文档更新和样式核对完成；没有运行任何验证命令。
+  ✓ 检查文档样式约束
+  ✓ 更新必要说明样式
+  ✓ 文本级范围自查
+diff --git a/ui/README.md b/ui/README.md
+index b684a46885f85d784bddfe8e54a2bad621b79857..86247844fd2e4738e5f35882b4d8b9c129cc6a72
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,7 @@
+ - **事件流** — 循环运行日志表格
+ - **设置** — 工作区 / CLI / scope 打开配置 + MCP 外部接入只读信息
+ - 侧边栏底部显示当前循环状态与 CLI 后端
++- 顶部搜索框支持跨需求、反馈、任务、Plan 和事件检索；未输入关键字时不展示可搜索总数，输入后由命中反馈和结果概览展示统计。
+ 
+ ## 需求 / 反馈附件交互
+ - 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+
+codex
+已完成 P004；未修改 plan 文件，未运行测试/构建/lint。
+
+**修改内容**
+- 更新工作区搜索说明：空搜索态不展示可搜索总数，输入后由命中反馈和结果概览展示统计：`ui/README.md:34`
+
+**样式核对**
+- 当前工作树没有 `src/renderer/styles.css`，实际搜索栏样式位于 `src/renderer/styles/workspace.css:41`。
+- `.workspace-search-count` 仍用于输入关键字后的命中反馈和 `0` 命中警示色，因此本任务未清理该样式。
+- 文本级检查确认 P004 scope 内没有残留 `可搜索 N 条`、`totalCount`、`searchableItemCount` 或 `countSearchableItems`。
+diff --git a/ui/README.md b/ui/README.md
+index b684a46885f85d784bddfe8e54a2bad621b79857..86247844fd2e4738e5f35882b4d8b9c129cc6a72
+--- a/ui/README.md
++++ b/ui/README.md
+@@ -31,6 +31,7 @@
+ - **事件流** — 循环运行日志表格
+ - **设置** — 工作区 / CLI / scope 打开配置 + MCP 外部接入只读信息
+ - 侧边栏底部显示当前循环状态与 CLI 后端
++- 顶部搜索框支持跨需求、反馈、任务、Plan 和事件检索；未输入关键字时不展示可搜索总数，输入后由命中反馈和结果概览展示统计。
+ 
+ ## 需求 / 反馈附件交互
+ - 需求和反馈输入框支持三种附件添加方式：点击选择文件、拖拽文件到输入区、在输入框内直接粘贴剪贴板图片或截图。
+
+tokens used
+96,736
+已完成 P004；未修改 plan 文件，未运行测试/构建/lint。
+
+**修改内容**
+- 更新工作区搜索说明：空搜索态不展示可搜索总数，输入后由命中反馈和结果概览展示统计：`ui/README.md:34`
+
+**样式核对**
+- 当前工作树没有 `src/renderer/styles.css`，实际搜索栏样式位于 `src/renderer/styles/workspace.css:41`。
+- `.workspace-search-count` 仍用于输入关键字后的命中反馈和 `0` 命中警示色，因此本任务未清理该样式。
+- 文本级检查确认 P004 scope 内没有残留 `可搜索 N 条`、`totalCount`、`searchableItemCount` 或 `countSearchableItems`。

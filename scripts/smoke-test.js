@@ -138,6 +138,8 @@ async function main() {
     );
 
     const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+    plan.agent_cli_provider = 'codex';
+    plan.codex_reasoning_effort = 'xhigh';
     const planFile = path.join(workspace, plan.file_path);
     const executableTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
     const fakeLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'fake-execute.log');
@@ -153,7 +155,8 @@ async function main() {
       planFile,
       originalPlanText,
     });
-    loop.runCodex = async (_workspace, prompt) => {
+    loop.runCodex = async (_workspace, prompt, _label, operation = {}) => {
+      assert.equal(operation.codexReasoningEffort, 'xhigh', '任务执行应保留 plan 级 xhigh 思考深度');
       assert.match(prompt, /只执行指定任务 P001/, '执行 prompt 应锁定指定任务');
       assert.match(prompt, /不要修改 plan 文件/, '执行 prompt 应禁止 Codex 写 plan');
       assert.match(prompt, /不运行测试、回归、验收、构建/, '执行 prompt 应把测试和验收推迟到最终节点');
@@ -296,6 +299,7 @@ async function main() {
     assert.equal(snapshot.plans[0].validation_passed, 1, '验收通过后 validation_passed 应为 1');
     assertWorkspaceSearchRegression(snapshot);
     assertFrontendInteractionSourceSmoke();
+    assertMarkdownPlanReaderSourceSmoke();
     assertEventPresentationCopyRegression();
     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
 
@@ -337,7 +341,7 @@ async function main() {
     loop.stop(multiProjectB);
     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, config persistence, scope concurrency, scope file open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, multi-backend, multi-loop');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -520,6 +524,11 @@ function assertFrontendInteractionSourceSmoke() {
     path.join(__dirname, '..', 'src', 'renderer', 'components', 'SearchResults.tsx'),
     'utf8',
   );
+  const overviewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceOverviewView.tsx'),
+    'utf8',
+  );
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8'), mcpAuthSource = `${fs.readFileSync(path.join(__dirname, '..', 'src', 'mcpServer.js'), 'utf8')}\n${fs.readFileSync(path.join(__dirname, '..', 'src', 'database.js'), 'utf8')}`;
 
   assert.match(planListsSource, /aria-expanded=\{expanded\}/, '任务分组应暴露展开状态');
   assert.match(planListsSource, /setExpandedOverrides/, '任务分组折叠状态应保存在前端会话内');
@@ -527,8 +536,8 @@ function assertFrontendInteractionSourceSmoke() {
   assert.match(planListsSource, /workspace-event-\$\{event\.id\}/, '事件卡片应提供搜索定位锚点');
   assert.match(planListsSource, /data-testid="plan-select-toggle"/, 'Plan 列表应暴露选择按钮测试标识');
   assert.match(planListsSource, /aria-pressed=\{selected\}/, 'Plan 选择按钮应暴露 pressed 状态');
-  assert.match(planListsSource, /data-testid="plan-task-filter-banner"/, '任务列表应暴露 Plan 过滤提示标识');
-  assert.match(planListsSource, /data-testid="plan-task-filter-clear"/, '任务列表应提供清空 Plan 过滤入口');
+  assert.doesNotMatch(planListsSource, /data-testid="plan-task-filter-banner"/, '任务列表不应显示 Plan 过滤提示标识');
+  assert.doesNotMatch(planListsSource, /data-testid="plan-task-filter-clear"/, '任务列表不应显示 Plan 过滤清空入口');
   assert.match(workspacePageSource, /isTaskAssociatedWithPlan/, 'WorkspacePage 应使用统一 Plan-Task 关联规则过滤任务');
   assert.match(workspacePageSource, /planFilter=\{selectedPlanTaskFilter\}/, 'TaskList 应接收 Plan 过滤上下文');
   assert.match(workspacePageSource, /onSelectPlan=\{planSelectionState\.selectPlan\}/, 'PlanList 应接收受控选择回调');
@@ -536,6 +545,38 @@ function assertFrontendInteractionSourceSmoke() {
   assert.match(searchResultsSource, /role="dialog"/, '搜索结果应以 dialog popup 呈现');
   assert.match(searchResultsSource, /role="listbox"/, '搜索结果列表应提供 listbox 语义');
   assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
+  assert.match(overviewSource, /startsWith\('scan\.'\)[\s\S]*<EventList events=\{recentEvents\}/, '概览近期事件应使用过滤后的事件列表');
+  assert.match(mainSource, /await loadRenderer\(mainWindow\);\s+scheduleMcpServerStart\(\);[\s\S]*function scheduleMcpServerStart\(\) \{ setTimeout\(\(\) => startMcpServer\(\)\.catch\(\(error\) => recordMcpStartupError\(error\)\), 0\); \}/, 'MCP 应在 renderer 加载后后台启动，失败只记录错误');
+  assert.match(mcpAuthSource, /Authorization Bearer[\s\S]*WWW-Authenticate[\s\S]*Bearer realm="AutoPlan MCP"[\s\S]*'mcp\.authToken': generateSecretToken\(\)/, 'MCP HTTP 应使用标准 Bearer 校验并自动生成默认密钥');
+}
+
+function assertMarkdownPlanReaderSourceSmoke() {
+  const markdownReaderSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'MarkdownReader.tsx'),
+    'utf8',
+  );
+  const planListSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'plans', 'PlanList.tsx'),
+    'utf8',
+  );
+  const autoplanTaskMarkdown = [
+    '## 任务拆解',
+    '- [ ] P001: 标准任务 <!-- scope: src/renderer/components/MarkdownReader.tsx -->',
+    '- [x] P002: 已完成任务 <!-- scope: src/renderer/components/plans/PlanList.tsx -->',
+    '  - 验收要点：嵌套 bullet 应保持普通列表',
+    '```',
+    '- [ ] 代码块里的 checkbox 文本不应被预处理',
+    '```',
+  ].join('\n');
+
+  assert.match(autoplanTaskMarkdown, /- \[ \] P001: 标准任务 <!-- scope:/, '阅读 smoke fixture 应覆盖标准任务行和 scope 注释');
+  assert.match(autoplanTaskMarkdown, /- \[x\] P002: 已完成任务 <!-- scope:/, '阅读 smoke fixture 应覆盖已完成任务行');
+  assert.match(markdownReaderSource, /remarkPlugins=\{\[remarkGfm\]\}/, 'MarkdownReader 应启用 GFM 任务列表解析');
+  assert.match(markdownReaderSource, /skipHtml/, 'MarkdownReader 应隐藏 scope HTML 注释而不是展示到预览');
+  assert.doesNotMatch(markdownReaderSource, /exposeHtmlComments|renderScopeCommentParts|markdown-scope-/, 'MarkdownReader 不应把 scope 注释转换为可见 chip');
+  assert.match(markdownReaderSource, /type="checkbox"[\s\S]*readOnly[\s\S]*disabled[\s\S]*tabIndex=\{-1\}/, 'MarkdownReader checkbox 应保持只读且不可聚焦');
+  assert.match(planListSource, /<MarkdownReader[\s\S]*markdown=\{planReadResult\?\.markdown \?\? ''\}/, 'Plan 阅读弹窗应继续通过 Markdown 正文展示任务拆解');
+  assert.doesNotMatch(planListSource, /plan-reader-task-summary|任务拆解解析结果|已解析任务列表|task_parse_message/, 'Plan 阅读弹窗不应在 Markdown 前展示独立任务拆解摘要');
 }
 
 function assertEventPresentationCopyRegression() {
@@ -581,8 +622,8 @@ async function assertPlanReadRegression(
   assert.equal(existingRead.tasks.length, 6, '读取 Plan 应返回任务摘要列表');
   assert.equal(existingRead.tasks[0].task_key, 'P001', '任务摘要应保留任务编号');
   assert.equal(existingRead.tasks[0].title, '明确范围与影响面', '任务摘要应保留任务标题');
-  assert.deepEqual(existingRead.tasks[0].scopes, ['unknown'], '任务摘要应返回 scope 列表');
-  assert.deepEqual(existingRead.tasks[5].scopes, ['validation'], '完整验收任务摘要应保留 validation scope');
+  assert.deepEqual(Array.from(existingRead.tasks[0].scopes), ['unknown'], '任务摘要应返回 scope 列表');
+  assert.deepEqual(Array.from(existingRead.tasks[5].scopes), ['validation'], '完整验收任务摘要应保留 validation scope');
 
   const malformedPlanRel = path.join('docs', 'plan', 'malformed-task-section.md');
   const malformedPlanFile = path.join(path.dirname(path.dirname(path.dirname(planFile))), malformedPlanRel);
@@ -706,6 +747,12 @@ async function assertLoopConfigPersistenceSmoke(db, loop, tempRoot) {
     effort: 'low',
   }, '验收命令保存为空后的刷新快照');
 
+  const xhighExpected = { projectId, validationCommand: '', provider: 'codex', effort: 'xhigh' };
+  configuredSnapshot = configureLoop(null, { projectId, agentCliProvider: 'codex', codexReasoningEffort: 'xhigh' });
+  assertLoopConfigSnapshot(configuredSnapshot, xhighExpected, 'xhigh Codex reasoning effort should be preserved in configure result');
+  assertLoopConfigRow(db, projectId, xhighExpected, 'xhigh Codex reasoning effort should be persisted');
+  assertLoopConfigSnapshot(snapshotProject(null, { projectId }), xhighExpected, 'xhigh Codex reasoning effort should be visible in refreshed snapshot');
+
   configuredSnapshot = configureLoop(null, {
     projectId,
     validationCommand: 'node scripts/config-validation-smoke.js',
@@ -750,10 +797,10 @@ async function assertLoopConfigPersistenceSmoke(db, loop, tempRoot) {
     effort: 'medium',
   }, '失败保存不应把旧值误展示为成功结果');
 
-  configureLoop(null, { projectId, codexReasoningEffort: 'high' });
-  await assertCodexReasoningExecutionArgSmoke(db, workspace, projectId, 'high');
-  configureLoop(null, { projectId, codexReasoningEffort: 'low' });
-  await assertCodexReasoningExecutionArgSmoke(db, workspace, projectId, 'low');
+  for (const effort of ['high', 'low', 'xhigh']) {
+    configureLoop(null, { projectId, codexReasoningEffort: effort });
+    await assertCodexReasoningExecutionArgSmoke(db, workspace, projectId, effort);
+  }
 }
 
 async function assertMcpToolsSmoke(db, loop, tempRoot) {
@@ -792,6 +839,18 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
   }, 'MCP create_project 数据库记录');
   assert.equal(loop.snapshot(mcpProjectId).state.running, 0, 'MCP 创建项目默认不应启动循环');
 
+  const listedProjects = assertMcpToolData(await callMcpTool(MCP_TOOL_NAMES.LIST_PROJECTS, {
+    query: 'MCP Smoke',
+  }, context), 'MCP list_projects');
+  assert.ok(
+    listedProjects.projects.some((project) => Number(project.id) === Number(mcpProjectId)),
+    'MCP list_projects should return the created project',
+  );
+  const fetchedProject = assertMcpToolSuccess(await callMcpTool(MCP_TOOL_NAMES.GET_PROJECT, {
+    projectId: mcpProjectId,
+  }, context), 'MCP get_project');
+  assert.equal(fetchedProject.project.id, mcpProjectId, 'MCP get_project should return the target project');
+
   const guiSnapshot = createProject(null, {
     name: 'GUI Smoke Project For MCP Compare',
     workspacePath: guiWorkspace,
@@ -825,6 +884,8 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
     ]);
   };
 
+  let mcpRequirementId = 0;
+  let mcpFeedbackId = 0;
   try {
     const requirementResult = assertMcpToolSuccess(await callMcpTool(MCP_TOOL_NAMES.CREATE_REQUIREMENT, {
       projectId: mcpProjectId,
@@ -837,6 +898,7 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
     }, context), 'MCP create_requirement');
     assert.ok(requirementResult.requirementId, 'MCP create_requirement 应返回 requirementId');
     const requirement = db.get('SELECT * FROM requirements WHERE id = ?', [requirementResult.requirementId]);
+    mcpRequirementId = requirement.id;
     assert.equal(requirement.project_id, mcpProjectId, 'MCP 需求应绑定目标项目');
     assert.equal(requirement.title, 'MCP Smoke 需求', 'MCP 需求应保存标题');
     assert.equal(requirement.agent_cli_provider, 'codex', 'MCP 需求应保存 Codex 后端');
@@ -864,10 +926,30 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
     }, context), 'MCP create_feedback');
     assert.ok(feedbackResult.feedbackId, 'MCP create_feedback 应返回 feedbackId');
     const feedback = db.get('SELECT * FROM feedback WHERE id = ?', [feedbackResult.feedbackId]);
+    mcpFeedbackId = feedback.id;
     assert.equal(feedback.requirement_id, requirement.id, 'MCP 反馈应关联同项目需求');
     assert.equal(feedback.agent_cli_provider, 'claude', 'MCP 反馈应保存 Claude 后端');
     assert.equal(feedback.codex_reasoning_effort, null, 'MCP 反馈选择 Claude 时应忽略 Codex 思考深度');
   } finally {
+    if (mcpRequirementId && mcpFeedbackId) {
+      const listedRequirements = assertMcpToolData(await callMcpTool(MCP_TOOL_NAMES.LIST_REQUIREMENTS, {
+        projectId: mcpProjectId,
+        status: 'open',
+      }, context), 'MCP list_requirements');
+      assert.ok(
+        listedRequirements.requirements.some((item) => Number(item.id) === Number(mcpRequirementId)),
+        'MCP list_requirements should return the created requirement',
+      );
+
+      const listedFeedback = assertMcpToolData(await callMcpTool(MCP_TOOL_NAMES.LIST_FEEDBACK, {
+        projectId: mcpProjectId,
+        status: 'open',
+      }, context), 'MCP list_feedback');
+      assert.ok(
+        listedFeedback.feedback.some((item) => Number(item.id) === Number(mcpFeedbackId)),
+        'MCP list_feedback should return the created feedback',
+      );
+    }
     loop.start = originalStart;
     const runtime = loop.existingRuntime(mcpProjectId);
     if (runtime) runtime.running = false;
@@ -876,6 +958,62 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
       nowIso(),
       mcpProjectId,
     ]);
+  }
+
+  const mcpPlanId = writeSmokePlan(db, loop, mcpWorkspace, mcpProjectId);
+  const listedPlans = assertMcpToolData(await callMcpTool(MCP_TOOL_NAMES.LIST_PLANS, {
+    projectId: mcpProjectId,
+    status: 'running',
+  }, context), 'MCP list_plans');
+  assert.ok(
+    listedPlans.plans.some((plan) => Number(plan.id) === Number(mcpPlanId)),
+    'MCP list_plans should return the synced plan',
+  );
+  const fetchedPlan = assertMcpToolData(await callMcpTool(MCP_TOOL_NAMES.GET_PLAN, {
+    projectId: mcpProjectId,
+    planId: mcpPlanId,
+  }, context), 'MCP get_plan');
+  assert.equal(fetchedPlan.plan.id, mcpPlanId, 'MCP get_plan should return the target plan');
+  assert.equal(fetchedPlan.tasks.length, 6, 'MCP get_plan should return plan tasks');
+  const listedTasks = assertMcpToolData(await callMcpTool(MCP_TOOL_NAMES.LIST_TASKS, {
+    projectId: mcpProjectId,
+    planId: mcpPlanId,
+    status: 'pending',
+  }, context), 'MCP list_tasks');
+  assert.equal(listedTasks.tasks.length, 6, 'MCP list_tasks should filter by plan and status');
+
+  const originalStartForControl = loop.start.bind(loop);
+  const originalStopForControl = loop.stop.bind(loop);
+  loop.start = (projectId) => {
+    const runtime = loop.runtime(projectId);
+    runtime.running = true;
+    db.run('UPDATE project_states SET running = 1, phase = ?, updated_at = ? WHERE project_id = ?', [
+      'running',
+      nowIso(),
+      projectId,
+    ]);
+  };
+  loop.stop = (projectId) => {
+    const runtime = loop.runtime(projectId);
+    runtime.running = false;
+    db.run('UPDATE project_states SET running = 0, phase = ?, updated_at = ? WHERE project_id = ?', [
+      'stopped',
+      nowIso(),
+      projectId,
+    ]);
+  };
+  try {
+    const started = assertMcpToolSuccess(await callMcpTool(MCP_TOOL_NAMES.START_LOOP, {
+      projectId: mcpProjectId,
+    }, context), 'MCP start_loop');
+    assert.equal(started.snapshot.state.running, true, 'MCP start_loop should return running state');
+    const stopped = assertMcpToolSuccess(await callMcpTool(MCP_TOOL_NAMES.STOP_LOOP, {
+      projectId: mcpProjectId,
+    }, context), 'MCP stop_loop');
+    assert.equal(stopped.snapshot.state.running, false, 'MCP stop_loop should return stopped state');
+  } finally {
+    loop.start = originalStartForControl;
+    loop.stop = originalStopForControl;
   }
 
   const crossProjectError = await callMcpTool(MCP_TOOL_NAMES.CREATE_FEEDBACK, {
@@ -892,14 +1030,19 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
     body: 'should fail',
     autoRun: 'yes',
   }, context);
-  assertMcpToolError(invalidAutoRunError, /autoRun 必须是布尔值/, '非法 autoRun 应返回可修正错误');
+  assertMcpToolError(invalidAutoRunError, /autoRun must be a boolean/, '非法 autoRun 应返回可修正错误');
 }
 
 function assertMcpToolSuccess(result, label) {
+  const parsed = assertMcpToolData(result, label);
+  assert.ok(parsed.snapshot, `${label} 应返回快照摘要`);
+  return parsed;
+}
+
+function assertMcpToolData(result, label) {
   assert.equal(result?.isError, undefined, `${label} 不应返回工具错误`);
   assert.equal(result?.content?.[0]?.type, 'text', `${label} 应返回文本 JSON`);
   const parsed = result.structuredContent || JSON.parse(result.content[0].text);
-  assert.ok(parsed.snapshot, `${label} 应返回快照摘要`);
   return parsed;
 }
 
@@ -2209,7 +2352,7 @@ function loadPatchedLoopService({ spawnOverride }) {
     if (request === 'node:child_process') return fakeChildProcess;
     if (request === './database') return { nowIso };
     if (request === './agentCli') return patchedAgentCli;
-    if (request === './codexActivity') return require('../src/codexActivity');
+    if (request === './codexActivity' || request.startsWith('./loop/')) return require(path.join(path.dirname(loopServicePath), request));
     return require(request);
   };
   vm.runInNewContext(

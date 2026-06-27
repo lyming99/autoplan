@@ -1,0 +1,1685 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0761-9673-7b40-b163-23963d2bbe7e
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_28_20260627-123944.md
+指定任务：
+- [ ] P004: 补充测试代码 <!-- scope: src/agentCli.test.js,src/renderer/components/shared.test.tsx,src/renderer/pages/WorkspacePage.test.tsx -->
+任务 scope：src/agentcli.test.js, src/renderer/components/shared.test.tsx, src/renderer/pages/workspacepage.test.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Planning P004 Tests**
+
+I’m considering that we only need to focus on the P004 tests here. We definitely shouldn't run tests at this point, just inspect the test files. It’s also important to remember the previous blocker is related to the loop configuration outside the scope. The P004 tests need to cover expected behavior, but they might fail due to that blocker. So, my task is to add tests without running them and make sure to inspect them if they don’t already exist.
+codex
+我会只查看 P004 指定测试文件，按前序改动补充覆盖用例但不运行测试。
+  → 查看现有测试结构
+  • 补充后端 xhigh 测试
+  • 补充前端读取测试
+  • 补充工作区选项测试
+  • 检查测试文件变更
+exec
+powershell.exe -Command "Get-ChildItem -LiteralPath 'src' -Filter 'agentCli.test.js' -Recurse | Select-Object -ExpandProperty FullName; Get-ChildItem -LiteralPath 'src\\renderer' -Filter 'shared.test.tsx' -Recurse | Select-Object -ExpandProperty FullName; Get-ChildItem -LiteralPath 'src\\renderer' -Filter 'WorkspacePage.test.tsx' -Recurse | Select-Object -ExpandProperty FullName" in D:\project\GitHub\autoplan
+ succeeded in 446ms:
+codex
+指定测试文件尚不存在；我会参考现有测试风格创建/补充这些文件。
+exec
+powershell.exe -Command "Get-ChildItem -Path 'src' -Recurse -Include '*.test.js','*.test.ts','*.test.tsx' | Select-Object -ExpandProperty FullName" in D:\project\GitHub\autoplan
+ succeeded in 438ms:
+codex
+项目里没有既有测试文件；我会查看测试依赖/配置，避免引入不匹配写法。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'package.json' -Encoding UTF8; ''; Get-ChildItem -Force -Name" in D:\project\GitHub\autoplan
+ succeeded in 441ms:
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+.autoplan-runtime
+.claude
+.git
+.github
+assets
+dist
+docs
+node_modules
+release
+release-test
+scripts
+src
+ui
+.codex-autoplan-overview-final.png
+.codex-autoplan-overview-left-log.png
+.codex-autoplan-overview-merged-log.png
+.codex-autoplan-overview.png
+.codex-dev-20260624-225246.log
+.codex-dev-20260624-225652.log
+.codex-dev-20260624-225837.log
+.codex-dev-20260624-230150.log
+.codex-dev.log
+.gitattributes
+.gitignore
+index.html
+LICENSE
+package-lock.json
+package.json
+README.md
+System.Drawing.Drawing2D.GraphicsPath
+tsconfig.json
+vite.config.ts
+
+**Considering test implementation**
+
+I don’t have a test runner available. It looks like I might need to create tests using node:test, but the package doesn’t have any test scripts. P005 mentions running npm test, but again, there’s no test in the package. I think the task should focus on adding tests only, not on the package itself. I probably need to inspect the tsconfig for the TSX module to figure this all out.
+codex
+当前没有测试脚本，但 P004 只允许测试文件；我会用 Node 内置测试风格补充最小可读用例。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'tsconfig.json' -Encoding UTF8; ''; Get-Content -LiteralPath 'vite.config.ts' -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 446ms:
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "useDefineForClassFields": true,
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "allowJs": false,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "noEmit": true,
+    "jsx": "react-jsx"
+  },
+  "include": ["src/renderer", "src/vite-env.d.ts", "vite.config.ts"]
+}
+
+import react from '@vitejs/plugin-react';
+import { defineConfig } from 'vite';
+
+export default defineConfig({
+  base: './',
+  plugins: [react()],
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+  },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+  },
+});
+
+**Exploring test options**
+
+I’m facing some issues with node types in the TSX test. One idea is to write `WorkspacePage.test.tsx` in a JS-ish TS format using dynamic `require`. I might also consider creating tests using Node in a `.test.js` file for the agent, while keeping the `.test.tsx` file free of Node imports. Since I have shared functions exported, I can import them for assertions, and I’ll need to include `describe/it` declarations.
+**Considering TypeScript testing options**
+
+I’m looking at building with all the TSX tests in the src/renderer folder. It seems like the build P005 would run TypeScript checks and fail if test globals aren’t declared properly. I wonder if I should use `// @ts-nocheck` to prevent type errors during the build? It might make the test code less strict with types, though. Is that an acceptable trade-off if it helps avoid issues with missing @types?
+codex
+我会查看后端导出函数，确保测试覆盖命令参数和 Claude 分支。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'src\\agentCli.js' -Encoding UTF8 | Select-Object -Last 45" in D:\project\GitHub\autoplan
+ succeeded in 445ms:
+  }
+}
+
+function agentCliActivity(activeOperation) {
+  if (Array.isArray(activeOperation.activity)) return activeOperation.activity;
+  if (activeOperation.activity && typeof activeOperation.activity.getLines === 'function') {
+    return activeOperation.activity.getLines();
+  }
+  return [];
+}
+
+function formatDurationMs(milliseconds) {
+  const seconds = Math.max(1, Math.round(Number(milliseconds || 0) / 1000));
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.round(seconds / 60);
+  return `${minutes}m`;
+}
+
+function readableAgentCliError({ provider, command, exitCode, error, logFile }) {
+  if (exitCode === 0 && !error) return '';
+  const displayName = AGENT_CLI_DISPLAY_NAMES[normalizeAgentCliProvider(provider)] || 'Agent CLI';
+  const resolvedCommand = normalizeAgentCliCommand(command) || defaultAgentCliCommand(provider);
+  if (error) return `${displayName} CLI 启动失败（${resolvedCommand}）：${error.message || String(error)}`;
+  const logHint = logFile ? `，日志：${logFile}` : '';
+  return `${displayName} CLI 退出码 ${exitCode}${logHint}`;
+}
+
+function readableAgentCliLastFileError({ provider, command, lastFile, error }) {
+  const displayName = AGENT_CLI_DISPLAY_NAMES[normalizeAgentCliProvider(provider)] || 'Agent CLI';
+  const resolvedCommand = normalizeAgentCliCommand(command) || defaultAgentCliCommand(provider);
+  return `${displayName} CLI last message 写入失败（${resolvedCommand} -> ${lastFile}）：${error.message || String(error)}`;
+}
+
+module.exports = {
+  AGENT_CLI_PROVIDERS,
+  DEFAULT_AGENT_CLI_PROVIDER,
+  agentCliSpawnSpec,
+  codexNewSessionArgs,
+  codexResumeSessionArgs,
+  normalizeCodexReasoningEffort,
+  normalizeAgentCliCommand,
+  normalizeAgentCliProvider,
+  readableAgentCliError,
+  runAgentCliAttempt,
+};
+
+codex
+接下来创建三个测试文件，覆盖后端参数、共享读取和工作区选项源码契约。
+  ✓ 查看现有测试结构
+  → 补充后端 xhigh 测试
+  • 补充前端读取测试
+  • 补充工作区选项测试
+  • 检查测试文件变更
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\agentCli.test.js
+D:\project\GitHub\autoplan\src\renderer\components\shared.test.tsx
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.test.tsx
+diff --git a/src/agentCli.test.js b/src/agentCli.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f566018bf1bc6623cde755ffce84dca45da3f2f2
+--- /dev/null
++++ b/src/agentCli.test.js
+@@ -0,0 +1,49 @@
++const { describe, it } = require('node:test');
++
++const {
++  agentCliSpawnSpec,
++  codexNewSessionArgs,
++  codexResumeSessionArgs,
++  normalizeCodexReasoningEffort,
++} = require('./agentCli');
++
++function expectEqual(actual, expected) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectIncludes(items, expected) {
++  if (!items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectNotIncludes(items, expected) {
++  if (items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('Codex reasoning effort', () => {
++  it('normalizes xhigh while preserving legacy fallbacks', () => {
++    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
++    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
++  });
++
++  it('passes xhigh to new and resumed Codex sessions', () => {
++    const expectedArg = 'model_reasoning_effort="xhigh"';
++
++    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++  });
++
++  it('does not add Codex reasoning args to Claude CLI specs', () => {
++    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
++
++    expectEqual(spec.agentCliProvider, 'claude');
++    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
++  });
++});
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..825995b9cbb58f21f8e45ea3ec4c40352dfcab1a
+--- /dev/null
++++ b/src/renderer/components/shared.test.tsx
+@@ -0,0 +1,40 @@
++import {
++  codexReasoningEffortLabel,
++  planCliSummaryLabel,
++  readCodexReasoningEffort,
++} from './shared';
++
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++
++function expectEqual(actual: unknown, expected: unknown) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('shared Codex reasoning helpers', () => {
++  it('reads xhigh from shared display sources', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
++    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
++  });
++
++  it('falls back to medium for empty and invalid Codex values', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
++  });
++
++  it('keeps Claude summaries free of Codex reasoning depth', () => {
++    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
++
++    expectEqual(readCodexReasoningEffort(source), null);
++    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
++  });
++
++  it('labels xhigh without degrading it to medium', () => {
++    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c067af97e9986a8d82cf8c658a9799116d80a1f6
+--- /dev/null
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -0,0 +1,39 @@
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++declare const process: { cwd(): string };
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
++const { join } = require('node:path') as { join: (...parts: string[]) => string };
++
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
++function workspacePageSource() {
++  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++}
++
++describe('WorkspacePage Codex reasoning options', () => {
++  it('offers xhigh after the existing three reasoning levels', () => {
++    const source = workspacePageSource();
++    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
++    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
++    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
++    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++
++    expect(lowIndex >= 0, 'low option should exist');
++    expect(mediumIndex > lowIndex, 'medium option should follow low');
++    expect(highIndex > mediumIndex, 'high option should follow medium');
++    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++  });
++
++  it('keeps medium as the default and accepts xhigh in local normalization', () => {
++    const source = workspacePageSource();
++
++    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
++    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
++    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++  });
++});
+
+diff --git a/src/agentCli.test.js b/src/agentCli.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f566018bf1bc6623cde755ffce84dca45da3f2f2
+--- /dev/null
++++ b/src/agentCli.test.js
+@@ -0,0 +1,49 @@
++const { describe, it } = require('node:test');
++
++const {
++  agentCliSpawnSpec,
++  codexNewSessionArgs,
++  codexResumeSessionArgs,
++  normalizeCodexReasoningEffort,
++} = require('./agentCli');
++
++function expectEqual(actual, expected) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectIncludes(items, expected) {
++  if (!items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectNotIncludes(items, expected) {
++  if (items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('Codex reasoning effort', () => {
++  it('normalizes xhigh while preserving legacy fallbacks', () => {
++    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
++    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
++  });
++
++  it('passes xhigh to new and resumed Codex sessions', () => {
++    const expectedArg = 'model_reasoning_effort="xhigh"';
++
++    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++  });
++
++  it('does not add Codex reasoning args to Claude CLI specs', () => {
++    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
++
++    expectEqual(spec.agentCliProvider, 'claude');
++    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
++  });
++});
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..825995b9cbb58f21f8e45ea3ec4c40352dfcab1a
+--- /dev/null
++++ b/src/renderer/components/shared.test.tsx
+@@ -0,0 +1,40 @@
++import {
++  codexReasoningEffortLabel,
++  planCliSummaryLabel,
++  readCodexReasoningEffort,
++} from './shared';
++
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++
++function expectEqual(actual: unknown, expected: unknown) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('shared Codex reasoning helpers', () => {
++  it('reads xhigh from shared display sources', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
++    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
++  });
++
++  it('falls back to medium for empty and invalid Codex values', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
++  });
++
++  it('keeps Claude summaries free of Codex reasoning depth', () => {
++    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
++
++    expectEqual(readCodexReasoningEffort(source), null);
++    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
++  });
++
++  it('labels xhigh without degrading it to medium', () => {
++    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c067af97e9986a8d82cf8c658a9799116d80a1f6
+--- /dev/null
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -0,0 +1,39 @@
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++declare const process: { cwd(): string };
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
++const { join } = require('node:path') as { join: (...parts: string[]) => string };
++
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
++function workspacePageSource() {
++  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++}
++
++describe('WorkspacePage Codex reasoning options', () => {
++  it('offers xhigh after the existing three reasoning levels', () => {
++    const source = workspacePageSource();
++    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
++    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
++    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
++    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++
++    expect(lowIndex >= 0, 'low option should exist');
++    expect(mediumIndex > lowIndex, 'medium option should follow low');
++    expect(highIndex > mediumIndex, 'high option should follow medium');
++    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++  });
++
++  it('keeps medium as the default and accepts xhigh in local normalization', () => {
++    const source = workspacePageSource();
++
++    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
++    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
++    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++  });
++});
+
+**Updating plan for TypeScript files**
+
+I need to revise my plan and inspect the files further. I might apply the patch successfully, but I should perform a static check too. There seems to be a potential issue with TypeScript regarding `require` when used in files with imports. The `isolatedModules` option should allow certain uses of `require`, but I might encounter errors with global types or duplicates. I need to clarify whether namespaces are allowed and check the declarations across script files.
+**Addressing global scope in TypeScript**
+
+I see that the Workspace doesn't have any imports or exports, which means it utilizes the global type. There's just one global `TestRegistrar`, and I might declare `require` globally as well. To avoid global pollution, adding `export {};` at the bottom would help, making the Workspace a module. I’m considering if I should also add this to the shared module. While there are some potential issues with asynchronous test functions, it seems we can manage those. I'll need to confirm my approach regarding `assert` usage as well.
+**Checking TypeScript arguments and exports**
+
+If an argument includes a string with a prefix, it only checks for exact matches. I could improve that by checking if joined strings do not include the value instead. Regarding the TypeScript build, there's a potential issue where it can't resolve `node:test` because it’s using `require` without type definitions, but that shouldn't need module resolution. I might also need to add `export {};` to the Workspace to prevent future global duplicates. Using the patch could help with that.
+codex
+测试文件已创建；我会做一次轻量静态审查并避免启动测试进程。
+  ✓ 查看现有测试结构
+  ✓ 补充后端 xhigh 测试
+  ✓ 补充前端读取测试
+  → 补充工作区选项测试
+  • 检查测试文件变更
+diff --git a/src/agentCli.test.js b/src/agentCli.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f566018bf1bc6623cde755ffce84dca45da3f2f2
+--- /dev/null
++++ b/src/agentCli.test.js
+@@ -0,0 +1,49 @@
++const { describe, it } = require('node:test');
++
++const {
++  agentCliSpawnSpec,
++  codexNewSessionArgs,
++  codexResumeSessionArgs,
++  normalizeCodexReasoningEffort,
++} = require('./agentCli');
++
++function expectEqual(actual, expected) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectIncludes(items, expected) {
++  if (!items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectNotIncludes(items, expected) {
++  if (items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('Codex reasoning effort', () => {
++  it('normalizes xhigh while preserving legacy fallbacks', () => {
++    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
++    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
++  });
++
++  it('passes xhigh to new and resumed Codex sessions', () => {
++    const expectedArg = 'model_reasoning_effort="xhigh"';
++
++    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++  });
++
++  it('does not add Codex reasoning args to Claude CLI specs', () => {
++    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
++
++    expectEqual(spec.agentCliProvider, 'claude');
++    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
++  });
++});
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..825995b9cbb58f21f8e45ea3ec4c40352dfcab1a
+--- /dev/null
++++ b/src/renderer/components/shared.test.tsx
+@@ -0,0 +1,40 @@
++import {
++  codexReasoningEffortLabel,
++  planCliSummaryLabel,
++  readCodexReasoningEffort,
++} from './shared';
++
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++
++function expectEqual(actual: unknown, expected: unknown) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('shared Codex reasoning helpers', () => {
++  it('reads xhigh from shared display sources', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
++    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
++  });
++
++  it('falls back to medium for empty and invalid Codex values', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
++  });
++
++  it('keeps Claude summaries free of Codex reasoning depth', () => {
++    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
++
++    expectEqual(readCodexReasoningEffort(source), null);
++    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
++  });
++
++  it('labels xhigh without degrading it to medium', () => {
++    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c067af97e9986a8d82cf8c658a9799116d80a1f6
+--- /dev/null
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -0,0 +1,39 @@
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++declare const process: { cwd(): string };
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
++const { join } = require('node:path') as { join: (...parts: string[]) => string };
++
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
++function workspacePageSource() {
++  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++}
++
++describe('WorkspacePage Codex reasoning options', () => {
++  it('offers xhigh after the existing three reasoning levels', () => {
++    const source = workspacePageSource();
++    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
++    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
++    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
++    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++
++    expect(lowIndex >= 0, 'low option should exist');
++    expect(mediumIndex > lowIndex, 'medium option should follow low');
++    expect(highIndex > mediumIndex, 'high option should follow medium');
++    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++  });
++
++  it('keeps medium as the default and accepts xhigh in local normalization', () => {
++    const source = workspacePageSource();
++
++    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
++    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
++    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++  });
++});
+
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'src\\renderer\\pages\\WorkspacePage.test.tsx' -Encoding UTF8 | Select-Object -First 80; ''; Get-Content -LiteralPath 'src\\renderer\\components\\shared.test.tsx' -Encoding UTF8 | Select-Object -First 90; ''; Get-Content -LiteralPath 'src\\agentCli.test.js' -Encoding UTF8 | Select-Object -First 120" in D:\project\GitHub\autoplan
+ succeeded in 479ms:
+type TestRegistrar = (name: string, fn: () => void) => void;
+
+declare function require(id: string): unknown;
+declare const process: { cwd(): string };
+
+const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
+const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
+const { join } = require('node:path') as { join: (...parts: string[]) => string };
+
+function expect(condition: unknown, message: string) {
+  if (!condition) throw new Error(message);
+}
+
+function workspacePageSource() {
+  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
+}
+
+describe('WorkspacePage Codex reasoning options', () => {
+  it('offers xhigh after the existing three reasoning levels', () => {
+    const source = workspacePageSource();
+    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
+
+    expect(lowIndex >= 0, 'low option should exist');
+    expect(mediumIndex > lowIndex, 'medium option should follow low');
+    expect(highIndex > mediumIndex, 'high option should follow medium');
+    expect(xhighIndex > highIndex, 'xhigh option should follow high');
+  });
+
+  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+    const source = workspacePageSource();
+
+    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
+  });
+});
+
+import {
+  codexReasoningEffortLabel,
+  planCliSummaryLabel,
+  readCodexReasoningEffort,
+} from './shared';
+
+type TestRegistrar = (name: string, fn: () => void) => void;
+
+declare function require(id: string): unknown;
+
+const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
+
+function expectEqual(actual: unknown, expected: unknown) {
+  if (actual !== expected) {
+    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
+  }
+}
+
+describe('shared Codex reasoning helpers', () => {
+  it('reads xhigh from shared display sources', () => {
+    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
+    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
+  });
+
+  it('falls back to medium for empty and invalid Codex values', () => {
+    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
+    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
+  });
+
+  it('keeps Claude summaries free of Codex reasoning depth', () => {
+    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
+
+    expectEqual(readCodexReasoningEffort(source), null);
+    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
+  });
+
+  it('labels xhigh without degrading it to medium', () => {
+    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
+  });
+});
+
+const { describe, it } = require('node:test');
+
+const {
+  agentCliSpawnSpec,
+  codexNewSessionArgs,
+  codexResumeSessionArgs,
+  normalizeCodexReasoningEffort,
+} = require('./agentCli');
+
+function expectEqual(actual, expected) {
+  if (actual !== expected) {
+    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
+  }
+}
+
+function expectIncludes(items, expected) {
+  if (!items.includes(expected)) {
+    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
+  }
+}
+
+function expectNotIncludes(items, expected) {
+  if (items.includes(expected)) {
+    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
+  }
+}
+
+describe('Codex reasoning effort', () => {
+  it('normalizes xhigh while preserving legacy fallbacks', () => {
+    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
+    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
+    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
+    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
+  });
+
+  it('passes xhigh to new and resumed Codex sessions', () => {
+    const expectedArg = 'model_reasoning_effort="xhigh"';
+
+    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
+    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
+  });
+
+  it('does not add Codex reasoning args to Claude CLI specs', () => {
+    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
+
+    expectEqual(spec.agentCliProvider, 'claude');
+    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
+  });
+});
+
+diff --git a/src/agentCli.test.js b/src/agentCli.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f566018bf1bc6623cde755ffce84dca45da3f2f2
+--- /dev/null
++++ b/src/agentCli.test.js
+@@ -0,0 +1,49 @@
++const { describe, it } = require('node:test');
++
++const {
++  agentCliSpawnSpec,
++  codexNewSessionArgs,
++  codexResumeSessionArgs,
++  normalizeCodexReasoningEffort,
++} = require('./agentCli');
++
++function expectEqual(actual, expected) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectIncludes(items, expected) {
++  if (!items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectNotIncludes(items, expected) {
++  if (items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('Codex reasoning effort', () => {
++  it('normalizes xhigh while preserving legacy fallbacks', () => {
++    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
++    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
++  });
++
++  it('passes xhigh to new and resumed Codex sessions', () => {
++    const expectedArg = 'model_reasoning_effort="xhigh"';
++
++    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++  });
++
++  it('does not add Codex reasoning args to Claude CLI specs', () => {
++    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
++
++    expectEqual(spec.agentCliProvider, 'claude');
++    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
++  });
++});
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..825995b9cbb58f21f8e45ea3ec4c40352dfcab1a
+--- /dev/null
++++ b/src/renderer/components/shared.test.tsx
+@@ -0,0 +1,40 @@
++import {
++  codexReasoningEffortLabel,
++  planCliSummaryLabel,
++  readCodexReasoningEffort,
++} from './shared';
++
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++
++function expectEqual(actual: unknown, expected: unknown) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('shared Codex reasoning helpers', () => {
++  it('reads xhigh from shared display sources', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
++    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
++  });
++
++  it('falls back to medium for empty and invalid Codex values', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
++  });
++
++  it('keeps Claude summaries free of Codex reasoning depth', () => {
++    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
++
++    expectEqual(readCodexReasoningEffort(source), null);
++    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
++  });
++
++  it('labels xhigh without degrading it to medium', () => {
++    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c067af97e9986a8d82cf8c658a9799116d80a1f6
+--- /dev/null
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -0,0 +1,39 @@
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++declare const process: { cwd(): string };
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
++const { join } = require('node:path') as { join: (...parts: string[]) => string };
++
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
++function workspacePageSource() {
++  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++}
++
++describe('WorkspacePage Codex reasoning options', () => {
++  it('offers xhigh after the existing three reasoning levels', () => {
++    const source = workspacePageSource();
++    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
++    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
++    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
++    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++
++    expect(lowIndex >= 0, 'low option should exist');
++    expect(mediumIndex > lowIndex, 'medium option should follow low');
++    expect(highIndex > mediumIndex, 'high option should follow medium');
++    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++  });
++
++  it('keeps medium as the default and accepts xhigh in local normalization', () => {
++    const source = workspacePageSource();
++
++    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
++    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
++    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++  });
++});
+
+codex
+文件内容看起来完整；我会做最后的变更范围核对，不执行任何测试命令。
+  ✓ 查看现有测试结构
+  ✓ 补充后端 xhigh 测试
+  ✓ 补充前端读取测试
+  ✓ 补充工作区选项测试
+  → 检查测试文件变更
+diff --git a/src/agentCli.test.js b/src/agentCli.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f566018bf1bc6623cde755ffce84dca45da3f2f2
+--- /dev/null
++++ b/src/agentCli.test.js
+@@ -0,0 +1,49 @@
++const { describe, it } = require('node:test');
++
++const {
++  agentCliSpawnSpec,
++  codexNewSessionArgs,
++  codexResumeSessionArgs,
++  normalizeCodexReasoningEffort,
++} = require('./agentCli');
++
++function expectEqual(actual, expected) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectIncludes(items, expected) {
++  if (!items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectNotIncludes(items, expected) {
++  if (items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('Codex reasoning effort', () => {
++  it('normalizes xhigh while preserving legacy fallbacks', () => {
++    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
++    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
++  });
++
++  it('passes xhigh to new and resumed Codex sessions', () => {
++    const expectedArg = 'model_reasoning_effort="xhigh"';
++
++    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++  });
++
++  it('does not add Codex reasoning args to Claude CLI specs', () => {
++    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
++
++    expectEqual(spec.agentCliProvider, 'claude');
++    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
++  });
++});
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..825995b9cbb58f21f8e45ea3ec4c40352dfcab1a
+--- /dev/null
++++ b/src/renderer/components/shared.test.tsx
+@@ -0,0 +1,40 @@
++import {
++  codexReasoningEffortLabel,
++  planCliSummaryLabel,
++  readCodexReasoningEffort,
++} from './shared';
++
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++
++function expectEqual(actual: unknown, expected: unknown) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('shared Codex reasoning helpers', () => {
++  it('reads xhigh from shared display sources', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
++    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
++  });
++
++  it('falls back to medium for empty and invalid Codex values', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
++  });
++
++  it('keeps Claude summaries free of Codex reasoning depth', () => {
++    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
++
++    expectEqual(readCodexReasoningEffort(source), null);
++    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
++  });
++
++  it('labels xhigh without degrading it to medium', () => {
++    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c067af97e9986a8d82cf8c658a9799116d80a1f6
+--- /dev/null
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -0,0 +1,39 @@
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++declare const process: { cwd(): string };
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
++const { join } = require('node:path') as { join: (...parts: string[]) => string };
++
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
++function workspacePageSource() {
++  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++}
++
++describe('WorkspacePage Codex reasoning options', () => {
++  it('offers xhigh after the existing three reasoning levels', () => {
++    const source = workspacePageSource();
++    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
++    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
++    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
++    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++
++    expect(lowIndex >= 0, 'low option should exist');
++    expect(mediumIndex > lowIndex, 'medium option should follow low');
++    expect(highIndex > mediumIndex, 'high option should follow medium');
++    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++  });
++
++  it('keeps medium as the default and accepts xhigh in local normalization', () => {
++    const source = workspacePageSource();
++
++    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
++    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
++    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++  });
++});
+
+exec
+powershell.exe -Command "git status --short -- src/agentCli.test.js src/renderer/components/shared.test.tsx src/renderer/pages/WorkspacePage.test.tsx; ''; git diff --stat -- src/agentCli.test.js src/renderer/components/shared.test.tsx src/renderer/pages/WorkspacePage.test.tsx" in D:\project\GitHub\autoplan
+ succeeded in 314ms:
+?? src/agentCli.test.js
+?? src/renderer/components/shared.test.tsx
+?? src/renderer/pages/WorkspacePage.test.tsx
+
+
+diff --git a/src/agentCli.test.js b/src/agentCli.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f566018bf1bc6623cde755ffce84dca45da3f2f2
+--- /dev/null
++++ b/src/agentCli.test.js
+@@ -0,0 +1,49 @@
++const { describe, it } = require('node:test');
++
++const {
++  agentCliSpawnSpec,
++  codexNewSessionArgs,
++  codexResumeSessionArgs,
++  normalizeCodexReasoningEffort,
++} = require('./agentCli');
++
++function expectEqual(actual, expected) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectIncludes(items, expected) {
++  if (!items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectNotIncludes(items, expected) {
++  if (items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('Codex reasoning effort', () => {
++  it('normalizes xhigh while preserving legacy fallbacks', () => {
++    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
++    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
++  });
++
++  it('passes xhigh to new and resumed Codex sessions', () => {
++    const expectedArg = 'model_reasoning_effort="xhigh"';
++
++    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++  });
++
++  it('does not add Codex reasoning args to Claude CLI specs', () => {
++    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
++
++    expectEqual(spec.agentCliProvider, 'claude');
++    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
++  });
++});
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..825995b9cbb58f21f8e45ea3ec4c40352dfcab1a
+--- /dev/null
++++ b/src/renderer/components/shared.test.tsx
+@@ -0,0 +1,40 @@
++import {
++  codexReasoningEffortLabel,
++  planCliSummaryLabel,
++  readCodexReasoningEffort,
++} from './shared';
++
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++
++function expectEqual(actual: unknown, expected: unknown) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('shared Codex reasoning helpers', () => {
++  it('reads xhigh from shared display sources', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
++    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
++  });
++
++  it('falls back to medium for empty and invalid Codex values', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
++  });
++
++  it('keeps Claude summaries free of Codex reasoning depth', () => {
++    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
++
++    expectEqual(readCodexReasoningEffort(source), null);
++    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
++  });
++
++  it('labels xhigh without degrading it to medium', () => {
++    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c067af97e9986a8d82cf8c658a9799116d80a1f6
+--- /dev/null
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -0,0 +1,39 @@
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++declare const process: { cwd(): string };
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
++const { join } = require('node:path') as { join: (...parts: string[]) => string };
++
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
++function workspacePageSource() {
++  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++}
++
++describe('WorkspacePage Codex reasoning options', () => {
++  it('offers xhigh after the existing three reasoning levels', () => {
++    const source = workspacePageSource();
++    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
++    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
++    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
++    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++
++    expect(lowIndex >= 0, 'low option should exist');
++    expect(mediumIndex > lowIndex, 'medium option should follow low');
++    expect(highIndex > mediumIndex, 'high option should follow medium');
++    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++  });
++
++  it('keeps medium as the default and accepts xhigh in local normalization', () => {
++    const source = workspacePageSource();
++
++    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
++    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
++    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++  });
++});
+
+**Checking git status**
+
+I’m looking at a situation with my git where the diff stat is empty, probably due to untracked files. I wonder if I should use `git diff --stat --no-index`, but maybe it’s not necessary. I’m also considering that checking the status might show only the test files. I need to finalize my update plan to get everything sorted out. There’s a bit to figure out!
+codex
+P004 只新增了三个指定测试文件；我会标记完成。
+  ✓ 查看现有测试结构
+  ✓ 补充后端 xhigh 测试
+  ✓ 补充前端读取测试
+  ✓ 补充工作区选项测试
+  ✓ 检查测试文件变更
+diff --git a/src/agentCli.test.js b/src/agentCli.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f566018bf1bc6623cde755ffce84dca45da3f2f2
+--- /dev/null
++++ b/src/agentCli.test.js
+@@ -0,0 +1,49 @@
++const { describe, it } = require('node:test');
++
++const {
++  agentCliSpawnSpec,
++  codexNewSessionArgs,
++  codexResumeSessionArgs,
++  normalizeCodexReasoningEffort,
++} = require('./agentCli');
++
++function expectEqual(actual, expected) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectIncludes(items, expected) {
++  if (!items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectNotIncludes(items, expected) {
++  if (items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('Codex reasoning effort', () => {
++  it('normalizes xhigh while preserving legacy fallbacks', () => {
++    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
++    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
++  });
++
++  it('passes xhigh to new and resumed Codex sessions', () => {
++    const expectedArg = 'model_reasoning_effort="xhigh"';
++
++    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++  });
++
++  it('does not add Codex reasoning args to Claude CLI specs', () => {
++    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
++
++    expectEqual(spec.agentCliProvider, 'claude');
++    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
++  });
++});
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..825995b9cbb58f21f8e45ea3ec4c40352dfcab1a
+--- /dev/null
++++ b/src/renderer/components/shared.test.tsx
+@@ -0,0 +1,40 @@
++import {
++  codexReasoningEffortLabel,
++  planCliSummaryLabel,
++  readCodexReasoningEffort,
++} from './shared';
++
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++
++function expectEqual(actual: unknown, expected: unknown) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('shared Codex reasoning helpers', () => {
++  it('reads xhigh from shared display sources', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
++    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
++  });
++
++  it('falls back to medium for empty and invalid Codex values', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
++  });
++
++  it('keeps Claude summaries free of Codex reasoning depth', () => {
++    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
++
++    expectEqual(readCodexReasoningEffort(source), null);
++    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
++  });
++
++  it('labels xhigh without degrading it to medium', () => {
++    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c067af97e9986a8d82cf8c658a9799116d80a1f6
+--- /dev/null
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -0,0 +1,39 @@
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++declare const process: { cwd(): string };
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
++const { join } = require('node:path') as { join: (...parts: string[]) => string };
++
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
++function workspacePageSource() {
++  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++}
++
++describe('WorkspacePage Codex reasoning options', () => {
++  it('offers xhigh after the existing three reasoning levels', () => {
++    const source = workspacePageSource();
++    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
++    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
++    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
++    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++
++    expect(lowIndex >= 0, 'low option should exist');
++    expect(mediumIndex > lowIndex, 'medium option should follow low');
++    expect(highIndex > mediumIndex, 'high option should follow medium');
++    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++  });
++
++  it('keeps medium as the default and accepts xhigh in local normalization', () => {
++    const source = workspacePageSource();
++
++    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
++    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
++    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++  });
++});
+
+codex
+已完成 P004，只新增指定 scope 内测试文件，未修改 plan，也未运行测试/构建/lint。
+
+**新增测试**
+- `src/agentCli.test.js:1`：覆盖 `xhigh` 归一化、大小写输入、非法/空值回落，以及 Codex 新会话/恢复会话参数传递。
+- `src/renderer/components/shared.test.tsx:1`：覆盖共享读取 `xhigh`、非法/空值回落、Claude 不显示 Codex 思考深度、`xhigh` 标签不降级。
+- `src/renderer/pages/WorkspacePage.test.tsx:1`：覆盖工作区选项包含 `xhigh`、顺序追加在 `high` 后、默认值仍为 `medium`。
+
+**未执行**
+- 按任务要求，没有运行 `npm test`、构建、lint 或其它验证命令。
+diff --git a/src/agentCli.test.js b/src/agentCli.test.js
+new file mode 100644
+index 0000000000000000000000000000000000000000..f566018bf1bc6623cde755ffce84dca45da3f2f2
+--- /dev/null
++++ b/src/agentCli.test.js
+@@ -0,0 +1,49 @@
++const { describe, it } = require('node:test');
++
++const {
++  agentCliSpawnSpec,
++  codexNewSessionArgs,
++  codexResumeSessionArgs,
++  normalizeCodexReasoningEffort,
++} = require('./agentCli');
++
++function expectEqual(actual, expected) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectIncludes(items, expected) {
++  if (!items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} to include ${JSON.stringify(expected)}`);
++  }
++}
++
++function expectNotIncludes(items, expected) {
++  if (items.includes(expected)) {
++    throw new Error(`Expected ${JSON.stringify(items)} not to include ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('Codex reasoning effort', () => {
++  it('normalizes xhigh while preserving legacy fallbacks', () => {
++    expectEqual(normalizeCodexReasoningEffort('xhigh'), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(' XHIGH '), 'xhigh');
++    expectEqual(normalizeCodexReasoningEffort(''), 'medium');
++    expectEqual(normalizeCodexReasoningEffort('invalid'), 'medium');
++  });
++
++  it('passes xhigh to new and resumed Codex sessions', () => {
++    const expectedArg = 'model_reasoning_effort="xhigh"';
++
++    expectIncludes(codexNewSessionArgs('D:/workspace', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++    expectIncludes(codexResumeSessionArgs('session-id', 'last.txt', { reasoningEffort: 'xhigh' }), expectedArg);
++  });
++
++  it('does not add Codex reasoning args to Claude CLI specs', () => {
++    const spec = agentCliSpawnSpec('claude', 'claude', 'last.txt', ['-c', 'model_reasoning_effort="xhigh"']);
++
++    expectEqual(spec.agentCliProvider, 'claude');
++    expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
++  });
++});
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..825995b9cbb58f21f8e45ea3ec4c40352dfcab1a
+--- /dev/null
++++ b/src/renderer/components/shared.test.tsx
+@@ -0,0 +1,40 @@
++import {
++  codexReasoningEffortLabel,
++  planCliSummaryLabel,
++  readCodexReasoningEffort,
++} from './shared';
++
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++
++function expectEqual(actual: unknown, expected: unknown) {
++  if (actual !== expected) {
++    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
++  }
++}
++
++describe('shared Codex reasoning helpers', () => {
++  it('reads xhigh from shared display sources', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
++    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
++  });
++
++  it('falls back to medium for empty and invalid Codex values', () => {
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
++    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
++  });
++
++  it('keeps Claude summaries free of Codex reasoning depth', () => {
++    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
++
++    expectEqual(readCodexReasoningEffort(source), null);
++    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
++  });
++
++  it('labels xhigh without degrading it to medium', () => {
++    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+new file mode 100644
+index 0000000000000000000000000000000000000000..c067af97e9986a8d82cf8c658a9799116d80a1f6
+--- /dev/null
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -0,0 +1,39 @@
++type TestRegistrar = (name: string, fn: () => void) => void;
++
++declare function require(id: string): unknown;
++declare const process: { cwd(): string };
++
++const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
++const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
++const { join } = require('node:path') as { join: (...parts: string[]) => string };
++
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
++function workspacePageSource() {
++  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++}
++
++describe('WorkspacePage Codex reasoning options', () => {
++  it('offers xhigh after the existing three reasoning levels', () => {
++    const source = workspacePageSource();
++    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
++    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
++    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
++    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++
++    expect(lowIndex >= 0, 'low option should exist');
++    expect(mediumIndex > lowIndex, 'medium option should follow low');
++    expect(highIndex > mediumIndex, 'high option should follow medium');
++    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++  });
++
++  it('keeps medium as the default and accepts xhigh in local normalization', () => {
++    const source = workspacePageSource();
++
++    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
++    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
++    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++  });
++});
+
+tokens used
+249,455
+已完成 P004，只新增指定 scope 内测试文件，未修改 plan，也未运行测试/构建/lint。
+
+**新增测试**
+- `src/agentCli.test.js:1`：覆盖 `xhigh` 归一化、大小写输入、非法/空值回落，以及 Codex 新会话/恢复会话参数传递。
+- `src/renderer/components/shared.test.tsx:1`：覆盖共享读取 `xhigh`、非法/空值回落、Claude 不显示 Codex 思考深度、`xhigh` 标签不降级。
+- `src/renderer/pages/WorkspacePage.test.tsx:1`：覆盖工作区选项包含 `xhigh`、顺序追加在 `high` 后、默认值仍为 `medium`。
+
+**未执行**
+- 按任务要求，没有运行 `npm test`、构建、lint 或其它验证命令。

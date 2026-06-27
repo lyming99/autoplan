@@ -1,0 +1,1779 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f07a4-dac9-7322-aede-cb62f7d9f8bb
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_19_20260627-134658.md
+指定任务：
+- [ ] P002: 增加 Plan 选中状态管理 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts -->
+任务 scope：src/renderer/pages/workspacepage.tsx, src/renderer/types.ts
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用 P001 的关联模型，只查看 P002 作用域内的状态挂载点。
+  → 定位选中状态挂载点
+  • 添加选择状态类型
+  • 实现状态清理传递
+  • 复查范围不跑测试
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\pages\\WorkspacePage.tsx' 1 35; Show 'src\\renderer\\pages\\WorkspacePage.tsx' 270 45; Show 'src\\renderer\\pages\\WorkspacePage.tsx' 630 40; Show 'src\\renderer\\pages\\WorkspacePage.tsx' 800 48; Show 'src\\renderer\\types.ts' 330 55" in D:\project\GitHub\autoplan
+ succeeded in 536ms:
+--- src\renderer\pages\WorkspacePage.tsx 1 ---
+    1: import { useEffect, useRef, useState } from 'react';
+    2: import type {
+    3:   AppSnapshot,
+    4:   Plan,
+    5:   Project,
+    6:   WorkspaceSearchResult,
+    7:   WorkspaceTab,
+    8: } from '../types';
+    9: import { useWorkspaceController } from '../hooks/useWorkspaceController';
+   10: import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
+   11: import { IntakePanel } from '../components/IntakePanel';
+   12: import { EventList, PlanList, TaskList } from '../components/PlanLists';
+   13: import { SearchResults } from '../components/SearchResults';
+   14: import { Icon } from '../components/icons';
+   15: import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+   16: import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+   17: import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+   18: import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+   19: 
+   20: export function WorkspacePage() {
+   21:   const {
+   22:     activeTab,
+   23:     addPendingFiles,
+   24:     appendIntakeTask,
+   25:     closePlanReader,
+   26:     composerCliSelection,
+   27:     createFeedback,
+   28:     createRequirement,
+   29:     deleteFeedback,
+   30:     deleteRequirement,
+   31:     displayTasks,
+   32:     error,
+   33:     filteredEmptyText,
+   34:     filteredItems,
+   35:     interruptIntake,
+--- src\renderer\pages\WorkspacePage.tsx 270 ---
+  270:                 type="feedback"
+  271:                 attachments={snapshot.attachments}
+  272:                 onAddFiles={addPendingFiles}
+  273:                 onDelete={deleteFeedback}
+  274:                 onRemoveAttachment={removePendingAttachment}
+  275:                 onSubmit={createFeedbackFromComposer}
+  276:                 onUpdate={updateFeedback}
+  277:                 onInterrupt={interruptIntake}
+  278:                 onResume={resumeIntake}
+  279:                 onAppendTask={appendIntakeTask}
+  280:               />
+  281:             </ComposerCliSelectionProvider>
+  282:           ) : null}
+  283:         </section>
+  284: 
+  285:         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+  286:           {activeTab === 'tasks' ? (
+  287:             <div className="task-main">
+  288:               <div className="task-status-grid">
+  289:                 <section className="card">
+  290:                   <div className="card-head">
+  291:                     <h2>Plan</h2>
+  292:                   </div>
+  293:                   <PlanList
+  294:                     emptyText={filteredEmptyText}
+  295:                     latestReadingPlan={latestReadingPlan}
+  296:                     onCloseReader={closePlanReader}
+  297:                     onOpenReader={openPlanReader}
+  298:                     onRunParallel={({ plan, batches }) =>
+  299:                       runLoopAction(() =>
+  300:                         (window.autoplan as typeof window.autoplan & {
+  301:                           runTaskBatches: (input: {
+  302:                             projectId: number;
+  303:                             planId: number;
+  304:                             batches: Array<{ taskIds: number[] }>;
+  305:                             manual: true;
+  306:                           }) => Promise<AppSnapshot>;
+  307:                         }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+  308:                       )
+  309:                     }
+  310:                     onRefreshReader={refreshPlanReader}
+  311:                     onReorderPlans={reorderPlansFromList}
+  312:                     plans={filteredItems.plans}
+  313:                     readerState={planReadState}
+  314:                     tasks={snapshot.tasks}
+--- src\renderer\pages\WorkspacePage.tsx 630 ---
+--- src\renderer\pages\WorkspacePage.tsx 800 ---
+--- src\renderer\types.ts 330 ---
+  330: export type CodexSessionState = CodexSessionMode | 'fallback-new' | string;
+  331: 
+  332: export interface CodexSessionInfo {
+  333:   codexSessionId?: string | null;
+  334:   codexSessionShortId?: string | null;
+  335:   codexSessionMode?: CodexSessionMode | null;
+  336:   codexSessionState?: CodexSessionState | null;
+  337:   codexSessionLabel?: string | null;
+  338:   codexSessionRequestedId?: string | null;
+  339:   codexSessionRequestedShortId?: string | null;
+  340:   codexSessionFallback?: boolean | null;
+  341: }
+  342: 
+  343: export interface PlanTask extends CodexSessionInfo {
+  344:   id: number;
+  345:   plan_id: number;
+  346:   task_key: string;
+  347:   title: string;
+  348:   raw_line: string;
+  349:   scope: string;
+  350:   scope_files: PlanScopeFileInfo[];
+  351:   status: string;
+  352:   sort_order: number;
+  353:   started_at: string | null;
+  354:   finished_at: string | null;
+  355:   duration_ms: number;
+  356:   run_duration_ms?: number;
+  357:   codex_session_id: string | null;
+  358:   agentCliProvider?: string | null;
+  359:   agentCliCommand?: string | null;
+  360:   codexReasoningEffort?: CodexReasoningEffort | null;
+  361:   updated_at: string;
+  362:   /** JOIN plans 得到 */
+  363:   file_path: string;
+  364:   /** JOIN plans 并读取计划 Markdown 标题得到 */
+  365:   plan_title: string;
+  366: }
+  367: 
+  368: export type PlanTaskAssociationSource = 'plan_id' | 'file_path';
+  369: 
+  370: export interface PlanTaskAssociationTaskRef {
+  371:   plan_id?: number | null;
+  372:   file_path?: string | null;
+  373: }
+  374: 
+  375: export interface PlanTaskAssociationPlanRef {
+  376:   id: number;
+  377:   file_path?: string | null;
+  378: }
+  379: 
+  380: export function readPlanTaskAssociationPlanId(task: PlanTaskAssociationTaskRef) {
+  381:   if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+  382:   const planId = Number(task.plan_id);
+  383:   return Number.isFinite(planId) ? planId : null;
+  384: }
+
+**Investigating WorkspacePage changes**
+
+I see that the WorkspacePage has been refactored to only import hooks now. I’m wondering if our previous changes have been shifted to the useWorkspaceController hook. It looks like P002 scope pertains solely to the WorkspacePage and its types. I need to inspect the rest to understand better. The lines ended at 314 because the file is shorter. I guess I should count the lines to check.
+codex
+当前页面已抽到 controller hook；我会只在页面层加状态并传递，避免改 hook/组件文件。
+exec
+powershell.exe -Command "(Get-Content -LiteralPath 'src\\renderer\\pages\\WorkspacePage.tsx' -Encoding UTF8).Count; rg -n \"PlanList|TaskList|snapshot|projectId|plans|openPlanReader|selected|useState|useEffect\" src/renderer/pages/WorkspacePage.tsx src/renderer/types.ts src/renderer/hooks/useWorkspaceController.ts" in D:\project\GitHub\autoplan
+2026-06-27T10:45:53.528076Z ERROR codex_core::tools::router: error={"output":"433\r\nrg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 89\r\n+ ... c\\renderer\\pages\\WorkspacePage.tsx' -Encoding UTF8).Count; rg -n \"Pla ...\r\n+                                                                ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.3}}
+ exited 1 in 1302ms:
+433
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 89
++ ... c\renderer\pages\WorkspacePage.tsx' -Encoding UTF8).Count; rg -n "Pla ...
++                                                                ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+**Troubleshooting command availability**
+
+It looks like I can’t find “rg” anymore, even though it was available earlier. This might be a path issue since I'm in PowerShell now. But it’s okay, there are alternatives! I could use “Select-String” instead. It's a viable option and will let me manipulate string searches without relying on “rg.” Hopefully, this approach will work out just fine! Let's see how it goes.
+codex
+`rg` 当前不可用，我改用 PowerShell 自带搜索继续定位。
+exec
+powershell.exe -Command "Select-String -Path 'src\\renderer\\pages\\WorkspacePage.tsx','src\\renderer\\types.ts','src\\renderer\\hooks\\useWorkspaceController.ts' -Pattern 'PlanList|TaskList|snapshot|projectId|plans|openPlanReader|selected|useState|useEffect' | ForEach-Object { \"{0}:{1}:{2}\" -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 475ms:
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:1:import { useEffect, useRef, useState } from 'react';
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:3:AppSnapshot,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:12:import { EventList, PlanList, TaskList } from '../components/PlanLists';
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:39:openPlanReader,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:44:projectId,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:57:snapshot,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:66:const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:67:const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:68:const [searchLocateNotice, setSearchLocateNotice] = useState('');
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:72:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:76:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:100:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:131:const reorderPlansFromList = (orderedPlans: Plan[]) =>
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:133:if (!snapshot) throw new Error('工作区快照尚未加载');
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:134:const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:135:const orderedQueue = [...orderedPlans];
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:136:const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:138:reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:139:}).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:142:if (!snapshot) {
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:149:projectId={projectId}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:168:projectId={projectId}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:206:? window.autoplan.stopLoop({ projectId, manual: true })
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:207:: window.autoplan.startLoop({ projectId, manual: true }),
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:228:<WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:245:attachments={snapshot.attachments}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:271:attachments={snapshot.attachments}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:293:<PlanList
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:297:onOpenReader={openPlanReader}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:302:projectId: number;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:306:}) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:307:}).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:311:onReorderPlans={reorderPlansFromList}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:312:plans={filteredItems.plans}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:314:tasks={snapshot.tasks}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:315:totalPlanCount={snapshot.plans.length}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:322:<TaskList
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:327:onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:328:onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:343:mcp={snapshot.mcp}
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:348:? window.autoplan.stopLoop({ projectId, manual: true })
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:349:: window.autoplan.startLoop({ projectId, manual: true }),
+D:\project\GitHub\autoplan\src\renderer\types.ts:17:export type PlanStatus = (typeof PLAN_STATUS)[keyof typeof PLAN_STATUS];
+D:\project\GitHub\autoplan\src\renderer\types.ts:179:/** 由 snapshot 合并自 project.workspace_path */
+D:\project\GitHub\autoplan\src\renderer\types.ts:240:status: PlanStatus;
+D:\project\GitHub\autoplan\src\renderer\types.ts:254:export interface PlanScopeFileInfo {
+D:\project\GitHub\autoplan\src\renderer\types.ts:350:scope_files: PlanScopeFileInfo[];
+D:\project\GitHub\autoplan\src\renderer\types.ts:362:/** JOIN plans 得到 */
+D:\project\GitHub\autoplan\src\renderer\types.ts:364:/** JOIN plans 并读取计划 Markdown 标题得到 */
+D:\project\GitHub\autoplan\src\renderer\types.ts:494:export interface AppSnapshot {
+D:\project\GitHub\autoplan\src\renderer\types.ts:495:activeProjectId: number | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:503:plans: Plan[];
+D:\project\GitHub\autoplan\src\renderer\types.ts:520:projectId: number | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:567:projectId: number;
+D:\project\GitHub\autoplan\src\renderer\types.ts:648:projectId: number;
+D:\project\GitHub\autoplan\src\renderer\types.ts:665:export interface McpSnapshotSummary {
+D:\project\GitHub\autoplan\src\renderer\types.ts:666:activeProjectId: number | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:679:plans: number;
+D:\project\GitHub\autoplan\src\renderer\types.ts:686:projectId: number | null;
+D:\project\GitHub\autoplan\src\renderer\types.ts:689:snapshot: McpSnapshotSummary;
+D:\project\GitHub\autoplan\src\renderer\types.ts:697:projectId: number;
+D:\project\GitHub\autoplan\src\renderer\types.ts:707:export interface ProjectIdInput {
+D:\project\GitHub\autoplan\src\renderer\types.ts:708:projectId: number;
+D:\project\GitHub\autoplan\src\renderer\types.ts:712:export interface RecordIdInput extends ProjectIdInput {
+D:\project\GitHub\autoplan\src\renderer\types.ts:716:export interface TaskIdInput extends ProjectIdInput {
+D:\project\GitHub\autoplan\src\renderer\types.ts:720:export interface ReadPlanInput extends ProjectIdInput {
+D:\project\GitHub\autoplan\src\renderer\types.ts:724:export interface IntakeActionInput extends ProjectIdInput {
+D:\project\GitHub\autoplan\src\renderer\types.ts:746:snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:747:createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:748:updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:749:deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:750:configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:751:startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:752:stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:753:runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:755:runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:756:stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:757:createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:758:updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:759:deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:760:createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:761:updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:762:deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:763:interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:764:resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:765:appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+D:\project\GitHub\autoplan\src\renderer\types.ts:768:onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:1:import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:6:AppSnapshot,
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:16:import { useSnapshot } from './useSnapshot';
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:17:import { searchWorkspaceSnapshot } from '../utils/search';
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:46:const params = useParams<{ projectId: string }>();
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:49:const projectId = Number(params.projectId);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:50:const { snapshot, setSnapshot, error, setError } = useSnapshot(Number.isFinite(projectId) ? projectId : null);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:52:const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => resolveWorkspaceTab(tabParam));
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:54:useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:56:useState<Record<IntakeType, AgentCliProvider>>(defaultComposerCliProviders);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:58:useState<Record<IntakeType, CodexReasoningEffort>>(defaultComposerCodexReasoning);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:59:const [loopForm, setLoopForm] = useState<LoopFormState>({
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:67:const [loopFormDirty, setLoopFormDirty] = useState(false);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:68:const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:79:const [searchQuery, setSearchQuery] = useState('');
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:80:const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:83:const project = snapshot?.activeProject || null;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:84:const state = snapshot?.state || null;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:85:const projects = snapshot?.projects || [];
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:86:const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:90:() => createFilteredWorkspaceItems(snapshot, workspaceSearch),
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:91:[snapshot, workspaceSearch],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:101:snapshot?.plans.find(
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:105:}, [planReadState.plan, snapshot?.plans]);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:118:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:119:if (!state || Number(state.project_id) !== Number(projectId)) return;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:122:}, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state]);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:124:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:126:}, [projectId]);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:128:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:139:}, [projectId, state?.agent_cli_provider, state?.codex_reasoning_effort]);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:144:selectedByType: composerCliProviders,
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:157:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:159:}, [projectId]);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:161:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:165:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:170:useEffect(() => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:176:}, [projectId]);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:179:const selectedFiles = Array.from(files || []);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:183:for (const file of selectedFiles) {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:215:if (!projectId) return false;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:218:projectId,
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:226:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:235:[composerCliProviders.requirement, composerCodexReasoning.requirement, pendingAttachments.requirement, projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:240:if (!projectId) return false;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:243:projectId,
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:251:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:260:[composerCliProviders.feedback, composerCodexReasoning.feedback, pendingAttachments.feedback, projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:265:if (!projectId) return false;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:267:const next = await window.autoplan.updateRequirement({ projectId, id, ...input });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:268:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:276:[projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:281:if (!projectId) return false;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:283:const next = await window.autoplan.deleteRequirement({ projectId, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:284:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:292:[projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:297:if (!projectId) return false;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:299:const next = await window.autoplan.updateFeedback({ projectId, id, ...input });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:300:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:308:[projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:313:if (!projectId) return false;
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:315:const next = await window.autoplan.deleteFeedback({ projectId, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:316:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:324:[projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:330:const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:331:if (next.state && Number(next.state.project_id) === Number(projectId)) {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:335:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:342:const runLoopAction = async (action: () => Promise<AppSnapshot>) => {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:345:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:355:const next = await window.autoplan.interruptIntake({ projectId, type, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:356:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:362:[projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:368:const next = await window.autoplan.resumeIntake({ projectId, type, id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:369:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:375:[projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:381:const next = await window.autoplan.appendIntakeTask({ projectId, type, id, title });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:382:setSnapshot(next);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:388:[projectId, setSnapshot, setError, showError],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:397:const result = await window.autoplan.readPlan({ projectId: plan.project_id, planId: plan.id });
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:422:const openPlanReader = useCallback(
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:447:const plan = snapshot?.plans.find((item) => getPlanTaskAssociationSource(task, item) !== null);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:448:if (plan) openPlanReader(plan);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:450:[openPlanReader, snapshot?.plans],
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:454:if (nextId && nextId !== projectId) {
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:493:openPlanReader,
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:498:projectId,
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:511:snapshot,
+
+codex
+因为 P002 只能改页面和类型，我先确认组件是否已有选择态 props 可接。
+exec
+powershell.exe -Command "Select-String -Path 'src\\renderer\\components\\PlanLists.tsx' -Pattern 'selectedPlan|onSelectPlan|planSelection|onClearPlan|selection|PlanList\\(|TaskList\\(' | ForEach-Object { \"{0}:{1}:{2}\" -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\components\\PlanLists.tsx' 600 60; Show 'src\\renderer\\components\\PlanLists.tsx' 945 45" in D:\project\GitHub\autoplan
+ succeeded in 517ms:
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:62:export function TaskList({
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx:305:export function PlanList({ plans, emptyText, onReorderPlans, onRunParallel, ...props }: PlanListProps) {
+--- src\renderer\components\PlanLists.tsx 600 ---
+--- src\renderer\components\PlanLists.tsx 945 ---
+
+**Inspecting plans**
+
+I'm considering whether to refactor the PlanLists. It might be beneficial to take a closer look at them. Could it make the process more efficient? I'll assess the current structure and see if changes are necessary. I'm curious about potential improvements and how they might enhance the overall functionality. I want to ensure that I'm making the best choices for clarity and effectiveness in the plans. Alright, let's see what I find!
+codex
+组件目前没有选择态 props；P002 将先在页面中维护并预留传递模型。
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\components\\PlanLists.tsx' 1 125; Show 'src\\renderer\\components\\PlanLists.tsx' 285 70; Show 'src\\renderer\\components\\PlanLists.tsx' 355 85" in D:\project\GitHub\autoplan
+ succeeded in 510ms:
+--- src\renderer\components\PlanLists.tsx 1 ---
+    1: import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+    2: import type { AppEvent, Plan, PlanTask, WorkspaceSearchResult } from '../types';
+    3: import { RecordCard } from './IntakePanel';
+    4: import { PlanList as BasePlanList } from './plans/PlanList';
+    5: import { formatChinaDateTime } from '../utils/time';
+    6: import {
+    7:   TASK_STATUS_FILTERS,
+    8:   formatTaskDuration,
+    9:   formatTaskPlanGroupSummary,
+   10:   groupTasksByPlan,
+   11:   matchesTaskStatusFilter,
+   12:   scopeFileLabel,
+   13:   scopeFileStatus,
+   14:   type TaskStatusFilter,
+   15:   type TimedPlanTask,
+   16: } from '../utils/planTasks';
+   17: import { formatEvent as formatBaseEvent, getEventSearchText as getBaseEventSearchText } from '../utils/planEvents';
+   18: import type { EventDisplay } from '../utils/planEvents';
+   19: 
+   20: export type { EventDisplay } from '../utils/planEvents';
+   21: 
+   22: const SYSTEM_EVENT_TITLES: Record<string, string> = {
+   23:   'scan.done': '扫描完成',
+   24:   'feedback.created': '反馈已创建',
+   25:   'plan.generated': '计划已生成',
+   26: };
+   27: 
+   28: export function formatEvent(event: AppEvent): EventDisplay {
+   29:   const display = formatBaseEvent(event);
+   30:   if (display.tone || display.badge) return display;
+   31:   const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
+   32:   return title === display.title ? display : { ...display, title };
+   33: }
+   34: 
+   35: export function getEventSearchText(event: AppEvent) {
+   36:   const display = formatEvent(event);
+   37:   return [
+   38:     getBaseEventSearchText(event),
+   39:     event.type,
+   40:     display.title,
+   41:     display.body,
+   42:     display.badge,
+   43:     display.meta,
+   44:   ]
+   45:     .filter(Boolean)
+   46:     .join(' ');
+   47: }
+   48: 
+   49: type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+   50: type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+   51: type PlanListProps = ComponentProps<typeof BasePlanList> & {
+   52:   onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+   53: };
+   54: 
+   55: const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [
+   56:   { key: 'all', label: '全部' },
+   57:   { key: 'running', label: '执行中' },
+   58:   { key: 'completed', label: '已完成' },
+   59:   { key: 'draft', label: '草稿' },
+   60: ];
+   61: 
+   62: export function TaskList({
+   63:   emptyText = '暂无任务。',
+   64:   tasks,
+   65:   onOpenPlan,
+   66:   onRun,
+   67:   onStop,
+   68:   locateTarget,
+   69: }: {
+   70:   emptyText?: string;
+   71:   tasks: PlanTask[];
+   72:   onOpenPlan?: (task: PlanTask) => void;
+   73:   onRun?: (task: PlanTask) => void;
+   74:   onStop?: (task: PlanTask) => void;
+   75:   locateTarget?: WorkspaceSearchResult | null;
+   76: }) {
+   77:   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+   78:   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+   79:   const visibleTasks = useMemo(
+   80:     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+   81:     [activeFilter, tasks],
+   82:   );
+   83:   const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+   84:   const defaultExpandedKeys = useMemo(() => getDefaultExpandedTaskGroupKeys(taskGroups), [taskGroups]);
+   85:   const filterCounts = useMemo(
+   86:     () =>
+   87:       TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+   88:         (counts, filter) => ({
+   89:           ...counts,
+   90:           [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+   91:         }),
+   92:         { all: 0, running: 0, queued: 0, completed: 0 },
+   93:       ),
+   94:     [tasks],
+   95:   );
+   96:   const activeFilterConfig =
+   97:     TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+   98:   const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+   99: 
+  100:   useEffect(() => {
+  101:     if (locateTarget?.targetTab === 'tasks') {
+  102:       setActiveFilter('all');
+  103:     }
+  104:   }, [locateTarget]);
+  105: 
+  106:   useEffect(() => {
+  107:     if (!locateTarget) return;
+  108:     const locatedGroup = findTaskGroupForSearchTarget(taskGroups, locateTarget);
+  109:     if (!locatedGroup) return;
+  110:     setExpandedOverrides((current) => (current[locatedGroup.key] ? current : { ...current, [locatedGroup.key]: true }));
+  111:   }, [locateTarget, taskGroups]);
+  112: 
+  113:   function toggleTaskGroup(groupKey: string) {
+  114:     const currentlyExpanded = expandedOverrides[groupKey] ?? defaultExpandedKeys.has(groupKey);
+  115:     setExpandedOverrides((current) => ({ ...current, [groupKey]: !currentlyExpanded }));
+  116:   }
+  117: 
+  118:   return (
+  119:     <div className="task-list-panel">
+  120:       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+  121:         {TASK_STATUS_FILTERS.map((filter) => {
+  122:           const active = activeFilter === filter.id;
+  123:           return (
+  124:             <button
+  125:               key={filter.id}
+--- src\renderer\components\PlanLists.tsx 285 ---
+  285: }
+  286: 
+  287: function findTaskGroupForSearchTarget(groups: TaskPlanGroup[], target: WorkspaceSearchResult) {
+  288:   const taskId = target.taskId ?? (target.targetType === 'task' ? target.targetId : null);
+  289:   const planId = target.planId ?? (target.targetType === 'plan' ? target.targetId : null);
+  290: 
+  291:   return groups.find((group) => {
+  292:     if (taskId !== null && group.tasks.some((task) => Number(task.id) === Number(taskId))) return true;
+  293:     if (planId !== null && group.source === 'plan' && Number(group.sourceId) === Number(planId)) return true;
+  294:     if (target.filePath && group.source === 'file' && group.sourceId === target.filePath) return true;
+  295:     return false;
+  296:   });
+  297: }
+  298: 
+  299: function taskPlanGroupAnchorId(group: TaskPlanGroup) {
+  300:   if (group.source === 'plan' && group.sourceId) return `workspace-plan-${group.sourceId}`;
+  301:   if (group.source === 'file' && group.sourceId) return `workspace-plan-file-${sanitizeTaskGroupKey(group.sourceId)}`;
+  302:   return undefined;
+  303: }
+  304: 
+  305: export function PlanList({ plans, emptyText, onReorderPlans, onRunParallel, ...props }: PlanListProps) {
+  306:   const [activeStatus, setActiveStatus] = useState<PlanStatusTab>('all');
+  307:   const [reordering, setReordering] = useState(false);
+  308:   const [draftRunningPlanId, setDraftRunningPlanId] = useState<number | null>(null);
+  309:   const [draftRunError, setDraftRunError] = useState('');
+  310:   const orderedPlans = useMemo(() => [...plans].sort(comparePlanOrder), [plans]);
+  311:   const counts = useMemo(() => planStatusCounts(orderedPlans), [orderedPlans]);
+  312:   const visiblePlans = orderedPlans.filter((plan) => planMatchesStatusTab(plan, activeStatus));
+  313: 
+  314:   async function movePlan(plan: Plan, direction: -1 | 1) {
+  315:     if (!onReorderPlans || reordering) return;
+  316:     const fromIndex = orderedPlans.findIndex((item) => item.id === plan.id);
+  317:     const toIndex = fromIndex + direction;
+  318:     const target = orderedPlans[toIndex];
+  319:     if (fromIndex < 0 || !target || !canReorderPlan(plan) || !canReorderPlan(target)) return;
+  320: 
+  321:     const nextPlans = [...orderedPlans];
+  322:     nextPlans[fromIndex] = target;
+  323:     nextPlans[toIndex] = plan;
+  324:     setReordering(true);
+  325:     try {
+  326:       await onReorderPlans(nextPlans);
+  327:     } finally {
+  328:       setReordering(false);
+  329:     }
+  330:   }
+  331: 
+  332:   async function runDraftPlan(plan: Plan) {
+  333:     setDraftRunError('');
+  334:     if (onRunParallel && plan.concurrency_suggestion?.hasSafeParallelBatches) {
+  335:       onRunParallel({
+  336:         plan,
+  337:         batches: plan.concurrency_suggestion.batches.map((batch) => ({
+  338:           taskIds: batch.tasks.map((task) => task.id),
+  339:         })),
+  340:       });
+  341:       return;
+  342:     }
+  343: 
+  344:     const task = firstPendingTaskForPlan(plan, props.tasks || []);
+  345:     if (!task) {
+  346:       setDraftRunError('草稿计划暂无可执行任务');
+  347:       return;
+  348:     }
+  349: 
+  350:     setDraftRunningPlanId(plan.id);
+  351:     try {
+  352:       await (window.autoplan as typeof window.autoplan & {
+  353:         runTask: (input: { projectId: number; taskId: number }) => Promise<unknown>;
+  354:       }).runTask({ projectId: plan.project_id, taskId: task.id });
+--- src\renderer\components\PlanLists.tsx 355 ---
+  355:     } catch (error) {
+  356:       setDraftRunError(error instanceof Error ? error.message : '草稿计划启动失败');
+  357:     } finally {
+  358:       setDraftRunningPlanId(null);
+  359:     }
+  360:   }
+  361: 
+  362:   return (
+  363:     <>
+  364:       <div className="task-filter-tabs" role="tablist" aria-label="计划状态筛选">
+  365:         {PLAN_STATUS_TABS.map((tab) => (
+  366:           <button
+  367:             key={tab.key}
+  368:             type="button"
+  369:             className={`task-filter-tab${activeStatus === tab.key ? ' active' : ''}`}
+  370:             onClick={() => setActiveStatus(tab.key)}
+  371:             role="tab"
+  372:             aria-selected={activeStatus === tab.key}
+  373:           >
+  374:             <span>{tab.label}</span>
+  375:             <span className="task-filter-count">{counts[tab.key]}</span>
+  376:           </button>
+  377:         ))}
+  378:       </div>
+  379: 
+  380:       {visiblePlans.length ? (
+  381:         <div className="list compact" aria-label="计划执行顺序调整">
+  382:           {draftRunError ? <div className="error-banner">{draftRunError}</div> : null}
+  383:           {visiblePlans.map((plan) => {
+  384:             const currentIndex = orderedPlans.findIndex((item) => item.id === plan.id);
+  385:             const previousPlan = orderedPlans[currentIndex - 1];
+  386:             const nextPlan = orderedPlans[currentIndex + 1];
+  387:             const disabledReason = reorderDisabledReason(plan);
+  388:             const draftRunDisabledReason = isDraftPlan(plan) ? draftPlanRunDisabledReason(plan, props.tasks || []) : '';
+  389:             return (
+  390:               <div key={`order-${plan.id}`} className="task-scope-chip">
+  391:                 <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+  392:                 <span>{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
+  393:                 <small>{disabledReason || '可调整'}</small>
+  394:                 <button
+  395:                   type="button"
+  396:                   className="btn-link"
+  397:                   disabled={reordering || Boolean(disabledReason) || !previousPlan || !canReorderPlan(previousPlan)}
+  398:                   onClick={() => movePlan(plan, -1)}
+  399:                 >
+  400:                   上移
+  401:                 </button>
+  402:                 <button
+  403:                   type="button"
+  404:                   className="btn-link"
+  405:                   disabled={reordering || Boolean(disabledReason) || !nextPlan || !canReorderPlan(nextPlan)}
+  406:                   onClick={() => movePlan(plan, 1)}
+  407:                 >
+  408:                   下移
+  409:                 </button>
+  410:                 {isDraftPlan(plan) ? (
+  411:                   <button
+  412:                     type="button"
+  413:                     className="btn-link"
+  414:                     disabled={draftRunningPlanId === plan.id || Boolean(draftRunDisabledReason)}
+  415:                     title={draftRunDisabledReason || undefined}
+  416:                     onClick={() => runDraftPlan(plan)}
+  417:                   >
+  418:                     {draftRunningPlanId === plan.id ? '启动中…' : '执行草稿'}
+  419:                   </button>
+  420:                 ) : null}
+  421:               </div>
+  422:             );
+  423:           })}
+  424:         </div>
+  425:       ) : null}
+  426: 
+  427:       <BasePlanList
+  428:         {...props}
+  429:         onRunParallel={onRunParallel}
+  430:         emptyText={activeStatus === 'all' ? emptyText : '当前分类暂无 Plan。'}
+  431:         plans={visiblePlans}
+  432:         totalPlanCount={props.totalPlanCount ?? plans.length}
+  433:       />
+  434:     </>
+  435:   );
+  436: }
+  437: 
+  438: function comparePlanOrder(left: Plan, right: Plan) {
+  439:   return (
+
+**Considering plan properties**
+
+I’m thinking about whether the PlanListProps are correctly derived from BasePlanList, particularly regarding selection props. It appears I might need to inspect BasePlanList, perhaps looking at something like P003. But there's a scope limitation that's making me hesitate. However, if BasePlanList is already set up to accept those props, maybe that changes things. It feels a bit tricky, and I want to get it right!
+codex
+页面包装组件透传给基础 PlanList；我确认基础组件是否已有选中状态接口。
+exec
+powershell.exe -Command "Select-String -Path 'src\\renderer\\components\\plans\\PlanList.tsx' -Pattern 'selectedPlan|onSelectPlan|PlanListProps|export function PlanList|onClear|selection' | ForEach-Object { \"{0}:{1}:{2}\" -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\components\\plans\\PlanList.tsx' 1 75" in D:\project\GitHub\autoplan
+ succeeded in 506ms:
+D:\project\GitHub\autoplan\src\renderer\components\plans\PlanList.tsx:74:export function PlanList({
+--- src\renderer\components\plans\PlanList.tsx 1 ---
+    1: import type { KeyboardEvent } from 'react';
+    2: import { useEffect, useId, useRef, useState } from 'react';
+    3: import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+    4: import { RecordCard } from '../IntakePanel';
+    5: import { MarkdownReader } from '../MarkdownReader';
+    6: import { planCliSummaryLabel } from '../shared';
+    7: import { formatChinaDateTime } from '../../utils/time';
+    8: import {
+    9:   formatPlanDurationSummary,
+   10:   planTitle,
+   11:   tasksForPlan,
+   12:   type ParallelRunRequest,
+   13: } from '../../utils/planTasks';
+   14: 
+   15: function hasPlanReaderUpdate(
+   16:   readingPlan: Plan | null,
+   17:   latestPlan: Plan | null | undefined,
+   18:   result: WorkspacePlanReadState['result'],
+   19: ) {
+   20:   if (!readingPlan || !latestPlan) return false;
+   21:   if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+   22: 
+   23:   const readFilePath = result?.file_path || readingPlan.file_path || '';
+   24:   const readHash = result?.hash || readingPlan.hash || '';
+   25:   const readUpdatedAt = result?.updated_at || readingPlan.updated_at || '';
+   26:   return (
+   27:     (latestPlan.file_path || '') !== readFilePath ||
+   28:     (latestPlan.hash || '') !== readHash ||
+   29:     (latestPlan.updated_at || '') !== readUpdatedAt ||
+   30:     (latestPlan.status || '') !== (readingPlan.status || '')
+   31:   );
+   32: }
+   33: 
+   34: const PLAN_READER_FOCUSABLE_SELECTOR = [
+   35:   'a[href]',
+   36:   'button:not([disabled])',
+   37:   'input:not([disabled]):not([type="hidden"])',
+   38:   'select:not([disabled])',
+   39:   'textarea:not([disabled])',
+   40:   '[tabindex]:not([tabindex="-1"])',
+   41: ].join(',');
+   42: 
+   43: function getPlanReaderFocusableElements(container: HTMLElement) {
+   44:   return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+   45:     (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+   46:   );
+   47: }
+   48: 
+   49: function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+   50:   if (hasRunningTask) return '该计划已有任务执行中';
+   51:   if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+   52:   if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+   53:   return '';
+   54: }
+   55: 
+   56: function readPlanTaskStatusLabel(status: string) {
+   57:   if (status === 'completed') return '已完成';
+   58:   if (status === 'running') return '执行中';
+   59:   if (status === 'blocked') return '已阻塞';
+   60:   if (status === 'failed') return '失败';
+   61:   return '待执行';
+   62: }
+   63: 
+   64: function readPlanTaskScopeLabel(task: ReadPlanTask) {
+   65:   return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+   66: }
+   67: 
+   68: function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+   69:   if (!result) return false;
+   70:   return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+   71: }
+   72: 
+   73: 
+   74: export function PlanList({
+   75:   emptyText = '暂无 plan。',
+
+codex
+基础组件也未接选择接口；本任务将只产出页面状态与类型模型，后续任务接 UI。
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\components\\plans\\PlanList.tsx' 74 62" in D:\project\GitHub\autoplan
+ succeeded in 500ms:
+--- src\renderer\components\plans\PlanList.tsx 74 ---
+   74: export function PlanList({
+   75:   emptyText = '暂无 plan。',
+   76:   latestReadingPlan,
+   77:   onCloseReader,
+   78:   onOpenReader,
+   79:   onRunParallel,
+   80:   onRefreshReader,
+   81:   plans,
+   82:   readerState,
+   83:   tasks = [],
+   84:   totalPlanCount = plans.length,
+   85: }: {
+   86:   emptyText?: string;
+   87:   latestReadingPlan?: Plan | null;
+   88:   onCloseReader: () => void;
+   89:   onOpenReader: (plan: Plan) => void;
+   90:   onRunParallel?: (request: ParallelRunRequest) => void;
+   91:   onRefreshReader: () => void;
+   92:   plans: Plan[];
+   93:   readerState: WorkspacePlanReadState;
+   94:   tasks?: PlanTask[];
+   95:   totalPlanCount?: number;
+   96: }) {
+   97:   const readingPlan = readerState.plan;
+   98:   const planReadResult = readerState.result;
+   99:   const planReadError = readerState.error;
+  100:   const planReading = readerState.loading;
+  101:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+  102:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+  103:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+  104:   const readerPlanForSummary = latestReadingPlan || readingPlan;
+  105:   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+  106:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+  107:   const readerTasks = planReadResult?.tasks || [];
+  108:   const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+  109:   const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+  110:   const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+  111:   const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+  112:   const readerDialogId = useId();
+  113:   const readerTitleId = useId();
+  114:   const readerDescriptionId = useId();
+  115:   const readerContentId = useId();
+  116:   const readerDialogRef = useRef<HTMLDivElement>(null);
+  117:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+  118:   const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+  119:   const readerStatusText = planReadError
+  120:     ? `读取失败：${planReadError}`
+  121:     : planReading
+  122:       ? '正在读取 Plan 全文。'
+  123:       : latestPlanUpdated
+  124:         ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+  125:         : 'Plan 全文已加载，当前为只读阅读模式。';
+  126: 
+  127:   useEffect(() => {
+  128:     if (!readingPlan) return undefined;
+  129: 
+  130:     previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  131:     const focusFrame = window.requestAnimationFrame(() => {
+  132:       readerDialogRef.current?.focus();
+  133:     });
+  134: 
+  135:     return () => {
+
+**Evaluating state management**
+
+I need to ensure that P002's acceptance can pass state info to PlanList and TaskList, but it seems the components might not accept it. Maybe I should define a composite `planSelection` constant that isn't being passed. It looks like P002 is focused mainly on state management in WorkspacePage, and the types might be a limitation. I’ll need to inspect the full destructuring of WorkspacePage and the variables to get a clearer picture.
+codex
+我会读取页面顶部状态区域，插入选中 Plan 状态和清理 effect。
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\pages\\WorkspacePage.tsx' 20 125; Show 'src\\renderer\\pages\\WorkspacePage.tsx' 285 50" in D:\project\GitHub\autoplan
+ succeeded in 531ms:
+--- src\renderer\pages\WorkspacePage.tsx 20 ---
+   20: export function WorkspacePage() {
+   21:   const {
+   22:     activeTab,
+   23:     addPendingFiles,
+   24:     appendIntakeTask,
+   25:     closePlanReader,
+   26:     composerCliSelection,
+   27:     createFeedback,
+   28:     createRequirement,
+   29:     deleteFeedback,
+   30:     deleteRequirement,
+   31:     displayTasks,
+   32:     error,
+   33:     filteredEmptyText,
+   34:     filteredItems,
+   35:     interruptIntake,
+   36:     latestReadingPlan,
+   37:     loopForm,
+   38:     navigate,
+   39:     openPlanReader,
+   40:     openTaskPlanReader,
+   41:     pendingAttachments,
+   42:     planReadState,
+   43:     project,
+   44:     projectId,
+   45:     projects,
+   46:     refreshPlanReader,
+   47:     removePendingAttachment,
+   48:     resumeIntake,
+   49:     runLoopAction,
+   50:     scopeFileOpenSettings,
+   51:     searchHitCount,
+   52:     searchQuery,
+   53:     selectSearchResult,
+   54:     selectTab,
+   55:     setScopeFileOpenSettings,
+   56:     setSearchQuery,
+   57:     snapshot,
+   58:     state,
+   59:     submitLoopConfig,
+   60:     switchProject,
+   61:     updateFeedback,
+   62:     updateLoopForm,
+   63:     updateRequirement,
+   64:     workspaceSearch,
+   65:   } = useWorkspaceController();
+   66:   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   67:   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   68:   const [searchLocateNotice, setSearchLocateNotice] = useState('');
+   69:   const searchPopupRef = useRef<HTMLDivElement>(null);
+   70:   const hasSearchQuery = !workspaceSearch.query.isEmpty;
+   71: 
+   72:   useEffect(() => {
+   73:     setSearchPopupOpen(hasSearchQuery);
+   74:   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+   75: 
+   76:   useEffect(() => {
+   77:     if (!searchPopupOpen) return undefined;
+   78: 
+   79:     function handlePointerDown(event: MouseEvent) {
+   80:       if (!searchPopupRef.current || !(event.target instanceof Node)) return;
+   81:       if (!searchPopupRef.current.contains(event.target)) {
+   82:         setSearchPopupOpen(false);
+   83:       }
+   84:     }
+   85: 
+   86:     function handleKeyDown(event: KeyboardEvent) {
+   87:       if (event.key === 'Escape') {
+   88:         setSearchPopupOpen(false);
+   89:       }
+   90:     }
+   91: 
+   92:     document.addEventListener('mousedown', handlePointerDown, true);
+   93:     document.addEventListener('keydown', handleKeyDown, true);
+   94:     return () => {
+   95:       document.removeEventListener('mousedown', handlePointerDown, true);
+   96:       document.removeEventListener('keydown', handleKeyDown, true);
+   97:     };
+   98:   }, [searchPopupOpen]);
+   99: 
+  100:   useEffect(() => {
+  101:     if (!pendingSearchTarget || activeTab !== pendingSearchTarget.targetTab) return undefined;
+  102: 
+  103:     const timer = window.setTimeout(() => {
+  104:       const located = locateWorkspaceSearchResult(pendingSearchTarget);
+  105:       setPendingSearchTarget(null);
+  106:       setSearchLocateNotice(located ? '' : formatSearchLocateFallback(pendingSearchTarget));
+  107:     }, 120);
+  108: 
+  109:     return () => window.clearTimeout(timer);
+  110:   }, [activeTab, pendingSearchTarget]);
+  111: 
+  112:   function handleSearchQueryChange(nextQuery: string) {
+  113:     setSearchQuery(nextQuery);
+  114:     if (nextQuery.trim()) return;
+  115: 
+  116:     setPendingSearchTarget(null);
+  117:     setSearchLocateNotice('');
+  118:     setSearchPopupOpen(false);
+  119:   }
+  120: 
+  121:   function handleSelectSearchResult(result: WorkspaceSearchResult) {
+  122:     setSearchLocateNotice('');
+  123:     setPendingSearchTarget(result);
+  124:     selectSearchResult(result);
+  125:   }
+  126: 
+  127:   const createRequirementFromComposer = (payload: string | ComposerSubmitPayload) =>
+  128:     createRequirement(payload as unknown as string);
+  129:   const createFeedbackFromComposer = (payload: string | ComposerSubmitPayload) =>
+  130:     createFeedback(payload as unknown as string);
+  131:   const reorderPlansFromList = (orderedPlans: Plan[]) =>
+  132:     runLoopAction(() => {
+  133:       if (!snapshot) throw new Error('工作区快照尚未加载');
+  134:       const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
+  135:       const orderedQueue = [...orderedPlans];
+  136:       const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
+  137:       return (window.autoplan as typeof window.autoplan & {
+  138:         reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
+  139:       }).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
+  140:     });
+  141: 
+  142:   if (!snapshot) {
+  143:     return (
+  144:       <div className="workspace-shell">
+--- src\renderer\pages\WorkspacePage.tsx 285 ---
+  285:         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+  286:           {activeTab === 'tasks' ? (
+  287:             <div className="task-main">
+  288:               <div className="task-status-grid">
+  289:                 <section className="card">
+  290:                   <div className="card-head">
+  291:                     <h2>Plan</h2>
+  292:                   </div>
+  293:                   <PlanList
+  294:                     emptyText={filteredEmptyText}
+  295:                     latestReadingPlan={latestReadingPlan}
+  296:                     onCloseReader={closePlanReader}
+  297:                     onOpenReader={openPlanReader}
+  298:                     onRunParallel={({ plan, batches }) =>
+  299:                       runLoopAction(() =>
+  300:                         (window.autoplan as typeof window.autoplan & {
+  301:                           runTaskBatches: (input: {
+  302:                             projectId: number;
+  303:                             planId: number;
+  304:                             batches: Array<{ taskIds: number[] }>;
+  305:                             manual: true;
+  306:                           }) => Promise<AppSnapshot>;
+  307:                         }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+  308:                       )
+  309:                     }
+  310:                     onRefreshReader={refreshPlanReader}
+  311:                     onReorderPlans={reorderPlansFromList}
+  312:                     plans={filteredItems.plans}
+  313:                     readerState={planReadState}
+  314:                     tasks={snapshot.tasks}
+  315:                     totalPlanCount={snapshot.plans.length}
+  316:                   />
+  317:                 </section>
+  318:                 <section className="card">
+  319:                   <div className="card-head">
+  320:                     <h2>任务</h2>
+  321:                   </div>
+  322:                   <TaskList
+  323:                     emptyText={filteredEmptyText}
+  324:                     locateTarget={pendingSearchTarget}
+  325:                     tasks={displayTasks}
+  326:                     onOpenPlan={openTaskPlanReader}
+  327:                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+  328:                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+  329:                   />
+  330:                 </section>
+  331:               </div>
+  332:             </div>
+  333:           ) : null}
+  334:         </section>
+
+**Considering task filter steps**
+
+I’m contemplating whether I can proceed now or if I should set something up first. If I set P003 to consume later, that might work. But I wonder about the UI; if it doesn't call `selectPlanForTaskFilter`, the state could stay null. P003 will need to add something for sure. Maybe I should make it utilized in `data-plan-selection` to avoid it being marked as unused?
+**Considering interface design**
+
+I'm thinking about how to refine the interface for `WorkspacePlanSelectionState`. I want to ensure it has a clear structure, including `selectedPlanId` and `selectedPlan`. The functions for selecting and clearing plans should be intuitive. I wonder if I need to consider an "invalid reason" as well — but maybe that’s not necessary for this version. I’ll just focus on making it clean and easy to understand.
+codex
+我将添加页面级 `selectedPlanId` 状态、失效清理和可传递的选择状态对象。
+  ✓ 定位选中状态挂载点
+  → 添加选择状态类型
+  • 实现状态清理传递
+  • 复查范围不跑测试
+exec
+powershell.exe -Command '$patch = @'"'
+*** Begin Patch
+*** Update File: src/renderer/types.ts
+@@
+ export function isTaskAssociatedWithPlan(task: PlanTaskAssociationTaskRef, plan: PlanTaskAssociationPlanRef) {
+   return getPlanTaskAssociationSource(task, plan) "'!== null;
+ }
++
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
+ 
+ export const TASK_EVENT_TYPES = {
+*** End Patch
+'"'@; "'$patch | apply_patch' in D:\project\GitHub\autoplan
+2026-06-27T10:47:28.999406Z ERROR codex_core::tools::router: error={"output":"Error: --codex-run-as-apply-patch requires a UTF-8 PATCH argument.\n","metadata":{"exit_code":1,"duration_seconds":0.5}}
+ exited 1 in 485ms:
+Error: --codex-run-as-apply-patch requires a UTF-8 PATCH argument.
+
+**Resolving command issues**
+
+I see that the command failed, possibly due to a piping issue. I need to apply the patch directly using a shell command with arguments instead. There's a warning, but it seems like this should work. I’m considering whether to retry or just move forward with using "apply_patch" since the failure isn't due to permission or the toolchain. Let's focus on getting it right this time!
+codex
+补丁管道编码失败，我改用直接 patch 参数写入。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\types.ts
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+codex
+类型已补上；现在在 WorkspacePage 中接入状态和清理逻辑。
+  ✓ 定位选中状态挂载点
+  ✓ 添加选择状态类型
+  → 实现状态清理传递
+  • 复查范围不跑测试
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index ceef44953c609d1399b42bbe7a774090208edc8f..2e8c64953b8abf2256c7d828f7f6948ee5c5af4c
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -3,6 +3,7 @@
+   AppSnapshot,
+   Plan,
+   Project,
++  WorkspacePlanSelectionState,
+   WorkspaceSearchResult,
+   WorkspaceTab,
+ } from '../types';
+@@ -66,14 +67,31 @@
+   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   const [searchLocateNotice, setSearchLocateNotice] = useState('');
++  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   const searchPopupRef = useRef<HTMLDivElement>(null);
+   const hasSearchQuery = !workspaceSearch.query.isEmpty;
++  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
++
++  const planSelectionState: WorkspacePlanSelectionState = {
++    selectedPlanId,
++    selectedPlan,
++    selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
++    clearSelection: () => setSelectedPlanId(null),
++  };
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+ 
+   useEffect(() => {
++    setSelectedPlanId((current) => {
++      if (current === null) return current;
++      if (!snapshot) return null;
++      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
++    });
++  }, [projectId, snapshot]);
++
++  useEffect(() => {
+     if (!searchPopupOpen) return undefined;
+ 
+     function handlePointerDown(event: MouseEvent) {
+@@ -284,7 +302,11 @@
+ 
+         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+           {activeTab === 'tasks' ? (
+-            <div className="task-main">
++            <div
++              className="task-main"
++              data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
++              data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
++            >
+               <div className="task-status-grid">
+                 <section className="card">
+                   <div className="card-head">
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index ceef44953c609d1399b42bbe7a774090208edc8f..2e8c64953b8abf2256c7d828f7f6948ee5c5af4c
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -3,6 +3,7 @@
+   AppSnapshot,
+   Plan,
+   Project,
++  WorkspacePlanSelectionState,
+   WorkspaceSearchResult,
+   WorkspaceTab,
+ } from '../types';
+@@ -66,14 +67,31 @@
+   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   const [searchLocateNotice, setSearchLocateNotice] = useState('');
++  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   const searchPopupRef = useRef<HTMLDivElement>(null);
+   const hasSearchQuery = !workspaceSearch.query.isEmpty;
++  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
++
++  const planSelectionState: WorkspacePlanSelectionState = {
++    selectedPlanId,
++    selectedPlan,
++    selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
++    clearSelection: () => setSelectedPlanId(null),
++  };
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+ 
+   useEffect(() => {
++    setSelectedPlanId((current) => {
++      if (current === null) return current;
++      if (!snapshot) return null;
++      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
++    });
++  }, [projectId, snapshot]);
++
++  useEffect(() => {
+     if (!searchPopupOpen) return undefined;
+ 
+     function handlePointerDown(event: MouseEvent) {
+@@ -284,7 +302,11 @@
+ 
+         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+           {activeTab === 'tasks' ? (
+-            <div className="task-main">
++            <div
++              className="task-main"
++              data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
++              data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
++            >
+               <div className="task-status-grid">
+                 <section className="card">
+                   <div className="card-head">
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+**Exploring React linting and dependencies**
+
+I'm considering lint hooks and whether exhaustive dependencies are necessary for useEffect. Using [projectId, snapshot] seems okay, but maybe relying on snapshot?.plans could help avoid dependency issues, especially if snapshot changes often. 
+
+I realize planSelectionState's handler functions are inline, which isn't an issue, but I should check for any unused properties while ensuring functions work properly. I’m thinking about the possible impact of setting selectedPlanId and ensuring it clears correctly if project IDs change. It’s quite a puzzle!
+**Analyzing component structure and props**
+
+I'm considering what happens if the snapshot is null after switching projects, and how this might affect the `selectPlan` stability. It's clear that the selected plan information needs to be passed to both `PlanList` and `TaskList`, but currently, the object isn't exported. 
+
+I’m pondering whether I could introduce state variables named `planSelectionState` to `PlanList`, but it seems they won't accept those. Modifying TypeScript to allow arbitrary props isn't feasible. I also need to ensure that scope is limited to certain files while checking for plan differences.
+codex
+状态已接入；我会做作用域和关键行号复查，不运行任何验收命令。
+  ✓ 定位选中状态挂载点
+  ✓ 添加选择状态类型
+  ✓ 实现状态清理传递
+  → 复查范围不跑测试
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index ceef44953c609d1399b42bbe7a774090208edc8f..2e8c64953b8abf2256c7d828f7f6948ee5c5af4c
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -3,6 +3,7 @@
+   AppSnapshot,
+   Plan,
+   Project,
++  WorkspacePlanSelectionState,
+   WorkspaceSearchResult,
+   WorkspaceTab,
+ } from '../types';
+@@ -66,14 +67,31 @@
+   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   const [searchLocateNotice, setSearchLocateNotice] = useState('');
++  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   const searchPopupRef = useRef<HTMLDivElement>(null);
+   const hasSearchQuery = !workspaceSearch.query.isEmpty;
++  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
++
++  const planSelectionState: WorkspacePlanSelectionState = {
++    selectedPlanId,
++    selectedPlan,
++    selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
++    clearSelection: () => setSelectedPlanId(null),
++  };
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+ 
+   useEffect(() => {
++    setSelectedPlanId((current) => {
++      if (current === null) return current;
++      if (!snapshot) return null;
++      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
++    });
++  }, [projectId, snapshot]);
++
++  useEffect(() => {
+     if (!searchPopupOpen) return undefined;
+ 
+     function handlePointerDown(event: MouseEvent) {
+@@ -284,7 +302,11 @@
+ 
+         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+           {activeTab === 'tasks' ? (
+-            <div className="task-main">
++            <div
++              className="task-main"
++              data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
++              data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
++            >
+               <div className="task-status-grid">
+                 <section className="card">
+                   <div className="card-head">
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+exec
+powershell.exe -Command 'function Show($path,$start,$count){ Write-Host "--- $path $start ---"; $lines=Get-Content -LiteralPath $path -Encoding UTF8; for($i=$start; $i -lt [Math]::Min($lines.Count+1,$start+$count); $i++){ '"'{0,5}: {1}' -f "'$i, $lines[$i-1] } }; Show '"'src\\renderer\\pages\\WorkspacePage.tsx' 1 95; Show 'src\\renderer\\pages\\WorkspacePage.tsx' 295 18; Show 'src\\renderer\\types.ts' 390 18; Write-Host '--- plan diff ---'; git diff --name-only -- docs/plan/plan_feedback_19_20260627-134658.md; Write-Host '--- scoped files diff ---'; git diff --name-only -- src/renderer/pages/WorkspacePage.tsx src/renderer/types.ts" in D:\project\GitHub\autoplan
+ succeeded in 618ms:
+--- src\renderer\pages\WorkspacePage.tsx 1 ---
+    1: import { useEffect, useRef, useState } from 'react';
+    2: import type {
+    3:   AppSnapshot,
+    4:   Plan,
+    5:   Project,
+    6:   WorkspacePlanSelectionState,
+    7:   WorkspaceSearchResult,
+    8:   WorkspaceTab,
+    9: } from '../types';
+   10: import { useWorkspaceController } from '../hooks/useWorkspaceController';
+   11: import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
+   12: import { IntakePanel } from '../components/IntakePanel';
+   13: import { EventList, PlanList, TaskList } from '../components/PlanLists';
+   14: import { SearchResults } from '../components/SearchResults';
+   15: import { Icon } from '../components/icons';
+   16: import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+   17: import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+   18: import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+   19: import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+   20: 
+   21: export function WorkspacePage() {
+   22:   const {
+   23:     activeTab,
+   24:     addPendingFiles,
+   25:     appendIntakeTask,
+   26:     closePlanReader,
+   27:     composerCliSelection,
+   28:     createFeedback,
+   29:     createRequirement,
+   30:     deleteFeedback,
+   31:     deleteRequirement,
+   32:     displayTasks,
+   33:     error,
+   34:     filteredEmptyText,
+   35:     filteredItems,
+   36:     interruptIntake,
+   37:     latestReadingPlan,
+   38:     loopForm,
+   39:     navigate,
+   40:     openPlanReader,
+   41:     openTaskPlanReader,
+   42:     pendingAttachments,
+   43:     planReadState,
+   44:     project,
+   45:     projectId,
+   46:     projects,
+   47:     refreshPlanReader,
+   48:     removePendingAttachment,
+   49:     resumeIntake,
+   50:     runLoopAction,
+   51:     scopeFileOpenSettings,
+   52:     searchHitCount,
+   53:     searchQuery,
+   54:     selectSearchResult,
+   55:     selectTab,
+   56:     setScopeFileOpenSettings,
+   57:     setSearchQuery,
+   58:     snapshot,
+   59:     state,
+   60:     submitLoopConfig,
+   61:     switchProject,
+   62:     updateFeedback,
+   63:     updateLoopForm,
+   64:     updateRequirement,
+   65:     workspaceSearch,
+   66:   } = useWorkspaceController();
+   67:   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   68:   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   69:   const [searchLocateNotice, setSearchLocateNotice] = useState('');
+   70:   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   71:   const searchPopupRef = useRef<HTMLDivElement>(null);
+   72:   const hasSearchQuery = !workspaceSearch.query.isEmpty;
+   73:   const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
+   74: 
+   75:   const planSelectionState: WorkspacePlanSelectionState = {
+   76:     selectedPlanId,
+   77:     selectedPlan,
+   78:     selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
+   79:     clearSelection: () => setSelectedPlanId(null),
+   80:   };
+   81: 
+   82:   useEffect(() => {
+   83:     setSearchPopupOpen(hasSearchQuery);
+   84:   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+   85: 
+   86:   useEffect(() => {
+   87:     setSelectedPlanId((current) => {
+   88:       if (current === null) return current;
+   89:       if (!snapshot) return null;
+   90:       return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
+   91:     });
+   92:   }, [projectId, snapshot]);
+   93: 
+   94:   useEffect(() => {
+   95:     if (!searchPopupOpen) return undefined;
+--- src\renderer\pages\WorkspacePage.tsx 295 ---
+  295:                 onInterrupt={interruptIntake}
+  296:                 onResume={resumeIntake}
+  297:                 onAppendTask={appendIntakeTask}
+  298:               />
+  299:             </ComposerCliSelectionProvider>
+  300:           ) : null}
+  301:         </section>
+  302: 
+  303:         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+  304:           {activeTab === 'tasks' ? (
+  305:             <div
+  306:               className="task-main"
+  307:               data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
+  308:               data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
+  309:             >
+  310:               <div className="task-status-grid">
+  311:                 <section className="card">
+  312:                   <div className="card-head">
+--- src\renderer\types.ts 390 ---
+  390: export function getPlanTaskAssociationSource(
+  391:   task: PlanTaskAssociationTaskRef,
+  392:   plan: PlanTaskAssociationPlanRef,
+  393: ): PlanTaskAssociationSource | null {
+  394:   const taskPlanId = readPlanTaskAssociationPlanId(task);
+  395:   if (taskPlanId !== null) return taskPlanId === plan.id ? 'plan_id' : null;
+  396: 
+  397:   const taskFilePath = readPlanTaskAssociationFilePath(task);
+  398:   const planFilePath = readPlanTaskAssociationFilePath(plan);
+  399:   return taskFilePath && planFilePath && taskFilePath === planFilePath ? 'file_path' : null;
+  400: }
+  401: 
+  402: export function isTaskAssociatedWithPlan(task: PlanTaskAssociationTaskRef, plan: PlanTaskAssociationPlanRef) {
+  403:   return getPlanTaskAssociationSource(task, plan) !== null;
+  404: }
+  405: 
+  406: export interface WorkspacePlanSelectionState {
+  407:   selectedPlanId: number | null;
+--- plan diff ---
+--- scoped files diff ---
+src/renderer/pages/WorkspacePage.tsx
+src/renderer/types.ts
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/types.ts', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index ceef44953c609d1399b42bbe7a774090208edc8f..2e8c64953b8abf2256c7d828f7f6948ee5c5af4c
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -3,6 +3,7 @@
+   AppSnapshot,
+   Plan,
+   Project,
++  WorkspacePlanSelectionState,
+   WorkspaceSearchResult,
+   WorkspaceTab,
+ } from '../types';
+@@ -66,14 +67,31 @@
+   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   const [searchLocateNotice, setSearchLocateNotice] = useState('');
++  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   const searchPopupRef = useRef<HTMLDivElement>(null);
+   const hasSearchQuery = !workspaceSearch.query.isEmpty;
++  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
++
++  const planSelectionState: WorkspacePlanSelectionState = {
++    selectedPlanId,
++    selectedPlan,
++    selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
++    clearSelection: () => setSelectedPlanId(null),
++  };
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+ 
+   useEffect(() => {
++    setSelectedPlanId((current) => {
++      if (current === null) return current;
++      if (!snapshot) return null;
++      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
++    });
++  }, [projectId, snapshot]);
++
++  useEffect(() => {
+     if (!searchPopupOpen) return undefined;
+ 
+     function handlePointerDown(event: MouseEvent) {
+@@ -284,7 +302,11 @@
+ 
+         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+           {activeTab === 'tasks' ? (
+-            <div className="task-main">
++            <div
++              className="task-main"
++              data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
++              data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
++            >
+               <div className="task-status-grid">
+                 <section className="card">
+                   <div className="card-head">
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+**Evaluating code issues**
+
+I need to focus on types in line 406, skipping full interface lines—that seems good. There's a potential issue about restricting scope to business files. I might not need tests. An update plan is necessary, but considering `planSelectionState`, it may be premature as it’s not part of the UI. I wonder if there could be a linting issue with "react/no-unknown-property" but it seems data-* is okay. I’ll make sure to address selected plans and toggles properly in my handlers. I need to check how `selectedPlanId` is being updated during selections.
+**Assessing selection and updates**
+
+I need to ensure that refreshing the snapshot after a selected plan is deleted works correctly with `[projectId, snapshot]`. If the snapshot changes and the plan is missing, it should clear too—that sounds good. I think I could improve the dependency for `[projectId, snapshot?.plans]` since the current setup could cause effects on every state update. Regarding `planSelectionState`, I’m considering how to use it for passing selected plan information, but I might need to update property names in `WorkspacePlanSelectionState`, like changing `onSelectPlan`. Also, I should mention there are no tests.
+codex
+P002 范围复查完成，未发现 plan 文件改动；我会标记计划完成。
+  ✓ 定位选中状态挂载点
+  ✓ 添加选择状态类型
+  ✓ 实现状态清理传递
+  ✓ 复查范围不跑测试
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index ceef44953c609d1399b42bbe7a774090208edc8f..2e8c64953b8abf2256c7d828f7f6948ee5c5af4c
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -3,6 +3,7 @@
+   AppSnapshot,
+   Plan,
+   Project,
++  WorkspacePlanSelectionState,
+   WorkspaceSearchResult,
+   WorkspaceTab,
+ } from '../types';
+@@ -66,14 +67,31 @@
+   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   const [searchLocateNotice, setSearchLocateNotice] = useState('');
++  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   const searchPopupRef = useRef<HTMLDivElement>(null);
+   const hasSearchQuery = !workspaceSearch.query.isEmpty;
++  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
++
++  const planSelectionState: WorkspacePlanSelectionState = {
++    selectedPlanId,
++    selectedPlan,
++    selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
++    clearSelection: () => setSelectedPlanId(null),
++  };
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+ 
+   useEffect(() => {
++    setSelectedPlanId((current) => {
++      if (current === null) return current;
++      if (!snapshot) return null;
++      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
++    });
++  }, [projectId, snapshot]);
++
++  useEffect(() => {
+     if (!searchPopupOpen) return undefined;
+ 
+     function handlePointerDown(event: MouseEvent) {
+@@ -284,7 +302,11 @@
+ 
+         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+           {activeTab === 'tasks' ? (
+-            <div className="task-main">
++            <div
++              className="task-main"
++              data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
++              data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
++            >
+               <div className="task-status-grid">
+                 <section className="card">
+                   <div className="card-head">
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+codex
+已完成 P002，未修改 plan 文件，也未运行测试/构建/lint。
+
+- 在 `src/renderer/types.ts:406` 新增 `WorkspacePlanSelectionState`，定义选中 Plan、切换选择、清空选择的状态模型。
+- 在 `src/renderer/pages/WorkspacePage.tsx:70` 增加 `selectedPlanId` 页面状态，并派生当前 `selectedPlan`。
+- 在 `src/renderer/pages/WorkspacePage.tsx:75` 定义选择状态对象：重复选择同一 Plan 会取消选择，`clearSelection` 用于后续“查看全部任务”入口。
+- 在 `src/renderer/pages/WorkspacePage.tsx:86` 添加快照/项目切换后的失效选择清理，选中 Plan 不存在时自动清空。
+- 在 `src/renderer/pages/WorkspacePage.tsx:305` 预留选中 Plan 的页面级数据挂点，未提前实现 P003/P004 的视觉态或任务过滤。
+已完成 P002，未修改 plan 文件，也未运行测试/构建/lint。
+
+- 在 `src/renderer/types.ts:406` 新增 `WorkspacePlanSelectionState`，定义选中 Plan、切换选择、清空选择的状态模型。
+- 在 `src/renderer/pages/WorkspacePage.tsx:70` 增加 `selectedPlanId` 页面状态，并派生当前 `selectedPlan`。
+- 在 `src/renderer/pages/WorkspacePage.tsx:75` 定义选择状态对象：重复选择同一 Plan 会取消选择，`clearSelection` 用于后续“查看全部任务”入口。
+- 在 `src/renderer/pages/WorkspacePage.tsx:86` 添加快照/项目切换后的失效选择清理，选中 Plan 不存在时自动清空。
+- 在 `src/renderer/pages/WorkspacePage.tsx:305` 预留选中 Plan 的页面级数据挂点，未提前实现 P003/P004 的视觉态或任务过滤。
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index ceef44953c609d1399b42bbe7a774090208edc8f..2e8c64953b8abf2256c7d828f7f6948ee5c5af4c
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -3,6 +3,7 @@
+   AppSnapshot,
+   Plan,
+   Project,
++  WorkspacePlanSelectionState,
+   WorkspaceSearchResult,
+   WorkspaceTab,
+ } from '../types';
+@@ -66,14 +67,31 @@
+   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
+   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
+   const [searchLocateNotice, setSearchLocateNotice] = useState('');
++  const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
+   const searchPopupRef = useRef<HTMLDivElement>(null);
+   const hasSearchQuery = !workspaceSearch.query.isEmpty;
++  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
++
++  const planSelectionState: WorkspacePlanSelectionState = {
++    selectedPlanId,
++    selectedPlan,
++    selectPlan: (plan) => setSelectedPlanId((current) => (current === plan.id ? null : plan.id)),
++    clearSelection: () => setSelectedPlanId(null),
++  };
+ 
+   useEffect(() => {
+     setSearchPopupOpen(hasSearchQuery);
+   }, [hasSearchQuery, workspaceSearch.query.normalized]);
+ 
+   useEffect(() => {
++    setSelectedPlanId((current) => {
++      if (current === null) return current;
++      if (!snapshot) return null;
++      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
++    });
++  }, [projectId, snapshot]);
++
++  useEffect(() => {
+     if (!searchPopupOpen) return undefined;
+ 
+     function handlePointerDown(event: MouseEvent) {
+@@ -284,7 +302,11 @@
+ 
+         <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+           {activeTab === 'tasks' ? (
+-            <div className="task-main">
++            <div
++              className="task-main"
++              data-selected-plan-id={planSelectionState.selectedPlanId ?? undefined}
++              data-selected-plan-file={planSelectionState.selectedPlan?.file_path || undefined}
++            >
+               <div className="task-status-grid">
+                 <section className="card">
+                   <div className="card-head">
+diff --git a/src/renderer/types.ts b/src/renderer/types.ts
+index 2fbfb95beaf1f3f1990efe81eb9a4630ee7d6fca..57fa88cf95d015ee81bc93c274339858ab2ef6bb
+--- a/src/renderer/types.ts
++++ b/src/renderer/types.ts
+@@ -403,6 +403,13 @@
+   return getPlanTaskAssociationSource(task, plan) !== null;
+ }
+ 
++export interface WorkspacePlanSelectionState {
++  selectedPlanId: number | null;
++  selectedPlan: Plan | null;
++  selectPlan: (plan: Plan) => void;
++  clearSelection: () => void;
++}
++
+ export const TASK_EVENT_TYPES = {
+   STARTED: 'task.started',
+   SUCCEEDED: 'task.succeeded',
+
+tokens used
+247,362

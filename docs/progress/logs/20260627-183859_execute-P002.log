@@ -1,0 +1,1621 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f079c-5f82-72f3-84e6-a4cca86cfe4b
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_18_20260627-134350.md
+指定任务：
+- [ ] P002: 移除未搜索状态可搜索数量 <!-- scope: src/renderer/pages/WorkspacePage.tsx -->
+任务 scope：src/renderer/pages/workspacepage.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Ensuring proper usage of memoization**
+
+I need to check if there are any unused useMemo hooks still in use. I might need to apply a patch, but I don't want to add any tests right now. I'm considering using rg for relevant snippets, but I have to keep in mind the context and the pre-existing modified file. It’s crucial to avoid overwriting anything. I should inspect the exact snippets in the current file since there could be modifications since my last check. So, using rg solely seems best!
+codex
+我会沿用 P001 结论，只在 `WorkspacePage.tsx` 移除空搜索态总量提示相关代码。
+  → 移除总量计算传参
+  • 调整搜索框空态
+  • 范围内静态自查
+codex
+先精确查看当前相关行，避免覆盖已有未提交改动。
+exec
+powershell.exe -Command "rg -n \"searchableItemCount|countSearchableItems|totalCount|resultLabel|workspace-search-count|WorkspaceSearchBox\" src\\renderer\\pages\\WorkspacePage.tsx" in D:\project\GitHub\autoplan
+2026-06-27T10:39:18.417655Z ERROR codex_core::tools::router: error={"output":"rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 1\r\n+ rg -n \"searchableItemCount|countSearchableItems|totalCount|resultLabe ...\r\n+ ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.3}}
+ exited 1 in 1280ms:
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 1
++ rg -n "searchableItemCount|countSearchableItems|totalCount|resultLabe ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+codex
+`rg` 当前 PATH 不可用，我改用 PowerShell 原生命令做同范围检索。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\pages\\WorkspacePage.tsx -Pattern 'searchableItemCount','countSearchableItems','totalCount','resultLabel','workspace-search-count','WorkspaceSearchBox' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 457ms:
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:16: import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:51: searchableItemCount,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:173: <WorkspaceSearchBox
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:177: totalCount={searchableItemCount}
+
+codex
+当前分支已把搜索框拆成组件；我会只读取接口确认，修改仍限定在 `WorkspacePage.tsx`。
+exec
+powershell.exe -Command '$p='"'src\\renderer\\pages\\WorkspacePage.tsx'; "'$lines=Get-Content -Encoding UTF8 $p; foreach($range in @(@(1,65),@(135,190))){ $s=$range[0]; $e=$range[1]; Write-Host ("--- {0}:{1}-{2} ---" -f $p,$s,$e); for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] } }; $p='"'src\\renderer\\components\\workspace\\WorkspaceSearchBox.tsx'; if(Test-Path "'$p){ $lines=Get-Content -Encoding UTF8 $p; Write-Host ("--- {0}:1-120 ---" -f $p); for($i=1;$i -le 120 -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] } }' in D:\project\GitHub\autoplan
+ succeeded in 510ms:
+--- src\renderer\pages\WorkspacePage.tsx:1-65 ---
+    1: import { useEffect, useRef, useState } from 'react';
+    2: import type {
+    3:   AppSnapshot,
+    4:   Plan,
+    5:   Project,
+    6:   WorkspaceSearchResult,
+    7:   WorkspaceTab,
+    8: } from '../types';
+    9: import { useWorkspaceController } from '../hooks/useWorkspaceController';
+   10: import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
+   11: import { IntakePanel } from '../components/IntakePanel';
+   12: import { EventList, PlanList, TaskList } from '../components/PlanLists';
+   13: import { SearchResults } from '../components/SearchResults';
+   14: import { Icon } from '../components/icons';
+   15: import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+   16: import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+   17: import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+   18: import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+   19: 
+   20: export function WorkspacePage() {
+   21:   const {
+   22:     activeTab,
+   23:     addPendingFiles,
+   24:     appendIntakeTask,
+   25:     closePlanReader,
+   26:     composerCliSelection,
+   27:     createFeedback,
+   28:     createRequirement,
+   29:     deleteFeedback,
+   30:     deleteRequirement,
+   31:     displayTasks,
+   32:     error,
+   33:     filteredEmptyText,
+   34:     filteredItems,
+   35:     interruptIntake,
+   36:     latestReadingPlan,
+   37:     loopForm,
+   38:     navigate,
+   39:     openPlanReader,
+   40:     openTaskPlanReader,
+   41:     pendingAttachments,
+   42:     planReadState,
+   43:     project,
+   44:     projectId,
+   45:     projects,
+   46:     refreshPlanReader,
+   47:     removePendingAttachment,
+   48:     resumeIntake,
+   49:     runLoopAction,
+   50:     scopeFileOpenSettings,
+   51:     searchableItemCount,
+   52:     searchHitCount,
+   53:     searchQuery,
+   54:     selectSearchResult,
+   55:     selectTab,
+   56:     setScopeFileOpenSettings,
+   57:     setSearchQuery,
+   58:     snapshot,
+   59:     state,
+   60:     submitLoopConfig,
+   61:     switchProject,
+   62:     updateFeedback,
+   63:     updateLoopForm,
+   64:     updateRequirement,
+   65:     workspaceSearch,
+--- src\renderer\pages\WorkspacePage.tsx:135-190 ---
+  135:     return (
+  136:       <div className="workspace-shell">
+  137:         <WorkspaceSidebar
+  138:           activeTab={activeTab}
+  139:           onTab={selectTab}
+  140:           onBack={() => navigate('/projects')}
+  141:           projectId={projectId}
+  142:           projects={projects}
+  143:           currentProject={project}
+  144:           state={null}
+  145:           onSwitchProject={switchProject}
+  146:         />
+  147:         <div className="workspace-main">
+  148:           <div className="empty">加载中...</div>
+  149:         </div>
+  150:       </div>
+  151:     );
+  152:   }
+  153: 
+  154:   return (
+  155:     <div className="workspace-shell">
+  156:       <WorkspaceSidebar
+  157:         activeTab={activeTab}
+  158:         onTab={selectTab}
+  159:         onBack={() => navigate('/projects')}
+  160:         projectId={projectId}
+  161:         projects={projects}
+  162:         currentProject={project}
+  163:         state={state}
+  164:         onSwitchProject={switchProject}
+  165:       />
+  166:       <div className="workspace-main">
+  167:         <header className="topbar">
+  168:           <div className="topbar-title">
+  169:             <h1>{tabTitle(activeTab)}</h1>
+  170:             <p>{tabSubtitle(activeTab, project)}</p>
+  171:           </div>
+  172:           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+  173:             <WorkspaceSearchBox
+  174:               hitCount={searchHitCount}
+  175:               onQueryChange={setSearchQuery}
+  176:               query={searchQuery}
+  177:               totalCount={searchableItemCount}
+  178:             />
+  179:             <SearchResults
+  180:               onClear={() => setSearchQuery('')}
+  181:               onClose={() => setSearchPopupOpen(false)}
+  182:               onSelectGroup={selectTab}
+  183:               onSelectResult={handleSelectSearchResult}
+  184:               open={searchPopupOpen}
+  185:               searchState={workspaceSearch}
+  186:             />
+  187:           </div>
+  188:           <div className="topbar-actions">
+  189:             <span className="pill">
+  190:               <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+--- src\renderer\components\workspace\WorkspaceSearchBox.tsx:1-120 ---
+    1: import { Icon } from '../icons';
+    2: import { normalizeSearchQuery } from '../../utils/workspaceSearch';
+    3: 
+    4: export function WorkspaceSearchBox({
+    5:   hitCount,
+    6:   onQueryChange,
+    7:   query,
+    8:   totalCount,
+    9: }: {
+   10:   hitCount: number;
+   11:   onQueryChange: (query: string) => void;
+   12:   query: string;
+   13:   totalCount: number;
+   14: }) {
+   15:   const hasQuery = Boolean(normalizeSearchQuery(query));
+   16:   const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
+   17: 
+   18:   return (
+   19:     <div className="workspace-search" role="search" aria-label="工作区搜索">
+   20:       <div className="workspace-search-field">
+   21:         <Icon name="search" size={16} className="workspace-search-icon" aria-hidden="true" />
+   22:         <input
+   23:           aria-label="搜索当前工作区"
+   24:           className="workspace-search-input search-input"
+   25:           onChange={(event) => onQueryChange(event.target.value)}
+   26:           onKeyDown={(event) => {
+   27:             if (event.key === 'Escape' && query) {
+   28:               event.preventDefault();
+   29:               onQueryChange('');
+   30:             }
+   31:           }}
+   32:           placeholder="搜索需求、反馈、任务、Plan 或事件"
+   33:           value={query}
+   34:         />
+   35:         {query ? (
+   36:           <button
+   37:             type="button"
+   38:             className="workspace-search-clear"
+   39:             onClick={() => onQueryChange('')}
+   40:             aria-label="清空工作区搜索关键字"
+   41:           >
+   42:             <Icon name="close" size={15} aria-hidden="true" />
+   43:           </button>
+   44:         ) : null}
+   45:       </div>
+   46:       <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+   47:         {resultLabel}
+   48:       </span>
+   49:     </div>
+   50:   );
+   51: }
+
+**Exploring CSS options**
+
+I can’t change the display of the existing imported component, which is a bit of a bummer. I'm wondering if it’s possible to define CSS inline instead. That seems like a straightforward solution, but I need to check if it would work properly with the current setup. Hm, I’ll need to think about how to implement it. There’s a lot to consider about the effects of using inline styles versus traditional CSS.
+**Investigating changes in repository**
+
+I’m wondering if the current changes are uncommitted due to a previous refactor by another agent. It’s possible that the WorkspaceSearchBox file is untracked, which could be causing some confusion. To clarify the situation, I should use the `git status` command in a short format to see the current state of the repository. This will help me identify any uncommitted changes or untracked files. Let’s move forward with that!
+codex
+实现点已迁移到子组件，先确认相关文件状态再做最小改动。
+exec
+powershell.exe -Command "git status --short -- src\\renderer\\pages\\WorkspacePage.tsx src\\renderer\\components\\workspace\\WorkspaceSearchBox.tsx" in D:\project\GitHub\autoplan
+ succeeded in 314ms:
+ M src/renderer/pages/WorkspacePage.tsx
+?? src/renderer/components/workspace/WorkspaceSearchBox.tsx
+
+**Evaluating workspace modifications**
+
+I'm considering that the modification only affects the WorkspacePage and doesn't extend beyond that. This change would overlook any untracked components and result in the removal of unused imports. However, since the current file imports a component, I think I should go ahead and remove that import while also adding a local function instead. It feels like a better solution for the situation!
+**Evaluating code structure**
+
+I’m thinking about how to address the "只修改 current scope file" issue by moving the search box logic back into WorkspacePage. But is this really the root cause? It might not be since the component still exists elsewhere. Also, I noticed that `src/renderer/components/workspace/WorkspaceSearchBox.tsx` still includes old behavior. If it's used in other places, the bug could persist. Should I look for imports using Select-String to catch everything?
+codex
+为保持 scope，我检查该子组件是否只有当前页面引用。
+exec
+powershell.exe -Command "Get-ChildItem -Path src\\renderer -Recurse -Include *.ts,*.tsx | Select-String -Pattern 'WorkspaceSearchBox' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 481ms:
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSearchBox.tsx:4: export function WorkspaceSearchBox({
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:16: import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:173: <WorkspaceSearchBox
+
+codex
+`searchableItemCount` 也可能已迁入 controller；我会确认是否必须同步清理。
+exec
+powershell.exe -Command "Get-ChildItem -Path src\\renderer -Recurse -Include *.ts,*.tsx | Select-String -Pattern 'searchableItemCount|countSearchableItems' | ForEach-Object { '{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 483ms:
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:40: countSearchableItems,
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:88: const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts:507: searchableItemCount,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:51: searchableItemCount,
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx:177: totalCount={searchableItemCount}
+D:\project\GitHub\autoplan\src\renderer\utils\workspaceSearch.ts:24: export function countSearchableItems(snapshot: AppSnapshot) {
+
+codex
+当前代码结构已拆分，P002 的“无用计算”在 controller/util 中；我会做最小根因改动并避免触碰 plan。
+exec
+powershell.exe -Command "git status --short -- src\\renderer\\hooks\\useWorkspaceController.ts src\\renderer\\utils\\workspaceSearch.ts src\\renderer\\components\\workspace\\WorkspaceSearchBox.tsx src\\renderer\\pages\\WorkspacePage.tsx" in D:\project\GitHub\autoplan
+ succeeded in 291ms:
+ M src/renderer/pages/WorkspacePage.tsx
+?? src/renderer/components/workspace/WorkspaceSearchBox.tsx
+?? src/renderer/hooks/useWorkspaceController.ts
+?? src/renderer/utils/workspaceSearch.ts
+
+**Inspecting functionality**
+
+I want to ensure that I'm satisfying the functionality properly. I need to take a closer look at the snippets related to the hooks and utilities to see how they're working together. There’s always that little voice that makes me double-check everything to make sure it's all functioning as intended. It can be a bit overwhelming, but it's essential to get it right for a smooth experience. Let's dive into the code!
+codex
+为避免保留死代码，我查看 controller/util 中相关导出点后再统一裁剪。
+exec
+powershell.exe -Command '$files=@('"'src\\renderer\\hooks\\useWorkspaceController.ts','src\\renderer\\utils\\workspaceSearch.ts'); foreach("'$p in $files){ if(Test-Path $p){ $lines=Get-Content -Encoding UTF8 $p; Write-Host ("--- {0}:1-110 ---" -f $p); for($i=1;$i -le 110 -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] }; if($p -like '"'*useWorkspaceController*'){ Write-Host (\"--- {0}:480-520 ---\" -f "'$p); for($i=480;$i -le 520 -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] } } } }' in D:\project\GitHub\autoplan
+ succeeded in 502ms:
+--- src\renderer\hooks\useWorkspaceController.ts:1-110 ---
+    1: import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
+    2: import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+    3: import { DEFAULT_WORKSPACE_TAB, getPlanTaskAssociationSource } from '../types';
+    4: import type {
+    5:   AgentCliProvider,
+    6:   AppSnapshot,
+    7:   CodexReasoningEffort,
+    8:   IntakeType,
+    9:   PendingAttachment,
+   10:   Plan,
+   11:   PlanTask,
+   12:   WorkspacePlanReadState,
+   13:   WorkspaceSearchResult,
+   14:   WorkspaceTab,
+   15: } from '../types';
+   16: import { useSnapshot } from './useSnapshot';
+   17: import { searchWorkspaceSnapshot } from '../utils/search';
+   18: import {
+   19:   appendPendingAttachments,
+   20:   agentCliOptions,
+   21:   codexReasoningOptions,
+   22:   createEmptyPlanReadState,
+   23:   createPendingClipboardImageAttachment,
+   24:   createPendingPathAttachment,
+   25:   defaultCodexReasoningEffort,
+   26:   defaultComposerCliProviders,
+   27:   defaultComposerCodexReasoning,
+   28:   defaultScopeFileOpenSettings,
+   29:   emptyPendingAttachments,
+   30:   getErrorMessage,
+   31:   loopConfigurePayloadFromForm,
+   32:   loopFormFromProjectState,
+   33:   loopFormsEqual,
+   34:   normalizeCodexReasoningEffort,
+   35:   resolveWorkspaceTab,
+   36:   type LoopFormState,
+   37:   type ScopeFileOpenSettings,
+   38: } from '../utils/workspaceForms';
+   39: import {
+   40:   countSearchableItems,
+   41:   createFilteredWorkspaceItems,
+   42:   searchNoMatchText,
+   43:   withTaskCliProviderTitle,
+   44: } from '../utils/workspaceSearch';
+   45: 
+   46: export function useWorkspaceController() {
+   47:   const params = useParams<{ projectId: string }>();
+   48:   const navigate = useNavigate();
+   49:   const [searchParams, setSearchParams] = useSearchParams();
+   50:   const projectId = Number(params.projectId);
+   51:   const { snapshot, setSnapshot, error, setError } = useSnapshot(Number.isFinite(projectId) ? projectId : null);
+   52:   const tabParam = searchParams.get('tab');
+   53:   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => resolveWorkspaceTab(tabParam));
+   54:   const [pendingAttachments, setPendingAttachments] =
+   55:     useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
+   56:   const [composerCliProviders, setComposerCliProviders] =
+   57:     useState<Record<IntakeType, AgentCliProvider>>(defaultComposerCliProviders);
+   58:   const [composerCodexReasoning, setComposerCodexReasoning] =
+   59:     useState<Record<IntakeType, CodexReasoningEffort>>(defaultComposerCodexReasoning);
+   60:   const [loopForm, setLoopForm] = useState<LoopFormState>({
+   61:     workspacePath: '',
+   62:     intervalSeconds: '5',
+   63:     validationCommand: '',
+   64:     agentCliProvider: 'codex',
+   65:     agentCliCommand: '',
+   66:     codexReasoningEffort: defaultCodexReasoningEffort,
+   67:   });
+   68:   const [loopFormDirty, setLoopFormDirty] = useState(false);
+   69:   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
+   70:     try {
+   71:       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
+   72:       const mode = parsed?.mode === 'folder' || parsed?.mode === 'vscode' || parsed?.mode === 'command'
+   73:         ? parsed.mode
+   74:         : 'system';
+   75:       return { mode, command: String(parsed?.command || '') };
+   76:     } catch {
+   77:       return defaultScopeFileOpenSettings;
+   78:     }
+   79:   });
+   80:   const [searchQuery, setSearchQuery] = useState('');
+   81:   const [planReadState, setPlanReadState] = useState<WorkspacePlanReadState>(() => createEmptyPlanReadState());
+   82:   const planReadRequestRef = useRef(0);
+   83: 
+   84:   const project = snapshot?.activeProject || null;
+   85:   const state = snapshot?.state || null;
+   86:   const projects = snapshot?.projects || [];
+   87:   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+   88:   const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   89:   const searchHitCount = workspaceSearch.total;
+   90:   const isSearching = !workspaceSearch.query.isEmpty;
+   91:   const filteredItems = useMemo(
+   92:     () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
+   93:     [snapshot, workspaceSearch],
+   94:   );
+   95:   const displayTasks = useMemo(
+   96:     () => filteredItems.tasks.map((task) => withTaskCliProviderTitle(task, state?.agent_cli_provider)),
+   97:     [filteredItems.tasks, state?.agent_cli_provider],
+   98:   );
+   99:   const filteredEmptyText = isSearching ? searchNoMatchText : undefined;
+  100:   const latestReadingPlan = useMemo(() => {
+  101:     if (!planReadState.plan) return null;
+  102:     return (
+  103:       snapshot?.plans.find(
+  104:         (plan) => plan.id === planReadState.plan?.id && plan.project_id === planReadState.plan?.project_id,
+  105:       ) || planReadState.plan
+  106:     );
+  107:   }, [planReadState.plan, snapshot?.plans]);
+  108: 
+  109:   const showError = useCallback((e: unknown) => {
+  110:     const msg = e instanceof Error ? e.message : String(e);
+--- src\renderer\hooks\useWorkspaceController.ts:480-520 ---
+  480:     closePlanReader,
+  481:     composerCliSelection,
+  482:     createFeedback,
+  483:     createRequirement,
+  484:     deleteFeedback,
+  485:     deleteRequirement,
+  486:     displayTasks,
+  487:     error,
+  488:     filteredEmptyText,
+  489:     filteredItems,
+  490:     interruptIntake,
+  491:     isSearching,
+  492:     latestReadingPlan,
+  493:     loopForm,
+  494:     navigate,
+  495:     openPlanReader,
+  496:     openTaskPlanReader,
+  497:     pendingAttachments,
+  498:     planReadState,
+  499:     project,
+  500:     projectId,
+  501:     projects,
+  502:     refreshPlanReader,
+  503:     removePendingAttachment,
+  504:     resumeIntake,
+  505:     runLoopAction,
+  506:     scopeFileOpenSettings,
+  507:     searchableItemCount,
+  508:     searchHitCount,
+  509:     searchQuery,
+  510:     selectSearchResult,
+  511:     selectTab,
+  512:     setScopeFileOpenSettings,
+  513:     setSearchQuery,
+  514:     snapshot,
+  515:     state,
+  516:     submitLoopConfig,
+  517:     switchProject,
+  518:     updateFeedback,
+  519:     updateLoopForm,
+  520:     updateRequirement,
+--- src\renderer\utils\workspaceSearch.ts:1-110 ---
+    1: import {
+    2:   WORKSPACE_SEARCH_SOURCE_TYPES,
+    3:   readPlanTaskAssociationFilePath,
+    4:   readPlanTaskAssociationPlanId,
+    5: } from '../types';
+    6: import type {
+    7:   AppSnapshot,
+    8:   Plan,
+    9:   PlanTask,
+   10:   WorkspaceSearchGroup,
+   11:   WorkspaceSearchSourceType,
+   12:   WorkspaceSearchState,
+   13: } from '../types';
+   14: import { agentCliProviderLabel, readAgentCliProvider } from '../components/shared';
+   15: 
+   16: export const searchNoMatchText = '没有匹配结果。';
+   17: 
+   18: export type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
+   19: 
+   20: export function normalizeSearchQuery(value: string) {
+   21:   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+   22: }
+   23: 
+   24: export function countSearchableItems(snapshot: AppSnapshot) {
+   25:   return (
+   26:     snapshot.requirements.length +
+   27:     snapshot.feedback.length +
+   28:     snapshot.plans.length +
+   29:     snapshot.tasks.length +
+   30:     snapshot.events.length
+   31:   );
+   32: }
+   33: 
+   34: export function createFilteredWorkspaceItems(
+   35:   snapshot: AppSnapshot | null | undefined,
+   36:   searchState: WorkspaceSearchState,
+   37: ): WorkspaceFilterableItems {
+   38:   if (!snapshot) {
+   39:     return { requirements: [], feedback: [], plans: [], tasks: [], events: [] };
+   40:   }
+   41:   if (searchState.query.isEmpty) {
+   42:     return {
+   43:       requirements: snapshot.requirements,
+   44:       feedback: snapshot.feedback,
+   45:       plans: snapshot.plans,
+   46:       tasks: snapshot.tasks,
+   47:       events: snapshot.events,
+   48:     };
+   49:   }
+   50: 
+   51:   const plans = filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
+   52:   const tasks = filterTasksBySearchGroups(snapshot.tasks, plans, searchState.groups);
+   53: 
+   54:   return {
+   55:     requirements: filterItemsBySearchGroup(
+   56:       snapshot.requirements,
+   57:       searchState.groups,
+   58:       WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+   59:     ),
+   60:     feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
+   61:     plans,
+   62:     tasks,
+   63:     events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
+   64:   };
+   65: }
+   66: 
+   67: export function filterItemsBySearchGroup<T extends { id: number }>(
+   68:   items: T[],
+   69:   groups: WorkspaceSearchGroup[],
+   70:   source: WorkspaceSearchSourceType,
+   71: ) {
+   72:   const group = groups.find((item) => item.source === source);
+   73:   if (!group?.results.length) return [];
+   74: 
+   75:   const recordIds = new Set(group.results.map((result) => result.recordId));
+   76:   return items.filter((item) => recordIds.has(item.id));
+   77: }
+   78: 
+   79: export function filterTasksBySearchGroups(
+   80:   tasks: PlanTask[],
+   81:   plans: Plan[],
+   82:   groups: WorkspaceSearchGroup[],
+   83: ) {
+   84:   const directTasks = filterItemsBySearchGroup(tasks, groups, WORKSPACE_SEARCH_SOURCE_TYPES.TASK);
+   85:   if (!plans.length) return directTasks;
+   86: 
+   87:   const taskIds = new Set(directTasks.map((task) => task.id));
+   88:   const planIds = new Set(plans.map((plan) => plan.id));
+   89:   const planFilePaths = new Set(plans.map((plan) => readPlanTaskAssociationFilePath(plan)).filter(Boolean));
+   90:   const planTasks = tasks.filter((task) => {
+   91:     const planId = readPlanTaskAssociationPlanId(task);
+   92:     if (planId !== null) return planIds.has(planId);
+   93:     const filePath = readPlanTaskAssociationFilePath(task);
+   94:     return Boolean(filePath && planFilePaths.has(filePath));
+   95:   });
+   96: 
+   97:   return [...directTasks, ...planTasks.filter((task) => !taskIds.has(task.id))];
+   98: }
+   99: 
+  100: export function withTaskCliProviderTitle(task: PlanTask, fallbackProvider?: string | null): PlanTask {
+  101:   const providerLabel = agentCliProviderLabel(readAgentCliProvider({ agentCliProvider: task.agentCliProvider || fallbackProvider }));
+  102:   if (!providerLabel || task.title.startsWith(`[${providerLabel}] `)) return task;
+  103:   return { ...task, title: `[${providerLabel}] ${task.title}` };
+  104: }
+
+**Considering patching files**
+
+I realize we need a patch since there are untracked files, and applying the patch should be non-destructive. I plan to modify four files, but I'm considering if that's allowed. The phrase “only modify business files directly related to the current task” suggests these might be okay. The user mentioned the scope is just WorkspacePage, so I wonder if I should limit changes to just that. I’ll aim for minimal changes across the relevant files and update the plan accordingly.
+codex
+相关实现已被拆到 controller/util/子组件；我会只裁掉这条空态数量链路。
+当前工作树中搜索框已拆出到子组件，`searchableItemCount` 在 controller/util 里生成；为完成 P002 需要同步裁剪这条直接链路。
+  → 移除总量计算传参
+  • 调整搜索框空态
+  • 范围内静态自查
+codex
+开始应用最小补丁：去掉 `totalCount` 链路，仅保留有查询时的命中数。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\workspace\WorkspaceSearchBox.tsx
+D:\project\GitHub\autoplan\src\renderer\hooks\useWorkspaceController.ts
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx
+D:\project\GitHub\autoplan\src\renderer\utils\workspaceSearch.ts
+diff --git a/src/renderer/components/workspace/WorkspaceSearchBox.tsx b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+index e79bfe87a72418bb5024712eac10b4bc002ee185..f3e526fc5dfed0be69f9a73bac4d69eb30c8d196
+--- a/src/renderer/components/workspace/WorkspaceSearchBox.tsx
++++ b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+@@ -5,15 +5,13 @@
+   hitCount,
+   onQueryChange,
+   query,
+-  totalCount,
+ }: {
+   hitCount: number;
+   onQueryChange: (query: string) => void;
+   query: string;
+-  totalCount: number;
+ }) {
+   const hasQuery = Boolean(normalizeSearchQuery(query));
+-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++  const resultLabel = `命中 ${hitCount} 条`;
+ 
+   return (
+     <div className="workspace-search" role="search" aria-label="工作区搜索">
+@@ -43,9 +41,11 @@
+           </button>
+         ) : null}
+       </div>
+-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+-        {resultLabel}
+-      </span>
++      {hasQuery ? (
++        <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++          {resultLabel}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/renderer/hooks/useWorkspaceController.ts b/src/renderer/hooks/useWorkspaceController.ts
+index 6ce4a36b1ac862fda713b6af5d8569fec60bbbee..a39d190461ba0122970435a9bb21250de3143abd
+--- a/src/renderer/hooks/useWorkspaceController.ts
++++ b/src/renderer/hooks/useWorkspaceController.ts
+@@ -37,7 +37,6 @@
+   type ScopeFileOpenSettings,
+ } from '../utils/workspaceForms';
+ import {
+-  countSearchableItems,
+   createFilteredWorkspaceItems,
+   searchNoMatchText,
+   withTaskCliProviderTitle,
+@@ -85,7 +84,6 @@
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
+   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   const searchHitCount = workspaceSearch.total;
+   const isSearching = !workspaceSearch.query.isEmpty;
+   const filteredItems = useMemo(
+@@ -504,7 +502,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 79e9002a12543a01203a9e2acb0bd789adb27cd8..890a7011a256286b6e4117265153c23dcb8dea61
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -48,7 +48,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+@@ -174,7 +173,6 @@
+               hitCount={searchHitCount}
+               onQueryChange={setSearchQuery}
+               query={searchQuery}
+-              totalCount={searchableItemCount}
+             />
+             <SearchResults
+               onClear={() => setSearchQuery('')}
+diff --git a/src/renderer/utils/workspaceSearch.ts b/src/renderer/utils/workspaceSearch.ts
+index 1b09728dbfafa135292bc422cd00c6e45cd72dba..bfdd8d0fc8b1eee6bd3193822d045d5cd5bcf8c2
+--- a/src/renderer/utils/workspaceSearch.ts
++++ b/src/renderer/utils/workspaceSearch.ts
+@@ -21,16 +21,6 @@
+   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ }
+ 
+-export function countSearchableItems(snapshot: AppSnapshot) {
+-  return (
+-    snapshot.requirements.length +
+-    snapshot.feedback.length +
+-    snapshot.plans.length +
+-    snapshot.tasks.length +
+-    snapshot.events.length
+-  );
+-}
+-
+ export function createFilteredWorkspaceItems(
+   snapshot: AppSnapshot | null | undefined,
+   searchState: WorkspaceSearchState,
+
+diff --git a/src/renderer/components/workspace/WorkspaceSearchBox.tsx b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+index e79bfe87a72418bb5024712eac10b4bc002ee185..f3e526fc5dfed0be69f9a73bac4d69eb30c8d196
+--- a/src/renderer/components/workspace/WorkspaceSearchBox.tsx
++++ b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+@@ -5,15 +5,13 @@
+   hitCount,
+   onQueryChange,
+   query,
+-  totalCount,
+ }: {
+   hitCount: number;
+   onQueryChange: (query: string) => void;
+   query: string;
+-  totalCount: number;
+ }) {
+   const hasQuery = Boolean(normalizeSearchQuery(query));
+-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++  const resultLabel = `命中 ${hitCount} 条`;
+ 
+   return (
+     <div className="workspace-search" role="search" aria-label="工作区搜索">
+@@ -43,9 +41,11 @@
+           </button>
+         ) : null}
+       </div>
+-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+-        {resultLabel}
+-      </span>
++      {hasQuery ? (
++        <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++          {resultLabel}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/renderer/hooks/useWorkspaceController.ts b/src/renderer/hooks/useWorkspaceController.ts
+index 6ce4a36b1ac862fda713b6af5d8569fec60bbbee..a39d190461ba0122970435a9bb21250de3143abd
+--- a/src/renderer/hooks/useWorkspaceController.ts
++++ b/src/renderer/hooks/useWorkspaceController.ts
+@@ -37,7 +37,6 @@
+   type ScopeFileOpenSettings,
+ } from '../utils/workspaceForms';
+ import {
+-  countSearchableItems,
+   createFilteredWorkspaceItems,
+   searchNoMatchText,
+   withTaskCliProviderTitle,
+@@ -85,7 +84,6 @@
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
+   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   const searchHitCount = workspaceSearch.total;
+   const isSearching = !workspaceSearch.query.isEmpty;
+   const filteredItems = useMemo(
+@@ -504,7 +502,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 79e9002a12543a01203a9e2acb0bd789adb27cd8..890a7011a256286b6e4117265153c23dcb8dea61
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -48,7 +48,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+@@ -174,7 +173,6 @@
+               hitCount={searchHitCount}
+               onQueryChange={setSearchQuery}
+               query={searchQuery}
+-              totalCount={searchableItemCount}
+             />
+             <SearchResults
+               onClear={() => setSearchQuery('')}
+diff --git a/src/renderer/utils/workspaceSearch.ts b/src/renderer/utils/workspaceSearch.ts
+index 1b09728dbfafa135292bc422cd00c6e45cd72dba..bfdd8d0fc8b1eee6bd3193822d045d5cd5bcf8c2
+--- a/src/renderer/utils/workspaceSearch.ts
++++ b/src/renderer/utils/workspaceSearch.ts
+@@ -21,16 +21,6 @@
+   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ }
+ 
+-export function countSearchableItems(snapshot: AppSnapshot) {
+-  return (
+-    snapshot.requirements.length +
+-    snapshot.feedback.length +
+-    snapshot.plans.length +
+-    snapshot.tasks.length +
+-    snapshot.events.length
+-  );
+-}
+-
+ export function createFilteredWorkspaceItems(
+   snapshot: AppSnapshot | null | undefined,
+   searchState: WorkspaceSearchState,
+
+**Clarifying apply_patch usage**
+
+It seems like the developer wants me to use the apply_patch via shell command, but I'm a bit confused since it looks like it's listed only under shell. The apply_patch tool isn't clearly available apart from that. There's a warning from the harness, so I need to double-check my setup and ensure there are no tests in the way. I should also perform some searches to clarify what's going on.
+codex
+补丁已应用；现在只做文本级自查，不启动测试或构建。
+  ✓ 移除总量计算传参
+  → 调整搜索框空态
+  • 范围内静态自查
+diff --git a/src/renderer/components/workspace/WorkspaceSearchBox.tsx b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+index e79bfe87a72418bb5024712eac10b4bc002ee185..f3e526fc5dfed0be69f9a73bac4d69eb30c8d196
+--- a/src/renderer/components/workspace/WorkspaceSearchBox.tsx
++++ b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+@@ -5,15 +5,13 @@
+   hitCount,
+   onQueryChange,
+   query,
+-  totalCount,
+ }: {
+   hitCount: number;
+   onQueryChange: (query: string) => void;
+   query: string;
+-  totalCount: number;
+ }) {
+   const hasQuery = Boolean(normalizeSearchQuery(query));
+-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++  const resultLabel = `命中 ${hitCount} 条`;
+ 
+   return (
+     <div className="workspace-search" role="search" aria-label="工作区搜索">
+@@ -43,9 +41,11 @@
+           </button>
+         ) : null}
+       </div>
+-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+-        {resultLabel}
+-      </span>
++      {hasQuery ? (
++        <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++          {resultLabel}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/renderer/hooks/useWorkspaceController.ts b/src/renderer/hooks/useWorkspaceController.ts
+index 6ce4a36b1ac862fda713b6af5d8569fec60bbbee..a39d190461ba0122970435a9bb21250de3143abd
+--- a/src/renderer/hooks/useWorkspaceController.ts
++++ b/src/renderer/hooks/useWorkspaceController.ts
+@@ -37,7 +37,6 @@
+   type ScopeFileOpenSettings,
+ } from '../utils/workspaceForms';
+ import {
+-  countSearchableItems,
+   createFilteredWorkspaceItems,
+   searchNoMatchText,
+   withTaskCliProviderTitle,
+@@ -85,7 +84,6 @@
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
+   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   const searchHitCount = workspaceSearch.total;
+   const isSearching = !workspaceSearch.query.isEmpty;
+   const filteredItems = useMemo(
+@@ -504,7 +502,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 79e9002a12543a01203a9e2acb0bd789adb27cd8..890a7011a256286b6e4117265153c23dcb8dea61
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -48,7 +48,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+@@ -174,7 +173,6 @@
+               hitCount={searchHitCount}
+               onQueryChange={setSearchQuery}
+               query={searchQuery}
+-              totalCount={searchableItemCount}
+             />
+             <SearchResults
+               onClear={() => setSearchQuery('')}
+diff --git a/src/renderer/utils/workspaceSearch.ts b/src/renderer/utils/workspaceSearch.ts
+index 1b09728dbfafa135292bc422cd00c6e45cd72dba..bfdd8d0fc8b1eee6bd3193822d045d5cd5bcf8c2
+--- a/src/renderer/utils/workspaceSearch.ts
++++ b/src/renderer/utils/workspaceSearch.ts
+@@ -21,16 +21,6 @@
+   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ }
+ 
+-export function countSearchableItems(snapshot: AppSnapshot) {
+-  return (
+-    snapshot.requirements.length +
+-    snapshot.feedback.length +
+-    snapshot.plans.length +
+-    snapshot.tasks.length +
+-    snapshot.events.length
+-  );
+-}
+-
+ export function createFilteredWorkspaceItems(
+   snapshot: AppSnapshot | null | undefined,
+   searchState: WorkspaceSearchState,
+
+exec
+powershell.exe -Command '$patterns='"'searchableItemCount','countSearchableItems','totalCount','可搜索'; Get-ChildItem -Path src\\renderer -Recurse -Include *.ts,*.tsx | Select-String -Pattern "'$patterns | ForEach-Object { '"'{0}:{1}: {2}' -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }; Write-Host '"'--- changed relevant ---'; git status --short -- docs\\plan\\plan_feedback_18_20260627-134350.md src\\renderer\\pages\\WorkspacePage.tsx src\\renderer\\components\\workspace\\WorkspaceSearchBox.tsx src\\renderer\\hooks\\useWorkspaceController.ts src\\renderer\\utils\\workspaceSearch.ts" in D:\project\GitHub\autoplan
+ succeeded in 496ms:
+--- changed relevant ---
+ M src/renderer/pages/WorkspacePage.tsx
+?? docs/plan/plan_feedback_18_20260627-134350.md
+?? src/renderer/components/workspace/WorkspaceSearchBox.tsx
+?? src/renderer/hooks/useWorkspaceController.ts
+?? src/renderer/utils/workspaceSearch.ts
+
+diff --git a/src/renderer/components/workspace/WorkspaceSearchBox.tsx b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+index e79bfe87a72418bb5024712eac10b4bc002ee185..f3e526fc5dfed0be69f9a73bac4d69eb30c8d196
+--- a/src/renderer/components/workspace/WorkspaceSearchBox.tsx
++++ b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+@@ -5,15 +5,13 @@
+   hitCount,
+   onQueryChange,
+   query,
+-  totalCount,
+ }: {
+   hitCount: number;
+   onQueryChange: (query: string) => void;
+   query: string;
+-  totalCount: number;
+ }) {
+   const hasQuery = Boolean(normalizeSearchQuery(query));
+-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++  const resultLabel = `命中 ${hitCount} 条`;
+ 
+   return (
+     <div className="workspace-search" role="search" aria-label="工作区搜索">
+@@ -43,9 +41,11 @@
+           </button>
+         ) : null}
+       </div>
+-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+-        {resultLabel}
+-      </span>
++      {hasQuery ? (
++        <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++          {resultLabel}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/renderer/hooks/useWorkspaceController.ts b/src/renderer/hooks/useWorkspaceController.ts
+index 6ce4a36b1ac862fda713b6af5d8569fec60bbbee..a39d190461ba0122970435a9bb21250de3143abd
+--- a/src/renderer/hooks/useWorkspaceController.ts
++++ b/src/renderer/hooks/useWorkspaceController.ts
+@@ -37,7 +37,6 @@
+   type ScopeFileOpenSettings,
+ } from '../utils/workspaceForms';
+ import {
+-  countSearchableItems,
+   createFilteredWorkspaceItems,
+   searchNoMatchText,
+   withTaskCliProviderTitle,
+@@ -85,7 +84,6 @@
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
+   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   const searchHitCount = workspaceSearch.total;
+   const isSearching = !workspaceSearch.query.isEmpty;
+   const filteredItems = useMemo(
+@@ -504,7 +502,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 79e9002a12543a01203a9e2acb0bd789adb27cd8..890a7011a256286b6e4117265153c23dcb8dea61
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -48,7 +48,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+@@ -174,7 +173,6 @@
+               hitCount={searchHitCount}
+               onQueryChange={setSearchQuery}
+               query={searchQuery}
+-              totalCount={searchableItemCount}
+             />
+             <SearchResults
+               onClear={() => setSearchQuery('')}
+diff --git a/src/renderer/utils/workspaceSearch.ts b/src/renderer/utils/workspaceSearch.ts
+index 1b09728dbfafa135292bc422cd00c6e45cd72dba..bfdd8d0fc8b1eee6bd3193822d045d5cd5bcf8c2
+--- a/src/renderer/utils/workspaceSearch.ts
++++ b/src/renderer/utils/workspaceSearch.ts
+@@ -21,16 +21,6 @@
+   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ }
+ 
+-export function countSearchableItems(snapshot: AppSnapshot) {
+-  return (
+-    snapshot.requirements.length +
+-    snapshot.feedback.length +
+-    snapshot.plans.length +
+-    snapshot.tasks.length +
+-    snapshot.events.length
+-  );
+-}
+-
+ export function createFilteredWorkspaceItems(
+   snapshot: AppSnapshot | null | undefined,
+   searchState: WorkspaceSearchState,
+
+**Inspecting search results**
+
+I found that the search didn’t show any patterns in the source renderer, which is good! However, there’s no `totalCount` either, which is worrisome. I think I need to look closely at the relevant snippets and make sure there’s no line with "resultLabel" or anything similar. It seems like I’m on the right track, but it’ll take some careful inspection to clarify what's happening here.
+codex
+空态总量文案已清除；最后查看关键片段和 plan 文件状态。
+  ✓ 移除总量计算传参
+  ✓ 调整搜索框空态
+  → 范围内静态自查
+diff --git a/src/renderer/components/workspace/WorkspaceSearchBox.tsx b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+index e79bfe87a72418bb5024712eac10b4bc002ee185..f3e526fc5dfed0be69f9a73bac4d69eb30c8d196
+--- a/src/renderer/components/workspace/WorkspaceSearchBox.tsx
++++ b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+@@ -5,15 +5,13 @@
+   hitCount,
+   onQueryChange,
+   query,
+-  totalCount,
+ }: {
+   hitCount: number;
+   onQueryChange: (query: string) => void;
+   query: string;
+-  totalCount: number;
+ }) {
+   const hasQuery = Boolean(normalizeSearchQuery(query));
+-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++  const resultLabel = `命中 ${hitCount} 条`;
+ 
+   return (
+     <div className="workspace-search" role="search" aria-label="工作区搜索">
+@@ -43,9 +41,11 @@
+           </button>
+         ) : null}
+       </div>
+-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+-        {resultLabel}
+-      </span>
++      {hasQuery ? (
++        <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++          {resultLabel}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/renderer/hooks/useWorkspaceController.ts b/src/renderer/hooks/useWorkspaceController.ts
+index 6ce4a36b1ac862fda713b6af5d8569fec60bbbee..a39d190461ba0122970435a9bb21250de3143abd
+--- a/src/renderer/hooks/useWorkspaceController.ts
++++ b/src/renderer/hooks/useWorkspaceController.ts
+@@ -37,7 +37,6 @@
+   type ScopeFileOpenSettings,
+ } from '../utils/workspaceForms';
+ import {
+-  countSearchableItems,
+   createFilteredWorkspaceItems,
+   searchNoMatchText,
+   withTaskCliProviderTitle,
+@@ -85,7 +84,6 @@
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
+   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   const searchHitCount = workspaceSearch.total;
+   const isSearching = !workspaceSearch.query.isEmpty;
+   const filteredItems = useMemo(
+@@ -504,7 +502,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 79e9002a12543a01203a9e2acb0bd789adb27cd8..890a7011a256286b6e4117265153c23dcb8dea61
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -48,7 +48,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+@@ -174,7 +173,6 @@
+               hitCount={searchHitCount}
+               onQueryChange={setSearchQuery}
+               query={searchQuery}
+-              totalCount={searchableItemCount}
+             />
+             <SearchResults
+               onClear={() => setSearchQuery('')}
+diff --git a/src/renderer/utils/workspaceSearch.ts b/src/renderer/utils/workspaceSearch.ts
+index 1b09728dbfafa135292bc422cd00c6e45cd72dba..bfdd8d0fc8b1eee6bd3193822d045d5cd5bcf8c2
+--- a/src/renderer/utils/workspaceSearch.ts
++++ b/src/renderer/utils/workspaceSearch.ts
+@@ -21,16 +21,6 @@
+   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ }
+ 
+-export function countSearchableItems(snapshot: AppSnapshot) {
+-  return (
+-    snapshot.requirements.length +
+-    snapshot.feedback.length +
+-    snapshot.plans.length +
+-    snapshot.tasks.length +
+-    snapshot.events.length
+-  );
+-}
+-
+ export function createFilteredWorkspaceItems(
+   snapshot: AppSnapshot | null | undefined,
+   searchState: WorkspaceSearchState,
+
+exec
+powershell.exe -Command '$targets=@(@('"'src\\renderer\\pages\\WorkspacePage.tsx',45,60),@('src\\renderer\\pages\\WorkspacePage.tsx',170,180),@('src\\renderer\\components\\workspace\\WorkspaceSearchBox.tsx',1,60),@('src\\renderer\\hooks\\useWorkspaceController.ts',35,45),@('src\\renderer\\hooks\\useWorkspaceController.ts',84,92),@('src\\renderer\\hooks\\useWorkspaceController.ts',500,510),@('src\\renderer\\utils\\workspaceSearch.ts',16,30)); foreach("'$t in $targets){ $p=$t[0]; if(Test-Path $p){ $lines=Get-Content -Encoding UTF8 $p; $s=[int]$t[1]; $e=[int]$t[2]; Write-Host ("--- {0}:{1}-{2} ---" -f $p,$s,$e); for($i=$s;$i -le $e -and $i -le $lines.Length;$i++){ '"'{0,5}: {1}' -f "'$i,$lines[$i-1] } } }' in D:\project\GitHub\autoplan
+ succeeded in 511ms:
+--- src\renderer\pages\WorkspacePage.tsx:45-60 ---
+   45:     projects,
+   46:     refreshPlanReader,
+   47:     removePendingAttachment,
+   48:     resumeIntake,
+   49:     runLoopAction,
+   50:     scopeFileOpenSettings,
+   51:     searchHitCount,
+   52:     searchQuery,
+   53:     selectSearchResult,
+   54:     selectTab,
+   55:     setScopeFileOpenSettings,
+   56:     setSearchQuery,
+   57:     snapshot,
+   58:     state,
+   59:     submitLoopConfig,
+   60:     switchProject,
+--- src\renderer\pages\WorkspacePage.tsx:170-180 ---
+  170:           </div>
+  171:           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
+  172:             <WorkspaceSearchBox
+  173:               hitCount={searchHitCount}
+  174:               onQueryChange={setSearchQuery}
+  175:               query={searchQuery}
+  176:             />
+  177:             <SearchResults
+  178:               onClear={() => setSearchQuery('')}
+  179:               onClose={() => setSearchPopupOpen(false)}
+  180:               onSelectGroup={selectTab}
+--- src\renderer\components\workspace\WorkspaceSearchBox.tsx:1-60 ---
+    1: import { Icon } from '../icons';
+    2: import { normalizeSearchQuery } from '../../utils/workspaceSearch';
+    3: 
+    4: export function WorkspaceSearchBox({
+    5:   hitCount,
+    6:   onQueryChange,
+    7:   query,
+    8: }: {
+    9:   hitCount: number;
+   10:   onQueryChange: (query: string) => void;
+   11:   query: string;
+   12: }) {
+   13:   const hasQuery = Boolean(normalizeSearchQuery(query));
+   14:   const resultLabel = `命中 ${hitCount} 条`;
+   15: 
+   16:   return (
+   17:     <div className="workspace-search" role="search" aria-label="工作区搜索">
+   18:       <div className="workspace-search-field">
+   19:         <Icon name="search" size={16} className="workspace-search-icon" aria-hidden="true" />
+   20:         <input
+   21:           aria-label="搜索当前工作区"
+   22:           className="workspace-search-input search-input"
+   23:           onChange={(event) => onQueryChange(event.target.value)}
+   24:           onKeyDown={(event) => {
+   25:             if (event.key === 'Escape' && query) {
+   26:               event.preventDefault();
+   27:               onQueryChange('');
+   28:             }
+   29:           }}
+   30:           placeholder="搜索需求、反馈、任务、Plan 或事件"
+   31:           value={query}
+   32:         />
+   33:         {query ? (
+   34:           <button
+   35:             type="button"
+   36:             className="workspace-search-clear"
+   37:             onClick={() => onQueryChange('')}
+   38:             aria-label="清空工作区搜索关键字"
+   39:           >
+   40:             <Icon name="close" size={15} aria-hidden="true" />
+   41:           </button>
+   42:         ) : null}
+   43:       </div>
+   44:       {hasQuery ? (
+   45:         <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+   46:           {resultLabel}
+   47:         </span>
+   48:       ) : null}
+   49:     </div>
+   50:   );
+   51: }
+--- src\renderer\hooks\useWorkspaceController.ts:35-45 ---
+   35:   resolveWorkspaceTab,
+   36:   type LoopFormState,
+   37:   type ScopeFileOpenSettings,
+   38: } from '../utils/workspaceForms';
+   39: import {
+   40:   createFilteredWorkspaceItems,
+   41:   searchNoMatchText,
+   42:   withTaskCliProviderTitle,
+   43: } from '../utils/workspaceSearch';
+   44: 
+   45: export function useWorkspaceController() {
+--- src\renderer\hooks\useWorkspaceController.ts:84-92 ---
+   84:   const state = snapshot?.state || null;
+   85:   const projects = snapshot?.projects || [];
+   86:   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+   87:   const searchHitCount = workspaceSearch.total;
+   88:   const isSearching = !workspaceSearch.query.isEmpty;
+   89:   const filteredItems = useMemo(
+   90:     () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
+   91:     [snapshot, workspaceSearch],
+   92:   );
+--- src\renderer\hooks\useWorkspaceController.ts:500-510 ---
+  500:     refreshPlanReader,
+  501:     removePendingAttachment,
+  502:     resumeIntake,
+  503:     runLoopAction,
+  504:     scopeFileOpenSettings,
+  505:     searchHitCount,
+  506:     searchQuery,
+  507:     selectSearchResult,
+  508:     selectTab,
+  509:     setScopeFileOpenSettings,
+  510:     setSearchQuery,
+--- src\renderer\utils\workspaceSearch.ts:16-30 ---
+   16: export const searchNoMatchText = '没有匹配结果。';
+   17: 
+   18: export type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
+   19: 
+   20: export function normalizeSearchQuery(value: string) {
+   21:   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+   22: }
+   23: 
+   24: export function createFilteredWorkspaceItems(
+   25:   snapshot: AppSnapshot | null | undefined,
+   26:   searchState: WorkspaceSearchState,
+   27: ): WorkspaceFilterableItems {
+   28:   if (!snapshot) {
+   29:     return { requirements: [], feedback: [], plans: [], tasks: [], events: [] };
+   30:   }
+
+diff --git a/src/renderer/components/workspace/WorkspaceSearchBox.tsx b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+index e79bfe87a72418bb5024712eac10b4bc002ee185..f3e526fc5dfed0be69f9a73bac4d69eb30c8d196
+--- a/src/renderer/components/workspace/WorkspaceSearchBox.tsx
++++ b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+@@ -5,15 +5,13 @@
+   hitCount,
+   onQueryChange,
+   query,
+-  totalCount,
+ }: {
+   hitCount: number;
+   onQueryChange: (query: string) => void;
+   query: string;
+-  totalCount: number;
+ }) {
+   const hasQuery = Boolean(normalizeSearchQuery(query));
+-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++  const resultLabel = `命中 ${hitCount} 条`;
+ 
+   return (
+     <div className="workspace-search" role="search" aria-label="工作区搜索">
+@@ -43,9 +41,11 @@
+           </button>
+         ) : null}
+       </div>
+-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+-        {resultLabel}
+-      </span>
++      {hasQuery ? (
++        <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++          {resultLabel}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/renderer/hooks/useWorkspaceController.ts b/src/renderer/hooks/useWorkspaceController.ts
+index 6ce4a36b1ac862fda713b6af5d8569fec60bbbee..a39d190461ba0122970435a9bb21250de3143abd
+--- a/src/renderer/hooks/useWorkspaceController.ts
++++ b/src/renderer/hooks/useWorkspaceController.ts
+@@ -37,7 +37,6 @@
+   type ScopeFileOpenSettings,
+ } from '../utils/workspaceForms';
+ import {
+-  countSearchableItems,
+   createFilteredWorkspaceItems,
+   searchNoMatchText,
+   withTaskCliProviderTitle,
+@@ -85,7 +84,6 @@
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
+   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   const searchHitCount = workspaceSearch.total;
+   const isSearching = !workspaceSearch.query.isEmpty;
+   const filteredItems = useMemo(
+@@ -504,7 +502,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 79e9002a12543a01203a9e2acb0bd789adb27cd8..890a7011a256286b6e4117265153c23dcb8dea61
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -48,7 +48,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+@@ -174,7 +173,6 @@
+               hitCount={searchHitCount}
+               onQueryChange={setSearchQuery}
+               query={searchQuery}
+-              totalCount={searchableItemCount}
+             />
+             <SearchResults
+               onClear={() => setSearchQuery('')}
+diff --git a/src/renderer/utils/workspaceSearch.ts b/src/renderer/utils/workspaceSearch.ts
+index 1b09728dbfafa135292bc422cd00c6e45cd72dba..bfdd8d0fc8b1eee6bd3193822d045d5cd5bcf8c2
+--- a/src/renderer/utils/workspaceSearch.ts
++++ b/src/renderer/utils/workspaceSearch.ts
+@@ -21,16 +21,6 @@
+   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ }
+ 
+-export function countSearchableItems(snapshot: AppSnapshot) {
+-  return (
+-    snapshot.requirements.length +
+-    snapshot.feedback.length +
+-    snapshot.plans.length +
+-    snapshot.tasks.length +
+-    snapshot.events.length
+-  );
+-}
+-
+ export function createFilteredWorkspaceItems(
+   snapshot: AppSnapshot | null | undefined,
+   searchState: WorkspaceSearchState,
+
+**Updating project plans**
+
+I need to check if the project plan still stands as is. It seems that I haven't modified it yet. Maybe I should track down the changes using a command like `git diff --stat` to see which files have been altered. This could help clarify things. Once I confirm everything, I'd want to note that the plan is complete. I really want to get this right!
+codex
+静态检查确认已无 `可搜索`/`totalCount` 链路残留；按要求不运行验收命令。
+  ✓ 移除总量计算传参
+  ✓ 调整搜索框空态
+  ✓ 范围内静态自查
+diff --git a/src/renderer/components/workspace/WorkspaceSearchBox.tsx b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+index e79bfe87a72418bb5024712eac10b4bc002ee185..f3e526fc5dfed0be69f9a73bac4d69eb30c8d196
+--- a/src/renderer/components/workspace/WorkspaceSearchBox.tsx
++++ b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+@@ -5,15 +5,13 @@
+   hitCount,
+   onQueryChange,
+   query,
+-  totalCount,
+ }: {
+   hitCount: number;
+   onQueryChange: (query: string) => void;
+   query: string;
+-  totalCount: number;
+ }) {
+   const hasQuery = Boolean(normalizeSearchQuery(query));
+-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++  const resultLabel = `命中 ${hitCount} 条`;
+ 
+   return (
+     <div className="workspace-search" role="search" aria-label="工作区搜索">
+@@ -43,9 +41,11 @@
+           </button>
+         ) : null}
+       </div>
+-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+-        {resultLabel}
+-      </span>
++      {hasQuery ? (
++        <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++          {resultLabel}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/renderer/hooks/useWorkspaceController.ts b/src/renderer/hooks/useWorkspaceController.ts
+index 6ce4a36b1ac862fda713b6af5d8569fec60bbbee..a39d190461ba0122970435a9bb21250de3143abd
+--- a/src/renderer/hooks/useWorkspaceController.ts
++++ b/src/renderer/hooks/useWorkspaceController.ts
+@@ -37,7 +37,6 @@
+   type ScopeFileOpenSettings,
+ } from '../utils/workspaceForms';
+ import {
+-  countSearchableItems,
+   createFilteredWorkspaceItems,
+   searchNoMatchText,
+   withTaskCliProviderTitle,
+@@ -85,7 +84,6 @@
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
+   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   const searchHitCount = workspaceSearch.total;
+   const isSearching = !workspaceSearch.query.isEmpty;
+   const filteredItems = useMemo(
+@@ -504,7 +502,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 79e9002a12543a01203a9e2acb0bd789adb27cd8..890a7011a256286b6e4117265153c23dcb8dea61
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -48,7 +48,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+@@ -174,7 +173,6 @@
+               hitCount={searchHitCount}
+               onQueryChange={setSearchQuery}
+               query={searchQuery}
+-              totalCount={searchableItemCount}
+             />
+             <SearchResults
+               onClear={() => setSearchQuery('')}
+diff --git a/src/renderer/utils/workspaceSearch.ts b/src/renderer/utils/workspaceSearch.ts
+index 1b09728dbfafa135292bc422cd00c6e45cd72dba..bfdd8d0fc8b1eee6bd3193822d045d5cd5bcf8c2
+--- a/src/renderer/utils/workspaceSearch.ts
++++ b/src/renderer/utils/workspaceSearch.ts
+@@ -21,16 +21,6 @@
+   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ }
+ 
+-export function countSearchableItems(snapshot: AppSnapshot) {
+-  return (
+-    snapshot.requirements.length +
+-    snapshot.feedback.length +
+-    snapshot.plans.length +
+-    snapshot.tasks.length +
+-    snapshot.events.length
+-  );
+-}
+-
+ export function createFilteredWorkspaceItems(
+   snapshot: AppSnapshot | null | undefined,
+   searchState: WorkspaceSearchState,
+
+codex
+已完成 P002，未修改 plan 文件、未勾选 checkbox，也未运行测试/构建/lint。
+
+**修改内容**
+- 移除页面侧 `searchableItemCount` 解构与 `totalCount` 传参：`src/renderer/pages/WorkspacePage.tsx:51`
+- 搜索框空态不再渲染旁侧数量；仅输入关键字后显示 `命中 N 条`：`src/renderer/components/workspace/WorkspaceSearchBox.tsx:44`
+- 清理已无用途的 `searchableItemCount` 计算与返回：`src/renderer/hooks/useWorkspaceController.ts:86`
+- 删除仅服务空态总量提示的 `countSearchableItems`：`src/renderer/utils/workspaceSearch.ts:20`
+
+**自查**
+- 文本级检索确认 `可搜索`、`totalCount`、`searchableItemCount`、`countSearchableItems` 在 `src/renderer` 中已无残留。
+- 按任务要求未执行 `npm run check`、smoke、lint、构建或测试命令。
+diff --git a/src/renderer/components/workspace/WorkspaceSearchBox.tsx b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+index e79bfe87a72418bb5024712eac10b4bc002ee185..f3e526fc5dfed0be69f9a73bac4d69eb30c8d196
+--- a/src/renderer/components/workspace/WorkspaceSearchBox.tsx
++++ b/src/renderer/components/workspace/WorkspaceSearchBox.tsx
+@@ -5,15 +5,13 @@
+   hitCount,
+   onQueryChange,
+   query,
+-  totalCount,
+ }: {
+   hitCount: number;
+   onQueryChange: (query: string) => void;
+   query: string;
+-  totalCount: number;
+ }) {
+   const hasQuery = Boolean(normalizeSearchQuery(query));
+-  const resultLabel = hasQuery ? `命中 ${hitCount} 条` : `可搜索 ${totalCount} 条`;
++  const resultLabel = `命中 ${hitCount} 条`;
+ 
+   return (
+     <div className="workspace-search" role="search" aria-label="工作区搜索">
+@@ -43,9 +41,11 @@
+           </button>
+         ) : null}
+       </div>
+-      <span className={`workspace-search-count${hasQuery && hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
+-        {resultLabel}
+-      </span>
++      {hasQuery ? (
++        <span className={`workspace-search-count${hitCount === 0 ? ' is-empty' : ''}`} aria-live="polite">
++          {resultLabel}
++        </span>
++      ) : null}
+     </div>
+   );
+ }
+diff --git a/src/renderer/hooks/useWorkspaceController.ts b/src/renderer/hooks/useWorkspaceController.ts
+index 6ce4a36b1ac862fda713b6af5d8569fec60bbbee..a39d190461ba0122970435a9bb21250de3143abd
+--- a/src/renderer/hooks/useWorkspaceController.ts
++++ b/src/renderer/hooks/useWorkspaceController.ts
+@@ -37,7 +37,6 @@
+   type ScopeFileOpenSettings,
+ } from '../utils/workspaceForms';
+ import {
+-  countSearchableItems,
+   createFilteredWorkspaceItems,
+   searchNoMatchText,
+   withTaskCliProviderTitle,
+@@ -85,7 +84,6 @@
+   const state = snapshot?.state || null;
+   const projects = snapshot?.projects || [];
+   const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+-  const searchableItemCount = useMemo(() => (snapshot ? countSearchableItems(snapshot) : 0), [snapshot]);
+   const searchHitCount = workspaceSearch.total;
+   const isSearching = !workspaceSearch.query.isEmpty;
+   const filteredItems = useMemo(
+@@ -504,7 +502,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 79e9002a12543a01203a9e2acb0bd789adb27cd8..890a7011a256286b6e4117265153c23dcb8dea61
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -48,7 +48,6 @@
+     resumeIntake,
+     runLoopAction,
+     scopeFileOpenSettings,
+-    searchableItemCount,
+     searchHitCount,
+     searchQuery,
+     selectSearchResult,
+@@ -174,7 +173,6 @@
+               hitCount={searchHitCount}
+               onQueryChange={setSearchQuery}
+               query={searchQuery}
+-              totalCount={searchableItemCount}
+             />
+             <SearchResults
+               onClear={() => setSearchQuery('')}
+diff --git a/src/renderer/utils/workspaceSearch.ts b/src/renderer/utils/workspaceSearch.ts
+index 1b09728dbfafa135292bc422cd00c6e45cd72dba..bfdd8d0fc8b1eee6bd3193822d045d5cd5bcf8c2
+--- a/src/renderer/utils/workspaceSearch.ts
++++ b/src/renderer/utils/workspaceSearch.ts
+@@ -21,16 +21,6 @@
+   return value.trim().toLowerCase().replace(/\s+/g, ' ');
+ }
+ 
+-export function countSearchableItems(snapshot: AppSnapshot) {
+-  return (
+-    snapshot.requirements.length +
+-    snapshot.feedback.length +
+-    snapshot.plans.length +
+-    snapshot.tasks.length +
+-    snapshot.events.length
+-  );
+-}
+-
+ export function createFilteredWorkspaceItems(
+   snapshot: AppSnapshot | null | undefined,
+   searchState: WorkspaceSearchState,
+
+已完成 P002，未修改 plan 文件、未勾选 checkbox，也未运行测试/构建/lint。
+
+**修改内容**
+- 移除页面侧 `searchableItemCount` 解构与 `totalCount` 传参：`src/renderer/pages/WorkspacePage.tsx:51`
+- 搜索框空态不再渲染旁侧数量；仅输入关键字后显示 `命中 N 条`：`src/renderer/components/workspace/WorkspaceSearchBox.tsx:44`
+- 清理已无用途的 `searchableItemCount` 计算与返回：`src/renderer/hooks/useWorkspaceController.ts:86`
+- 删除仅服务空态总量提示的 `countSearchableItems`：`src/renderer/utils/workspaceSearch.ts:20`
+
+**自查**
+- 文本级检索确认 `可搜索`、`totalCount`、`searchableItemCount`、`countSearchableItems` 在 `src/renderer` 中已无残留。
+- 按任务要求未执行 `npm run check`、smoke、lint、构建或测试命令。
+tokens used
+63,154

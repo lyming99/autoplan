@@ -1,0 +1,2670 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0787-c56a-7321-b5bf-b9effedf1460
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_15_20260627-132045.md
+指定任务：
+- [ ] P003: 完善计划生成格式防护 <!-- scope: src/loopService.js,README.md -->
+任务 scope：src/loopservice.js, readme.md
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Considering module methods**
+
+I’m thinking that the planGeneration module methods might need to be called from loopService. I’ll have to inspect that to confirm. It’s unclear right now, so I want to take a closer look to ensure everything is correctly set up. Understanding how these modules interact seems essential for smooth functionality. I’ll dig into the details to see if any adjustments are necessary.
+codex
+我会沿用前序结论，只查看计划生成入口和 README 相关段落。
+  → 定位生成防护入口
+  • 补充格式防护逻辑
+  • 更新 README 说明
+  • 静态复查范围
+codex
+先确认 `loopService.js` 当前委托生成计划的位置，以及 README 中已有格式说明。
+exec
+powershell.exe -Command "Select-String -Path src\\loopService.js -Pattern \"generatePlan|processIntakePlan|planGeneration|insertPlan|syncPlanTasks|plan.generated|plan.generate.failed\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; Write-Output '"'--- README'; Select-String -Path README.md -Pattern \"任务拆解|scope|validation|unknown|计划|checkbox|P001\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}' in D:\project\GitHub\autoplan
+ succeeded in 492ms:
+56: const planGeneration = require('./loop/planGeneration');
+316:         generatedPlanId = await this.generatePlanForIntake(projectId, workspace, pendingIntakes[0]);
+587:   /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
+674:   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+721:        WHERE project_id = ? AND type = 'plan.generated' AND meta IS NOT NULL
+745:   async generatePlan(projectId, workspace, issueScan) {
+746:     return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);
+750:   async generatePlanForIntake(projectId, workspace, intake) {
+751:     return planGeneration.generatePlanForIntake(this, loopFlowHelpers(), projectId, workspace, intake);
+755:     return planGeneration.intakeAttachmentPrompt(this, loopFlowHelpers(), projectId, workspace, intake, sourceName);
+806:   syncPlanTasks(planId, planFile) {
+807:     return syncPlanTasksFromMarkdown(this, planId, planFile);
+1216: function syncPlanTasksFromMarkdown(service, planId, planFile) {
+--- README
+3: Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+12: - **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
+17: AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**与**单条需求/反馈级**选择后端，不同项目和不同记录可使用不同 CLI：
+25: - **项目级切换**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+26: - **单条配置优先**：需求输入框和反馈输入框下方都可单独选择 CLI 后端、命令路径和 Codex 思考深度。单条记录已配置时，计划生成、任务执行、失败修复和验收重试优先使用该记录生成计划时的配置；未配置时继承项目级默认配置。
+28: - **计划级 CLI 快照**：每个计划会保存生成该计划时实际解析出的 CLI 后端、命令路径和 Codex 思考深度，用于计划列表与 Plan 全文阅读器展示；后续切换项目默认配置不会改变历史计划显示。
+29: - **历史计划兼容**：早期计划缺少计划级 CLI 字段时，展示按 Codex CLI + `medium` 思考深度降级；Claude 计划只显示 Claude CLI，不展示可误解的 Codex 思考深度。
+39: - 空验收命令保持为空字符串，并在计划完成后跳过外部验收命令。
+40: - 项目默认 Codex 时，单条需求可覆盖为 Codex + `high` 思考深度，生成计划时携带 `model_reasoning_effort="high"`。
+41: - 同一项目内单条反馈可覆盖为 Claude，生成计划时使用 `claude --print`，且不携带 Codex session 或思考深度参数。
+42: - 计划生成后快照会记录本次实际使用的后端与命令；Codex 计划记录规范化后的思考深度，Claude 计划不写入 Codex 思考深度；历史空字段按 Codex + `medium` 展示。
+44: 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+119: ## 计划并发执行与 scope 文件
+121: AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
+124: - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
+125: - [ ] P007: 完整验收 <!-- scope: validation -->
+130: - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+131: - **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
+132: - **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
+133: - **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
+137: 1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
+138: 2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
+140: 4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
+143: ### scope 文件打开配置
+145: Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
+156: 请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
+
+codex
+计划生成已委托模块。为保持 scope，只看模块调用 helpers 的位置，决定从 `loopService.js` 注入防护。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loop\\planGeneration.js 1 220; Write-Output '--- loop methods'; Show src\\loopService.js 660 760; Write-Output '--- README'; Show README.md 115 160" in D:\project\GitHub\autoplan
+ succeeded in 503ms:
+    1: const fs = require('node:fs');
+    2: const path = require('node:path');
+    3: const { nowIso } = require('../database');
+    4: const {
+    5:   agentCliContextFields,
+    6:   agentCliOperationFields,
+    7:   agentCliProviderDisplayName,
+    8:   effectiveAgentCliConfig,
+    9: } = require('./agentCliConfig');
+   10: 
+   11: async function generatePlan(service, helpers, projectId, workspace, issueScan) {
+   12:   const { timestampForPath, readSnippet, normalizeRelative, hashFile } = helpers;
+   13:     service.setPhase(projectId, 'generate-plan');
+   14:     const planAgentCliConfig = effectiveAgentCliConfig(service.status(projectId));
+   15:     const planFile = path.join(
+   16:       workspace,
+   17:       'docs',
+   18:       'plan',
+   19:       `plan_${timestampForPath()}_${issueScan.aggregateHash.slice(0, 8)}.md`,
+   20:     );
+   21:     const issueBundle = issueScan.files
+   22:       .map((file) => {
+   23:         const full = path.join(workspace, file.path);
+   24:         return ['---', `path: ${file.path}`, `hash: ${file.hash}`, 'content:', readSnippet(full, 20000)].join('\n');
+   25:       })
+   26:       .join('\n');
+   27: 
+   28:     const prompt = [
+   29:       '你是需求整理与开发计划生成者。',
+   30:       '请根据 docs/issues 收集到的反馈和需求，生成一个开发计划和验收标准。',
+   31:       '',
+   32:       `输出文件：${planFile}`,
+   33:       '',
+   34:       '格式要求：',
+   35:       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+   36:       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
+   37:       '- 每个任务要有验收要点',
+   38:       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+   39:       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+   40:       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+   41:       '- 必须包含总体验收标准和进度区',
+   42:       '- 只写 plan 文件，不要改业务代码',
+   43:       '',
+   44:       '需求快照：',
+   45:       issueBundle,
+   46:     ].join('\n');
+   47: 
+   48:     const result = await service.runCodex(workspace, prompt, 'generate-plan', {
+   49:       projectId,
+   50:       ...agentCliOperationFields(planAgentCliConfig),
+   51:     });
+   52:     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+   53:     const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+   54:     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
+   55:     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+   56:       service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, agentContext);
+   57:       return;
+   58:     }
+   59: 
+   60:     const id = service.insertPlan({
+   61:       projectId,
+   62:       issueHash: issueScan.aggregateHash,
+   63:       filePath: normalizeRelative(workspace, planFile),
+   64:       hash: hashFile(planFile),
+   65:       status: 'pending',
+   66:       agentCliConfig: planAgentCliSnapshot,
+   67:     });
+   68:     service.syncPlanTasks(id, planFile);
+   69:     service.db.run('UPDATE project_states SET last_issue_hash = ?, updated_at = ? WHERE project_id = ?', [
+   70:       issueScan.aggregateHash,
+   71:       nowIso(),
+   72:       projectId,
+   73:     ]);
+   74:     service.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+   75:       ...agentContext,
+   76:       planId: id,
+   77:     });
+   78:   }
+   79: 
+   80: async function generatePlanForIntake(service, helpers, projectId, workspace, intake) {
+   81:   const { timestampForPath, normalizeRelative, hashFile, hashText } = helpers;
+   82:     const table = intake.__type === 'feedback' ? 'feedback' : 'requirements';
+   83:     const sourceName = intake.__type === 'feedback' ? '反馈' : '需求';
+   84:     service.setPhase(projectId, 'generate-plan');
+   85:     const planAgentCliConfig = effectiveAgentCliConfig(service.status(projectId), intake);
+   86:     const safeId = String(intake.id).replace(/[^0-9a-zA-Z_-]/g, '');
+   87:     const planFile = path.join(
+   88:       workspace,
+   89:       'docs',
+   90:       'plan',
+   91:       `plan_${intake.__type}_${safeId}_${timestampForPath()}.md`,
+   92:     );
+   93:     const attachmentPrompt = service.intakeAttachmentPrompt(projectId, workspace, intake, sourceName);
+   94:     const promptParts = [
+   95:       '你是需求整理与开发计划生成者。',
+   96:       `请根据以下${sourceName}，生成一个开发计划和验收标准。`,
+   97:       '',
+   98:       `输出文件：${planFile}`,
+   99:       '',
+  100:       '格式要求：',
+  101:       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+  102:       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
+  103:       '- 每个任务要有验收要点',
+  104:       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+  105:       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+  106:       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+  107:       '- 必须包含总体验收标准和进度区',
+  108:       '- 只写 plan 文件，不要改业务代码',
+  109:       '',
+  110:       `${sourceName} #${intake.id} 内容：`,
+  111:       String(intake.body || '').trim() || '（正文为空）',
+  112:     ];
+  113:     if (attachmentPrompt) promptParts.push('', attachmentPrompt);
+  114:     const prompt = promptParts.join('\n');
+  115: 
+  116:     const result = await service.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, {
+  117:       projectId,
+  118:       intakeType: intake.__type,
+  119:       intakeId: intake.id,
+  120:       ...agentCliOperationFields(planAgentCliConfig),
+  121:     });
+  122:     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+  123:     const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+  124:     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
+  125:     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+  126:       service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`, agentContext);
+  127:       return null;
+  128:     }
+  129: 
+  130:     const issueHash = `${intake.__type}-${intake.id}-${hashText(String(intake.body || '')).slice(0, 16)}`;
+  131:     const planStatus = draftPlanRequested(intake) ? 'draft' : 'pending';
+  132:     const id = service.insertPlan({
+  133:       projectId,
+  134:       issueHash,
+  135:       filePath: normalizeRelative(workspace, planFile),
+  136:       hash: hashFile(planFile),
+  137:       status: planStatus,
+  138:       agentCliConfig: planAgentCliSnapshot,
+  139:     });
+  140:     service.syncPlanTasks(id, planFile);
+  141:     if (planStatus === 'draft') {
+  142:       service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['draft', nowIso(), id]);
+  143:     }
+  144:     // 回写关联
+  145:     service.db.run(`UPDATE ${table} SET linked_plan_id = ?, updated_at = ? WHERE id = ?`, [id, nowIso(), intake.id]);
+  146:     service.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成计划：${normalizeRelative(workspace, planFile)}`, {
+  147:       ...agentContext,
+  148:       planId: id,
+  149:       intakeType: intake.__type,
+  150:       intakeId: intake.id,
+  151:     });
+  152:     return id;
+  153:   }
+  154: 
+  155: function intakeAttachmentPrompt(service, helpers, projectId, workspace, intake, sourceName) {
+  156:   const { intakeAttachmentOwnerTypes, describeIntakeAttachment, formatIntakeAttachmentEntry } = helpers;
+  157:     const ownerTypes = intakeAttachmentOwnerTypes(intake.__type);
+  158:     const placeholders = ownerTypes.map(() => '?').join(', ');
+  159:     const attachments = service.db.all(
+  160:       `SELECT * FROM attachments
+  161:        WHERE project_id = ? AND owner_id = ? AND owner_type IN (${placeholders})
+  162:        ORDER BY created_at ASC, id ASC`,
+  163:       [projectId, intake.id, ...ownerTypes],
+  164:     );
+  165:     if (!attachments.length) return '';
+  166: 
+  167:     const entries = attachments.map((attachment, index) => describeIntakeAttachment(workspace, attachment, index));
+  168:     const failed = entries.filter((entry) => !entry.readable);
+  169:     if (failed.length) {
+  170:       service.addEvent(
+  171:         projectId,
+  172:         'attachment.read.failed',
+  173:         `${sourceName} #${intake.id} 存在不可读附件：${failed.map((entry) => `${entry.name}（${entry.readError}）`).join('；')}`,
+  174:         {
+  175:           intakeType: intake.__type,
+  176:           intakeId: intake.id,
+  177:           attachments: failed.map((entry) => ({
+  178:             id: entry.id,
+  179:             name: entry.name,
+  180:             path: entry.path,
+  181:             error: entry.readError,
+  182:           })),
+  183:         },
+  184:       );
+  185:     }
+  186: 
+  187:     return [
+  188:       '附件清单：',
+  189:       '以下附件已持久化到本地文件系统；不要将图片二进制内联进 plan，工具可以通过“持久化本地路径”读取附件内容。',
+  190:       '生成 plan 时，如任务理解或后续执行依赖附件内容，请在计划、验收要点或任务说明中保留必要的附件路径或引用。',
+  191:       ...entries.flatMap((entry) => formatIntakeAttachmentEntry(entry)),
+  192:     ].join('\n');
+  193: }
+  194: 
+  195: function draftPlanRequested(intake = {}) {
+  196:   return intake?.createAsDraft === true || intake?.draft === true || String(intake?.status || '') === 'draft';
+  197: }
+  198: 
+  199: module.exports = {
+  200:   generatePlan,
+  201:   generatePlanForIntake,
+  202:   intakeAttachmentPrompt,
+  203: };
+--- loop methods
+  660:     orderedIds.forEach((id, index) => {
+  661:       const sortOrder = index + 1;
+  662:       if (currentOrderById.get(id) === sortOrder) return;
+  663:       this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
+  664:         sortOrder,
+  665:         updatedAt,
+  666:         id,
+  667:         normalizedProjectId,
+  668:       ]);
+  669:     });
+  670:     this.emitUpdate(normalizedProjectId);
+  671:     return this.snapshot(normalizedProjectId);
+  672:   }
+  673: 
+  674:   insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
+  675:     const createdAt = nowIso();
+  676:     const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
+  677:       ? Number(sortOrder)
+  678:       : this.nextPlanSortOrder(projectId);
+  679:     const columns = [
+  680:       'project_id',
+  681:       'issue_hash',
+  682:       'file_path',
+  683:       'hash',
+  684:       'status',
+  685:       'sort_order',
+  686:       'total_tasks',
+  687:       'completed_tasks',
+  688:       'validation_passed',
+  689:       'created_at',
+  690:       'updated_at',
+  691:     ];
+  692:     const values = [projectId, issueHash, filePath, hash, status, normalizedSortOrder, 0, 0, 0, createdAt, createdAt];
+  693:     for (const [column, value] of planAgentCliColumnValues(this.planColumns(), agentCliConfig)) {
+  694:       columns.push(column);
+  695:       values.push(value);
+  696:     }
+  697:     return this.db.insert(
+  698:       `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
+  699:       values,
+  700:     );
+  701:   }
+  702: 
+  703:   planAgentCliConfig(plan) {
+  704:     const projectDefaults = this.status(plan.project_id);
+  705:     const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
+  706:     const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
+  707:     const snapshotDefaults = eventSnapshot || sourceSnapshot || projectDefaults;
+  708:     if (hasAgentCliOverride(plan)) return effectiveAgentCliConfig(snapshotDefaults, plan);
+  709:     if (eventSnapshot) return effectiveAgentCliConfig(projectDefaults, eventSnapshot);
+  710:     if (sourceSnapshot) return effectiveAgentCliConfig(projectDefaults, sourceSnapshot);
+  711:     return effectiveAgentCliConfig(projectDefaults);
+  712:   }
+  713: 
+  714:   planSnapshotAgentCliConfig(plan) {
+  715:     return this.planAgentCliConfig(plan);
+  716:   }
+  717: 
+  718:   planAgentCliEventSnapshot(projectId, planId) {
+  719:     const rows = this.db.all(
+  720:       `SELECT meta FROM events
+  721:        WHERE project_id = ? AND type = 'plan.generated' AND meta IS NOT NULL
+  722:        ORDER BY id DESC
+  723:        LIMIT 40`,
+  724:       [projectId],
+  725:     );
+  726:     for (const row of rows) {
+  727:       const meta = parseEventMeta(row.meta);
+  728:       if (!meta || typeof meta !== 'object') continue;
+  729:       if (Number(meta.planId ?? meta.plan_id) === Number(planId) && hasAgentCliOverride(meta)) return meta;
+  730:     }
+  731:     return null;
+  732:   }
+  733: 
+  734:   planSourceAgentCliSnapshot(projectId, planId) {
+  735:     const requirement = this.db.get('SELECT * FROM requirements WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [
+  736:       projectId,
+  737:       planId,
+  738:     ]);
+  739:     if (requirement && hasAgentCliOverride(requirement)) return requirement;
+  740:     const feedback = this.db.get('SELECT * FROM feedback WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [projectId, planId]);
+  741:     if (feedback && hasAgentCliOverride(feedback)) return feedback;
+  742:     return null;
+  743:   }
+  744: 
+  745:   async generatePlan(projectId, workspace, issueScan) {
+  746:     return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);
+  747:   }
+  748: 
+  749:   /** 为单条需求/反馈生成计划（调 codex），并回写 linked_plan_id。失败返回 null，下轮重试。 */
+  750:   async generatePlanForIntake(projectId, workspace, intake) {
+  751:     return planGeneration.generatePlanForIntake(this, loopFlowHelpers(), projectId, workspace, intake);
+  752:   }
+  753: 
+  754:   intakeAttachmentPrompt(projectId, workspace, intake, sourceName) {
+  755:     return planGeneration.intakeAttachmentPrompt(this, loopFlowHelpers(), projectId, workspace, intake, sourceName);
+  756:   }
+  757: 
+  758:   async processPlan(workspace, plan) {
+  759:     return taskExecution.processPlan(this, loopFlowHelpers(), workspace, plan);
+  760:   }
+--- README
+  115: - **常见错误**：必填字段缺失、字符串超长、`autoRun` 非布尔值、CLI 后端或 Codex 思考深度枚举非法、项目 ID 非正整数，都会以可修正的中文错误返回。
+  116: 
+  117: `npm run smoke` 覆盖 MCP 工具创建项目、提交需求/反馈、反馈关联需求、`autoRun`、CLI 配置规范化、附件保存和无效入参错误；真实 MCP 客户端连通性留给最终手动验收。
+  118: 
+  119: ## 计划并发执行与 scope 文件
+  120: 
+  121: AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
+  122: 
+  123: ```md
+  124: - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
+  125: - [ ] P007: 完整验收 <!-- scope: validation -->
+  126: ```
+  127: 
+  128: ### 并发建议规则
+  129: 
+  130: - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+  131: - **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
+  132: - **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
+  133: - **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
+  134: 
+  135: ### 手动并发执行流程
+  136: 
+  137: 1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
+  138: 2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
+  139: 3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
+  140: 4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
+  141: 5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
+  142: 
+  143: ### scope 文件打开配置
+  144: 
+  145: Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
+  146: 
+  147: 打开方式在项目「设置」中配置，默认使用系统默认方式：
+  148: 
+  149: | 打开方式 | 说明 | 示例配置 |
+  150: | --- | --- | --- |
+  151: | 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
+  152: | 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
+  153: | VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
+  154: | 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
+  155: 
+  156: 请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
+  157: 
+  158: ## 发布
+  159: 
+  160: 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+codex
+为避免改 `planGeneration.js`，我会在 `loopService.js` 的 `runCodex` 入口增强生成计划提示。
+exec
+powershell.exe -Command "Select-String -Path src\\loopService.js -Pattern \"async runCodex\\(|runCodex\\(\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 820 930" in D:\project\GitHub\autoplan
+ succeeded in 523ms:
+817:     const result = await this.runCodex(workspace, prompt, label, operation);
+832:   async runCodex(workspace, prompt, label, operation = {}) {
+  820:       if (changed) {
+  821:         fs.writeFileSync(planFile, before, 'utf8');
+  822:         this.addEvent(operation.projectId, 'plan.guard.restored', `${agentCliProviderDisplayName(result.agentCliProvider)} 修改了 plan，已恢复：${normalizeRelative(workspace, planFile)}`, {
+  823:           ...agentCliContextFields(result),
+  824:           planId: operation.planId || null,
+  825:           taskId: operation.taskId || null,
+  826:         });
+  827:       }
+  828:     }
+  829:     return result;
+  830:   }
+  831: 
+  832:   async runCodex(workspace, prompt, label, operation = {}) {
+  833:     const projectIdForEmit = operation.projectId;
+  834:     const runtime = this.runtime(projectIdForEmit);
+  835:     if (!runtime) throw new Error('projectId is required for codex operations');
+  836:     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+  837:     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+  838:     const agentCliProvider = agentCliConfig.provider;
+  839:     const agentCliCommand = agentCliConfig.command;
+  840:     const codexReasoningEffort = agentCliConfig.codexReasoningEffort;
+  841:     const isCodexProvider = agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
+  842:     const logDir = path.join(workspace, 'docs', 'progress', 'logs');
+  843:     fs.mkdirSync(logDir, { recursive: true });
+  844:     const prefix = `${timestampForPath()}_${safePart(label)}`;
+  845:     const logFile = path.join(logDir, `${prefix}.log`);
+  846:     const lastFile = path.join(logDir, `${prefix}.last.txt`);
+  847:     const hasSessionOption = isCodexProvider && hasCodexSessionOption(operation);
+  848:     const requestedSessionId = isCodexProvider ? operationCodexSessionId(operation) : '';
+  849:     const activeOperation = {
+  850:       ...operation,
+  851:       label,
+  852:       logFile,
+  853:       lastFile,
+  854:       agentCliProvider,
+  855:       agentCliCommand,
+  856:       ...(isCodexProvider ? { codexReasoningEffort } : {}),
+  857:       ...(isCodexProvider
+  858:         ? {
+  859:             codexSessionId: requestedSessionId || null,
+  860:             codexSessionRequestedId: requestedSessionId || null,
+  861:             codexSessionMode: requestedSessionId ? 'resume' : 'new',
+  862:             codexSessionState: requestedSessionId ? 'resume' : 'new',
+  863:           }
+  864:         : {}),
+  865:       logBuffer: '',
+  866:       activity: isCodexProvider ? new CodexActivityPrinter(200) : null,
+  867:       startedAt: nowIso(),
+  868:     };
+  869:     if (!isCodexProvider) clearCodexSessionFields(activeOperation);
+  870:     let operationKey = null;
+  871:     let capturedSessionId = '';
+  872:     let sessionScanBuffer = '';
+  873:     const stream = fs.createWriteStream(logFile, { encoding: 'utf8' });
+  874:     const appendInternalLog = (message) => {
+  875:       const text = `\n[AutoPlan] ${message}\n`;
+  876:       stream.write(text);
+  877:       activeOperation.logBuffer = `${activeOperation.logBuffer || ''}${text}`;
+  878:       if (activeOperation.logBuffer.length > 24000) {
+  879:         activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
+  880:       }
+  881:     };
+  882:     const resultFor = (attempt, mode) => {
+  883:       if (activeOperation.activity && typeof activeOperation.activity.flush === 'function') {
+  884:         activeOperation.activity.flush();
+  885:       }
+  886:       const exitCode = typeof attempt?.exitCode === 'number' ? attempt.exitCode : -1;
+  887:       const sessionId = capturedSessionId || (mode === 'resume' ? requestedSessionId : '');
+  888:       const codexSessionFields = isCodexProvider
+  889:         ? codexSessionContextFields({
+  890:             codexSessionId: sessionId,
+  891:             codexSessionRequestedId: requestedSessionId,
+  892:             codexSessionMode: mode,
+  893:             codexSessionFallback: mode === 'new' && Boolean(requestedSessionId),
+  894:           })
+  895:         : {};
+  896:       return {
+  897:         exitCode,
+  898:         logFile,
+  899:         lastFile,
+  900:         provider: activeOperation.agentCliProvider,
+  901:         agentCliProvider: activeOperation.agentCliProvider,
+  902:         command: activeOperation.agentCliCommand,
+  903:         agentCliCommand: activeOperation.agentCliCommand,
+  904:         ...(isCodexProvider ? { codexReasoningEffort: activeOperation.codexReasoningEffort } : {}),
+  905:         activity: activeOperation.activity ? activeOperation.activity.getLines() : [],
+  906:         output: attempt?.output || '',
+  907:         errorMessage: attempt?.errorMessage || '',
+  908:         timedOut: Boolean(attempt?.timedOut),
+  909:         timeoutMs: attempt?.timeoutMs,
+  910:         ...(isCodexProvider
+  911:           ? {
+  912:               sessionId: sessionId || null,
+  913:               codexSessionId: sessionId || null,
+  914:               codexSessionMode: mode,
+  915:               resumed: mode === 'resume',
+  916:             }
+  917:           : {}),
+  918:         ...codexSessionFields,
+  919:       };
+  920:     };
+  921:     const runAttempt = async (args, mode) => {
+  922:       if (isCodexProvider) {
+  923:         activeOperation.codexSessionMode = mode;
+  924:         activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
+  925:         activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
+  926:       }
+  927:       return runAgentCliAttempt({
+  928:         workspace,
+  929:         prompt,
+  930:         lastFile,
+
+**Considering event querying**
+
+I’m thinking about how to handle querying event metadata. It might be simpler to record every sync, but that's not ideal. Adding checks like `recordPlanTaskParseEmpty` sounds better for last tasks. I need to create a helper for that. My query plan would involve selecting the project ID and file path from the plans. I also need to check the events table for the specific type and message—perhaps inspecting the `addEvent` function would help clarify things.
+codex
+我会在生成请求进入 CLI 前追加严格格式防护，并在同步到 0 个任务时记录明确事件。
+exec
+powershell.exe -Command "Select-String -Path src\\loopService.js -Pattern \"addEvent\\(\" | Select-Object -First 5 | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 520 570; Show src\\loopService.js 920 1010" in D:\project\GitHub\autoplan
+ succeeded in 506ms:
+268:       addEvent: (id, type, message, meta) => this.addEvent(id, type, message, meta),
+311:       this.addEvent(projectId, 'scan.done', `待处理需求/反馈=${pendingIntakes.length}`);
+415:         this.addEvent(projectId, 'tasks.parallel.finished', `并发批次 ${index + 1}/${batches.length} 执行完成`, {
+518:     this.addEvent(projectId, type, taskEventMessage(type, task, meta), meta);
+571:     this.addEvent(projectId, 'plan.interrupted', `plan #${planId} 已中断，未完成任务已挂起`);
+  520: 
+  521:   recordTaskFailure(projectId, plan, task, finishedAt = nowIso(), metaOverrides = {}) {
+  522:     const currentTask = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [task.id]) || task;
+  523:     if (currentTask.status !== TASK_EVENT_STATUS.RUNNING) return null;
+  524:     const failedTask = this.finishTaskRun(task.id, TASK_EVENT_STATUS.PENDING, finishedAt, { onlyIfRunning: true }) || currentTask;
+  525:     this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.FAILED, failedTask, {
+  526:       planId: plan?.id,
+  527:       status: TASK_EVENT_STATUS.FAILED,
+  528:       finishedAt,
+  529:       ...metaOverrides,
+  530:     });
+  531:     return failedTask;
+  532:   }
+  533: 
+  534:   /** 中断某个 plan：停止正在执行的 codex 进程，未完成任务标记为 blocked，plan 标记为 interrupted */
+  535:   interruptPlan(projectId, planId) {
+  536:     const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+  537:     if (!plan) return;
+  538:     // 若当前正在执行该 plan 的任务，kill 进程
+  539:     const runtime = this.runtime(projectId);
+  540:     const activePlanOperations = runtime
+  541:       ? findRuntimeOperations(runtime, (operation) => Number(operation?.planId) === Number(planId))
+  542:       : [];
+  543:     for (const activeEntry of activePlanOperations) {
+  544:       const finishedAt = nowIso();
+  545:       killChildProcess(activeEntry.child);
+  546:       const activeTaskId = activeEntry.operation?.taskId;
+  547:       const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;
+  548:       const interruptedTask = activeTaskId
+  549:         ? this.finishTaskRun(activeTaskId, 'blocked', finishedAt, { onlyIfRunning: true })
+  550:         : null;
+  551:       const eventTask = interruptedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: planId } : null);
+  552:       if (eventTask) {
+  553:         this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.INTERRUPTED, eventTask, {
+  554:           ...agentCliContextFields(activeEntry.operation, { defaultProvider: true }),
+  555:           planId,
+  556:           taskId: activeTaskId || undefined,
+  557:           status: TASK_EVENT_STATUS.INTERRUPTED,
+  558:           finishedAt,
+  559:           log: activeEntry.operation?.logFile,
+  560:           exitCode: typeof activeEntry.operation?.exitCode === 'number' ? activeEntry.operation.exitCode : undefined,
+  561:         });
+  562:       }
+  563:     }
+  564:     // 其余未完成任务 → blocked
+  565:     this.db.run(
+  566:       `UPDATE plan_tasks SET status = ?, updated_at = ?
+  567:        WHERE plan_id = ? AND status IN ('pending', 'running')`,
+  568:       ['blocked', nowIso(), planId],
+  569:     );
+  570:     this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['interrupted', nowIso(), planId]);
+  920:     };
+  921:     const runAttempt = async (args, mode) => {
+  922:       if (isCodexProvider) {
+  923:         activeOperation.codexSessionMode = mode;
+  924:         activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
+  925:         activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
+  926:       }
+  927:       return runAgentCliAttempt({
+  928:         workspace,
+  929:         prompt,
+  930:         lastFile,
+  931:         logFile,
+  932:         runtime,
+  933:         activeOperation,
+  934:         operationKey,
+  935:         onOperationKey: (nextOperationKey) => {
+  936:           operationKey = nextOperationKey;
+  937:         },
+  938:         registerRuntimeOperation,
+  939:         waitForChild,
+  940:         stream,
+  941:         provider: activeOperation.agentCliProvider,
+  942:         command: activeOperation.agentCliCommand,
+  943:         codexArgs: args,
+  944:         env: workspaceToolEnv(workspace),
+  945:         onChunk: (text) => {
+  946:           if (!isCodexProvider) return;
+  947:           sessionScanBuffer = `${sessionScanBuffer}${text}`.slice(-4000);
+  948:           const parsedSessionId = extractCodexSessionId(sessionScanBuffer);
+  949:           if (parsedSessionId) {
+  950:             capturedSessionId = parsedSessionId;
+  951:             activeOperation.codexSessionId = parsedSessionId;
+  952:           }
+  953:         },
+  954:       });
+  955:     };
+  956:     const tailTimer = setInterval(() => {
+  957:       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
+  958:     }, 600);
+  959:     try {
+  960:       if (!isCodexProvider) {
+  961:         const attempt = await runAttempt([], '');
+  962:         return resultFor(attempt, '');
+  963:       }
+  964: 
+  965:       if (requestedSessionId) {
+  966:         this.addEvent(projectIdForEmit, 'codex.session.resume.started', `尝试恢复 Codex 会话 ${shortCodexSessionId(requestedSessionId)}`, {
+  967:           ...codexSessionContextFields({
+  968:             codexSessionId: requestedSessionId,
+  969:             codexSessionRequestedId: requestedSessionId,
+  970:             codexSessionMode: 'resume',
+  971:           }),
+  972:           sessionId: requestedSessionId,
+  973:           label,
+  974:           planId: operation.planId || null,
+  975:           taskId: operation.taskId || null,
+  976:         });
+  977:         const resume = await runAttempt(codexResumeSessionArgs(requestedSessionId, lastFile, { reasoningEffort: codexReasoningEffort }), 'resume');
+  978:         const resumeFailed = resume.exitCode !== 0 && !extractCodexSessionId(resume.output) && isCodexResumeFailure(resume.output);
+  979:         if (!resumeFailed) return resultFor(resume, 'resume');
+  980: 
+  981:         this.addEvent(projectIdForEmit, 'codex.session.resume.failed', `恢复 Codex 会话失败，已回退新建：${shortCodexSessionId(requestedSessionId)}`, {
+  982:           ...codexSessionContextFields({
+  983:             codexSessionRequestedId: requestedSessionId,
+  984:             codexSessionMode: 'new',
+  985:             codexSessionState: 'fallback-new',
+  986:             codexSessionFallback: true,
+  987:           }),
+  988:           sessionId: requestedSessionId,
+  989:           label,
+  990:           planId: operation.planId || null,
+  991:           taskId: operation.taskId || null,
+  992:           exitCode: resume.exitCode,
+  993:           log: logFile,
+  994:         });
+  995:         activeOperation.codexSessionFallback = true;
+  996:         activeOperation.codexSessionRequestedId = requestedSessionId;
+  997:         activeOperation.codexSessionId = null;
+  998:         activeOperation.codexSessionMode = 'new';
+  999:         activeOperation.codexSessionState = 'fallback-new';
+ 1000:         appendInternalLog(`Codex resume failed for session ${requestedSessionId}; falling back to a new session.`);
+ 1001:       } else if (hasSessionOption) {
+ 1002:         this.addEvent(projectIdForEmit, 'codex.session.resume.skipped', 'Codex session id 为空，已新建会话', {
+ 1003:           ...codexSessionContextFields({ codexSessionMode: 'new' }),
+ 1004:           label,
+ 1005:           planId: operation.planId || null,
+ 1006:           taskId: operation.taskId || null,
+ 1007:           reason: 'empty_session_id',
+ 1008:         });
+ 1009:         appendInternalLog('Codex session id was empty; starting a new session.');
+ 1010:       }
+
+**Considering function definition**
+
+I'm thinking about defining the addEvent function around line 480. I want to ensure that the placement is logical within the code structure. It’s important to keep the flow and context in mind when adding this function. I should make sure that it integrates well with existing code and doesn't disrupt anything. Let me gather my thoughts to see if there’s anything else I should consider before finalizing this decision.
+exec
+powershell.exe -Command "Select-String -Path src\\loopService.js -Pattern \"addEvent\\(projectId\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 480 520" in D:\project\GitHub\autoplan
+ succeeded in 479ms:
+311:       this.addEvent(projectId, 'scan.done', `待处理需求/反馈=${pendingIntakes.length}`);
+415:         this.addEvent(projectId, 'tasks.parallel.finished', `并发批次 ${index + 1}/${batches.length} 执行完成`, {
+518:     this.addEvent(projectId, type, taskEventMessage(type, task, meta), meta);
+571:     this.addEvent(projectId, 'plan.interrupted', `plan #${planId} 已中断，未完成任务已挂起`);
+583:     this.addEvent(projectId, 'plan.resumed', `plan #${planId} 已恢复`);
+966:         this.addEvent(projectIdForEmit, 'codex.session.resume.started', `尝试恢复 Codex 会话 ${shortCodexSessionId(requestedSessionId)}`, {
+981:         this.addEvent(projectIdForEmit, 'codex.session.resume.failed', `恢复 Codex 会话失败，已回退新建：${shortCodexSessionId(requestedSessionId)}`, {
+1002:         this.addEvent(projectIdForEmit, 'codex.session.resume.skipped', 'Codex session id 为空，已新建会话', {
+1098:   addEvent(projectId, type, message, meta = null) {
+  480:     if (!normalizedSessionId) return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+  481:     this.db.run(
+  482:       `UPDATE plan_tasks
+  483:        SET codex_session_id = ?, updated_at = ?
+  484:        WHERE id = ?`,
+  485:       [normalizedSessionId, updatedAt, taskId],
+  486:     );
+  487:     return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+  488:   }
+  489: 
+  490:   finishTaskRun(taskId, status, finishedAt = nowIso(), options = {}) {
+  491:     const task = this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+  492:     if (!task) return null;
+  493:     const isRunning = task.status === TASK_EVENT_STATUS.RUNNING;
+  494:     if (options.onlyIfRunning && !isRunning) return withTaskDurationMeta(task);
+  495: 
+  496:     const runDurationMs = isRunning ? taskRunDurationMs(task.started_at, finishedAt) : undefined;
+  497:     const durationMs = normalizeDurationMs(task.duration_ms) + (runDurationMs || 0);
+  498:     this.db.run(
+  499:       `UPDATE plan_tasks
+  500:        SET status = ?, duration_ms = ?, finished_at = ?, updated_at = ?
+  501:        WHERE id = ?`,
+  502:       [status, durationMs, finishedAt, finishedAt, taskId],
+  503:     );
+  504:     return withTaskDurationMeta(
+  505:       {
+  506:         ...task,
+  507:         status,
+  508:         duration_ms: durationMs,
+  509:         finished_at: finishedAt,
+  510:         updated_at: finishedAt,
+  511:       },
+  512:       runDurationMs,
+  513:     );
+  514:   }
+  515: 
+  516:   addTaskLifecycleEvent(projectId, type, task, metaOverrides = {}) {
+  517:     const meta = taskEventMeta(task, metaOverrides);
+  518:     this.addEvent(projectId, type, taskEventMessage(type, task, meta), meta);
+  519:   }
+  520: 
+
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 1088 1112" in D:\project\GitHub\autoplan
+ succeeded in 468ms:
+ 1088:   recordError(projectId, error) {
+ 1089:     recordRuntimeError(
+ 1090:       this.db,
+ 1091:       projectId,
+ 1092:       error,
+ 1093:       (id, type, message, meta) => this.addEvent(id, type, message, meta),
+ 1094:       (id) => this.emitUpdate(id),
+ 1095:     );
+ 1096:   }
+ 1097: 
+ 1098:   addEvent(projectId, type, message, meta = null) {
+ 1099:     this.db.run('INSERT INTO events (project_id, type, message, meta, created_at) VALUES (?, ?, ?, ?, ?)', [
+ 1100:       projectId,
+ 1101:       type,
+ 1102:       message,
+ 1103:       meta ? JSON.stringify(meta) : null,
+ 1104:       nowIso(),
+ 1105:     ]);
+ 1106:     this.emitUpdate(projectId);
+ 1107:   }
+ 1108: 
+ 1109:   emitUpdate(projectId) {
+ 1110:     this.emit('update', this.snapshot(projectId));
+ 1111:   }
+ 1112: 
+
+codex
+我会补一个统一提示附加器，让两类生成计划入口都继承同一格式防护。
+exec
+powershell.exe -Command "Select-String -Path src\\loop\\planGeneration.js -Pattern \"runCodex\\(\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}' in D:\project\GitHub\autoplan
+ succeeded in 457ms:
+48:     const result = await service.runCodex(workspace, prompt, 'generate-plan', {
+116:     const result = await service.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, {
+
+**Inspecting intake details**
+
+I see I need a label for intake gen-feedback-15 and I wonder if I should look into `operation.intakeType`. It seems important to check that, so I'll focus on inspecting lines 100-125 to find relevant information. I hope that helps clarify what I need to do! Let's ensure everything lines up correctly for this operation. It feels like a small but necessary detail.
+codex
+单条需求/反馈生成 label 是 `gen-*`，我确认 operation 元数据便于识别。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loop\\planGeneration.js 96 128" in D:\project\GitHub\autoplan
+ succeeded in 457ms:
+   96:       `请根据以下${sourceName}，生成一个开发计划和验收标准。`,
+   97:       '',
+   98:       `输出文件：${planFile}`,
+   99:       '',
+  100:       '格式要求：',
+  101:       '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+  102:       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
+  103:       '- 每个任务要有验收要点',
+  104:       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
+  105:       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
+  106:       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
+  107:       '- 必须包含总体验收标准和进度区',
+  108:       '- 只写 plan 文件，不要改业务代码',
+  109:       '',
+  110:       `${sourceName} #${intake.id} 内容：`,
+  111:       String(intake.body || '').trim() || '（正文为空）',
+  112:     ];
+  113:     if (attachmentPrompt) promptParts.push('', attachmentPrompt);
+  114:     const prompt = promptParts.join('\n');
+  115: 
+  116:     const result = await service.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, {
+  117:       projectId,
+  118:       intakeType: intake.__type,
+  119:       intakeId: intake.id,
+  120:       ...agentCliOperationFields(planAgentCliConfig),
+  121:     });
+  122:     const agentContext = agentCliContextFields(result, { defaultProvider: true });
+  123:     const planAgentCliSnapshot = effectiveAgentCliConfig(planAgentCliConfig, agentContext);
+  124:     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
+  125:     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
+  126:       service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`, agentContext);
+  127:       return null;
+  128:     }
+
+codex
+现在修改 `loopService.js`：提示附加器、0 任务解析事件和 runCodex 接入。
+2026-06-27T09:58:09.228987Z ERROR codex_core::tools::router: error=apply_patch verification failed: Failed to find expected lines in D:\project\GitHub\autoplan\src\loopService.js:
+const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\s*<!--\s*${PLAN_TASK_SCOPE_LABEL_RE}\s*[:=：]\s*([^>]*?)\s*-->\s*`, 'i');
+const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+const PLAN_TASK_PATH_RE = /[\w./\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+codex
+补丁上下文因正则反斜杠不匹配，我先读精确行再重试。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 89 100" in D:\project\GitHub\autoplan
+ succeeded in 466ms:
+   89: const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+   90: const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+   91: const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
+   92: const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
+   93: const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
+   94: const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
+   95: const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+   96: const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+   97: const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+   98: 
+   99: class LoopService extends EventEmitter {
+  100:   constructor(db) {
+
+codex
+重试插入生成格式防护常量。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..393fccb97d7a93ca3a859335cc53f536156fa207
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..393fccb97d7a93ca3a859335cc53f536156fa207
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+
+codex
+常量已加入。接着把增强后的 prompt 传给 CLI。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..23875cb3232a3accb1029a6f3ecaa77b2ed58be3
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..23875cb3232a3accb1029a6f3ecaa77b2ed58be3
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+
+**Evaluating function placement**
+
+I need to consider adding functions near the timestamp or before the sync process. It seems I should also handle empty records. Maybe I can patch in sync after parsing the tasks? I need to think through the sequence a bit more to make sure everything flows smoothly. It's all about timing and ensuring no gaps. That way, I can get the tasks done without any hiccups!  Another way to think about it... hmm.
+codex
+CLI prompt 已接入增强版。现在补 0 任务解析事件和提示附加函数。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..c0e4355e8948ebbe818c10967e9d6259f10c030a
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1217,6 +1219,7 @@
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..c0e4355e8948ebbe818c10967e9d6259f10c030a
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1217,6 +1219,7 @@
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+
+codex
+继续新增两个辅助函数，保持逻辑集中在 `loopService.js`。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..70206e4bd8024257593dd403546b896a0bc034c6
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..70206e4bd8024257593dd403546b896a0bc034c6
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+**Planning README update**
+
+I need to update the README and come up with a plan first. It seems like I should include an example for `unknown`, since the existing section has validation but lacks that in the code block. I also need to add a text section about ##任务拆解. I’ll make sure the lines are fixed and avoid using tables or nested formats. I’ll focus on patching that specific section of the README.
+codex
+代码侧防护已补。接下来更新 README 的任务格式说明，保持与解析规则一致。
+  ✓ 定位生成防护入口
+  ✓ 补充格式防护逻辑
+  → 更新 README 说明
+  • 静态复查范围
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..70206e4bd8024257593dd403546b896a0bc034c6
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+codex
+修改 README 的 scope/任务拆解说明，只改相关段落。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\README.md
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..70206e4bd8024257593dd403546b896a0bc034c6
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..70206e4bd8024257593dd403546b896a0bc034c6
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+codex
+README 已更新。最后做静态复查：确认只改 scope 文件、提示和事件文本完整。
+  ✓ 定位生成防护入口
+  ✓ 补充格式防护逻辑
+  ✓ 更新 README 说明
+  → 静态复查范围
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..70206e4bd8024257593dd403546b896a0bc034c6
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+codex
+执行只读复查，不运行测试或构建。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 89 102; Write-Output '--- runCodex'; Show src\\loopService.js 832 842; Show src\\loopService.js 926 932; Write-Output '--- guards'; Show src\\loopService.js 1216 1278; Write-Output '--- readme'; Show README.md 119 135; Write-Output '--- status'; git status --short src\\loopService.js README.md docs\\plan\\plan_feedback_15_20260627-132045.md" in D:\project\GitHub\autoplan
+ succeeded in 567ms:
+   89: const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
+   90: const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+   91: const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
+   92: const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
+   93: const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
+   94: const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
+   95: const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+   96: const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+   97: const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+   98: const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+   99: 
+  100: class LoopService extends EventEmitter {
+  101:   constructor(db) {
+  102:     super();
+--- runCodex
+  832: 
+  833:   async runCodex(workspace, prompt, label, operation = {}) {
+  834:     const projectIdForEmit = operation.projectId;
+  835:     const runtime = this.runtime(projectIdForEmit);
+  836:     if (!runtime) throw new Error('projectId is required for codex operations');
+  837:     const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+  838:     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+  839:     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+  840:     const agentCliProvider = agentCliConfig.provider;
+  841:     const agentCliCommand = agentCliConfig.command;
+  842:     const codexReasoningEffort = agentCliConfig.codexReasoningEffort;
+  926:         activeOperation.codexSessionState = activeOperation.codexSessionFallback ? 'fallback-new' : mode;
+  927:         activeOperation.codexSessionId = mode === 'resume' ? requestedSessionId || null : capturedSessionId || null;
+  928:       }
+  929:       return runAgentCliAttempt({
+  930:         workspace,
+  931:         prompt: effectivePrompt,
+  932:         lastFile,
+--- guards
+ 1216: }
+ 1217: 
+ 1218: function planGenerationGuardedPrompt(prompt, label, operation = {}) {
+ 1219:   if (!isPlanGenerationOperation(label, operation)) return prompt;
+ 1220:   const text = String(prompt || '');
+ 1221:   if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
+ 1222:   return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
+ 1223:     '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
+ 1224:     '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
+ 1225:     '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
+ 1226:     '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
+ 1227:     '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
+ 1228:   ].join('\n')}`;
+ 1229: }
+ 1230: 
+ 1231: function isPlanGenerationOperation(label, operation = {}) {
+ 1232:   const text = String(label || '');
+ 1233:   return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
+ 1234: }
+ 1235: 
+ 1236: function syncPlanTasksFromMarkdown(service, planId, planFile) {
+ 1237:   if (!fs.existsSync(planFile)) return;
+ 1238:   const text = fs.readFileSync(planFile, 'utf8');
+ 1239:   const tasks = parsePlanTasksFromMarkdown(text);
+ 1240:   if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+ 1241:   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+ 1242:   const existingByKey = new Map();
+ 1243:   for (const existing of existingTasks) {
+ 1244:     const matches = existingByKey.get(existing.task_key) || [];
+ 1245:     matches.push(existing);
+ 1246:     existingByKey.set(existing.task_key, matches);
+ 1247:   }
+ 1248: 
+ 1249:   const syncedStatuses = [];
+ 1250:   for (const task of tasks) {
+ 1251:     const existing = existingByKey.get(task.key)?.shift();
+ 1252:     const status = existing ? syncedTaskStatus(task.status, existing.status) : task.status;
+ 1253:     syncedStatuses.push(status);
+ 1254:     if (existing) {
+ 1255:       service.db.run(
+ 1256:         `UPDATE plan_tasks
+ 1257:          SET title = ?, raw_line = ?, scope = ?, status = ?, sort_order = ?, updated_at = ?
+ 1258:          WHERE id = ?`,
+ 1259:         [task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso(), existing.id],
+ 1260:       );
+ 1261:     } else {
+ 1262:       service.db.run(
+ 1263:         `INSERT INTO plan_tasks (plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at)
+ 1264:          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+ 1265:         [planId, task.key, task.title, task.rawLine, task.scope, status, task.sortOrder, nowIso()],
+ 1266:       );
+ 1267:     }
+ 1268:   }
+ 1269: 
+ 1270:   for (const matches of existingByKey.values()) {
+ 1271:     for (const stale of matches) service.db.run('DELETE FROM plan_tasks WHERE id = ?', [stale.id]);
+ 1272:   }
+ 1273: 
+ 1274:   const completed = syncedStatuses.filter((status) => status === TASK_EVENT_STATUS.COMPLETED).length;
+ 1275:   const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [planId]);
+ 1276:   const status = currentPlan?.validation_passed || currentPlan?.status === 'completed'
+ 1277:     ? 'completed'
+ 1278:     : tasks.length > 0 && completed === tasks.length
+--- readme
+  119: ## 计划并发执行与 scope 文件
+  120: 
+  121: AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+  122: 
+  123: ```md
+  124: - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
+  125: - [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+  126: - [ ] P007: 完整验收 <!-- scope: validation -->
+  127: ```
+  128: 
+  129: 任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
+  130: 
+  131: ### 并发建议规则
+  132: 
+  133: - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+  134: - **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
+  135: - **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
+--- status
+ M README.md
+ M src/loopService.js
+?? docs/plan/plan_feedback_15_20260627-132045.md
+
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..70206e4bd8024257593dd403546b896a0bc034c6
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+codex
+再看 0 任务事件函数，确认提示足够明确且不会重复刷事件。
+exec
+powershell.exe -Command 'function Show($path,$start,$end){$i=0; Get-Content -Encoding UTF8 $path | ForEach-Object {$i++; if($i -ge $start -and $i -le $end){'"'{0,5}: {1}' -f "'$i,$_}}}; Show src'"\\loopService.js 1284 1320" in D:\project\GitHub\autoplan
+ succeeded in 455ms:
+ 1284:   );
+ 1285: }
+ 1286: 
+ 1287: function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
+ 1288:   const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
+ 1289:   if (!plan?.project_id) return;
+ 1290:   const filePath = plan.file_path || planFile;
+ 1291:   const message = `计划未解析到任务拆解：${filePath}`;
+ 1292:   const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
+ 1293:     plan.project_id,
+ 1294:     'plan.tasks.parse.empty',
+ 1295:     message,
+ 1296:   ]);
+ 1297:   if (existing) return;
+ 1298:   service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
+ 1299:     planId,
+ 1300:     filePath,
+ 1301:     taskCount: 0,
+ 1302:     markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
+ 1303:     reason: 'no_parseable_task_lines',
+ 1304:     hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
+ 1305:   });
+ 1306: }
+ 1307: 
+ 1308: function parsePlanTasksFromMarkdown(markdown) {
+ 1309:   const tasks = [];
+ 1310:   const lines = String(markdown || '').split(/\r?\n/);
+ 1311:   for (const line of lines) {
+ 1312:     const match = line.match(PLAN_TASK_LINE_RE);
+ 1313:     if (!match) continue;
+ 1314:     const sortOrder = tasks.length + 1;
+ 1315:     const rawTitle = match[2].trim();
+ 1316:     const titleWithoutScope = stripPlanTaskScopeComment(rawTitle);
+ 1317:     const parsedTitle = parsePlanTaskTitle(titleWithoutScope, sortOrder);
+ 1318:     const rawLine = ensurePlanTaskScopeComment(line, parsedTitle.validationLike ? 'validation' : 'unknown');
+ 1319:     tasks.push({
+ 1320:       key: parsedTitle.key,
+
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..70206e4bd8024257593dd403546b896a0bc034c6
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务写 `- [ ] P999: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+codex
+提示里示例编号与“不跳号”略冲突，我会改成不暗示固定 P999。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\loopService.js
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..5d531c31cab3dd6249f10f240aff1ddc816bcc3c
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务也使用连续编号，例如 `- [ ] P007: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..5d531c31cab3dd6249f10f240aff1ddc816bcc3c
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务也使用连续编号，例如 `- [ ] P007: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+**Finalizing the update plan**
+
+I need to make sure that the final update plan is complete. But first, I think I should take a moment to static select the exact line that I want to focus on. It’s essential to be precise in this step, as it sets the foundation for the entire update. I want to ensure everything is clear before moving to the final version. Let’s take it one step at a time!
+codex
+最后确认修正后的提示行和状态。
+exec
+powershell.exe -Command "Select-String -Path src\\loopService.js -Pattern \"完整验收任务也使用|plan.tasks.parse.empty|effectivePrompt\" | ForEach-Object {\""'$($_.LineNumber): $($_.Line)"}; Select-String -Path README.md -Pattern "任务拆解|scope: unknown|scope: validation|嵌套 checkbox" | ForEach-Object {"$($_.LineNumber): $($_.Line)"}; git status --short src'"\\loopService.js README.md docs\\plan\\plan_feedback_15_20260627-132045.md" in D:\project\GitHub\autoplan
+ succeeded in 482ms:
+837:     const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+931:         prompt: effectivePrompt,
+1226:     '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务也使用连续编号，例如 `- [ ] P007: 完整验收 <!-- scope: validation -->`。',
+1294:     'plan.tasks.parse.empty',
+1298:   service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
+121: AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+125: - [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+126: - [ ] P007: 完整验收 <!-- scope: validation -->
+129: 任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
+ M README.md
+ M src/loopService.js
+?? docs/plan/plan_feedback_15_20260627-132045.md
+
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..5d531c31cab3dd6249f10f240aff1ddc816bcc3c
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务也使用连续编号，例如 `- [ ] P007: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+codex
+静态复查完成：只改了 P003 scope 文件，未启动测试/构建。
+P003 已完成；按要求未修改 plan 文件，也未运行任何测试、构建或 lint/analyze 命令。
+  ✓ 定位生成防护入口
+  ✓ 补充格式防护逻辑
+  ✓ 更新 README 说明
+  ✓ 静态复查范围
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..5d531c31cab3dd6249f10f240aff1ddc816bcc3c
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务也使用连续编号，例如 `- [ ] P007: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+codex
+**完成情况**
+- 已完成 P003，仅修改 `src/loopService.js:837`、`src/loopService.js:1218`、`src/loopService.js:1287` 和 `README.md:121`。
+- 在 `runCodex` 入口为计划生成类任务追加严格格式防护，要求 `## 任务拆解`、独占 checkbox 任务行、固定 `scope` 注释，并禁止段落/代码块/表格/嵌套 checkbox。
+- 当 `syncPlanTasks` 解析到 0 个任务时，会记录 `plan.tasks.parse.empty` 事件，带上原因和修复提示，避免静默失败。
+- README 已补充 `unknown`、`validation` 示例，以及任务拆解章节和固定行格式说明。
+
+**未执行**
+- 未修改只读 plan 文件，未勾选 checkbox，未更新进度区。
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark。
+diff --git a/README.md b/README.md
+index a3a01a079a535821bd6846acc8975294884290e7..3d65c81c25b28a73e9298007c491e308e4122f4f
+--- a/README.md
++++ b/README.md
+@@ -118,13 +118,16 @@
+ 
+ ## 计划并发执行与 scope 文件
+ 
+-AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
++AutoPlan 生成计划时要求所有任务拆解都放在 `## 任务拆解` 章节中，且每个任务行都必须独占一行并携带固定格式的 `scope` 注释，例如：
+ 
+ ```md
+ - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
++- [ ] P002: 梳理暂不确定影响范围的兼容逻辑 <!-- scope: unknown -->
+ - [ ] P007: 完整验收 <!-- scope: validation -->
+ ```
+ 
++任务行必须使用 `- [ ] P001: 任务标题 <!-- scope: ... -->` 或已完成态 `- [x] P001: 任务标题 <!-- scope: ... -->`。不要把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以作为任务下方的缩进列表，但不能写成新的 checkbox 任务。
++
+ ### 并发建议规则
+ 
+ - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+diff --git a/src/loopService.js b/src/loopService.js
+index 86ccfce82469d8662b1528b3876bf015bb5b9007..5d531c31cab3dd6249f10f240aff1ddc816bcc3c
+--- a/src/loopService.js
++++ b/src/loopService.js
+@@ -95,6 +95,7 @@
+ const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
+ const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
+ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
++const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
+ 
+ class LoopService extends EventEmitter {
+   constructor(db) {
+@@ -833,6 +834,7 @@
+     const projectIdForEmit = operation.projectId;
+     const runtime = this.runtime(projectIdForEmit);
+     if (!runtime) throw new Error('projectId is required for codex operations');
++    const effectivePrompt = planGenerationGuardedPrompt(prompt, label, operation);
+     const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+     const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+     const agentCliProvider = agentCliConfig.provider;
+@@ -926,7 +928,7 @@
+       }
+       return runAgentCliAttempt({
+         workspace,
+-        prompt,
++        prompt: effectivePrompt,
+         lastFile,
+         logFile,
+         runtime,
+@@ -1213,10 +1215,29 @@
+   )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+ }
+ 
++function planGenerationGuardedPrompt(prompt, label, operation = {}) {
++  if (!isPlanGenerationOperation(label, operation)) return prompt;
++  const text = String(prompt || '');
++  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
++  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
++    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
++    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
++    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
++    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务也使用连续编号，例如 `- [ ] P007: 完整验收 <!-- scope: validation -->`。',
++    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
++  ].join('\n')}`;
++}
++
++function isPlanGenerationOperation(label, operation = {}) {
++  const text = String(label || '');
++  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
++}
++
+ function syncPlanTasksFromMarkdown(service, planId, planFile) {
+   if (!fs.existsSync(planFile)) return;
+   const text = fs.readFileSync(planFile, 'utf8');
+   const tasks = parsePlanTasksFromMarkdown(text);
++  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
+   const existingByKey = new Map();
+   for (const existing of existingTasks) {
+@@ -1263,6 +1284,27 @@
+   );
+ }
+ 
++function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
++  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
++  if (!plan?.project_id) return;
++  const filePath = plan.file_path || planFile;
++  const message = `计划未解析到任务拆解：${filePath}`;
++  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
++    plan.project_id,
++    'plan.tasks.parse.empty',
++    message,
++  ]);
++  if (existing) return;
++  service.addEvent(plan.project_id, 'plan.tasks.parse.empty', message, {
++    planId,
++    filePath,
++    taskCount: 0,
++    markdownBytes: Buffer.byteLength(String(markdown || ''), 'utf8'),
++    reason: 'no_parseable_task_lines',
++    hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
++  });
++}
++
+ function parsePlanTasksFromMarkdown(markdown) {
+   const tasks = [];
+   const lines = String(markdown || '').split(/\r?\n/);
+
+**完成情况**
+- 已完成 P003，仅修改 `src/loopService.js:837`、`src/loopService.js:1218`、`src/loopService.js:1287` 和 `README.md:121`。
+- 在 `runCodex` 入口为计划生成类任务追加严格格式防护，要求 `## 任务拆解`、独占 checkbox 任务行、固定 `scope` 注释，并禁止段落/代码块/表格/嵌套 checkbox。
+- 当 `syncPlanTasks` 解析到 0 个任务时，会记录 `plan.tasks.parse.empty` 事件，带上原因和修复提示，避免静默失败。
+- README 已补充 `unknown`、`validation` 示例，以及任务拆解章节和固定行格式说明。
+
+**未执行**
+- 未修改只读 plan 文件，未勾选 checkbox，未更新进度区。
+- 按要求未运行测试、构建、lint/analyze、coverage、e2e 或 benchmark。
+tokens used
+259,728

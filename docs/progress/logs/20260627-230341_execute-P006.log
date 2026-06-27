@@ -1,0 +1,1668 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0980-dd3a-76c0-9f9a-471daf8d1c4f
+--------
+user
+你是开发执行者。
+请只执行指定任务 P006，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_36_20260627-221620.md
+指定任务：- [ ] P006: 补充界面结构与交互测试代码 <!-- scope: src/renderer/pages/WorkspacePage.test.tsx,src/renderer/components/shared.test.tsx -->
+任务 scope：src/renderer/pages/workspacepage.test.tsx, src/renderer/components/shared.test.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Inspecting P006 tests**
+
+I'm focusing on just the P006 tests for now. It seems important to review and inspect the existing tests to ensure everything is working as intended. I want to make sure that nothing essential is missed and that I understand the current state of those tests before proceeding further. It feels like a good step to make sure I have a solid foundation before moving on!
+codex
+我会沿用前面 UI 结构变更，只查看并补充指定测试文件。
+exec
+powershell.exe -Command "Get-Content -Raw -Encoding UTF8 src/renderer/pages/WorkspacePage.test.tsx; '--- shared test ---'; Get-Content -Raw -Encoding UTF8 src/renderer/components/shared.test.tsx; '--- package scripts'; Get-Content -Raw -Encoding UTF8 package.json" in D:\project\GitHub\autoplan
+ succeeded in 596ms:
+export {};
+
+type TestRegistrar = (name: string, fn: () => void) => void;
+
+declare function require(id: string): unknown;
+declare const process: { cwd(): string };
+
+const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
+const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
+const { join } = require('node:path') as { join: (...parts: string[]) => string };
+
+function expect(condition: unknown, message: string) {
+  if (!condition) throw new Error(message);
+}
+
+function workspacePageSource() {
+  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
+}
+
+describe('WorkspacePage Codex reasoning options', () => {
+  it('offers xhigh after the existing three reasoning levels', () => {
+    const source = workspacePageSource();
+    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
+
+    expect(lowIndex >= 0, 'low option should exist');
+    expect(mediumIndex > lowIndex, 'medium option should follow low');
+    expect(highIndex > mediumIndex, 'high option should follow medium');
+    expect(xhighIndex > highIndex, 'xhigh option should follow high');
+  });
+
+  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+    const source = workspacePageSource();
+
+    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
+  });
+});
+
+--- shared test ---
+import {
+  codexReasoningEffortLabel,
+  planCliSummaryLabel,
+  readCodexReasoningEffort,
+} from './shared';
+
+type TestRegistrar = (name: string, fn: () => void) => void;
+
+declare function require(id: string): unknown;
+
+const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
+
+function expectEqual(actual: unknown, expected: unknown) {
+  if (actual !== expected) {
+    throw new Error(`Expected ${JSON.stringify(actual)} to equal ${JSON.stringify(expected)}`);
+  }
+}
+
+describe('shared Codex reasoning helpers', () => {
+  it('reads xhigh from shared display sources', () => {
+    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
+    expectEqual(readCodexReasoningEffort({ reasoningEffort: ' XHIGH ' }), 'xhigh');
+  });
+
+  it('falls back to medium for empty and invalid Codex values', () => {
+    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: '' }), 'medium');
+    expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'invalid' }), 'medium');
+  });
+
+  it('keeps Claude summaries free of Codex reasoning depth', () => {
+    const source = { agent_cli_provider: 'claude', codex_reasoning_effort: 'xhigh' };
+
+    expectEqual(readCodexReasoningEffort(source), null);
+    expectEqual(planCliSummaryLabel(source), 'Claude CLI');
+  });
+
+  it('labels xhigh without degrading it to medium', () => {
+    expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
+  });
+});
+
+--- package scripts
+{
+  "name": "autoplan",
+  "version": "0.2.1-beta.2",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "verify:release-artifacts": "node scripts/verify-release-artifacts.js",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths",
+    "check:lengths": "node scripts/check-file-lengths.js",
+    "mcp:http": "node src/mcpServer.js --http",
+    "mcp:stdio": "node src/mcpServer.js --stdio",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "afterSign": "scripts/notarize-mac.js",
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm",
+      "src/loop/scanWorker.js",
+      "src/loop/workspaceFiles.js"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+
+codex
+我会把现有源代码结构测试更新为覆盖任务页、设置页和表单选项结构，不启动测试进程。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.test.tsx
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+deleted file mode 100644
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..0000000000000000000000000000000000000000
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ /dev/null
+@@ -1,41 +0,0 @@
+-export {};
+-
+-type TestRegistrar = (name: string, fn: () => void) => void;
+-
+-declare function require(id: string): unknown;
+-declare const process: { cwd(): string };
+-
+-const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
+-const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
+-const { join } = require('node:path') as { join: (...parts: string[]) => string };
+-
+-function expect(condition: unknown, message: string) {
+-  if (!condition) throw new Error(message);
+-}
+-
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
+-}
+-
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
+-
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
+-  });
+-
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
+-
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
+-  });
+-});
+
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+deleted file mode 100644
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..0000000000000000000000000000000000000000
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ /dev/null
+@@ -1,41 +0,0 @@
+-export {};
+-
+-type TestRegistrar = (name: string, fn: () => void) => void;
+-
+-declare function require(id: string): unknown;
+-declare const process: { cwd(): string };
+-
+-const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
+-const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
+-const { join } = require('node:path') as { join: (...parts: string[]) => string };
+-
+-function expect(condition: unknown, message: string) {
+-  if (!condition) throw new Error(message);
+-}
+-
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
+-}
+-
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
+-
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
+-  });
+-
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
+-
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
+-  });
+-});
+
+codex
+已清空旧的过时测试，马上写入覆盖当前 UI 结构的新测试。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.test.tsx
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..429371f9e1b7e5c442bad0ca1cf4f34d222a22e1
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, 'className={`plan-card ${cardState}${selected ? \' selected\' : \'\'}`}', 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, 'className={`plan-validation ${plan.validation_passed ? \'passed\' : \'pending\'}`}', 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, 'className={`task-item${running ? \' running\' : \'\'}`}', 'standalone task list should render task cards');
++    expectIncludes(taskList, 'className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : \'\'}`}', 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..429371f9e1b7e5c442bad0ca1cf4f34d222a22e1
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, 'className={`plan-card ${cardState}${selected ? \' selected\' : \'\'}`}', 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, 'className={`plan-validation ${plan.validation_passed ? \'passed\' : \'pending\'}`}', 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, 'className={`task-item${running ? \' running\' : \'\'}`}', 'standalone task list should render task cards');
++    expectIncludes(taskList, 'className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : \'\'}`}', 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+**Inspecting TS Syntax Issues**
+
+I’m thinking about potential TypeScript syntax issues concerning string escapes and backticks. It seems like I need to take a closer look at how these elements are being used, as sometimes they can lead to unexpected errors or bugs in the code. Making sure I resolve any problems in the syntax will help ensure the code is running smoothly. Let's see what I can find!
+codex
+我会静态读取新测试，检查字符串转义是否有效。
+exec
+powershell.exe -Command '$lines=Get-Content -Encoding UTF8 src/renderer/pages/WorkspacePage.test.tsx; for($i=1;$i -le $lines.Count;$i++){ '"'{0,4}: {1}' -f "'$i,$lines[$i-1] }' in D:\project\GitHub\autoplan
+ succeeded in 535ms:
+   1: export {};
+   2: 
+   3: type TestRegistrar = (name: string, fn: () => void) => void;
+   4: 
+   5: declare function require(id: string): unknown;
+   6: declare const process: { cwd(): string };
+   7: 
+   8: const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
+   9: const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
+  10: const { join } = require('node:path') as { join: (...parts: string[]) => string };
+  11: 
+  12: function expect(condition: unknown, message: string) {
+  13:   if (!condition) throw new Error(message);
+  14: }
+  15: 
+  16: function source(...parts: string[]) {
+  17:   return readFileSync(join(process.cwd(), ...parts), 'utf8');
+  18: }
+  19: 
+  20: function expectIncludes(sourceText: string, snippet: string, message: string) {
+  21:   expect(sourceText.includes(snippet), message);
+  22: }
+  23: 
+  24: describe('Workspace task page structure', () => {
+  25:   it('keeps the task page split into Plan and task columns', () => {
+  26:     const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+  27: 
+  28:     expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
+  29:     expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
+  30:     expectIncludes(page, '<PlanList', 'task page should render the Plan column');
+  31:     expectIncludes(page, '<TaskList', 'task page should render the task column');
+  32:     expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
+  33:   });
+  34: 
+  35:   it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
+  36:     const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
+  37: 
+  38:     expectIncludes(planList, 'className={`plan-card ${cardState}${selected ? \' selected\' : \'\'}`}', 'Plan list should render visual cards with selected state');
+  39:     expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
+  40:     expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
+  41:     expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
+  42:     expectIncludes(planList, 'className={`plan-validation ${plan.validation_passed ? \'passed\' : \'pending\'}`}', 'Plan card should expose validation state');
+  43:     expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
+  44:     expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
+  45:   });
+  46: 
+  47:   it('keeps task grouping, status filters, and scope semantic classes wired', () => {
+  48:     const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
+  49:     const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
+  50:     const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
+  51: 
+  52:     expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
+  53:     expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
+  54:     expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
+  55:     expectIncludes(taskList, 'className={`task-item${running ? \' running\' : \'\'}`}', 'standalone task list should render task cards');
+  56:     expectIncludes(taskList, 'className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : \'\'}`}', 'scope chips should receive semantic classes');
+  57:     expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
+  58:     expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
+  59:     expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
+  60:     expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
+  61:   });
+  62: });
+  63: 
+  64: describe('Workspace settings page structure', () => {
+  65:   it('defines four settings panes with navigation metadata', () => {
+  66:     const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+  67: 
+  68:     expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
+  69:     expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
+  70:     expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
+  71:     expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
+  72:     expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+  73:   });
+  74: 
+  75:   it('keeps CLI, scope, and MCP interactions represented in source', () => {
+  76:     const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+  77: 
+  78:     expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
+  79:     expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
+  80:     expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
+  81:     expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
+  82:     expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
+  83:     expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
+  84:     expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
+  85:     expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+  86:   });
+  87: });
+
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..429371f9e1b7e5c442bad0ca1cf4f34d222a22e1
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, 'className={`plan-card ${cardState}${selected ? \' selected\' : \'\'}`}', 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, 'className={`plan-validation ${plan.validation_passed ? \'passed\' : \'pending\'}`}', 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, 'className={`task-item${running ? \' running\' : \'\'}`}', 'standalone task list should render task cards');
++    expectIncludes(taskList, 'className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : \'\'}`}', 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+codex
+发现几处源片段断言的引号转义可能导致测试文件语法错误，我会改成双引号字符串。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.test.tsx
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..3ace83f98110ad34de8a8746261f6ad7d1be3e32
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, "className={`plan-card ${cardState}${selected ? ' selected' : ''}`}", 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, "className={`task-item${running ? ' running' : ''}`}", 'standalone task list should render task cards');
++    expectIncludes(taskList, "className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}", 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..3ace83f98110ad34de8a8746261f6ad7d1be3e32
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, "className={`plan-card ${cardState}${selected ? ' selected' : ''}`}", 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, "className={`task-item${running ? ' running' : ''}`}", 'standalone task list should render task cards');
++    expectIncludes(taskList, "className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}", 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+codex
+我会在 shared 测试里补充设置页选项数据的结构断言。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\shared.test.tsx
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+index 825995b9cbb58f21f8e45ea3ec4c40352dfcab1a..d5d68f490149b9e970a3a0dec1caacd84d03300d
+--- a/src/renderer/components/shared.test.tsx
++++ b/src/renderer/components/shared.test.tsx
+@@ -3,6 +3,11 @@
+   planCliSummaryLabel,
+   readCodexReasoningEffort,
+ } from './shared';
++import {
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
++  scopeFileOpenModeOptions,
++} from '../utils/workspaceForms';
+ 
+ type TestRegistrar = (name: string, fn: () => void) => void;
+ 
+@@ -16,6 +21,10 @@
+   }
+ }
+ 
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
+ describe('shared Codex reasoning helpers', () => {
+   it('reads xhigh from shared display sources', () => {
+     expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
+@@ -38,3 +47,27 @@
+     expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
+   });
+ });
++
++describe('settings choice metadata', () => {
++  it('keeps CLI provider choices ready for segmented controls', () => {
++    expectEqual(agentCliOptionDetails.length, 2);
++    expectEqual(agentCliOptionDetails[0].value, 'codex');
++    expectEqual(agentCliOptionDetails[1].value, 'claude');
++    expect(agentCliOptionDetails.every((option) => option.description), 'CLI options should include descriptions');
++  });
++
++  it('keeps Codex effort card choices aligned with labels', () => {
++    const effortValues = codexReasoningOptionDetails.map((option) => option.value).join(',');
++
++    expectEqual(effortValues, 'low,medium,high,xhigh');
++    expectEqual(codexReasoningOptionDetails.find((option) => option.value === 'xhigh')?.label, '超高');
++    expect(codexReasoningOptionDetails.every((option) => option.description), 'Codex effort options should include descriptions');
++  });
++
++  it('keeps scope open modes complete for the segmented control', () => {
++    const scopeModes = scopeFileOpenModeOptions.map((option) => option.value).join(',');
++
++    expectEqual(scopeModes, 'system,folder,vscode,command');
++    expect(scopeFileOpenModeOptions.some((option) => option.description.includes('{file}')), 'command mode should document the {file} placeholder');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..3ace83f98110ad34de8a8746261f6ad7d1be3e32
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, "className={`plan-card ${cardState}${selected ? ' selected' : ''}`}", 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, "className={`task-item${running ? ' running' : ''}`}", 'standalone task list should render task cards');
++    expectIncludes(taskList, "className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}", 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+index 825995b9cbb58f21f8e45ea3ec4c40352dfcab1a..d5d68f490149b9e970a3a0dec1caacd84d03300d
+--- a/src/renderer/components/shared.test.tsx
++++ b/src/renderer/components/shared.test.tsx
+@@ -3,6 +3,11 @@
+   planCliSummaryLabel,
+   readCodexReasoningEffort,
+ } from './shared';
++import {
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
++  scopeFileOpenModeOptions,
++} from '../utils/workspaceForms';
+ 
+ type TestRegistrar = (name: string, fn: () => void) => void;
+ 
+@@ -16,6 +21,10 @@
+   }
+ }
+ 
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
+ describe('shared Codex reasoning helpers', () => {
+   it('reads xhigh from shared display sources', () => {
+     expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
+@@ -38,3 +47,27 @@
+     expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
+   });
+ });
++
++describe('settings choice metadata', () => {
++  it('keeps CLI provider choices ready for segmented controls', () => {
++    expectEqual(agentCliOptionDetails.length, 2);
++    expectEqual(agentCliOptionDetails[0].value, 'codex');
++    expectEqual(agentCliOptionDetails[1].value, 'claude');
++    expect(agentCliOptionDetails.every((option) => option.description), 'CLI options should include descriptions');
++  });
++
++  it('keeps Codex effort card choices aligned with labels', () => {
++    const effortValues = codexReasoningOptionDetails.map((option) => option.value).join(',');
++
++    expectEqual(effortValues, 'low,medium,high,xhigh');
++    expectEqual(codexReasoningOptionDetails.find((option) => option.value === 'xhigh')?.label, '超高');
++    expect(codexReasoningOptionDetails.every((option) => option.description), 'Codex effort options should include descriptions');
++  });
++
++  it('keeps scope open modes complete for the segmented control', () => {
++    const scopeModes = scopeFileOpenModeOptions.map((option) => option.value).join(',');
++
++    expectEqual(scopeModes, 'system,folder,vscode,command');
++    expect(scopeFileOpenModeOptions.some((option) => option.description.includes('{file}')), 'command mode should document the {file} placeholder');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..3ace83f98110ad34de8a8746261f6ad7d1be3e32
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, "className={`plan-card ${cardState}${selected ? ' selected' : ''}`}", 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, "className={`task-item${running ? ' running' : ''}`}", 'standalone task list should render task cards');
++    expectIncludes(taskList, "className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}", 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+**Verifying code options**
+
+I don't need to run tests right now, but I can do a static read instead. The old WorkspacePage test concerning codex options has been removed, which is good. I need to verify that certain strings exist, and I can use Select-String for that. I wonder if syntax is necessary or if I can just use TypeScript here. I can't run any code, but I’ll inspect what's shared.
+codex
+我会做静态确认，确保新增测试只引用当前存在的源码片段和导出。
+exec
+powershell.exe -Command '$files=@('"'src/renderer/pages/WorkspacePage.test.tsx','src/renderer/components/shared.test.tsx'); foreach("'$f in $files){'"'--- '+"'$f; Select-String -Path $f -Pattern "describe'"\\(|it\\(|expectIncludes|agentCliOptionDetails|scopeFileOpenModeOptions|className=\\{"'`|settings-nav|task-plan-group" | ForEach-Object { $_.LineNumber.ToString().PadLeft(4)+'"': '+"'$_.Line.Trim() }}; '"'--- status'; git status --short -- src/renderer/pages/WorkspacePage.test.tsx src/renderer/components/shared.test.tsx docs/plan/plan_requirement_36_20260627-221620.md" in D:\project\GitHub\autoplan
+ succeeded in 662ms:
+--- src/renderer/pages/WorkspacePage.test.tsx
+  20: function expectIncludes(sourceText: string, snippet: string, message: string) {
+  24: describe('Workspace task page structure', () => {
+  25: it('keeps the task page split into Plan and task columns', () => {
+  28: expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
+  29: expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
+  30: expectIncludes(page, '<PlanList', 'task page should render the Plan column');
+  31: expectIncludes(page, '<TaskList', 'task page should render the task column');
+  32: expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
+  35: it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
+  38: expectIncludes(planList, "className={`plan-card ${cardState}${selected ? ' selected' : ''}`}", 'Plan list should render visual cards with selected state');
+  39: expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
+  40: expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
+  41: expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
+  42: expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
+  43: expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
+  44: expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
+  47: it('keeps task grouping, status filters, and scope semantic classes wired', () => {
+  52: expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
+  53: expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
+  54: expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
+  55: expectIncludes(taskList, "className={`task-item${running ? ' running' : ''}`}", 'standalone task list should render task cards');
+  56: expectIncludes(taskList, "className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}", 'scope chips should receive semantic classes');
+  57: expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
+  58: expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
+  59: expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
+  60: expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
+  64: describe('Workspace settings page structure', () => {
+  65: it('defines four settings panes with navigation metadata', () => {
+  68: expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
+  69: expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
+  70: expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
+  71: expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
+  72: expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+  75: it('keeps CLI, scope, and MCP interactions represented in source', () => {
+  78: expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
+  79: expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
+  80: expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
+  81: expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
+  82: expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
+  83: expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
+  84: expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
+  85: expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+--- src/renderer/components/shared.test.tsx
+   7: agentCliOptionDetails,
+   9: scopeFileOpenModeOptions,
+  28: describe('shared Codex reasoning helpers', () => {
+  29: it('reads xhigh from shared display sources', () => {
+  34: it('falls back to medium for empty and invalid Codex values', () => {
+  39: it('keeps Claude summaries free of Codex reasoning depth', () => {
+  46: it('labels xhigh without degrading it to medium', () => {
+  51: describe('settings choice metadata', () => {
+  52: it('keeps CLI provider choices ready for segmented controls', () => {
+  53: expectEqual(agentCliOptionDetails.length, 2);
+  54: expectEqual(agentCliOptionDetails[0].value, 'codex');
+  55: expectEqual(agentCliOptionDetails[1].value, 'claude');
+  56: expect(agentCliOptionDetails.every((option) => option.description), 'CLI options should include descriptions');
+  59: it('keeps Codex effort card choices aligned with labels', () => {
+  67: it('keeps scope open modes complete for the segmented control', () => {
+  68: const scopeModes = scopeFileOpenModeOptions.map((option) => option.value).join(',');
+  71: expect(scopeFileOpenModeOptions.some((option) => option.description.includes('{file}')), 'command mode should document the {file} placeholder');
+--- status
+ M src/renderer/components/shared.test.tsx
+ M src/renderer/pages/WorkspacePage.test.tsx
+?? docs/plan/plan_requirement_36_20260627-221620.md
+
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+index 825995b9cbb58f21f8e45ea3ec4c40352dfcab1a..d5d68f490149b9e970a3a0dec1caacd84d03300d
+--- a/src/renderer/components/shared.test.tsx
++++ b/src/renderer/components/shared.test.tsx
+@@ -3,6 +3,11 @@
+   planCliSummaryLabel,
+   readCodexReasoningEffort,
+ } from './shared';
++import {
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
++  scopeFileOpenModeOptions,
++} from '../utils/workspaceForms';
+ 
+ type TestRegistrar = (name: string, fn: () => void) => void;
+ 
+@@ -16,6 +21,10 @@
+   }
+ }
+ 
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
+ describe('shared Codex reasoning helpers', () => {
+   it('reads xhigh from shared display sources', () => {
+     expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
+@@ -38,3 +47,27 @@
+     expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
+   });
+ });
++
++describe('settings choice metadata', () => {
++  it('keeps CLI provider choices ready for segmented controls', () => {
++    expectEqual(agentCliOptionDetails.length, 2);
++    expectEqual(agentCliOptionDetails[0].value, 'codex');
++    expectEqual(agentCliOptionDetails[1].value, 'claude');
++    expect(agentCliOptionDetails.every((option) => option.description), 'CLI options should include descriptions');
++  });
++
++  it('keeps Codex effort card choices aligned with labels', () => {
++    const effortValues = codexReasoningOptionDetails.map((option) => option.value).join(',');
++
++    expectEqual(effortValues, 'low,medium,high,xhigh');
++    expectEqual(codexReasoningOptionDetails.find((option) => option.value === 'xhigh')?.label, '超高');
++    expect(codexReasoningOptionDetails.every((option) => option.description), 'Codex effort options should include descriptions');
++  });
++
++  it('keeps scope open modes complete for the segmented control', () => {
++    const scopeModes = scopeFileOpenModeOptions.map((option) => option.value).join(',');
++
++    expectEqual(scopeModes, 'system,folder,vscode,command');
++    expect(scopeFileOpenModeOptions.some((option) => option.description.includes('{file}')), 'command mode should document the {file} placeholder');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..3ace83f98110ad34de8a8746261f6ad7d1be3e32
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, "className={`plan-card ${cardState}${selected ? ' selected' : ''}`}", 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, "className={`task-item${running ? ' running' : ''}`}", 'standalone task list should render task cards');
++    expectIncludes(taskList, "className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}", 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+codex
+已完成 P006，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint/analyze。
+
+**完成内容**
+- 重写 `WorkspacePage.test.tsx` 的源结构测试，覆盖任务页双列、Plan 卡片、任务分组、状态筛选和 scope 语义类：`src/renderer/pages/WorkspacePage.test.tsx:24`
+- 补充设置页结构测试，覆盖四分组导航、右侧 pane、CLI/思考深度/scope 交互和 MCP 只读信息：`src/renderer/pages/WorkspacePage.test.tsx:64`
+- 在 `shared.test.tsx` 中补充设置选项元数据测试，覆盖 CLI 分段控件、Codex 思考深度卡片和 scope 打开方式完整性：`src/renderer/components/shared.test.tsx:51`
+
+**说明**
+- 只改了 P006 scope 内的 2 个测试文件。
+- 按要求没有启动测试进程，验证留给最终验收阶段统一执行。
+diff --git a/src/renderer/components/shared.test.tsx b/src/renderer/components/shared.test.tsx
+index 825995b9cbb58f21f8e45ea3ec4c40352dfcab1a..d5d68f490149b9e970a3a0dec1caacd84d03300d
+--- a/src/renderer/components/shared.test.tsx
++++ b/src/renderer/components/shared.test.tsx
+@@ -3,6 +3,11 @@
+   planCliSummaryLabel,
+   readCodexReasoningEffort,
+ } from './shared';
++import {
++  agentCliOptionDetails,
++  codexReasoningOptionDetails,
++  scopeFileOpenModeOptions,
++} from '../utils/workspaceForms';
+ 
+ type TestRegistrar = (name: string, fn: () => void) => void;
+ 
+@@ -16,6 +21,10 @@
+   }
+ }
+ 
++function expect(condition: unknown, message: string) {
++  if (!condition) throw new Error(message);
++}
++
+ describe('shared Codex reasoning helpers', () => {
+   it('reads xhigh from shared display sources', () => {
+     expectEqual(readCodexReasoningEffort({ codex_reasoning_effort: 'xhigh' }), 'xhigh');
+@@ -38,3 +47,27 @@
+     expectEqual(codexReasoningEffortLabel('xhigh'), '超高');
+   });
+ });
++
++describe('settings choice metadata', () => {
++  it('keeps CLI provider choices ready for segmented controls', () => {
++    expectEqual(agentCliOptionDetails.length, 2);
++    expectEqual(agentCliOptionDetails[0].value, 'codex');
++    expectEqual(agentCliOptionDetails[1].value, 'claude');
++    expect(agentCliOptionDetails.every((option) => option.description), 'CLI options should include descriptions');
++  });
++
++  it('keeps Codex effort card choices aligned with labels', () => {
++    const effortValues = codexReasoningOptionDetails.map((option) => option.value).join(',');
++
++    expectEqual(effortValues, 'low,medium,high,xhigh');
++    expectEqual(codexReasoningOptionDetails.find((option) => option.value === 'xhigh')?.label, '超高');
++    expect(codexReasoningOptionDetails.every((option) => option.description), 'Codex effort options should include descriptions');
++  });
++
++  it('keeps scope open modes complete for the segmented control', () => {
++    const scopeModes = scopeFileOpenModeOptions.map((option) => option.value).join(',');
++
++    expectEqual(scopeModes, 'system,folder,vscode,command');
++    expect(scopeFileOpenModeOptions.some((option) => option.description.includes('{file}')), 'command mode should document the {file} placeholder');
++  });
++});
+diff --git a/src/renderer/pages/WorkspacePage.test.tsx b/src/renderer/pages/WorkspacePage.test.tsx
+index e52c7d24beddac59ec3150d0b447f69d2b3aca24..3ace83f98110ad34de8a8746261f6ad7d1be3e32
+--- a/src/renderer/pages/WorkspacePage.test.tsx
++++ b/src/renderer/pages/WorkspacePage.test.tsx
+@@ -13,29 +13,75 @@
+   if (!condition) throw new Error(message);
+ }
+ 
+-function workspacePageSource() {
+-  return readFileSync(join(process.cwd(), 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
++function source(...parts: string[]) {
++  return readFileSync(join(process.cwd(), ...parts), 'utf8');
+ }
+ 
+-describe('WorkspacePage Codex reasoning options', () => {
+-  it('offers xhigh after the existing three reasoning levels', () => {
+-    const source = workspacePageSource();
+-    const lowIndex = source.indexOf("{ value: 'low', label: '低 · 快速' }");
+-    const mediumIndex = source.indexOf("{ value: 'medium', label: '中 · 默认' }");
+-    const highIndex = source.indexOf("{ value: 'high', label: '高 · 深入' }");
+-    const xhighIndex = source.indexOf("{ value: 'xhigh', label: '超高 · 最深入' }");
++function expectIncludes(sourceText: string, snippet: string, message: string) {
++  expect(sourceText.includes(snippet), message);
++}
++
++describe('Workspace task page structure', () => {
++  it('keeps the task page split into Plan and task columns', () => {
++    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
++
++    expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
++    expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
++    expectIncludes(page, '<PlanList', 'task page should render the Plan column');
++    expectIncludes(page, '<TaskList', 'task page should render the task column');
++    expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
++  });
++
++  it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
++    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
++
++    expectIncludes(planList, "className={`plan-card ${cardState}${selected ? ' selected' : ''}`}", 'Plan list should render visual cards with selected state');
++    expectIncludes(planList, 'className="plan-progress"', 'Plan card should include progress block');
++    expectIncludes(planList, 'className="concurrency-row"', 'Plan card should include concurrency summary');
++    expectIncludes(planList, 'className="plan-meta"', 'Plan card should include CLI/hash/update metadata');
++    expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
++    expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
++    expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
++  });
++
++  it('keeps task grouping, status filters, and scope semantic classes wired', () => {
++    const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
++    const taskList = source('src', 'renderer', 'components', 'plans', 'TaskList.tsx');
++    const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
++
++    expectIncludes(planLists, 'className="task-filter-tabs"', 'task status filters should remain available');
++    expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
++    expectIncludes(planLists, 'formatTaskPlanGroupSummary(group)', 'task groups should render a summary');
++    expectIncludes(taskList, "className={`task-item${running ? ' running' : ''}`}", 'standalone task list should render task cards');
++    expectIncludes(taskList, "className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}", 'scope chips should receive semantic classes');
++    expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
++    expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
++    expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
++    expectIncludes(planTasks, 'if (left.hasRunningTask !== right.hasRunningTask)', 'running task groups should sort first');
++  });
++});
++
++describe('Workspace settings page structure', () => {
++  it('defines four settings panes with navigation metadata', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(lowIndex >= 0, 'low option should exist');
+-    expect(mediumIndex > lowIndex, 'medium option should follow low');
+-    expect(highIndex > mediumIndex, 'high option should follow medium');
+-    expect(xhighIndex > highIndex, 'xhigh option should follow high');
++    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
++    expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
++    expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
++    expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
++    expectIncludes(settingsView, 'className="settings-pane active"', 'settings view should render active pane content');
+   });
+ 
+-  it('keeps medium as the default and accepts xhigh in local normalization', () => {
+-    const source = workspacePageSource();
++  it('keeps CLI, scope, and MCP interactions represented in source', () => {
++    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+ 
+-    expect(source.includes("const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';"), 'default should stay medium');
+-    expect(source.includes("effort === 'xhigh'"), 'local normalization should accept xhigh');
+-    expect(source.includes('return defaultCodexReasoningEffort;'), 'invalid local values should still use the default');
++    expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
++    expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
++    expectIncludes(settingsView, "loopForm.agentCliProvider === 'claude'", 'Claude should hide Codex-only effort controls');
++    expectIncludes(settingsView, 'scopeFileOpenModeOptions.map', 'scope mode should use segmented option data');
++    expectIncludes(settingsView, "scopeFileOpenSettings.mode === 'vscode' || scopeFileOpenSettings.mode === 'command'", 'editor command should only expand for command-based modes');
++    expectIncludes(settingsView, '<InfoRow label="服务状态">', 'MCP pane should expose service status as readonly info');
++    expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
++    expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+   });
+ });
+
+tokens used
+442,021
+已完成 P006，未修改 plan 文件、未勾选 checkbox，未运行测试/构建/lint/analyze。
+
+**完成内容**
+- 重写 `WorkspacePage.test.tsx` 的源结构测试，覆盖任务页双列、Plan 卡片、任务分组、状态筛选和 scope 语义类：`src/renderer/pages/WorkspacePage.test.tsx:24`
+- 补充设置页结构测试，覆盖四分组导航、右侧 pane、CLI/思考深度/scope 交互和 MCP 只读信息：`src/renderer/pages/WorkspacePage.test.tsx:64`
+- 在 `shared.test.tsx` 中补充设置选项元数据测试，覆盖 CLI 分段控件、Codex 思考深度卡片和 scope 打开方式完整性：`src/renderer/components/shared.test.tsx:51`
+
+**说明**
+- 只改了 P006 scope 内的 2 个测试文件。
+- 按要求没有启动测试进程，验证留给最终验收阶段统一执行。

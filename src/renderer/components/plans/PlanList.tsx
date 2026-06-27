@@ -1,7 +1,6 @@
-import type { KeyboardEvent } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
 import { useEffect, useId, useRef, useState } from 'react';
-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
-import { RecordCard } from '../IntakePanel';
+import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
 import { MarkdownReader } from '../MarkdownReader';
 import { planCliSummaryLabel } from '../shared';
 import { formatChinaDateTime } from '../../utils/time';
@@ -40,9 +39,32 @@ const PLAN_READER_FOCUSABLE_SELECTOR = [
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
 
+const PLAN_CARD_INTERACTIVE_SELECTOR = [
+  'a[href]',
+  'button',
+  'input',
+  'select',
+  'textarea',
+  'summary',
+  '[role="button"]',
+  '[role="link"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
 function getPlanReaderFocusableElements(container: HTMLElement) {
   return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
     (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+  );
+}
+
+function isPlanCardInteractiveEvent(event: MouseEvent<HTMLElement> | KeyboardEvent<HTMLElement>) {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return false;
+  const interactiveElement = target.closest<HTMLElement>(PLAN_CARD_INTERACTIVE_SELECTOR);
+  return Boolean(
+    interactiveElement &&
+      interactiveElement !== event.currentTarget &&
+      event.currentTarget.contains(interactiveElement),
   );
 }
 
@@ -53,23 +75,25 @@ function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
   return '';
 }
 
-function readPlanTaskStatusLabel(status: string) {
-  if (status === 'completed') return '已完成';
-  if (status === 'running') return '执行中';
-  if (status === 'blocked') return '已阻塞';
-  if (status === 'failed') return '失败';
-  return '待执行';
+function getPlanProgressPercent(plan: Plan) {
+  const total = Math.max(0, Number(plan.total_tasks || 0));
+  if (!total) return 0;
+  return Math.max(0, Math.min(100, Math.round((Number(plan.completed_tasks || 0) / total) * 100)));
 }
 
-function readPlanTaskScopeLabel(task: ReadPlanTask) {
-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+function planCardState(plan: Plan, hasRunningTask: boolean) {
+  if (plan.is_draft || plan.status === 'draft') return 'draft';
+  if (plan.validation_passed || plan.status === 'completed') return 'completed';
+  if (hasRunningTask || plan.status === 'running') return 'running';
+  return 'active';
 }
 
-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
-  if (!result) return false;
-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+function planCardChipClass(state: string) {
+  if (state === 'completed') return 'chip-completed';
+  if (state === 'running') return 'chip-running';
+  if (state === 'draft') return 'chip-waiting';
+  return 'chip-pending';
 }
-
 
 export function PlanList({
   emptyText = '暂无 plan。',
@@ -77,9 +101,12 @@ export function PlanList({
   onCloseReader,
   onOpenReader,
   onRunParallel,
+  onSelectPlan,
   onRefreshReader,
   plans,
   readerState,
+  renderPlanControls,
+  selectedPlanId,
   tasks = [],
   totalPlanCount = plans.length,
 }: {
@@ -88,9 +115,12 @@ export function PlanList({
   onCloseReader: () => void;
   onOpenReader: (plan: Plan) => void;
   onRunParallel?: (request: ParallelRunRequest) => void;
+  onSelectPlan?: (plan: Plan) => void;
   onRefreshReader: () => void;
   plans: Plan[];
   readerState: WorkspacePlanReadState;
+  renderPlanControls?: (plan: Plan) => ReactNode;
+  selectedPlanId?: number | null;
   tasks?: PlanTask[];
   totalPlanCount?: number;
 }) {
@@ -104,11 +134,6 @@ export function PlanList({
   const readerPlanForSummary = latestReadingPlan || readingPlan;
   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
-  const readerTasks = planReadResult?.tasks || [];
-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
   const readerDialogId = useId();
   const readerTitleId = useId();
   const readerDescriptionId = useId();
@@ -181,14 +206,12 @@ export function PlanList({
   return (
     <>
       {plans.length ? (
-        <div className="list compact">
+        <div className="list compact plan-card-list">
           {plans.map((plan) => {
             const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
             const durationSummary = formatPlanDurationSummary(planTasks);
             const title = planTitle(plan);
-            const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
-              plan.validation_passed ? 'passed' : 'pending'
-            }`;
+            const progressPercent = getPlanProgressPercent(plan);
             const cliSummary = planCliSummaryLabel(plan);
             const readingThisPlan = Boolean(
               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
@@ -198,13 +221,68 @@ export function PlanList({
             const runningInPlan = planTasks.some((task) => task.status === 'running');
             const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
             const canRunParallel = Boolean(onRunParallel && suggestion?.hasSafeParallelBatches && !parallelDisabledReason);
+            const cardState = planCardState(plan, runningInPlan);
+            const selected = selectedPlanId === plan.id;
+            const progressTone = plan.validation_passed || plan.status === 'completed' ? ' success' : runningInPlan ? ' running' : '';
             return (
-              <RecordCard
-                actions={
-                  <div className="item-actions">
+              <article
+                className={`plan-card ${cardState}${selected ? ' selected' : ''}`}
+                key={plan.id}
+                aria-selected={onSelectPlan ? selected : undefined}
+                data-plan-status={cardState}
+                data-selected={selected ? 'true' : undefined}
+                tabIndex={onSelectPlan ? 0 : undefined}
+                onClick={(event) => {
+                  if (isPlanCardInteractiveEvent(event)) return;
+                  onSelectPlan?.(plan);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter' && event.key !== ' ') return;
+                  if (isPlanCardInteractiveEvent(event)) return;
+                  event.preventDefault();
+                  onSelectPlan?.(plan);
+                }}
+              >
+                <div className="plan-top">
+                  <span className={`chip ${planCardChipClass(cardState)}`}>{plan.status}</span>
+                  <span className={`plan-title${cardState === 'draft' ? ' muted' : ''}`} title={title || plan.file_path}>
+                    {title || '未命名计划'}
+                  </span>
+                </div>
+
+                <div className="plan-path" title={plan.file_path}>{plan.file_path}</div>
+
+                <div className="plan-progress">
+                  <div className="progress-head">
+                    <span className="ph-left">任务进度</span>
+                    <span className="ph-right">{plan.completed_tasks} / {plan.total_tasks} · {progressPercent}%</span>
+                  </div>
+                  <div className={`progress${progressTone}`} aria-hidden="true">
+                    <span style={{ width: `${progressPercent}%` }} />
+                  </div>
+                  <div className="plan-progress-subline">{durationSummary}</div>
+                </div>
+
+                <div className="concurrency-row">
+                  <span className="conc-item parallel">可并发 <b>{suggestion?.parallelTaskCount || 0}</b></span>
+                  <span className="conc-item batch">建议 <b>{suggestion?.batchCount || 0}</b> 批</span>
+                  <span className="conc-item serial">串行 <b>{suggestion?.serialTaskCount || 0}</b></span>
+                  {parallelDisabledReason ? <span className="conc-item blocked" title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
+                </div>
+
+                <div className="plan-meta">
+                  <span className="cli-tag">{cliSummary}</span>
+                  <span className="meta-dot" />
+                  <span className="mono">{plan.hash?.slice(0, 12) || 'no-hash'}</span>
+                  <span className="meta-dot" />
+                  <span>{formatChinaDateTime(plan.updated_at)}</span>
+                </div>
+
+                <div className="plan-actions">
+                  <div className="plan-primary-actions">
                     <button
                       type="button"
-                      className="btn-link plan-parallel-link"
+                      className="btn btn-sm btn-primary plan-parallel-link"
                       disabled={!canRunParallel}
                       title={parallelDisabledReason || undefined}
                       onClick={() => setConfirmingPlan(plan)}
@@ -213,7 +291,7 @@ export function PlanList({
                     </button>
                     <button
                       type="button"
-                      className="btn-link plan-read-link"
+                      className="btn btn-sm plan-read-link"
                       aria-haspopup="dialog"
                       aria-controls={readingThisPlan ? readerDialogId : undefined}
                       aria-expanded={readingThisPlan}
@@ -224,24 +302,12 @@ export function PlanList({
                       {disableRead ? '读取中…' : '阅读全文'}
                     </button>
                   </div>
-                }
-                key={plan.id}
-                title={plan.file_path}
-                status={plan.status}
-                body={
-                  <div className="plan-list-body">
-                    {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
-                    <div className="plan-list-summary">{progressSummary}</div>
-                    <div className="plan-parallel-summary">
-                      <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
-                      <span>建议 {suggestion?.batchCount || 0} 批</span>
-                      <span>串行 {suggestion?.serialTaskCount || 0} 个</span>
-                      {parallelDisabledReason ? <span title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
-                    </div>
-                  </div>
-                }
-                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
-              />
+                  {renderPlanControls ? <div className="plan-secondary-actions">{renderPlanControls(plan)}</div> : null}
+                  <span className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}>
+                    验收 {plan.validation_passed ? 'passed' : 'pending'}
+                  </span>
+                </div>
+              </article>
             );
           })}
         </div>
@@ -369,10 +435,6 @@ export function PlanList({
                     {readerHash?.slice(0, 12) || '-'}
                   </dd>
                 </div>
-                <div className="plan-reader-summary-item">
-                  <dt>任务拆解</dt>
-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
-                </div>
               </dl>
 
               {latestPlanUpdated ? (
@@ -395,25 +457,6 @@ export function PlanList({
                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
                   正在读取 Plan 全文…
                 </div>
-              ) : null}
-              {!planReading && !planReadError && planReadResult ? (
-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
-                    {readerTaskParseMessage}
-                  </div>
-                  {readerTasks.length ? (
-                    <ul className="list compact" aria-label="已解析任务列表">
-                      {readerTasks.map((task) => (
-                        <li key={task.id} className="task-scope-chip">
-                          <span className="mono">{task.task_key}</span>
-                          <span>{task.title}</span>
-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : null}
-                </section>
               ) : null}
               {!planReading && !planReadError ? (
                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">

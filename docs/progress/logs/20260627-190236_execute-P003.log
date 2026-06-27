@@ -1,0 +1,367 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f08a4-46b2-7491-86f2-13346f160c4a
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_20_20260627-183133.md
+指定任务：
+- [ ] P003: 准备 beta Release notes <!-- scope: docs/release-notes,docs/release.md -->
+任务 scope：docs/release-notes, docs/release.md
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Updating release notes**
+
+I need to focus on P003 only and use the existing context for this task. I'll review the scope docs and the release notes, particularly looking at docs/release.md. My goal is to create a release notes file named v0.2.1-beta.1.md and update the docs/release.md with the beta process details. I also need to inspect the docs/release.md and the release-notes directory, but I won't run any tests for this.
+codex
+我会沿用已确定的 `v0.2.1-beta.1`，只查看并更新发布说明相关文件。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Write-Output '---release notes dir---'; if (Test-Path docs/release-notes) { Get-ChildItem docs/release-notes | Select-Object Name } else { Write-Output '(missing)' }; Write-Output '---docs/release.md---'; Get-Content -Encoding UTF8 docs/release.md | Select-Object -First 260" in D:\project\GitHub\autoplan
+ succeeded in 498ms:
+---release notes dir---
+(missing)
+---docs/release.md---
+# 发布说明
+
+AutoPlan 使用 GitHub Actions + electron-builder 发布桌面端安装包。当前发布流程覆盖 Windows、macOS、Linux 三个平台，支持推送 tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+## 发布前检查
+
+发布前请确认：
+
+- 依赖已安装且项目能够在本地正常开发运行。
+- `package.json` 中的 `version` 已更新为目标版本。
+- Git 工作区干净，没有未提交或未跟踪文件。
+- 当前仓库已配置可推送的远端，默认远端名为 `origin`。
+- GitHub 仓库的 Actions 权限允许 workflow 读写 `contents`，以便内置 `GITHUB_TOKEN` 创建或更新 Release。
+- tag 使用 `v` 前缀，例如 `v0.2.0`。
+
+## GitHub Actions 触发方式
+
+Release workflow 位于 `.github/workflows/release.yml`，触发方式如下：
+
+- 推送匹配 `v*` 的 tag 时自动触发，例如 `git push origin v0.2.0`。
+- 在 GitHub Actions 页面手动运行 `Release` workflow，并填写 `tag`。
+- 手动触发时可填写 `release_notes`；为空时 workflow 会读取 tag message 或使用兜底说明。
+
+workflow 会在三个 runner 上分别构建：
+
+| 平台 | Runner | 打包命令 | 主要产物 |
+| --- | --- | --- | --- |
+| Windows | `windows-latest` | `npm run package:win` | NSIS 安装包 |
+| macOS | `macos-latest` | `npm run package:mac` | DMG、ZIP |
+| Linux | `ubuntu-latest` | `npm run package:linux` | AppImage、DEB |
+
+每个平台的构建结果会先上传为 workflow artifact，随后发布 job 使用仓库内置 `GITHUB_TOKEN` 创建或更新 GitHub Release，并把三端产物附加到 Release。
+
+## 产物命名与位置
+
+本地和 CI 打包输出目录均为 `release/`。产物命名包含产品名、版本、平台和架构，避免不同平台互相覆盖：
+
+- Windows：`AutoPlan-<version>-win-<arch>-Setup.<ext>`
+- macOS：`AutoPlan-<version>-mac-<arch>.<ext>`
+- Linux：`AutoPlan-<version>-linux-<arch>.<ext>`
+
+GitHub Release 页面会展示最终附件；Actions 页面中也可以查看各平台上传的临时 artifact。
+
+## 本地一键发布脚本
+
+本地发布脚本位于 `scripts/release.py`。脚本只负责编排 tag 创建与推送，不在本地执行三端构建；三端构建由 GitHub Actions 完成。
+
+常用示例：
+
+```bash
+python scripts/release.py --tag v0.2.0 --notes "发布说明"
+python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
+python scripts/release.py --tag v0.2.0 --notes "test release" --dry-run
+python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
+```
+
+脚本会检查以下常见失败场景并给出提示：
+
+- 未安装 Git，或当前目录不是 Git 仓库。
+- 工作区不干净。
+- 指定远端不存在，默认检查 `origin`。
+- tag 格式不符合 Git ref 规范。
+- 本地或远端已存在同名 tag。
+- 推送远端失败。
+- 未检测到 GitHub CLI 时会给出提示；基础 tag 推送不强制依赖 `gh`。
+
+默认情况下，脚本会在真正创建并推送 tag 前要求交互确认。使用 `--dry-run` 只执行检查，不创建本地 tag，也不推送远端；使用 `--yes` 可跳过确认。
+
+## 版本说明传递
+
+版本说明支持两种本地输入方式：
+
+- `--notes`：直接传入短文本。
+- `--notes-file`：从 UTF-8 文本文件读取，适合包含换行、中文、Markdown 列表或链接的长说明。
+
+脚本会把版本说明写入 annotated tag message。tag 推送触发 workflow 后，发布 job 会按以下优先级生成 Release 正文：
+
+1. 手动触发 workflow 时填写的 `release_notes`。
+2. tag 中的 annotated message。
+3. 最近一次提交摘要。
+4. 默认模板 `Automated release for <tag>.`。
+
+如果同一 tag 的 Release 已存在，workflow 会更新 Release 标题和正文，并使用 `--clobber` 覆盖同名附件。
+
+## 当前能力边界
+
+当前发布流程不包含以下能力：
+
+- 代码签名。
+- macOS 公证。
+- 自动更新服务器或增量更新分发。
+- 私有证书、密钥或额外 token 的管理。
+
+这些能力可在后续任务中补充；当前基础发布只依赖 GitHub Actions、electron-builder 和仓库内置 `GITHUB_TOKEN`。
+
+**Updating documentation and files**
+
+I need to create a directory and a file, and it seems it’s also good to know about the recent updates summary from the README. I could reference aspects like external access, project requirements, and the macOS specifics. I want to include release notes, a beta warning, and document the compile pass policy. Updating the docs/release.md with the beta process and using the recommended notes file sounds right. I aim to ensure that I don’t modify the plan and create the directory properly.
+codex
+发布说明结构清楚；我会新增 beta notes 文件并补充维护者发布流程。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; New-Item -ItemType Directory -Force -Path 'docs/release-notes' | Out-Null; "'$content = @'"'
+# AutoPlan v0.2.1-beta.1
+
+> **Beta 未测试版本**：这是面向快速分发的预发布版本，未经过完整人工测试，不等同于稳定正式版，也不承诺零缺陷。
+
+## 近期更新摘要
+
+- 增强需求与反馈附件能力，支持文件选择、拖拽和截图粘贴，并把附件清单注入给 AI 工具作为上下文。
+- 支持项目级与单条需求/反馈级 CLI 后端配置，可在 Codex CLI 与 Claude CLI 之间切换，并保留计划级 CLI 快照。
+- 新增本机 MCP 外部接入能力，方便其它 MCP 客户端创建项目、提交需求和提交反馈。
+- 完善计划任务 scope 规范、并发建议规则和 scope 文件打开配置，降低任务并发执行时的冲突风险。
+- 补充三端发布流程与 macOS 发布安装说明，便于通过 GitHub Actions 生成 Windows、macOS、Linux 安装包。
+
+## Beta 风险提示
+
+本 beta 版本用于更快分发近期修复和功能更新。当前策略是：AI 修复问题后，只要项目编译通过即可发布，以减少人工测试和等待时间。因此，下载测试或日常使用中仍可能遇到功能缺陷、平台差异或安装包问题。
+
+## 问题反馈
+
+如果你发现问题，请直接到 GitHub Issue 界面提交反馈，并尽量包含：
+
+- 使用的操作系统与安装包类型。
+- 复现步骤、预期行为和实际行为。
+- 相关截图、日志或附件。
+
+后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
+'@; "'$utf8NoBom = New-Object System.Text.UTF8Encoding($false); [System.IO.File]::WriteAllText((Resolve-Path '"'docs/release-notes').Path + [System.IO.Path]::DirectorySeparatorChar + 'v0.2.1-beta.1.md', "'$content, $utf8NoBom)' in D:\project\GitHub\autoplan
+ succeeded in 481ms:
+codex
+Release notes 已创建；接着只更新 `docs/release.md` 的 beta 发布指引。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\docs\release.md
+diff --git a/docs/release.md b/docs/release.md
+index 5a281b1c66701792289db91eea1b80c94c4792eb..3c64e3dc7dfb504dcf8c903a2e2ce71dea161315
+--- a/docs/release.md
++++ b/docs/release.md
+@@ -50,6 +50,7 @@
+ ```bash
+ python scripts/release.py --tag v0.2.0 --notes "发布说明"
+ python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
++python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
+ python scripts/release.py --tag v0.2.0 --notes "test release" --dry-run
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
+ ```
+@@ -66,6 +67,20 @@
+ 
+ 默认情况下，脚本会在真正创建并推送 tag 前要求交互确认。使用 `--dry-run` 只执行检查，不创建本地 tag，也不推送远端；使用 `--yes` 可跳过确认。
+ 
++## Beta 发布流程
++
++Beta 版本用于快速分发近期修复和功能更新，tag 必须使用可识别的预发布格式，例如 `v0.2.1-beta.1`，并确保 `package.json` 中的 `version` 与去掉 `v` 前缀后的版本号一致，例如 `0.2.1-beta.1`。
++
++发布 beta 前，先在 `docs/release-notes/` 下准备与 tag 对齐的 Release notes，例如 `docs/release-notes/v0.2.1-beta.1.md`。Release notes 开头应明确标注 beta 是未完整人工测试的预发布版本，并包含近期更新摘要、风险提示、Issue 反馈入口，以及“AI 修复问题后编译通过即可发布”的策略说明。
++
++推荐使用 `--notes-file` 发布 beta，避免长 Markdown 文案在命令行中转义出错：
++
++```bash
++python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
++```
++
++脚本会把 Release notes 写入 annotated tag message。tag 推送后，GitHub Actions Release workflow 会优先使用该 tag message 生成 GitHub Release 正文。
++
+ ## 版本说明传递
+ 
+ 版本说明支持两种本地输入方式：
+
+diff --git a/docs/release.md b/docs/release.md
+index 5a281b1c66701792289db91eea1b80c94c4792eb..3c64e3dc7dfb504dcf8c903a2e2ce71dea161315
+--- a/docs/release.md
++++ b/docs/release.md
+@@ -50,6 +50,7 @@
+ ```bash
+ python scripts/release.py --tag v0.2.0 --notes "发布说明"
+ python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
++python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
+ python scripts/release.py --tag v0.2.0 --notes "test release" --dry-run
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
+ ```
+@@ -66,6 +67,20 @@
+ 
+ 默认情况下，脚本会在真正创建并推送 tag 前要求交互确认。使用 `--dry-run` 只执行检查，不创建本地 tag，也不推送远端；使用 `--yes` 可跳过确认。
+ 
++## Beta 发布流程
++
++Beta 版本用于快速分发近期修复和功能更新，tag 必须使用可识别的预发布格式，例如 `v0.2.1-beta.1`，并确保 `package.json` 中的 `version` 与去掉 `v` 前缀后的版本号一致，例如 `0.2.1-beta.1`。
++
++发布 beta 前，先在 `docs/release-notes/` 下准备与 tag 对齐的 Release notes，例如 `docs/release-notes/v0.2.1-beta.1.md`。Release notes 开头应明确标注 beta 是未完整人工测试的预发布版本，并包含近期更新摘要、风险提示、Issue 反馈入口，以及“AI 修复问题后编译通过即可发布”的策略说明。
++
++推荐使用 `--notes-file` 发布 beta，避免长 Markdown 文案在命令行中转义出错：
++
++```bash
++python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
++```
++
++脚本会把 Release notes 写入 annotated tag message。tag 推送后，GitHub Actions Release workflow 会优先使用该 tag message 生成 GitHub Release 正文。
++
+ ## 版本说明传递
+ 
+ 版本说明支持两种本地输入方式：
+
+**Verifying tests and file status**
+
+I need to verify something, but I don't have tests available. I'll use Select-String and check the status. It might also be helpful to use `cat` to view the first lines of a new file. I want to make sure to get a "完整 diff no," which suggests using `git diff --stat` if the output isn’t too lengthy. Let's proceed with that approach!
+codex
+P003 文件已更新；现在核对新增文件、关键措辞和改动范围。 
+
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Write-Output '---KEY LINES---'; Select-String -Path docs/release-notes/v0.2.1-beta.1.md -Pattern 'Beta 未测试版本|近期更新摘要|Issue|编译通过即可发布|AI 流程'; Select-String -Path docs/release.md -Pattern 'Beta 发布流程|v0.2.1-beta.1|--notes-file|编译通过即可发布'; Write-Output '---STATUS---'; git status --short -- docs/release-notes docs/release.md 'docs/plan/plan_feedback_20_20260627-183133.md'" in D:\project\GitHub\autoplan
+ succeeded in 508ms:
+---KEY LINES---
+
+docs\release-notes\v0.2.1-beta.1.md:3:> **Beta 未测试版本**：这是面向快速分发的预发布版本，未经过完整人工测试，不等同于稳定正式版，也不承诺零缺陷。
+docs\release-notes\v0.2.1-beta.1.md:5:## 近期更新摘要
+docs\release-notes\v0.2.1-beta.1.md:15:本 beta 版本用于更快分发近期修复和功能更新。当前策略是：AI 修复问题后，只要项目编译通过即可发布，以减少人工测试和等待时间。因此，下载测试或日常使用中仍
+可能遇到功能缺陷、平台差异或安装包问题。
+docs\release-notes\v0.2.1-beta.1.md:19:如果你发现问题，请直接到 GitHub Issue 界面提交反馈，并尽量包含：
+docs\release-notes\v0.2.1-beta.1.md:25:后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
+docs\release.md:52:python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
+docs\release.md:53:python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
+docs\release.md:55:python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
+docs\release.md:70:## Beta 发布流程
+docs\release.md:72:Beta 版本用于快速分发近期修复和功能更新，tag 必须使用可识别的预发布格式，例如 `v0.2.1-beta.1`，并确保 `package.json` 中的 `version` 与去掉 `v` 
+前缀后的版本号一致，例如 `0.2.1-beta.1`。
+docs\release.md:74:发布 beta 前，先在 `docs/release-notes/` 下准备与 tag 对齐的 Release notes，例如 `docs/release-notes/v0.2.1-beta.1.m
+d`。Release notes 开头应明确标注 beta 是未完整人工测试的预发布版本，并包含近期更新摘要、风险提示、Issue 反馈入口，以及“AI 修复问题后编译通过即可发布”的策略说明。
+docs\release.md:76:推荐使用 `--notes-file` 发布 beta，避免长 Markdown 文案在命令行中转义出错：
+docs\release.md:79:python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
+docs\release.md:89:- `--notes-file`：从 UTF-8 文本文件读取，适合包含换行、中文、Markdown 列表或链接的长说明。
+---STATUS---
+ M docs/release.md
+?? docs/plan/plan_feedback_20_20260627-183133.md
+?? docs/release-notes/
+
+
+
+diff --git a/docs/release.md b/docs/release.md
+index 5a281b1c66701792289db91eea1b80c94c4792eb..3c64e3dc7dfb504dcf8c903a2e2ce71dea161315
+--- a/docs/release.md
++++ b/docs/release.md
+@@ -50,6 +50,7 @@
+ ```bash
+ python scripts/release.py --tag v0.2.0 --notes "发布说明"
+ python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
++python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
+ python scripts/release.py --tag v0.2.0 --notes "test release" --dry-run
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
+ ```
+@@ -66,6 +67,20 @@
+ 
+ 默认情况下，脚本会在真正创建并推送 tag 前要求交互确认。使用 `--dry-run` 只执行检查，不创建本地 tag，也不推送远端；使用 `--yes` 可跳过确认。
+ 
++## Beta 发布流程
++
++Beta 版本用于快速分发近期修复和功能更新，tag 必须使用可识别的预发布格式，例如 `v0.2.1-beta.1`，并确保 `package.json` 中的 `version` 与去掉 `v` 前缀后的版本号一致，例如 `0.2.1-beta.1`。
++
++发布 beta 前，先在 `docs/release-notes/` 下准备与 tag 对齐的 Release notes，例如 `docs/release-notes/v0.2.1-beta.1.md`。Release notes 开头应明确标注 beta 是未完整人工测试的预发布版本，并包含近期更新摘要、风险提示、Issue 反馈入口，以及“AI 修复问题后编译通过即可发布”的策略说明。
++
++推荐使用 `--notes-file` 发布 beta，避免长 Markdown 文案在命令行中转义出错：
++
++```bash
++python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
++```
++
++脚本会把 Release notes 写入 annotated tag message。tag 推送后，GitHub Actions Release workflow 会优先使用该 tag message 生成 GitHub Release 正文。
++
+ ## 版本说明传递
+ 
+ 版本说明支持两种本地输入方式：
+
+已完成 P003，仅修改 `docs/release-notes/` 与 `docs/release.md`，未运行测试/构建/lint，也未修改 plan 文件。
+
+- 新增 `docs/release-notes/v0.2.1-beta.1.md:1`，文件名与 tag `v0.2.1-beta.1` 对齐
+- 在 `docs/release-notes/v0.2.1-beta.1.md:3` 明确标注“Beta 未测试版本”
+- 在 `docs/release-notes/v0.2.1-beta.1.md:5`、`docs/release-notes/v0.2.1-beta.1.md:15`、`docs/release-notes/v0.2.1-beta.1.md:19` 覆盖近期更新、beta 风险、Issue 反馈和编译通过即发布策略
+- 在 `docs/release.md:70` 新增 `Beta 发布流程`
+- 在 `docs/release.md:76` 推荐使用 `--notes-file`，并在 `docs/release.md:79` 给出 beta 发布命令示例
+**Finalizing document plan**
+
+I’m finalizing the document but I’ll avoid mentioning any tests. It seems I didn’t plan for this specifically, so I might need to note that the existing plan isn't tracked properly. I also shouldn't modify the plan or add a checkbox. I need to include references to the files I've created and ensure the document is concise, so I’ll aim for 10 lines or fewer while including updated documentation.
+codex
+已完成 P003，仅修改 `docs/release-notes/` 与 `docs/release.md`，未运行测试/构建/lint，也未修改 plan 文件。
+
+- 新增 `docs/release-notes/v0.2.1-beta.1.md:1`，文件名与 tag `v0.2.1-beta.1` 对齐
+- 在 `docs/release-notes/v0.2.1-beta.1.md:3` 明确标注“Beta 未测试版本”
+- 在 `docs/release-notes/v0.2.1-beta.1.md:5`、`docs/release-notes/v0.2.1-beta.1.md:15`、`docs/release-notes/v0.2.1-beta.1.md:19` 覆盖近期更新、beta 风险、Issue 反馈和编译通过即发布策略
+- 在 `docs/release.md:70` 新增 `Beta 发布流程`
+- 在 `docs/release.md:76` 推荐使用 `--notes-file`，并在 `docs/release.md:79` 给出 beta 发布命令示例
+diff --git a/docs/release.md b/docs/release.md
+index 5a281b1c66701792289db91eea1b80c94c4792eb..3c64e3dc7dfb504dcf8c903a2e2ce71dea161315
+--- a/docs/release.md
++++ b/docs/release.md
+@@ -50,6 +50,7 @@
+ ```bash
+ python scripts/release.py --tag v0.2.0 --notes "发布说明"
+ python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
++python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
+ python scripts/release.py --tag v0.2.0 --notes "test release" --dry-run
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
+ ```
+@@ -66,6 +67,20 @@
+ 
+ 默认情况下，脚本会在真正创建并推送 tag 前要求交互确认。使用 `--dry-run` 只执行检查，不创建本地 tag，也不推送远端；使用 `--yes` 可跳过确认。
+ 
++## Beta 发布流程
++
++Beta 版本用于快速分发近期修复和功能更新，tag 必须使用可识别的预发布格式，例如 `v0.2.1-beta.1`，并确保 `package.json` 中的 `version` 与去掉 `v` 前缀后的版本号一致，例如 `0.2.1-beta.1`。
++
++发布 beta 前，先在 `docs/release-notes/` 下准备与 tag 对齐的 Release notes，例如 `docs/release-notes/v0.2.1-beta.1.md`。Release notes 开头应明确标注 beta 是未完整人工测试的预发布版本，并包含近期更新摘要、风险提示、Issue 反馈入口，以及“AI 修复问题后编译通过即可发布”的策略说明。
++
++推荐使用 `--notes-file` 发布 beta，避免长 Markdown 文案在命令行中转义出错：
++
++```bash
++python scripts/release.py --tag v0.2.1-beta.1 --notes-file docs/release-notes/v0.2.1-beta.1.md --yes
++```
++
++脚本会把 Release notes 写入 annotated tag message。tag 推送后，GitHub Actions Release workflow 会优先使用该 tag message 生成 GitHub Release 正文。
++
+ ## 版本说明传递
+ 
+ 版本说明支持两种本地输入方式：
+
+tokens used
+71,973

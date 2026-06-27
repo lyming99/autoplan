@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentProps } from 'react';
 import type { AppEvent, Plan, PlanTask, WorkspaceSearchResult } from '../types';
 import { RecordCard } from './IntakePanel';
 import { PlanList as BasePlanList } from './plans/PlanList';
@@ -6,8 +6,9 @@ import { formatChinaDateTime } from '../utils/time';
 import {
   TASK_STATUS_FILTERS,
   formatTaskDuration,
-  formatTaskPlanGroupSummary,
+  formatTaskPlanGroupProgress,
   groupTasksByPlan,
+  isTaskPlanGroupCompleted,
   matchesTaskStatusFilter,
   scopeFileLabel,
   scopeFileStatus,
@@ -49,17 +50,11 @@ export function getEventSearchText(event: AppEvent) {
 
 type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
 type TaskListPlanFilter = {
-  plan: Plan;
   totalTaskCount: number;
-  visibleTaskCount: number;
-  onClear: () => void;
 };
 type PlanListProps = ComponentProps<typeof BasePlanList> & {
-  onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
   selectedPlanId?: number | null;
-  selectedPlan?: Plan | null;
   onSelectPlan?: (plan: Plan) => void;
-  onClearPlanSelection?: () => void;
 };
 
 const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [
@@ -68,10 +63,6 @@ const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [
   { key: 'completed', label: '已完成' },
   { key: 'draft', label: '草稿' },
 ];
-
-function planDisplayName(plan: Plan) {
-  return plan.title || plan.file_path || `Plan #${plan.id}`;
-}
 
 export function TaskList({
   emptyText = '暂无任务。',
@@ -92,6 +83,7 @@ export function TaskList({
 }) {
   const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
   const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+  const taskGroupsListRef = useRef<HTMLDivElement>(null);
   const visibleTasks = useMemo(
     () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
     [activeFilter, tasks],
@@ -138,21 +130,15 @@ export function TaskList({
   function toggleTaskGroup(groupKey: string) {
     const currentlyExpanded = expandedOverrides[groupKey] ?? defaultExpandedKeys.has(groupKey);
     setExpandedOverrides((current) => ({ ...current, [groupKey]: !currentlyExpanded }));
+    if (currentlyExpanded) {
+      window.requestAnimationFrame(() => {
+        taskGroupsListRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+      });
+    }
   }
 
   return (
     <div className="task-list-panel">
-      {planFilter ? (
-        <div className="search-locate-notice" data-testid="plan-task-filter-banner">
-          <span>
-            正在查看 Plan「{planDisplayName(planFilter.plan)}」的任务：当前 {planFilter.visibleTaskCount} / 全部{' '}
-            {planFilter.totalTaskCount}
-          </span>
-          <button type="button" className="btn-link" data-testid="plan-task-filter-clear" onClick={planFilter.onClear}>
-            查看全部任务
-          </button>
-        </div>
-      ) : null}
       <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
         {TASK_STATUS_FILTERS.map((filter) => {
           const active = activeFilter === filter.id;
@@ -172,7 +158,7 @@ export function TaskList({
         })}
       </div>
       {taskGroups.length ? (
-        <div className="list compact">
+        <div className="list compact task-groups" ref={taskGroupsListRef}>
           {taskGroups.map((group) => {
             const expanded = expandedOverrides[group.key] ?? defaultExpandedKeys.has(group.key);
             const groupItemsId = `task-plan-group-items-${sanitizeTaskGroupKey(group.key)}`;
@@ -196,8 +182,9 @@ export function TaskList({
                     <span className="task-plan-group-title" title={group.title}>{group.title}</span>
                   </span>
                   <span className="task-plan-group-meta">
-                    <span className="task-plan-group-counts">{formatTaskPlanGroupCounts(group)}</span>
-                    <span className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</span>
+                    <span className={`task-plan-group-progress${isTaskPlanGroupCompleted(group) ? ' completed' : ' incomplete'}`}>
+                      {formatTaskPlanGroupProgress(group)}
+                    </span>
                   </span>
                 </button>
                 {expanded ? (
@@ -312,10 +299,6 @@ function getDefaultExpandedTaskGroupKeys(groups: TaskPlanGroup[]) {
   return new Set(defaultGroups.map((group) => group.key));
 }
 
-function formatTaskPlanGroupCounts(group: TaskPlanGroup) {
-  return `${group.stats.total} 个任务 · 进行中 ${group.stats.running} · 已完成 ${group.stats.completed}`;
-}
-
 function sanitizeTaskGroupKey(key: string) {
   return key.replace(/[^a-zA-Z0-9_-]/g, '-');
 }
@@ -341,16 +324,12 @@ function taskPlanGroupAnchorId(group: TaskPlanGroup) {
 export function PlanList({
   plans,
   emptyText,
-  onReorderPlans,
   onRunParallel,
   selectedPlanId,
-  selectedPlan: controlledSelectedPlan,
   onSelectPlan,
-  onClearPlanSelection,
   ...props
 }: PlanListProps) {
   const [activeStatus, setActiveStatus] = useState<PlanStatusTab>('all');
-  const [reordering, setReordering] = useState(false);
   const [draftRunningPlanId, setDraftRunningPlanId] = useState<number | null>(null);
   const [draftRunError, setDraftRunError] = useState('');
   const [localSelectedPlanId, setLocalSelectedPlanId] = useState<number | null>(null);
@@ -359,8 +338,6 @@ export function PlanList({
   const visiblePlans = orderedPlans.filter((plan) => planMatchesStatusTab(plan, activeStatus));
   const hasControlledSelection = typeof selectedPlanId !== 'undefined';
   const effectiveSelectedPlanId = hasControlledSelection ? selectedPlanId : localSelectedPlanId;
-  const effectiveSelectedPlan =
-    controlledSelectedPlan || orderedPlans.find((plan) => plan.id === effectiveSelectedPlanId) || null;
 
   useEffect(() => {
     if (typeof selectedPlanId !== 'undefined') return;
@@ -375,31 +352,6 @@ export function PlanList({
       setLocalSelectedPlanId((current) => (current === plan.id ? null : plan.id));
     }
     onSelectPlan?.(plan);
-  }
-
-  function clearPlanSelection() {
-    if (!hasControlledSelection) {
-      setLocalSelectedPlanId(null);
-    }
-    onClearPlanSelection?.();
-  }
-
-  async function movePlan(plan: Plan, direction: -1 | 1) {
-    if (!onReorderPlans || reordering) return;
-    const fromIndex = orderedPlans.findIndex((item) => item.id === plan.id);
-    const toIndex = fromIndex + direction;
-    const target = orderedPlans[toIndex];
-    if (fromIndex < 0 || !target || !canReorderPlan(plan) || !canReorderPlan(target)) return;
-
-    const nextPlans = [...orderedPlans];
-    nextPlans[fromIndex] = target;
-    nextPlans[toIndex] = plan;
-    setReordering(true);
-    try {
-      await onReorderPlans(nextPlans);
-    } finally {
-      setReordering(false);
-    }
   }
 
   async function runDraftPlan(plan: Plan) {
@@ -432,6 +384,36 @@ export function PlanList({
     }
   }
 
+  function renderPlanControls(plan: Plan) {
+    const draftRunDisabledReason = isDraftPlan(plan) ? draftPlanRunDisabledReason(plan, props.tasks || []) : '';
+    const selected = effectiveSelectedPlanId === plan.id;
+
+    return (
+      <>
+        <button
+          type="button"
+          className={`btn-link plan-select-button${selected ? ' active' : ''}`}
+          aria-pressed={selected}
+          data-testid="plan-select-toggle"
+          onClick={() => selectPlan(plan)}
+        >
+          {selected ? '取消选择' : '查看任务'}
+        </button>
+        {isDraftPlan(plan) ? (
+          <button
+            type="button"
+            className="btn-link"
+            disabled={draftRunningPlanId === plan.id || Boolean(draftRunDisabledReason)}
+            title={draftRunDisabledReason || undefined}
+            onClick={() => runDraftPlan(plan)}
+          >
+            {draftRunningPlanId === plan.id ? '启动中…' : '执行草稿'}
+          </button>
+        ) : null}
+      </>
+    );
+  }
+
   return (
     <>
       <div className="task-filter-tabs" role="tablist" aria-label="计划状态筛选">
@@ -450,86 +432,16 @@ export function PlanList({
         ))}
       </div>
 
-      <div className={`plan-selection-bar${effectiveSelectedPlan ? ' is-active' : ''}`} aria-live="polite">
-        <span className="plan-selection-summary">
-          {effectiveSelectedPlan
-            ? `已选择：${planDisplayName(effectiveSelectedPlan)}`
-            : '未选择 Plan，当前任务列表可查看全部任务'}
-        </span>
-        <button
-          type="button"
-          className="btn-link plan-selection-clear"
-          data-testid="plan-selection-clear"
-          disabled={!effectiveSelectedPlan}
-          onClick={clearPlanSelection}
-        >
-          查看全部任务
-        </button>
-      </div>
-
-      {visiblePlans.length ? (
-        <div className="list compact plan-selection-list" aria-label="计划选择与执行顺序调整">
-          {draftRunError ? <div className="error-banner">{draftRunError}</div> : null}
-          {visiblePlans.map((plan) => {
-            const currentIndex = orderedPlans.findIndex((item) => item.id === plan.id);
-            const previousPlan = orderedPlans[currentIndex - 1];
-            const nextPlan = orderedPlans[currentIndex + 1];
-            const disabledReason = reorderDisabledReason(plan);
-            const draftRunDisabledReason = isDraftPlan(plan) ? draftPlanRunDisabledReason(plan, props.tasks || []) : '';
-            const selected = effectiveSelectedPlanId === plan.id;
-            return (
-              <div key={`order-${plan.id}`} className={`task-scope-chip plan-select-row${selected ? ' is-selected' : ''}`}>
-                <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
-                <span className="plan-select-row-title">{planDisplayName(plan)}</span>
-                {selected ? <span className="plan-selected-badge">已选中</span> : null}
-                <small>{disabledReason || '可调整'}</small>
-                <button
-                  type="button"
-                  className={`btn-link plan-select-button${selected ? ' active' : ''}`}
-                  aria-pressed={selected}
-                  data-testid="plan-select-toggle"
-                  onClick={() => selectPlan(plan)}
-                >
-                  {selected ? '取消选择' : '查看任务'}
-                </button>
-                <button
-                  type="button"
-                  className="btn-link"
-                  disabled={reordering || Boolean(disabledReason) || !previousPlan || !canReorderPlan(previousPlan)}
-                  onClick={() => movePlan(plan, -1)}
-                >
-                  上移
-                </button>
-                <button
-                  type="button"
-                  className="btn-link"
-                  disabled={reordering || Boolean(disabledReason) || !nextPlan || !canReorderPlan(nextPlan)}
-                  onClick={() => movePlan(plan, 1)}
-                >
-                  下移
-                </button>
-                {isDraftPlan(plan) ? (
-                  <button
-                    type="button"
-                    className="btn-link"
-                    disabled={draftRunningPlanId === plan.id || Boolean(draftRunDisabledReason)}
-                    title={draftRunDisabledReason || undefined}
-                    onClick={() => runDraftPlan(plan)}
-                  >
-                    {draftRunningPlanId === plan.id ? '启动中…' : '执行草稿'}
-                  </button>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
+      {draftRunError ? <div className="error-banner plan-list-error">{draftRunError}</div> : null}
 
       <BasePlanList
         {...props}
         onRunParallel={onRunParallel}
+        onSelectPlan={selectPlan}
         emptyText={activeStatus === 'all' ? emptyText : '当前分类暂无 Plan。'}
         plans={visiblePlans}
+        renderPlanControls={renderPlanControls}
+        selectedPlanId={effectiveSelectedPlanId}
         totalPlanCount={props.totalPlanCount ?? plans.length}
       />
     </>
@@ -570,16 +482,6 @@ function isDraftPlan(plan: Plan) {
 
 function isCompletedPlan(plan: Plan) {
   return Boolean(plan.validation_passed) || plan.status === 'completed';
-}
-
-function canReorderPlan(plan: Plan) {
-  return !['running', 'completed'].includes(String(plan.status || '')) && !plan.validation_passed;
-}
-
-function reorderDisabledReason(plan: Plan) {
-  if (plan.status === 'running') return '执行中不可移动';
-  if (isCompletedPlan(plan)) return '已完成不可移动';
-  return '';
 }
 
 function draftPlanRunDisabledReason(plan: Plan, tasks: PlanTask[]) {

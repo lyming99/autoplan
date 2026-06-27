@@ -37,6 +37,7 @@ const {
 } = require('./loop/agentCliConfig');
 const {
   archiveRuntimeOperation,
+  createThrottledUpdateEmitter,
   ensureProjectRuntime,
   existingProjectRuntime,
   findActiveRuntimeProject,
@@ -87,7 +88,6 @@ const {
 } = require('./loop/taskEvents');
 
 const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
-const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
 const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
 const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
 const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
@@ -102,6 +102,10 @@ class LoopService extends EventEmitter {
     super();
     this.db = db;
     this.runtimes = new Map();
+    this.updateEmitter = createThrottledUpdateEmitter({
+      snapshot: (projectId) => this.snapshot(projectId),
+      emit: (snapshot) => this.emit('update', snapshot),
+    });
     this.resetRuntimeState();
   }
 
@@ -141,6 +145,7 @@ class LoopService extends EventEmitter {
 
   ensureProjectState(projectId) {
     if (!projectId) return;
+    if (this.db.get('SELECT project_id FROM project_states WHERE project_id = ?', [projectId])) return;
     this.db.run(
       `INSERT OR IGNORE INTO project_states
        (project_id, running, phase, interval_seconds, validation_command, updated_at)
@@ -281,6 +286,7 @@ class LoopService extends EventEmitter {
     if (!projectId) return;
     const runtime = this.runtime(projectId);
     if (!runtime || runtime.busy) return;
+    const startedFromRunningLoop = runtime.running;
     runtime.busy = true;
     try {
       const project = this.project(projectId);
@@ -318,7 +324,8 @@ class LoopService extends EventEmitter {
       }
 
       // 同步 docs/plan 目录下的 plan 文件（兼容文件式需求）
-      const planScan = this.scanDirectory(path.join(workspace, 'docs', 'plan'), workspace, ['.md']);
+      const planScan = await this.scanDirectoryInWorker(path.join(workspace, 'docs', 'plan'), workspace, ['.md']);
+      if (startedFromRunningLoop && !runtime.running) return;
       this.saveScan(projectId, 'plan', planScan);
 
       // 执行队列里可运行的 plan
@@ -598,6 +605,10 @@ class LoopService extends EventEmitter {
     return workspaceFiles.scanDirectory(this, loopFlowHelpers(), root, workspace, extensions);
   }
 
+  scanDirectoryInWorker(root, workspace, extensions) {
+    return workspaceFiles.scanDirectoryInWorker(root, workspace, extensions);
+  }
+
   saveScan(projectId, type, scan) {
     return workspaceFiles.saveScan(this, loopFlowHelpers(), projectId, type, scan);
   }
@@ -873,9 +884,20 @@ class LoopService extends EventEmitter {
     let capturedSessionId = '';
     let sessionScanBuffer = '';
     const stream = fs.createWriteStream(logFile, { encoding: 'utf8' });
+    stream.on('error', (error) => {
+      activeOperation.errorMessage = error?.message || String(error);
+    });
+    const safeStreamWrite = (text) => {
+      if (stream.destroyed || stream.writableEnded || stream.writableFinished) return;
+      try {
+        stream.write(text);
+      } catch (error) {
+        activeOperation.errorMessage = error?.message || String(error);
+      }
+    };
     const appendInternalLog = (message) => {
       const text = `\n[AutoPlan] ${message}\n`;
-      stream.write(text);
+      safeStreamWrite(text);
       activeOperation.logBuffer = `${activeOperation.logBuffer || ''}${text}`;
       if (activeOperation.logBuffer.length > 24000) {
         activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
@@ -957,7 +979,7 @@ class LoopService extends EventEmitter {
     };
     const tailTimer = setInterval(() => {
       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
-    }, 600);
+    }, 1500);
     try {
       if (!isCodexProvider) {
         const attempt = await runAttempt([], '');
@@ -1015,7 +1037,9 @@ class LoopService extends EventEmitter {
       return resultFor(fresh, 'new');
     } finally {
       clearInterval(tailTimer);
-      stream.end();
+      if (!stream.destroyed && !stream.writableEnded && !stream.writableFinished) {
+        stream.end();
+      }
       if (operationKey && runtime.activeOperations.has(operationKey)) {
         this.archiveOperation(projectIdForEmit, operationKey);
       }
@@ -1058,7 +1082,7 @@ class LoopService extends EventEmitter {
     child.stderr.on('data', onChunk);
     const tailTimer = setInterval(() => {
       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
-    }, 600);
+    }, 1500);
     try {
       const exitCode = await waitForChild(child, SHELL_COMMAND_TIMEOUT_MS);
       const timedOut = Boolean(child.__autoplanTimedOut);
@@ -1108,8 +1132,12 @@ class LoopService extends EventEmitter {
     this.emitUpdate(projectId);
   }
 
-  emitUpdate(projectId) {
-    this.emit('update', this.snapshot(projectId));
+  emitUpdate(projectId, options = {}) {
+    this.updateEmitter.emit(projectId, options);
+  }
+
+  flushPendingUpdates() {
+    this.updateEmitter.flush();
   }
 
   snapshot(projectId = null) {

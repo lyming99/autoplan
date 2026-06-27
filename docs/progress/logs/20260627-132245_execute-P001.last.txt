@@ -1,0 +1,15 @@
+**P001 结论**
+- 已完成定位；未修改 `docs/plan/plan_feedback_15_20260627-132045.md`，未勾选 checkbox，未运行测试/构建/lint。
+- 根因不是标准任务行解析失败：`syncPlanTasks` 能解析标准 checkbox、缺 scope、缩进/中文冒号等常见样例，入口在 `src/loopService.js:1387`。
+- 主要断点在阅读链路：`plans:read` 只返回 Markdown 原文，不返回 `plan_tasks` 解析结果或解析状态，见 `src/main.js:323`、`src/main.js:483`。
+- 前端“阅读全文”只把 `markdown` 交给 `MarkdownReader`，没有展示 DB 中的任务拆解摘要/异常态，见 `src/renderer/components/PlanLists.tsx:735`。
+- `MarkdownReader` 会渲染 checkbox 并暴露 scope 注释，不负责展示解析结果，见 `src/renderer/components/MarkdownReader.tsx:49`、`src/renderer/components/MarkdownReader.tsx:91`。
+
+**样例结果**
+- 标准：`- [ ] P001: 标准任务 <!-- scope: src/loopService.js,src/main.js -->` → key `P001`，scope 正常拆分。
+- 缺 scope：`- [ ] P002: 缺少 scope 的任务` → 会补 `unknown` 并入库；但当前实现会在 `syncPlanTasks` 中写回 plan 文件。
+- 中文/缩进：`  - [x] P003：中文标点 <!-- scope： src/main.js；src/renderer/components/PlanLists.tsx -->` → key `P003`，状态 completed，scope 正常拆分。
+
+**后续边界**
+- P002 应修解析稳定性与写回副作用。
+- P004 应让 `plans:read` 返回任务摘要/解析状态，并在阅读器展示。

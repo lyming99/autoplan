@@ -1,0 +1,894 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f08a4-46b2-7491-86f2-13346f160c4a
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_20_20260627-183133.md
+指定任务：
+- [ ] P001: 确认 beta 版本号与发布参数 <!-- scope: package.json,scripts/release.py -->
+任务 scope：package.json, scripts/release.py
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Evaluating code execution process**
+
+I need to act as a coding agent since the user only wants me to execute task P001. It seems I should first inspect the plan in a read-only manner for more details. I don't need to run tests or modify the build/lint process, just the scope within package.json and scripts/release.py. I also need to check if AGENTS is included since it mentions the contents, but I can’t see them. I'll use commands to investigate and gather the necessary information.
+codex
+我会先只读取计划与任务 scope 文件，确认 P001 的具体要求。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; if (Test-Path AGENTS.md) { Get-Content -Raw -Encoding UTF8 AGENTS.md }; Write-Output '---PLAN---'; Get-Content -Raw -Encoding UTF8 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_feedback_20_20260627-183133.md'; Write-Output '---PACKAGE---'; Get-Content -Raw -Encoding UTF8 'package.json'; Write-Output '---RELEASE---'; Get-Content -Raw -Encoding UTF8 'scripts/release.py'" in D:\project\GitHub\autoplan
+ succeeded in 199ms:
+---PLAN---
+# 反馈 #20 开发计划：发布 beta 版本并补充说明
+
+## 背景
+
+近期 AutoPlan 已完成多轮功能更新，需要通过 `scripts/release.py` 发布一个 beta 版本，利用现有 GitHub Actions 发布流程生成安装包。该 beta 版本定位为快速分发版本：不做完整人工测试，AI 完成问题修复后，只要编译通过即可发布，以缩短测试与发布周期。
+
+本次计划重点不是新增业务能力，而是规范 beta 版本发布文案、Release notes 与发布操作，确保下载用户明确知道：beta 是未充分测试版本，如下载测试或使用中发现问题，可直接在 GitHub Issue 界面反馈；后续软件/AI 流程会从 Issue 中发现问题并继续修复。
+
+## 任务列表
+
+- [ ] P001: 确认 beta 版本号与发布参数 <!-- scope: package.json,scripts/release.py -->
+  - 验收要点：确认目标 beta 版本号采用可识别的预发布格式，例如 `0.2.1-beta.1`，Git tag 对应为 `v0.2.1-beta.1`。
+  - 验收要点：`package.json` 中 `version` 与计划发布的 tag 保持一致，避免 Release 产物版本号和 Git tag 不一致。
+  - 验收要点：确认 `scripts/release.py` 已支持通过 `--tag` 和 `--notes-file` 或 `--notes` 传入 beta 发布说明并推送 tag。
+  - 验收要点：如发布脚本已有能力，不为 beta 发布新增重复脚本；仅在参数、提示或文档存在缺口时补充最小变更。
+
+- [ ] P002: 补充 README beta 版本说明 <!-- scope: README.md -->
+  - 验收要点：README 新增或更新 beta 版本说明，明确 beta 是未完整测试版本，不等同于稳定正式版。
+  - 验收要点：README 说明 beta 发布策略为 AI 解决问题后编译通过即可发布，用于减少人工测试和等待时间。
+  - 验收要点：README 明确下载测试或使用中发现问题时，用户可直接到 GitHub Issue 界面提交反馈。
+  - 验收要点：README 说明后续软件/AI 流程会持续从 Issue 中发现问题、生成修复计划并处理，不承诺 beta 版本零缺陷。
+
+- [ ] P003: 准备 beta Release notes <!-- scope: docs/release-notes,docs/release.md -->
+  - 验收要点：新增本次 beta 版本 Release notes 文件，文件名与 tag 对齐，例如 `docs/release-notes/v0.2.1-beta.1.md`。
+  - 验收要点：Release notes 开头明确标注“Beta 未测试版本”或等价说明，避免用户误认为是稳定版本。
+  - 验收要点：Release notes 包含近期更新摘要、beta 风险提示、Issue 反馈入口说明和“编译通过即发布”的发布策略说明。
+  - 验收要点：`docs/release.md` 的发布说明补充 beta 发布流程，推荐使用 `--notes-file` 传入 beta Release notes。
+
+- [ ] P004: 使用 release 脚本推送 beta tag <!-- scope: scripts/release.py,git tags,GitHub Release -->
+  - 验收要点：在工作区干净、版本号与 Release notes 准备完成后，通过 `python scripts/release.py --tag <beta-tag> --notes-file docs/release-notes/<beta-tag>.md --yes` 推送 beta tag。
+  - 验收要点：脚本执行前不绕过既有发布前置检查，包括 Git 仓库检查、工作区状态检查、tag 格式检查、本地和远端同名 tag 检查。
+  - 验收要点：推送后 GitHub Actions Release workflow 被 tag 触发，且 Release 正文使用 beta Release notes 内容。
+  - 验收要点：若脚本或远端推送失败，保留错误信息并停止发布，不手工创建不一致的 tag 或 Release。
+
+- [ ] P005: 完整验收 <!-- scope: validation -->
+  - 验收要点：最终验收命令为 `npm run build`，通过标准为 TypeScript 与 Vite 构建均成功，无阻断发布的编译错误。
+  - 验收要点：确认 README 与 Release notes 均包含 beta 未测试、AI 修复、编译通过即发布、Issue 反馈和后续自动发现修复问题的描述。
+  - 验收要点：确认 `package.json` 版本号、Git tag、Release notes 文件名和 GitHub Release 标题/正文中的 beta 版本一致。
+  - 验收要点：确认 GitHub Actions 三端构建任务已启动；若任一平台构建失败，则该 beta 发布不得标记为可下载完成状态。
+  - 验收要点：确认 GitHub Release 附件可见后，在 Release 正文保留 beta 风险提示与 Issue 反馈入口。
+
+## 总体验收标准
+
+- 文档范围：`README.md` 必须面向普通下载用户说明 beta 版本风险、发布节奏和 Issue 反馈方式；`docs/release.md` 必须面向维护者说明 beta 发布流程；本次 `docs/release-notes/<beta-tag>.md` 必须可直接作为 GitHub Release 正文。
+- 发布范围：本次仅发布 beta 版本，不扩大为稳定正式版；版本号、tag、Release notes 和构建产物版本必须一致。
+- 发布策略：beta 版本允许不做完整人工测试，但必须完成编译验收；AI 修复问题后，只要 `npm run build` 通过即可使用 release 脚本发布。
+- 最终验收命令：`npm run build`。
+- 发布命令：`python scripts/release.py --tag <beta-tag> --notes-file docs/release-notes/<beta-tag>.md --yes`，其中 `<beta-tag>` 必须替换为实际 beta tag，例如 `v0.2.1-beta.1`。
+- 通过标准：构建命令返回 0；release 脚本成功推送 tag；GitHub Actions Release workflow 被触发；GitHub Release 正文包含 beta 风险提示；下载测试问题可通过 Issue 入口提交。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：反馈 #20 开发计划已创建，待执行。
+
+---PACKAGE---
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "verify:release-artifacts": "node scripts/verify-release-artifacts.js",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths",
+    "check:lengths": "node scripts/check-file-lengths.js",
+    "mcp:http": "node src/mcpServer.js --http",
+    "mcp:stdio": "node src/mcpServer.js --stdio",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "afterSign": "scripts/notarize-mac.js",
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+---RELEASE---
+#!/usr/bin/env python3
+"""Create and push a release tag for the GitHub Actions release workflow."""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+TAG_PREFIX = "v"
+
+
+class ReleaseError(RuntimeError):
+    """A user-facing release preflight error."""
+
+
+def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            check=False,
+            capture_output=capture,
+            text=True,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
+
+
+def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        if detail:
+            raise ReleaseError(f"{message}\n{detail}")
+        raise ReleaseError(message)
+
+
+def ensure_git_available() -> None:
+    if shutil.which("git") is None:
+        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
+
+
+def ensure_gh_hint() -> None:
+    if shutil.which("gh") is None:
+        print(
+            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
+            file=sys.stderr,
+        )
+
+
+def validate_tag(tag: str) -> None:
+    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
+        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
+    if any(char.isspace() for char in tag):
+        raise ReleaseError("tag 不能包含空白字符。")
+    invalid_chars = set("~^:?*[\\")
+    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
+        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
+    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
+    require_success(result, "tag 格式不符合 Git ref 规范。")
+
+
+def ensure_repository() -> None:
+    result = run_git(["rev-parse", "--is-inside-work-tree"])
+    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
+    if result.stdout.strip() != "true":
+        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
+
+
+def ensure_clean_worktree() -> None:
+    result = run_git(["status", "--porcelain"])
+    require_success(result, "无法读取 Git 工作区状态。")
+    if result.stdout.strip():
+        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
+
+
+def ensure_remote(remote: str) -> None:
+    result = run_git(["remote", "get-url", remote])
+    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
+
+
+def ensure_tag_absent(tag: str, remote: str) -> None:
+    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
+    if local.returncode == 0:
+        raise ReleaseError(f"本地 tag 已存在：{tag}。")
+
+    remote_result = run_git(["ls-remote", "--tags", remote, tag])
+    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
+    if remote_result.stdout.strip():
+        raise ReleaseError(f"远端 tag 已存在：{tag}。")
+
+
+def read_notes(args: argparse.Namespace) -> str:
+    if args.notes and args.notes_file:
+        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
+    if args.notes:
+        return args.notes
+    if args.notes_file:
+        path = Path(args.notes_file)
+        try:
+            return path.read_text(encoding="utf-8").rstrip()
+        except FileNotFoundError as exc:
+            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+        except OSError as exc:
+            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
+    return ""
+
+
+def confirm_release(tag: str, remote: str) -> None:
+    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
+    if answer.strip().lower() not in {"y", "yes"}:
+        raise ReleaseError("已取消发布。")
+
+
+def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+    tag_message = notes.rstrip() or f"Release {tag}"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        notes_path = Path(temp_dir) / "release-notes.md"
+        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
+        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
+        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+
+    push_result = run_git(["push", remote, tag])
+    if push_result.returncode != 0:
+        run_git(["tag", "-d", tag])
+        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
+    )
+    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
+    parser.add_argument("--notes", help="直接传入版本说明文本。")
+    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
+    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
+    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
+    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        notes = read_notes(args)
+        ensure_git_available()
+        validate_tag(args.tag)
+        ensure_repository()
+        ensure_clean_worktree()
+        ensure_remote(args.remote)
+        ensure_tag_absent(args.tag, args.remote)
+        ensure_gh_hint()
+
+        print(f"发布 tag：{args.tag}")
+        print(f"目标远端：{args.remote}")
+        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
+
+        if args.dry_run:
+            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
+            return 0
+
+        if not args.yes:
+            confirm_release(args.tag, args.remote)
+
+        create_and_push_tag(args.tag, notes, args.remote)
+        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
+        return 0
+    except ReleaseError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+
+**Reviewing package release process**
+
+I need to confirm if the package version is indeed a beta and plan the modifications accordingly. It's important to check the release parameters and see if the release script already supports it. Maybe I just need to change the package version. I'll also inspect the package fully and look for any examples of how the release script works. Let’s clarify these tasks to ensure a smooth release.
+codex
+计划里 P001 只要求版本与发布参数；现在单独查看 scope 文件关键内容。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Write-Output 'package version:'; (Get-Content -Raw -Encoding UTF8 package.json | ConvertFrom-Json).version; Write-Output 'release.py head:'; Get-Content -Encoding UTF8 scripts/release.py | Select-Object -First 240" in D:\project\GitHub\autoplan
+ succeeded in 230ms:
+package version:
+0.2.0
+release.py head:
+#!/usr/bin/env python3
+"""Create and push a release tag for the GitHub Actions release workflow."""
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+
+TAG_PREFIX = "v"
+
+
+class ReleaseError(RuntimeError):
+    """A user-facing release preflight error."""
+
+
+def run_git(args: list[str], *, capture: bool = True) -> subprocess.CompletedProcess[str]:
+    try:
+        return subprocess.run(
+            ["git", *args],
+            check=False,
+            capture_output=capture,
+            text=True,
+            encoding="utf-8",
+        )
+    except FileNotFoundError as exc:
+        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。") from exc
+
+
+def require_success(result: subprocess.CompletedProcess[str], message: str) -> None:
+    if result.returncode != 0:
+        detail = (result.stderr or result.stdout or "").strip()
+        if detail:
+            raise ReleaseError(f"{message}\n{detail}")
+        raise ReleaseError(message)
+
+
+def ensure_git_available() -> None:
+    if shutil.which("git") is None:
+        raise ReleaseError("未找到 Git，请先安装 Git 并确认 git 命令已加入 PATH。")
+
+
+def ensure_gh_hint() -> None:
+    if shutil.which("gh") is None:
+        print(
+            "提示：未检测到 GitHub CLI（gh）。tag 推送仍可触发 Actions；如需本地确认登录状态，请安装并运行 gh auth login。",
+            file=sys.stderr,
+        )
+
+
+def validate_tag(tag: str) -> None:
+    if not tag.startswith(TAG_PREFIX) or len(tag) == 1:
+        raise ReleaseError("tag 必须以 v 开头，例如 v0.2.0。")
+    if any(char.isspace() for char in tag):
+        raise ReleaseError("tag 不能包含空白字符。")
+    invalid_chars = set("~^:?*[\\")
+    if any(char in invalid_chars for char in tag) or ".." in tag or tag.endswith("."):
+        raise ReleaseError("tag 包含 Git 不支持的字符，请使用类似 v0.2.0 的格式。")
+    result = run_git(["check-ref-format", f"refs/tags/{tag}"])
+    require_success(result, "tag 格式不符合 Git ref 规范。")
+
+
+def ensure_repository() -> None:
+    result = run_git(["rev-parse", "--is-inside-work-tree"])
+    require_success(result, "当前目录不是 Git 仓库，请在项目根目录运行。")
+    if result.stdout.strip() != "true":
+        raise ReleaseError("当前目录不是 Git 工作区，请在项目根目录运行。")
+
+
+def ensure_clean_worktree() -> None:
+    result = run_git(["status", "--porcelain"])
+    require_success(result, "无法读取 Git 工作区状态。")
+    if result.stdout.strip():
+        raise ReleaseError("工作区存在未提交或未跟踪文件，请先提交、暂存或清理后再发布。")
+
+
+def ensure_remote(remote: str) -> None:
+    result = run_git(["remote", "get-url", remote])
+    require_success(result, f"未找到远端 {remote}，请先配置 Git 远端。")
+
+
+def ensure_tag_absent(tag: str, remote: str) -> None:
+    local = run_git(["rev-parse", "--verify", f"refs/tags/{tag}"])
+    if local.returncode == 0:
+        raise ReleaseError(f"本地 tag 已存在：{tag}。")
+
+    remote_result = run_git(["ls-remote", "--tags", remote, tag])
+    require_success(remote_result, f"无法查询远端 tag，请检查 {remote} 权限或网络。")
+    if remote_result.stdout.strip():
+        raise ReleaseError(f"远端 tag 已存在：{tag}。")
+
+
+def read_notes(args: argparse.Namespace) -> str:
+    if args.notes and args.notes_file:
+        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
+    if args.notes:
+        return args.notes
+    if args.notes_file:
+        path = Path(args.notes_file)
+        try:
+            return path.read_text(encoding="utf-8").rstrip()
+        except FileNotFoundError as exc:
+            raise ReleaseError(f"版本说明文件不存在：{path}") from exc
+        except OSError as exc:
+            raise ReleaseError(f"无法读取版本说明文件：{path}\n{exc}") from exc
+    return ""
+
+
+def confirm_release(tag: str, remote: str) -> None:
+    answer = input(f"确认创建并推送 tag {tag} 到 {remote} 以触发 GitHub Release？[y/N] ")
+    if answer.strip().lower() not in {"y", "yes"}:
+        raise ReleaseError("已取消发布。")
+
+
+def create_and_push_tag(tag: str, notes: str, remote: str) -> None:
+    tag_message = notes.rstrip() or f"Release {tag}"
+    with tempfile.TemporaryDirectory() as temp_dir:
+        notes_path = Path(temp_dir) / "release-notes.md"
+        notes_path.write_text(f"{tag_message}\n", encoding="utf-8")
+        tag_args = ["tag", "-a", tag, "-F", str(notes_path)]
+        require_success(run_git(tag_args), f"创建本地 tag 失败：{tag}。")
+
+    push_result = run_git(["push", remote, tag])
+    if push_result.returncode != 0:
+        run_git(["tag", "-d", tag])
+        require_success(push_result, f"推送 tag 到 {remote} 失败，本地 tag 已尝试回滚。")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description="创建并推送发布 tag，触发 GitHub Actions 三端 Release 工作流。"
+    )
+    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
+    parser.add_argument("--notes", help="直接传入版本说明文本。")
+    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
+    parser.add_argument("--remote", default="origin", help="要推送的 Git 远端，默认 origin。")
+    parser.add_argument("--dry-run", action="store_true", help="只执行检查并展示动作，不创建或推送 tag。")
+    parser.add_argument("--yes", action="store_true", help="跳过交互确认，直接创建并推送 tag。")
+    return parser
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    try:
+        notes = read_notes(args)
+        ensure_git_available()
+        validate_tag(args.tag)
+        ensure_repository()
+        ensure_clean_worktree()
+        ensure_remote(args.remote)
+        ensure_tag_absent(args.tag, args.remote)
+        ensure_gh_hint()
+
+        print(f"发布 tag：{args.tag}")
+        print(f"目标远端：{args.remote}")
+        print(f"版本说明：{'已提供' if notes else '未提供，将由 Release workflow 使用默认说明'}")
+
+        if args.dry_run:
+            print("dry-run：检查通过，不会创建本地 tag，也不会推送远端。")
+            return 0
+
+        if not args.yes:
+            confirm_release(args.tag, args.remote)
+
+        create_and_push_tag(args.tag, notes, args.remote)
+        print(f"已推送 {args.tag}，GitHub Actions 将由 tag 推送触发 Release 工作流。")
+        return 0
+    except ReleaseError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+**Evaluating package versioning**
+
+I need to figure out whether to use a package-lock file. The scope indicates it's only for package.json, but if a version exists in package-lock, that needs consideration. If there's a beta version confirmation, should I update package.json to 0.2.1-beta.1? I see that release.py supports tag notes but it seems I should ensure consistency between the package and tag versions. It looks like I’m aiming for alignment with the planned beta version.
+**Considering release script modifications**
+
+I need to keep in mind that the release script already has support in place. My main task is about "开发修改", which might mean I only need to modify package.json. If that’s the case and only the package changes, it looks like P001 should pass. However, the task scope involves both package.json and scripts/release.py. Should I inspect the package with the scripts to ensure everything lines up correctly? I’m not entirely sure yet!
+codex
+已确认脚本具备参数能力；接下来只把包版本对齐到 beta tag。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Get-Content -Raw -Encoding UTF8 package.json" in D:\project\GitHub\autoplan
+ succeeded in 166ms:
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "verify:release-artifacts": "node scripts/verify-release-artifacts.js",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths",
+    "check:lengths": "node scripts/check-file-lengths.js",
+    "mcp:http": "node src/mcpServer.js --http",
+    "mcp:stdio": "node src/mcpServer.js --stdio",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "afterSign": "scripts/notarize-mac.js",
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.17.0",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+
+codex
+我会做最小变更：仅更新 `package.json` 的 beta 版本号。 
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\package.json
+diff --git a/package.json b/package.json
+index b62da3d270f401da993dc939e0f3743693baf0f2..7c73d6c2f4f00c49ec78db74d0e36fe2b2511191
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.2.0",
++  "version": "0.2.1-beta.1",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "author": "lyming99 <lyming99@users.noreply.github.com>",
+   "main": "src/main.js",
+
+diff --git a/package.json b/package.json
+index b62da3d270f401da993dc939e0f3743693baf0f2..7c73d6c2f4f00c49ec78db74d0e36fe2b2511191
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.2.0",
++  "version": "0.2.1-beta.1",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "author": "lyming99 <lyming99@users.noreply.github.com>",
+   "main": "src/main.js",
+
+**Verifying apply_patch usage**
+
+I'm exploring the apply_patch tool, but I notice there's no direct namespace. I wonder if using the shell for apply_patch is fine. A warning appeared, but it seems like it was successful. I should inspect the git diff since it doesn’t necessarily mean tests were run. Also, I need to check the release script because I’m not sure it’s modified. Verifying the package version and git diff is important, but commands seem fine without tests.
+codex
+版本已更新；现在只检查改动范围，避免触碰其它任务文件。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; git diff -- package.json scripts/release.py; Write-Output '---STATUS---'; git status --short -- package.json scripts/release.py 'docs/plan/plan_feedback_20_20260627-183133.md'" in D:\project\GitHub\autoplan
+ succeeded in 226ms:
+diff --git a/package.json b/package.json
+index 40cb400..7c73d6c 100644
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.2.0",
++  "version": "0.2.1-beta.1",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "author": "lyming99 <lyming99@users.noreply.github.com>",
+   "main": "src/main.js",
+@@ -13,7 +13,11 @@
+     "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+     "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+     "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+-    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
++    "verify:release-artifacts": "node scripts/verify-release-artifacts.js",
++    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/mcpServer.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js && npm run check:lengths",
++    "check:lengths": "node scripts/check-file-lengths.js",
++    "mcp:http": "node src/mcpServer.js --http",
++    "mcp:stdio": "node src/mcpServer.js --stdio",
+     "smoke": "node scripts/smoke-test.js"
+   },
+   "build": {
+@@ -22,6 +26,7 @@
+     "directories": {
+       "output": "release"
+     },
++    "afterSign": "scripts/notarize-mac.js",
+     "files": [
+       "assets/**/*",
+       "dist/**/*",
+@@ -47,6 +52,11 @@
+       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+     },
+     "mac": {
++      "category": "public.app-category.productivity",
++      "hardenedRuntime": true,
++      "gatekeeperAssess": false,
++      "entitlements": "build/entitlements.mac.plist",
++      "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+       "target": [
+         {
+           "target": "dmg",
+@@ -91,6 +101,7 @@
+     }
+   },
+   "dependencies": {
++    "@modelcontextprotocol/sdk": "^1.17.0",
+     "react": "^19.2.7",
+     "react-dom": "^19.2.7",
+     "react-markdown": "^10.1.0",
+---STATUS---
+ M package.json
+?? docs/plan/plan_feedback_20_20260627-183133.md
+warning: in the working copy of 'package.json', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/package.json b/package.json
+index b62da3d270f401da993dc939e0f3743693baf0f2..7c73d6c2f4f00c49ec78db74d0e36fe2b2511191
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.2.0",
++  "version": "0.2.1-beta.1",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "author": "lyming99 <lyming99@users.noreply.github.com>",
+   "main": "src/main.js",
+
+codex
+改动范围确认完毕；再取一下相关行号便于交付说明。
+exec
+powershell.exe -Command '$ErrorActionPreference='"'Stop'; Select-String -Path package.json -Pattern '\"version\"'; Select-String -Path scripts/release.py -Pattern '--tag|--notes|--notes-file'" in D:\project\GitHub\autoplan
+ succeeded in 203ms:
+
+package.json:3:  "version": "0.2.1-beta.1",
+scripts\release.py:91:    remote_result = run_git(["ls-remote", "--tags", remote, tag])
+scripts\release.py:99:        raise ReleaseError("--notes 与 --notes-file 只能二选一。")
+scripts\release.py:137:    parser.add_argument("--tag", required=True, help="发布 tag，例如 v0.2.0。")
+scripts\release.py:138:    parser.add_argument("--notes", help="直接传入版本说明文本。")
+scripts\release.py:139:    parser.add_argument("--notes-file", help="从 UTF-8 文本文件读取版本说明。")
+
+
+
+diff --git a/package.json b/package.json
+index b62da3d270f401da993dc939e0f3743693baf0f2..7c73d6c2f4f00c49ec78db74d0e36fe2b2511191
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.2.0",
++  "version": "0.2.1-beta.1",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "author": "lyming99 <lyming99@users.noreply.github.com>",
+   "main": "src/main.js",
+
+codex
+已完成 P001，未执行测试/构建/lint，也未修改 plan 文件或勾选 checkbox。
+
+- 已将 `package.json:3` 版本号更新为 `0.2.1-beta.1`
+- 对应发布 tag 为 `v0.2.1-beta.1`
+- 已确认 `scripts/release.py:137` 支持 `--tag`
+- 已确认 `scripts/release.py:138` 与 `scripts/release.py:139` 支持 `--notes` / `--notes-file`
+- `scripts/release.py` 已具备所需能力，因此未新增重复 beta 发布脚本或额外改动
+diff --git a/package.json b/package.json
+index b62da3d270f401da993dc939e0f3743693baf0f2..7c73d6c2f4f00c49ec78db74d0e36fe2b2511191
+--- a/package.json
++++ b/package.json
+@@ -1,6 +1,6 @@
+ {
+   "name": "autoplan",
+-  "version": "0.2.0",
++  "version": "0.2.1-beta.1",
+   "description": "Electron app for issue-driven autonomous planning and development loops.",
+   "author": "lyming99 <lyming99@users.noreply.github.com>",
+   "main": "src/main.js",
+
+tokens used
+28,757
+已完成 P001，未执行测试/构建/lint，也未修改 plan 文件或勾选 checkbox。
+
+- 已将 `package.json:3` 版本号更新为 `0.2.1-beta.1`
+- 对应发布 tag 为 `v0.2.1-beta.1`
+- 已确认 `scripts/release.py:137` 支持 `--tag`
+- 已确认 `scripts/release.py:138` 与 `scripts/release.py:139` 支持 `--notes` / `--notes-file`
+- `scripts/release.py` 已具备所需能力，因此未新增重复 beta 发布脚本或额外改动

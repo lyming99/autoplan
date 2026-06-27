@@ -4,12 +4,14 @@ const { nowIso } = require('../database');
 const { DEFAULT_AGENT_CLI_PROVIDER, agentCliContextFields, codexSessionContextFields, effectiveAgentCliConfig, intakeSnapshotRow, normalizeOptionalString } = require('./agentCliConfig');
 const { TASK_EVENT_STATUS, normalizeDurationMs, taskRunDurationMs } = require('./taskEvents');
 const { operationSnapshotRow, runtimeOperationContextByTask } = require('./runtime');
-const { planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');
+const { emptyConcurrencySuggestion, planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');
 const { extractMarkdownTitle } = require('./planParser');
-const { resolveWorkspaceChildPath } = require('./workspaceFiles');
+const { readSnippet, resolveWorkspaceChildPath } = require('./workspaceFiles');
+const { MCP_TOOL_NAMES: MCP_TOOL_NAME_MAP } = require('../mcpTools');
+const { MCP_TOOL_DOCS } = require('../mcpToolDocs');
 
-const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 43847, path: '/mcp' });
-const MCP_TOOL_NAMES = Object.freeze(['create_project', 'create_requirement', 'create_feedback']);
+const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 43847, path: '/mcp', authToken: '' });
+const MCP_TOOL_NAMES = Object.freeze(Object.values(MCP_TOOL_NAME_MAP));
 const LOCAL_MCP_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
 
 function snapshot(service, helpers, projectId = null) {
@@ -41,10 +43,16 @@ function snapshot(service, helpers, projectId = null) {
     const concurrencySuggestionByPlanId = new Map(
       planRows.map((plan) => [
         Number(plan.id),
-        planConcurrencySuggestion(activeProject.workspace_path, tasksByPlanId.get(Number(plan.id)) || []),
+        cachedPlanConcurrencySuggestion(
+          service,
+          activeProject.workspace_path,
+          plan,
+          tasksByPlanId.get(Number(plan.id)) || [],
+        ),
       ]),
     );
     const planSnapshots = planRows.map((plan) => planSnapshotRow(
+      service,
       activeProject.workspace_path,
       plan,
       concurrencySuggestionByPlanId.get(Number(plan.id)),
@@ -83,6 +91,7 @@ function snapshot(service, helpers, projectId = null) {
       plans: planSnapshots,
       tasks: taskRows
         .map((task) => taskSnapshotRow(
+          service,
           activeProject.workspace_path,
           {
             ...task,
@@ -113,7 +122,7 @@ function snapshot(service, helpers, projectId = null) {
     };
   }
 
-function taskSnapshotRow(workspace, task, operationContext = null) {
+function taskSnapshotRow(service, workspace, task, operationContext = null) {
   if (!task) return task;
   const startedAt = normalizeOptionalString(task.started_at) || null;
   const finishedAt = normalizeOptionalString(task.finished_at) || null;
@@ -132,7 +141,7 @@ function taskSnapshotRow(workspace, task, operationContext = null) {
       });
   return {
     ...task,
-    scope_files: taskScopeFileInfos(workspace, task),
+    scope_files: cachedTaskScopeFileInfos(service, workspace, task),
     started_at: startedAt,
     finished_at: finishedAt,
     duration_ms: normalizeDurationMs(task.duration_ms),
@@ -149,6 +158,7 @@ function mcpStatusSnapshot(db) {
   const host = normalizeMcpHost(process.env.AUTOPLAN_MCP_HOST ?? settings['mcp.host']);
   const port = normalizeMcpPort(process.env.AUTOPLAN_MCP_PORT ?? settings['mcp.port']);
   const mcpPath = normalizeMcpPath(process.env.AUTOPLAN_MCP_PATH ?? settings['mcp.path']);
+  const authToken = normalizeMcpAuthToken(process.env.AUTOPLAN_MCP_AUTH_TOKEN ?? settings['mcp.authToken']);
   const latestEvent = db?.get
     ? db.get(
         `SELECT type, message, meta, created_at
@@ -174,8 +184,11 @@ function mcpStatusSnapshot(db) {
     port: transport === 'http' ? port : null,
     path: transport === 'http' ? mcpPath : null,
     url,
+    authToken,
+    authHeader: authToken ? `Authorization: Bearer ${authToken}` : '',
     localOnly: transport !== 'http' || LOCAL_MCP_HOSTS.has(String(host).toLowerCase()),
     tools: MCP_TOOL_NAMES,
+    toolDocs: MCP_TOOL_DOCS,
     connectionExample: transport === 'http'
       ? `http://${host}:${port}${mcpPath}`
       : 'npm run mcp:stdio',
@@ -224,6 +237,10 @@ function normalizeMcpPath(value) {
   return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
 }
 
+function normalizeMcpAuthToken(value) {
+  return String(value || MCP_DEFAULT_CONFIG.authToken).trim();
+}
+
 function emptySnapshot(projects, mcp = null) {
   return {
     activeProjectId: null,
@@ -265,7 +282,7 @@ function parseEventMeta(meta) {
   return meta;
 }
 
-function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
+function planSnapshotRow(service, workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
   if (!plan) return plan;
   const planAgentCliConfig = agentCliConfig || effectiveAgentCliConfig({}, plan);
   const status = String(plan.status || 'pending');
@@ -277,7 +294,7 @@ function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCli
     agent_cli_provider: planAgentCliConfig.provider,
     agent_cli_command: planAgentCliConfig.command,
     codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
-    title: readPlanMarkdownTitle(workspace, plan.file_path),
+    title: cachedPlanMarkdownTitle(service, workspace, plan),
     concurrency_suggestion: concurrencySuggestion || emptyConcurrencySuggestion(),
   };
 }
@@ -311,7 +328,63 @@ function readPlanMarkdownTitle(workspace, filePath) {
   }
 }
 
+function cachedPlanMarkdownTitle(service, workspace, plan) {
+  if (!service) return readPlanMarkdownTitle(workspace, plan?.file_path);
+  if (!service._planTitleCache) service._planTitleCache = new Map();
+  const cache = service._planTitleCache;
+  const version = plan?.hash || plan?.updated_at || '';
+  const key = `${workspace || ''}\0${plan?.file_path || ''}\0${version}`;
+  if (cache.has(key)) return cache.get(key);
+  const title = readPlanMarkdownTitle(workspace, plan?.file_path);
+  cache.set(key, title);
+  if (cache.size > 200) cache.delete(cache.keys().next().value);
+  return title;
+}
+
+function cachedPlanConcurrencySuggestion(service, workspace, plan, tasks) {
+  if (!service) return planConcurrencySuggestion(workspace, tasks);
+  if (!service._planConcurrencyCache) service._planConcurrencyCache = new Map();
+  const cache = service._planConcurrencyCache;
+  const taskFingerprint = tasks
+    .map((task) => [
+      task.id,
+      task.status,
+      task.scope,
+      task.raw_line,
+      task.updated_at,
+    ].join(':'))
+    .join('|');
+  const key = `${workspace || ''}\0${plan?.id || ''}\0${taskFingerprint}`;
+  if (cache.has(key)) return cache.get(key);
+  const suggestion = planConcurrencySuggestion(workspace, tasks);
+  cache.set(key, suggestion);
+  if (cache.size > 200) cache.delete(cache.keys().next().value);
+  return suggestion;
+}
+
+function cachedTaskScopeFileInfos(service, workspace, task) {
+  if (!service) return taskScopeFileInfos(workspace, task);
+  if (!service._taskScopeFileInfoCache) service._taskScopeFileInfoCache = new Map();
+  const cache = service._taskScopeFileInfoCache;
+  const key = [
+    workspace || '',
+    task?.id || '',
+    task?.scope || '',
+    task?.raw_line || '',
+    task?.title || '',
+    task?.updated_at || '',
+  ].join('\0');
+  if (cache.has(key)) return cache.get(key);
+  const infos = taskScopeFileInfos(workspace, task);
+  cache.set(key, infos);
+  if (cache.size > 500) cache.delete(cache.keys().next().value);
+  return infos;
+}
+
 module.exports = {
+  cachedPlanConcurrencySuggestion,
+  cachedPlanMarkdownTitle,
+  cachedTaskScopeFileInfos,
   emptySnapshot,
   eventSnapshotRow,
   groupPlanTasksByPlanId,

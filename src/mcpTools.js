@@ -1,12 +1,23 @@
 const MCP_TOOL_NAMES = Object.freeze({
+  LIST_PROJECTS: 'list_projects',
+  GET_PROJECT: 'get_project',
   CREATE_PROJECT: 'create_project',
+  LIST_REQUIREMENTS: 'list_requirements',
   CREATE_REQUIREMENT: 'create_requirement',
+  LIST_FEEDBACK: 'list_feedback',
   CREATE_FEEDBACK: 'create_feedback',
+  LIST_PLANS: 'list_plans',
+  GET_PLAN: 'get_plan',
+  LIST_TASKS: 'list_tasks',
+  START_LOOP: 'start_loop',
+  STOP_LOOP: 'stop_loop',
 });
 
 const AGENT_CLI_PROVIDERS = Object.freeze(['codex', 'claude']);
 const CODEX_REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh']);
 const INTAKE_STATUSES = Object.freeze(['open', 'completed', 'closed']);
+const PLAN_STATUSES = Object.freeze(['pending', 'running', 'ready_for_validation', 'completed', 'interrupted', 'draft']);
+const TASK_STATUSES = Object.freeze(['pending', 'running', 'completed', 'blocked', 'failed', 'stopping', 'stopped', 'interrupted']);
 
 const LIMITS = Object.freeze({
   name: 120,
@@ -15,6 +26,8 @@ const LIMITS = Object.freeze({
   description: 5000,
   workspacePath: 1000,
   command: 1000,
+  query: 200,
+  rows: 200,
   attachmentName: 255,
   attachmentPath: 2000,
   attachmentData: 10 * 1024 * 1024,
@@ -59,7 +72,34 @@ const COMMON_CLI_PROPERTIES = Object.freeze({
   },
 });
 
+const PROJECT_ID_SCHEMA = Object.freeze({ projectId: { type: 'integer', minimum: 1 } });
+const LIMIT_SCHEMA = Object.freeze({ limit: { type: 'integer', minimum: 1, maximum: LIMITS.rows } });
+
 const MCP_TOOL_DEFINITIONS = Object.freeze([
+  {
+    name: MCP_TOOL_NAMES.LIST_PROJECTS,
+    title: 'List AutoPlan projects',
+    description: 'List projects with runtime state summaries.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        query: { type: 'string', maxLength: LIMITS.query },
+        ...LIMIT_SCHEMA,
+      },
+    },
+  },
+  {
+    name: MCP_TOOL_NAMES.GET_PROJECT,
+    title: 'Get AutoPlan project',
+    description: 'Get one project and its snapshot summary.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['projectId'],
+      properties: PROJECT_ID_SCHEMA,
+    },
+  },
   {
     name: MCP_TOOL_NAMES.CREATE_PROJECT,
     title: 'Create AutoPlan project',
@@ -77,6 +117,12 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
+    name: MCP_TOOL_NAMES.LIST_REQUIREMENTS,
+    title: 'List AutoPlan requirements',
+    description: 'List requirements for a project.',
+    inputSchema: intakeListSchema(INTAKE_STATUSES),
+  },
+  {
     name: MCP_TOOL_NAMES.CREATE_REQUIREMENT,
     title: 'Create AutoPlan requirement',
     description: 'Create a requirement, optionally save attachments and start the project loop.',
@@ -85,7 +131,7 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false,
       required: ['projectId', 'title', 'body'],
       properties: {
-        projectId: { type: 'integer', minimum: 1 },
+        ...PROJECT_ID_SCHEMA,
         title: { type: 'string', minLength: 1, maxLength: LIMITS.title },
         body: { type: 'string', minLength: 1, maxLength: LIMITS.body },
         attachments: attachmentArraySchema(),
@@ -96,6 +142,12 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
     },
   },
   {
+    name: MCP_TOOL_NAMES.LIST_FEEDBACK,
+    title: 'List AutoPlan feedback',
+    description: 'List feedback for a project.',
+    inputSchema: intakeListSchema(INTAKE_STATUSES),
+  },
+  {
     name: MCP_TOOL_NAMES.CREATE_FEEDBACK,
     title: 'Create AutoPlan feedback',
     description: 'Create feedback, optionally associate it with a requirement and start the project loop.',
@@ -104,7 +156,7 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false,
       required: ['projectId', 'title', 'body'],
       properties: {
-        projectId: { type: 'integer', minimum: 1 },
+        ...PROJECT_ID_SCHEMA,
         requirementId: { type: ['integer', 'null'], minimum: 1 },
         title: { type: 'string', minLength: 1, maxLength: LIMITS.title },
         body: { type: 'string', minLength: 1, maxLength: LIMITS.body },
@@ -114,6 +166,54 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
         ...COMMON_CLI_PROPERTIES,
       },
     },
+  },
+  {
+    name: MCP_TOOL_NAMES.LIST_PLANS,
+    title: 'List AutoPlan plans',
+    description: 'List plans for a project.',
+    inputSchema: intakeListSchema(PLAN_STATUSES),
+  },
+  {
+    name: MCP_TOOL_NAMES.GET_PLAN,
+    title: 'Get AutoPlan plan',
+    description: 'Get one plan and its tasks.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['projectId', 'planId'],
+      properties: {
+        ...PROJECT_ID_SCHEMA,
+        planId: { type: 'integer', minimum: 1 },
+      },
+    },
+  },
+  {
+    name: MCP_TOOL_NAMES.LIST_TASKS,
+    title: 'List AutoPlan tasks',
+    description: 'List tasks for a project, optionally filtered by plan or status.',
+    inputSchema: {
+      type: 'object',
+      additionalProperties: false,
+      required: ['projectId'],
+      properties: {
+        ...PROJECT_ID_SCHEMA,
+        planId: { type: 'integer', minimum: 1 },
+        status: { type: 'string', enum: TASK_STATUSES },
+        ...LIMIT_SCHEMA,
+      },
+    },
+  },
+  {
+    name: MCP_TOOL_NAMES.START_LOOP,
+    title: 'Start AutoPlan loop',
+    description: 'Start the project loop.',
+    inputSchema: projectActionSchema(),
+  },
+  {
+    name: MCP_TOOL_NAMES.STOP_LOOP,
+    title: 'Stop AutoPlan loop',
+    description: 'Stop the project loop.',
+    inputSchema: projectActionSchema(),
   },
 ]);
 
@@ -136,7 +236,7 @@ async function registerMcpTools(server, context = {}) {
 
 async function callMcpTool(name, input = {}, context = {}) {
   const tool = MCP_TOOL_DEFINITIONS.find((item) => item.name === name);
-  if (!tool) throw new Error(`未知 MCP 工具：${name || ''}`);
+  if (!tool) throw new Error(`Unknown MCP tool: ${name || ''}`);
 
   try {
     const validated = validateToolInput(tool.name, input);
@@ -148,15 +248,37 @@ async function callMcpTool(name, input = {}, context = {}) {
 }
 
 async function runTool(name, input, context) {
-  const service = requiredIntakeService(context);
+  if (name === MCP_TOOL_NAMES.LIST_PROJECTS) {
+    const db = requiredDb(context);
+    return {
+      projects: listProjectRows(db, input).map((project) => projectSummary(project, context.loop)),
+    };
+  }
+  if (name === MCP_TOOL_NAMES.GET_PROJECT) {
+    const loop = requiredLoop(context);
+    const project = requiredProject(loop, input.projectId);
+    return {
+      project: projectSummary(project, loop),
+      snapshot: snapshotSummary(loop.snapshot(input.projectId)),
+    };
+  }
   if (name === MCP_TOOL_NAMES.CREATE_PROJECT) {
+    const service = requiredIntakeService(context);
     const snapshot = service.createProject(input);
     return {
       projectId: Number(snapshot.activeProjectId || snapshot.activeProject?.id || 0),
       snapshot: snapshotSummary(snapshot),
     };
   }
+  if (name === MCP_TOOL_NAMES.LIST_REQUIREMENTS) {
+    requiredProject(requiredLoop(context), input.projectId);
+    return {
+      projectId: input.projectId,
+      requirements: listIntakeRows(requiredDb(context), 'requirements', input).map((row) => intakeDetail(row)),
+    };
+  }
   if (name === MCP_TOOL_NAMES.CREATE_REQUIREMENT) {
+    const service = requiredIntakeService(context);
     const snapshot = service.createRequirement(input);
     const requirement = latestIntake(context.db, 'requirements', input.projectId);
     return {
@@ -166,7 +288,15 @@ async function runTool(name, input, context) {
       snapshot: snapshotSummary(snapshot),
     };
   }
+  if (name === MCP_TOOL_NAMES.LIST_FEEDBACK) {
+    requiredProject(requiredLoop(context), input.projectId);
+    return {
+      projectId: input.projectId,
+      feedback: listIntakeRows(requiredDb(context), 'feedback', input).map((row) => intakeDetail(row)),
+    };
+  }
   if (name === MCP_TOOL_NAMES.CREATE_FEEDBACK) {
+    const service = requiredIntakeService(context);
     const snapshot = service.createFeedback(input);
     const feedback = latestIntake(context.db, 'feedback', input.projectId);
     return {
@@ -176,15 +306,81 @@ async function runTool(name, input, context) {
       snapshot: snapshotSummary(snapshot),
     };
   }
-  throw new Error(`未知 MCP 工具：${name}`);
+  if (name === MCP_TOOL_NAMES.LIST_PLANS) {
+    requiredProject(requiredLoop(context), input.projectId);
+    return {
+      projectId: input.projectId,
+      plans: listPlanRows(requiredDb(context), input).map((plan) => planSummary(plan)),
+    };
+  }
+  if (name === MCP_TOOL_NAMES.GET_PLAN) {
+    requiredProject(requiredLoop(context), input.projectId);
+    const db = requiredDb(context);
+    const plan = requiredPlan(db, input.projectId, input.planId);
+    return {
+      projectId: input.projectId,
+      plan: planSummary(plan),
+      tasks: listTaskRows(db, { projectId: input.projectId, planId: input.planId, limit: LIMITS.rows }).map((task) => taskSummary(task)),
+    };
+  }
+  if (name === MCP_TOOL_NAMES.LIST_TASKS) {
+    requiredProject(requiredLoop(context), input.projectId);
+    const db = requiredDb(context);
+    if (input.planId) requiredPlan(db, input.projectId, input.planId);
+    return {
+      projectId: input.projectId,
+      tasks: listTaskRows(db, input).map((task) => taskSummary(task)),
+    };
+  }
+  if (name === MCP_TOOL_NAMES.START_LOOP) {
+    const loop = requiredLoop(context);
+    requiredProject(loop, input.projectId);
+    loop.start(input.projectId);
+    return {
+      projectId: input.projectId,
+      snapshot: snapshotSummary(loop.snapshot(input.projectId)),
+    };
+  }
+  if (name === MCP_TOOL_NAMES.STOP_LOOP) {
+    const loop = requiredLoop(context);
+    requiredProject(loop, input.projectId);
+    loop.stop(input.projectId);
+    return {
+      projectId: input.projectId,
+      snapshot: snapshotSummary(loop.snapshot(input.projectId)),
+    };
+  }
+  throw new Error(`Unknown MCP tool: ${name}`);
 }
 
 function validateToolInput(name, input) {
-  assertPlainObject(input, '入参必须是对象');
+  assertPlainObject(input, 'Input must be an object');
+  if (name === MCP_TOOL_NAMES.LIST_PROJECTS) return validateListProjectsInput(input);
+  if (name === MCP_TOOL_NAMES.GET_PROJECT) return validateProjectIdInput(input);
   if (name === MCP_TOOL_NAMES.CREATE_PROJECT) return validateCreateProjectInput(input);
+  if (name === MCP_TOOL_NAMES.LIST_REQUIREMENTS) return validateListIntakesInput(input);
   if (name === MCP_TOOL_NAMES.CREATE_REQUIREMENT) return validateCreateRequirementInput(input);
+  if (name === MCP_TOOL_NAMES.LIST_FEEDBACK) return validateListIntakesInput(input);
   if (name === MCP_TOOL_NAMES.CREATE_FEEDBACK) return validateCreateFeedbackInput(input);
-  throw new Error(`未知 MCP 工具：${name}`);
+  if (name === MCP_TOOL_NAMES.LIST_PLANS) return validateListPlansInput(input);
+  if (name === MCP_TOOL_NAMES.GET_PLAN) return validateGetPlanInput(input);
+  if (name === MCP_TOOL_NAMES.LIST_TASKS) return validateListTasksInput(input);
+  if (name === MCP_TOOL_NAMES.START_LOOP) return validateProjectIdInput(input);
+  if (name === MCP_TOOL_NAMES.STOP_LOOP) return validateProjectIdInput(input);
+  throw new Error(`Unknown MCP tool: ${name}`);
+}
+
+function validateListProjectsInput(input) {
+  return stripUndefined({
+    query: optionalString(input, 'query', LIMITS.query),
+    limit: optionalLimit(input),
+  });
+}
+
+function validateProjectIdInput(input) {
+  return {
+    projectId: requiredPositiveInteger(input, 'projectId'),
+  };
 }
 
 function validateCreateProjectInput(input) {
@@ -193,6 +389,14 @@ function validateCreateProjectInput(input) {
     workspacePath: requiredString(input, 'workspacePath', LIMITS.workspacePath),
     description: optionalString(input, 'description', LIMITS.description),
     ...validatedAgentCliInput(input),
+  });
+}
+
+function validateListIntakesInput(input) {
+  return stripUndefined({
+    projectId: requiredPositiveInteger(input, 'projectId'),
+    status: optionalEnum(input, 'status', INTAKE_STATUSES),
+    limit: optionalLimit(input),
   });
 }
 
@@ -221,6 +425,30 @@ function validateCreateFeedbackInput(input) {
   });
 }
 
+function validateListPlansInput(input) {
+  return stripUndefined({
+    projectId: requiredPositiveInteger(input, 'projectId'),
+    status: optionalEnum(input, 'status', PLAN_STATUSES),
+    limit: optionalLimit(input),
+  });
+}
+
+function validateGetPlanInput(input) {
+  return {
+    projectId: requiredPositiveInteger(input, 'projectId'),
+    planId: requiredPositiveInteger(input, 'planId'),
+  };
+}
+
+function validateListTasksInput(input) {
+  return stripUndefined({
+    projectId: requiredPositiveInteger(input, 'projectId'),
+    planId: optionalPositiveInteger(input, 'planId'),
+    status: optionalEnum(input, 'status', TASK_STATUSES),
+    limit: optionalLimit(input),
+  });
+}
+
 function validatedAgentCliInput(input) {
   return stripUndefined({
     agentCliProvider: optionalEnum(input, 'agentCliProvider', AGENT_CLI_PROVIDERS),
@@ -231,13 +459,13 @@ function validatedAgentCliInput(input) {
 
 function optionalAttachments(input) {
   if (input.attachments === undefined) return [];
-  if (!Array.isArray(input.attachments)) throw new Error('attachments 必须是数组');
-  if (input.attachments.length > LIMITS.attachments) throw new Error(`attachments 最多支持 ${LIMITS.attachments} 个`);
+  if (!Array.isArray(input.attachments)) throw new Error('attachments must be an array');
+  if (input.attachments.length > LIMITS.attachments) throw new Error(`attachments supports at most ${LIMITS.attachments} items`);
   return input.attachments.map((attachment, index) => validateAttachment(attachment, index));
 }
 
 function validateAttachment(attachment, index) {
-  assertPlainObject(attachment, `attachments[${index}] 必须是对象`);
+  assertPlainObject(attachment, `attachments[${index}] must be an object`);
   const normalized = stripUndefined({
     name: optionalString(attachment, 'name', LIMITS.attachmentName),
     size: optionalNonNegativeInteger(attachment, 'size'),
@@ -250,15 +478,15 @@ function validateAttachment(attachment, index) {
     bytes: optionalByteArray(attachment, 'bytes'),
   });
   if (!normalized.path && !normalized.dataUrl && !normalized.base64 && !normalized.dataBase64 && !normalized.bytes && !normalized.name) {
-    throw new Error(`attachments[${index}] 至少需要 name 占位信息，或 path、dataUrl、base64、dataBase64、bytes 之一`);
+    throw new Error(`attachments[${index}] needs name, path, dataUrl, base64, dataBase64, or bytes`);
   }
   return normalized;
 }
 
 function requiredString(input, key, maxLength) {
-  if (!Object.prototype.hasOwnProperty.call(input, key)) throw new Error(`${key} 为必填字符串`);
+  if (!Object.prototype.hasOwnProperty.call(input, key)) throw new Error(`${key} is required`);
   const value = stringValue(input[key], key, maxLength);
-  if (!value) throw new Error(`${key} 不能为空`);
+  if (!value) throw new Error(`${key} cannot be empty`);
   return value;
 }
 
@@ -268,57 +496,66 @@ function optionalString(input, key, maxLength) {
 }
 
 function stringValue(value, key, maxLength) {
-  if (typeof value !== 'string') throw new Error(`${key} 必须是字符串`);
+  if (typeof value !== 'string') throw new Error(`${key} must be a string`);
   const trimmed = value.trim();
-  if (trimmed.length > maxLength) throw new Error(`${key} 长度不能超过 ${maxLength} 个字符`);
+  if (trimmed.length > maxLength) throw new Error(`${key} cannot exceed ${maxLength} characters`);
   return trimmed;
 }
 
 function requiredPositiveInteger(input, key) {
   const value = positiveIntegerValue(input[key], key);
-  if (!value) throw new Error(`${key} 必须是大于 0 的整数`);
+  if (!value) throw new Error(`${key} must be an integer greater than 0`);
   return value;
 }
 
 function optionalPositiveInteger(input, key, options = {}) {
-  if (input[key] === undefined || (options.nullable && input[key] === null)) return null;
+  if (input[key] === undefined) return undefined;
+  if (input[key] === null && options.nullable) return null;
   const value = positiveIntegerValue(input[key], key);
-  if (!value) throw new Error(`${key} 必须是大于 0 的整数`);
+  if (!value) throw new Error(`${key} must be an integer greater than 0`);
   return value;
 }
 
 function positiveIntegerValue(value, key) {
-  if (typeof value !== 'number' || !Number.isInteger(value)) throw new Error(`${key} 必须是整数`);
+  if (typeof value !== 'number' || !Number.isInteger(value)) throw new Error(`${key} must be an integer`);
   return value > 0 ? value : 0;
+}
+
+function optionalLimit(input) {
+  if (input.limit === undefined || input.limit === null) return 100;
+  if (typeof input.limit !== 'number' || !Number.isInteger(input.limit) || input.limit < 1 || input.limit > LIMITS.rows) {
+    throw new Error(`limit must be an integer from 1 to ${LIMITS.rows}`);
+  }
+  return input.limit;
 }
 
 function optionalBoolean(input, key) {
   if (input[key] === undefined || input[key] === null) return undefined;
-  if (typeof input[key] !== 'boolean') throw new Error(`${key} 必须是布尔值`);
+  if (typeof input[key] !== 'boolean') throw new Error(`${key} must be a boolean`);
   return input[key];
 }
 
 function optionalNonNegativeInteger(input, key) {
   if (input[key] === undefined || input[key] === null) return undefined;
   if (typeof input[key] !== 'number' || !Number.isInteger(input[key]) || input[key] < 0) {
-    throw new Error(`${key} 必须是大于等于 0 的整数`);
+    throw new Error(`${key} must be a non-negative integer`);
   }
   return input[key];
 }
 
 function optionalEnum(input, key, values) {
   if (input[key] === undefined || input[key] === null) return undefined;
-  if (typeof input[key] !== 'string') throw new Error(`${key} 必须是字符串`);
-  if (!values.includes(input[key])) throw new Error(`${key} 必须是以下值之一：${values.join(', ')}`);
+  if (typeof input[key] !== 'string') throw new Error(`${key} must be a string`);
+  if (!values.includes(input[key])) throw new Error(`${key} must be one of: ${values.join(', ')}`);
   return input[key];
 }
 
 function optionalByteArray(input, key) {
   if (input[key] === undefined || input[key] === null) return undefined;
-  if (!Array.isArray(input[key])) throw new Error(`${key} 必须是字节数组`);
-  if (input[key].length > LIMITS.attachmentData) throw new Error(`${key} 长度不能超过 ${LIMITS.attachmentData}`);
+  if (!Array.isArray(input[key])) throw new Error(`${key} must be a byte array`);
+  if (input[key].length > LIMITS.attachmentData) throw new Error(`${key} cannot exceed ${LIMITS.attachmentData} bytes`);
   for (const value of input[key]) {
-    if (!Number.isInteger(value) || value < 0 || value > 255) throw new Error(`${key} 每一项必须是 0-255 的整数`);
+    if (!Number.isInteger(value) || value < 0 || value > 255) throw new Error(`${key} items must be integers from 0 to 255`);
   }
   return input[key];
 }
@@ -331,14 +568,131 @@ function stripUndefined(value) {
   return Object.fromEntries(Object.entries(value).filter((entry) => entry[1] !== undefined));
 }
 
+function requiredDb(context) {
+  if (!context?.db) throw new Error('MCP database is not initialized');
+  return context.db;
+}
+
+function requiredLoop(context) {
+  if (!context?.loop) throw new Error('MCP loop service is not initialized');
+  return context.loop;
+}
+
 function requiredIntakeService(context) {
-  if (!context?.intakeService) throw new Error('MCP 工具服务尚未初始化');
+  if (!context?.intakeService) throw new Error('MCP intake service is not initialized');
   return context.intakeService;
+}
+
+function requiredProject(loop, projectId) {
+  if (!loop) throw new Error('MCP loop service is not initialized');
+  const project = loop.project(projectId);
+  if (!project) throw new Error('Project not found');
+  return project;
+}
+
+function requiredPlan(db, projectId, planId) {
+  const plan = db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
+  if (!plan) throw new Error('Plan not found');
+  return plan;
 }
 
 function latestIntake(db, table, projectId) {
   if (!db) return null;
   return db.get(`SELECT * FROM ${table} WHERE project_id = ? ORDER BY id DESC LIMIT 1`, [projectId]);
+}
+
+function listProjectRows(db, input) {
+  const params = [];
+  let where = '';
+  if (input.query) {
+    where = 'WHERE name LIKE ? OR workspace_path LIKE ? OR description LIKE ?';
+    const query = `%${input.query}%`;
+    params.push(query, query, query);
+  }
+  params.push(input.limit || 100);
+  return db.all(`SELECT * FROM projects ${where} ORDER BY updated_at DESC, id DESC LIMIT ?`, params);
+}
+
+function listIntakeRows(db, table, input) {
+  const params = [input.projectId];
+  let statusClause = '';
+  if (input.status) {
+    statusClause = ' AND status = ?';
+    params.push(input.status);
+  }
+  params.push(input.limit || 100);
+  return db.all(
+    `SELECT * FROM ${table}
+     WHERE project_id = ?${statusClause}
+     ORDER BY updated_at DESC, id DESC
+     LIMIT ?`,
+    params,
+  );
+}
+
+function listPlanRows(db, input) {
+  const params = [input.projectId];
+  let statusClause = '';
+  if (input.status) {
+    statusClause = ' AND status = ?';
+    params.push(input.status);
+  }
+  params.push(input.limit || 100);
+  return db.all(
+    `SELECT * FROM plans
+     WHERE project_id = ?${statusClause}
+     ORDER BY sort_order ASC, created_at ASC, id ASC
+     LIMIT ?`,
+    params,
+  );
+}
+
+function listTaskRows(db, input) {
+  const params = [input.projectId];
+  let filterClause = '';
+  if (input.planId) {
+    filterClause += ' AND plan_tasks.plan_id = ?';
+    params.push(input.planId);
+  }
+  if (input.status) {
+    filterClause += ' AND plan_tasks.status = ?';
+    params.push(input.status);
+  }
+  params.push(input.limit || 100);
+  return db.all(
+    `SELECT plan_tasks.*, plans.project_id, plans.file_path AS plan_file_path
+     FROM plan_tasks
+     JOIN plans ON plans.id = plan_tasks.plan_id
+     WHERE plans.project_id = ?${filterClause}
+     ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC,
+              plan_tasks.sort_order ASC, plan_tasks.id ASC
+     LIMIT ?`,
+    params,
+  );
+}
+
+function projectSummary(project, loop = null) {
+  const state = loop?.status ? loop.status(project.id) : null;
+  return {
+    id: project.id,
+    name: project.name,
+    workspacePath: project.workspace_path || '',
+    description: project.description || '',
+    createdAt: project.created_at,
+    updatedAt: project.updated_at,
+    state: state ? stateSummary(state) : null,
+  };
+}
+
+function stateSummary(state) {
+  return {
+    running: Boolean(state.running),
+    phase: state.phase || 'idle',
+    intervalSeconds: Number(state.interval_seconds || 5),
+    validationCommand: state.validation_command || '',
+    agentCliProvider: state.agent_cli_provider || null,
+    codexReasoningEffort: state.codex_reasoning_effort || null,
+  };
 }
 
 function intakeSummary(record) {
@@ -347,10 +701,63 @@ function intakeSummary(record) {
     id: record.id,
     projectId: record.project_id,
     requirementId: record.requirement_id || null,
+    linkedPlanId: record.linked_plan_id || null,
     title: record.title,
     status: record.status,
     createdAt: record.created_at,
     updatedAt: record.updated_at,
+  };
+}
+
+function intakeDetail(record) {
+  if (!record) return null;
+  return {
+    ...intakeSummary(record),
+    body: record.body || '',
+    agentCliProvider: record.agent_cli_provider || null,
+    agentCliCommand: record.agent_cli_command || '',
+    codexReasoningEffort: record.codex_reasoning_effort || null,
+  };
+}
+
+function planSummary(plan) {
+  if (!plan) return null;
+  return {
+    id: plan.id,
+    projectId: plan.project_id,
+    issueHash: plan.issue_hash || '',
+    filePath: plan.file_path || '',
+    hash: plan.hash || '',
+    status: plan.status || 'pending',
+    sortOrder: Number(plan.sort_order || 0),
+    totalTasks: Number(plan.total_tasks || 0),
+    completedTasks: Number(plan.completed_tasks || 0),
+    validationPassed: Boolean(plan.validation_passed),
+    agentCliProvider: plan.agent_cli_provider || null,
+    agentCliCommand: plan.agent_cli_command || '',
+    codexReasoningEffort: plan.codex_reasoning_effort || null,
+    createdAt: plan.created_at,
+    updatedAt: plan.updated_at,
+  };
+}
+
+function taskSummary(task) {
+  if (!task) return null;
+  return {
+    id: task.id,
+    projectId: task.project_id || null,
+    planId: task.plan_id,
+    planFilePath: task.plan_file_path || task.file_path || '',
+    taskKey: task.task_key,
+    title: task.title,
+    rawLine: task.raw_line,
+    scope: task.scope || '',
+    status: task.status || 'pending',
+    sortOrder: Number(task.sort_order || 0),
+    startedAt: task.started_at || null,
+    finishedAt: task.finished_at || null,
+    durationMs: Number(task.duration_ms || 0),
+    codexSessionId: task.codex_session_id || null,
   };
 }
 
@@ -363,13 +770,7 @@ function snapshotSummary(snapshot = {}) {
       workspacePath: snapshot.activeProject.workspace_path || '',
       description: snapshot.activeProject.description || '',
     } : null,
-    state: snapshot.state ? {
-      running: Boolean(snapshot.state.running),
-      phase: snapshot.state.phase || 'idle',
-      validationCommand: snapshot.state.validation_command || '',
-      agentCliProvider: snapshot.state.agent_cli_provider || null,
-      codexReasoningEffort: snapshot.state.codex_reasoning_effort || null,
-    } : null,
+    state: snapshot.state ? stateSummary(snapshot.state) : null,
     counts: {
       projects: countOf(snapshot.projects),
       requirements: countOf(snapshot.requirements),
@@ -393,7 +794,7 @@ function toolResult(result) {
 }
 
 function toolError(error) {
-  const message = error?.message || String(error || '未知错误');
+  const message = error?.message || String(error || 'Unknown error');
   return {
     isError: true,
     content: [{ type: 'text', text: message }],
@@ -406,6 +807,28 @@ function attachmentArraySchema() {
     type: 'array',
     maxItems: LIMITS.attachments,
     items: ATTACHMENT_INPUT_SCHEMA,
+  };
+}
+
+function intakeListSchema(statusValues) {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['projectId'],
+    properties: {
+      ...PROJECT_ID_SCHEMA,
+      status: { type: 'string', enum: statusValues },
+      ...LIMIT_SCHEMA,
+    },
+  };
+}
+
+function projectActionSchema() {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: ['projectId'],
+    properties: PROJECT_ID_SCHEMA,
   };
 }
 

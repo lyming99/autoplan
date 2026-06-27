@@ -1,0 +1,1118 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: medium
+reasoning summaries: none
+session id: 019f0993-4d92-7d32-987f-fe648a26fca3
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_37_20260627-225309.md
+指定任务：- [ ] P002: 隐藏计划阅读任务拆解摘要 <!-- scope: src/renderer/components/plans/PlanList.tsx -->
+任务 scope：src/renderer/components/plans/planlist.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Modifying the PlanList**
+
+I need to focus on modifying the PlanList and consider referencing some prior information, but I can only use what's relevant. I should remove the task summary block and any variables or functions that aren't currently in use. It's important to be cautious with any existing user modifications. I’ll apply a patch, but I don’t need to conduct any tests at this point. I wonder if I should check AGENTS later. Do I need a list?
+codex
+我会沿用 P001 结论，只在 `PlanList.tsx` 移除独立任务拆解摘要。
+  → 确认当前文件状态
+  • 移除摘要展示区块
+  • 清理未用代码
+  • 检查限定改动
+exec
+powershell.exe -Command 'Get-ChildItem -Force -Filter AGENTS.md -Path .; $i=0; Get-Content -LiteralPath '"'src\\renderer\\components\\plans\\PlanList.tsx' -Encoding UTF8 | ForEach-Object { "'$i++; if (($i -ge 70 -and $i -le 140) -or ($i -ge 400 -and $i -le 480)) { '"'{0,4}: {1}' -f "'$i, $_ } }' in D:\project\GitHub\autoplan
+ succeeded in 575ms:
+  70:   if (state === 'running') return 'chip-running';
+  71:   if (state === 'draft') return 'chip-waiting';
+  72:   return 'chip-pending';
+  73: }
+  74: 
+  75: function readPlanTaskStatusLabel(status: string) {
+  76:   if (status === 'completed') return '已完成';
+  77:   if (status === 'running') return '执行中';
+  78:   if (status === 'blocked') return '已阻塞';
+  79:   if (status === 'failed') return '失败';
+  80:   return '待执行';
+  81: }
+  82: 
+  83: function readPlanTaskScopeLabel(task: ReadPlanTask) {
+  84:   return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+  85: }
+  86: 
+  87: function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+  88:   if (!result) return false;
+  89:   return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+  90: }
+  91: 
+  92: 
+  93: export function PlanList({
+  94:   emptyText = '暂无 plan。',
+  95:   latestReadingPlan,
+  96:   onCloseReader,
+  97:   onOpenReader,
+  98:   onRunParallel,
+  99:   onRefreshReader,
+ 100:   plans,
+ 101:   readerState,
+ 102:   renderPlanControls,
+ 103:   selectedPlanId,
+ 104:   tasks = [],
+ 105:   totalPlanCount = plans.length,
+ 106: }: {
+ 107:   emptyText?: string;
+ 108:   latestReadingPlan?: Plan | null;
+ 109:   onCloseReader: () => void;
+ 110:   onOpenReader: (plan: Plan) => void;
+ 111:   onRunParallel?: (request: ParallelRunRequest) => void;
+ 112:   onRefreshReader: () => void;
+ 113:   plans: Plan[];
+ 114:   readerState: WorkspacePlanReadState;
+ 115:   renderPlanControls?: (plan: Plan) => ReactNode;
+ 116:   selectedPlanId?: number | null;
+ 117:   tasks?: PlanTask[];
+ 118:   totalPlanCount?: number;
+ 119: }) {
+ 120:   const readingPlan = readerState.plan;
+ 121:   const planReadResult = readerState.result;
+ 122:   const planReadError = readerState.error;
+ 123:   const planReading = readerState.loading;
+ 124:   const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+ 125:   const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+ 126:   const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+ 127:   const readerPlanForSummary = latestReadingPlan || readingPlan;
+ 128:   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+ 129:   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+ 130:   const readerTasks = planReadResult?.tasks || [];
+ 131:   const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+ 132:   const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+ 133:   const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+ 134:   const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+ 135:   const readerDialogId = useId();
+ 136:   const readerTitleId = useId();
+ 137:   const readerDescriptionId = useId();
+ 138:   const readerContentId = useId();
+ 139:   const readerDialogRef = useRef<HTMLDivElement>(null);
+ 140:   const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+ 400:               </div>
+ 401:             </div>
+ 402:             <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+ 403:               <dl className="plan-reader-summary" aria-label="Plan 摘要">
+ 404:                 <div className="plan-reader-summary-item">
+ 405:                   <dt>状态</dt>
+ 406:                   <dd>{readingPlan.status}</dd>
+ 407:                 </div>
+ 408:                 <div className="plan-reader-summary-item">
+ 409:                   <dt>CLI</dt>
+ 410:                   <dd>{readerCliSummary || '-'}</dd>
+ 411:                 </div>
+ 412:                 <div className="plan-reader-summary-item">
+ 413:                   <dt>更新时间</dt>
+ 414:                   <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+ 415:                 </div>
+ 416:                 <div className="plan-reader-summary-item">
+ 417:                   <dt>哈希</dt>
+ 418:                   <dd className="mono" title={readerHash}>
+ 419:                     {readerHash?.slice(0, 12) || '-'}
+ 420:                   </dd>
+ 421:                 </div>
+ 422:                 <div className="plan-reader-summary-item">
+ 423:                   <dt>任务拆解</dt>
+ 424:                   <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+ 425:                 </div>
+ 426:               </dl>
+ 427: 
+ 428:               {latestPlanUpdated ? (
+ 429:                 <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+ 430:                   Plan 列表信息已更新，可刷新读取最新正文。
+ 431:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 432:                     刷新读取
+ 433:                   </button>
+ 434:                 </div>
+ 435:               ) : null}
+ 436:               {planReadError ? (
+ 437:                 <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+ 438:                   <span>{planReadError}</span>
+ 439:                   <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+ 440:                     重试
+ 441:                   </button>
+ 442:                 </div>
+ 443:               ) : null}
+ 444:               {planReading ? (
+ 445:                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+ 446:                   正在读取 Plan 全文…
+ 447:                 </div>
+ 448:               ) : null}
+ 449:               {!planReading && !planReadError && planReadResult ? (
+ 450:                 <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+ 451:                   <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+ 452:                     {readerTaskParseMessage}
+ 453:                   </div>
+ 454:                   {readerTasks.length ? (
+ 455:                     <ul className="list compact" aria-label="已解析任务列表">
+ 456:                       {readerTasks.map((task) => (
+ 457:                         <li key={task.id} className="task-scope-chip">
+ 458:                           <span className="mono">{task.task_key}</span>
+ 459:                           <span>{task.title}</span>
+ 460:                           <small>{readPlanTaskStatusLabel(task.status)}</small>
+ 461:                           <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+ 462:                         </li>
+ 463:                       ))}
+ 464:                     </ul>
+ 465:                   ) : null}
+ 466:                 </section>
+ 467:               ) : null}
+ 468:               {!planReading && !planReadError ? (
+ 469:                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+ 470:                   <MarkdownReader
+ 471:                     markdown={planReadResult?.markdown ?? ''}
+ 472:                     emptyMessage="暂无计划正文"
+ 473:                     ariaLabel="Plan Markdown 正文内容"
+ 474:                   />
+ 475:                 </section>
+ 476:               ) : null}
+ 477:             </div>
+ 478:           </div>
+ 479:         </div>
+ 480:       ) : null}
+
+codex
+现在移除摘要区块和对应未用计算，保留刷新、错误、加载与正文阅读。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\plans\PlanList.tsx
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 77f8679e57acdf46f7c13d279c84d012a6044b7c..a41d2c8c5bc8066e44f6b4b8d2270cf493feb4f2
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent, ReactNode } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+ import { formatChinaDateTime } from '../../utils/time';
+@@ -70,25 +70,7 @@
+   if (state === 'running') return 'chip-running';
+   if (state === 'draft') return 'chip-waiting';
+   return 'chip-pending';
+-}
+-
+-function readPlanTaskStatusLabel(status: string) {
+-  if (status === 'completed') return '已完成';
+-  if (status === 'running') return '执行中';
+-  if (status === 'blocked') return '已阻塞';
+-  if (status === 'failed') return '失败';
+-  return '待执行';
+-}
+-
+-function readPlanTaskScopeLabel(task: ReadPlanTask) {
+-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+-}
+-
+-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+-  if (!result) return false;
+-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+ }
+-
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -127,11 +109,6 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+-  const readerTasks = planReadResult?.tasks || [];
+-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -418,10 +395,6 @@
+                   <dd className="mono" title={readerHash}>
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+-                </div>
+-                <div className="plan-reader-summary-item">
+-                  <dt>任务拆解</dt>
+-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                 </div>
+               </dl>
+ 
+@@ -445,25 +418,6 @@
+                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                   正在读取 Plan 全文…
+                 </div>
+-              ) : null}
+-              {!planReading && !planReadError && planReadResult ? (
+-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+-                    {readerTaskParseMessage}
+-                  </div>
+-                  {readerTasks.length ? (
+-                    <ul className="list compact" aria-label="已解析任务列表">
+-                      {readerTasks.map((task) => (
+-                        <li key={task.id} className="task-scope-chip">
+-                          <span className="mono">{task.task_key}</span>
+-                          <span>{task.title}</span>
+-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+-                        </li>
+-                      ))}
+-                    </ul>
+-                  ) : null}
+-                </section>
+               ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 77f8679e57acdf46f7c13d279c84d012a6044b7c..a41d2c8c5bc8066e44f6b4b8d2270cf493feb4f2
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent, ReactNode } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+ import { formatChinaDateTime } from '../../utils/time';
+@@ -70,25 +70,7 @@
+   if (state === 'running') return 'chip-running';
+   if (state === 'draft') return 'chip-waiting';
+   return 'chip-pending';
+-}
+-
+-function readPlanTaskStatusLabel(status: string) {
+-  if (status === 'completed') return '已完成';
+-  if (status === 'running') return '执行中';
+-  if (status === 'blocked') return '已阻塞';
+-  if (status === 'failed') return '失败';
+-  return '待执行';
+-}
+-
+-function readPlanTaskScopeLabel(task: ReadPlanTask) {
+-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+-}
+-
+-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+-  if (!result) return false;
+-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+ }
+-
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -127,11 +109,6 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+-  const readerTasks = planReadResult?.tasks || [];
+-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -418,10 +395,6 @@
+                   <dd className="mono" title={readerHash}>
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+-                </div>
+-                <div className="plan-reader-summary-item">
+-                  <dt>任务拆解</dt>
+-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                 </div>
+               </dl>
+ 
+@@ -445,25 +418,6 @@
+                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                   正在读取 Plan 全文…
+                 </div>
+-              ) : null}
+-              {!planReading && !planReadError && planReadResult ? (
+-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+-                    {readerTaskParseMessage}
+-                  </div>
+-                  {readerTasks.length ? (
+-                    <ul className="list compact" aria-label="已解析任务列表">
+-                      {readerTasks.map((task) => (
+-                        <li key={task.id} className="task-scope-chip">
+-                          <span className="mono">{task.task_key}</span>
+-                          <span>{task.title}</span>
+-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+-                        </li>
+-                      ))}
+-                    </ul>
+-                  ) : null}
+-                </section>
+               ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+
+**Checking for leftovers**
+
+I noticed a warning from the tool via the shell, but it seems like everything is done. Let's check if there are any limitations, as I might not be able to test thoroughly. I think I’ll use the `rg` command to make sure there are no leftovers in the file. It's always good to be cautious and make sure everything is clean. Better safe than sorry!
+codex
+摘要已移除；我会做一次轻量文本检查，确保没有遗留未用引用。
+  ✓ 确认当前文件状态
+  ✓ 移除摘要展示区块
+  → 清理未用代码
+  • 检查限定改动
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 77f8679e57acdf46f7c13d279c84d012a6044b7c..a41d2c8c5bc8066e44f6b4b8d2270cf493feb4f2
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent, ReactNode } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+ import { formatChinaDateTime } from '../../utils/time';
+@@ -70,25 +70,7 @@
+   if (state === 'running') return 'chip-running';
+   if (state === 'draft') return 'chip-waiting';
+   return 'chip-pending';
+-}
+-
+-function readPlanTaskStatusLabel(status: string) {
+-  if (status === 'completed') return '已完成';
+-  if (status === 'running') return '执行中';
+-  if (status === 'blocked') return '已阻塞';
+-  if (status === 'failed') return '失败';
+-  return '待执行';
+-}
+-
+-function readPlanTaskScopeLabel(task: ReadPlanTask) {
+-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+-}
+-
+-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+-  if (!result) return false;
+-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+ }
+-
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -127,11 +109,6 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+-  const readerTasks = planReadResult?.tasks || [];
+-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -418,10 +395,6 @@
+                   <dd className="mono" title={readerHash}>
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+-                </div>
+-                <div className="plan-reader-summary-item">
+-                  <dt>任务拆解</dt>
+-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                 </div>
+               </dl>
+ 
+@@ -445,25 +418,6 @@
+                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                   正在读取 Plan 全文…
+                 </div>
+-              ) : null}
+-              {!planReading && !planReadError && planReadResult ? (
+-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+-                    {readerTaskParseMessage}
+-                  </div>
+-                  {readerTasks.length ? (
+-                    <ul className="list compact" aria-label="已解析任务列表">
+-                      {readerTasks.map((task) => (
+-                        <li key={task.id} className="task-scope-chip">
+-                          <span className="mono">{task.task_key}</span>
+-                          <span>{task.title}</span>
+-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+-                        </li>
+-                      ))}
+-                    </ul>
+-                  ) : null}
+-                </section>
+               ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+
+exec
+powershell.exe -Command 'rg -n "ReadPlanTask|readPlanTask|hasReaderTaskParseWarning|readerTask|plan-reader-task-summary|任务拆解解析结果|已解析任务列表|task_parse" src/renderer/components/plans/PlanList.tsx; git diff -- src/renderer/components/plans/PlanList.tsx --stat' in D:\project\GitHub\autoplan
+ succeeded in 1688ms:
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 79e69d9..a41d2c8 100644
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,7 +1,6 @@
+-import type { KeyboardEvent } from 'react';
++import type { KeyboardEvent, ReactNode } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
+-import { RecordCard } from '../IntakePanel';
++import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+ import { formatChinaDateTime } from '../../utils/time';
+@@ -53,24 +52,26 @@ function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+   return '';
+ }
+ 
+-function readPlanTaskStatusLabel(status: string) {
+-  if (status === 'completed') return '已完成';
+-  if (status === 'running') return '执行中';
+-  if (status === 'blocked') return '已阻塞';
+-  if (status === 'failed') return '失败';
+-  return '待执行';
++function getPlanProgressPercent(plan: Plan) {
++  const total = Math.max(0, Number(plan.total_tasks || 0));
++  if (!total) return 0;
++  return Math.max(0, Math.min(100, Math.round((Number(plan.completed_tasks || 0) / total) * 100)));
+ }
+ 
+-function readPlanTaskScopeLabel(task: ReadPlanTask) {
+-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
++function planCardState(plan: Plan, hasRunningTask: boolean) {
++  if (plan.is_draft || plan.status === 'draft') return 'draft';
++  if (plan.validation_passed || plan.status === 'completed') return 'completed';
++  if (hasRunningTask || plan.status === 'running') return 'running';
++  return 'active';
+ }
+ 
+-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+-  if (!result) return false;
+-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
++function planCardChipClass(state: string) {
++  if (state === 'completed') return 'chip-completed';
++  if (state === 'running') return 'chip-running';
++  if (state === 'draft') return 'chip-waiting';
++  return 'chip-pending';
+ }
+ 
+-
+ export function PlanList({
+   emptyText = '暂无 plan。',
+   latestReadingPlan,
+@@ -80,6 +81,8 @@ export function PlanList({
+   onRefreshReader,
+   plans,
+   readerState,
++  renderPlanControls,
++  selectedPlanId,
+   tasks = [],
+   totalPlanCount = plans.length,
+ }: {
+@@ -91,6 +94,8 @@ export function PlanList({
+   onRefreshReader: () => void;
+   plans: Plan[];
+   readerState: WorkspacePlanReadState;
++  renderPlanControls?: (plan: Plan) => ReactNode;
++  selectedPlanId?: number | null;
+   tasks?: PlanTask[];
+   totalPlanCount?: number;
+ }) {
+@@ -104,11 +109,6 @@ export function PlanList({
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+-  const readerTasks = planReadResult?.tasks || [];
+-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -181,14 +181,12 @@ export function PlanList({
+   return (
+     <>
+       {plans.length ? (
+-        <div className="list compact">
++        <div className="list compact plan-card-list">
+           {plans.map((plan) => {
+             const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+             const durationSummary = formatPlanDurationSummary(planTasks);
+             const title = planTitle(plan);
+-            const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+-              plan.validation_passed ? 'passed' : 'pending'
+-            }`;
++            const progressPercent = getPlanProgressPercent(plan);
+             const cliSummary = planCliSummaryLabel(plan);
+             const readingThisPlan = Boolean(
+               readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+@@ -198,13 +196,54 @@ export function PlanList({
+             const runningInPlan = planTasks.some((task) => task.status === 'running');
+             const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
+             const canRunParallel = Boolean(onRunParallel && suggestion?.hasSafeParallelBatches && !parallelDisabledReason);
++            const cardState = planCardState(plan, runningInPlan);
++            const selected = selectedPlanId === plan.id;
++            const progressTone = plan.validation_passed || plan.status === 'completed' ? ' success' : runningInPlan ? ' running' : '';
+             return (
+-              <RecordCard
+-                actions={
+-                  <div className="item-actions">
++              <article
++                className={`plan-card ${cardState}${selected ? ' selected' : ''}`}
++                key={plan.id}
++                data-plan-status={cardState}
++                data-selected={selected ? 'true' : undefined}
++              >
++                <div className="plan-top">
++                  <span className={`chip ${planCardChipClass(cardState)}`}>{plan.status}</span>
++                  <span className="plan-path" title={plan.file_path}>{plan.file_path}</span>
++                </div>
++
++                {title ? <div className={`plan-title${cardState === 'draft' ? ' muted' : ''}`} title={title}>{title}</div> : null}
++
++                <div className="plan-progress">
++                  <div className="progress-head">
++                    <span className="ph-left">任务进度</span>
++                    <span className="ph-right">{plan.completed_tasks} / {plan.total_tasks} · {progressPercent}%</span>
++                  </div>
++                  <div className={`progress${progressTone}`} aria-hidden="true">
++                    <span style={{ width: `${progressPercent}%` }} />
++                  </div>
++                  <div className="plan-progress-subline">{durationSummary}</div>
++                </div>
++
++                <div className="concurrency-row">
++                  <span className="conc-item parallel">可并发 <b>{suggestion?.parallelTaskCount || 0}</b></span>
++                  <span className="conc-item batch">建议 <b>{suggestion?.batchCount || 0}</b> 批</span>
++                  <span className="conc-item serial">串行 <b>{suggestion?.serialTaskCount || 0}</b></span>
++                  {parallelDisabledReason ? <span className="conc-item blocked" title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
++                </div>
++
++                <div className="plan-meta">
++                  <span className="cli-tag">{cliSummary}</span>
++                  <span className="meta-dot" />
++                  <span className="mono">{plan.hash?.slice(0, 12) || 'no-hash'}</span>
++                  <span className="meta-dot" />
++                  <span>{formatChinaDateTime(plan.updated_at)}</span>
++                </div>
++
++                <div className="plan-actions">
++                  <div className="plan-primary-actions">
+                     <button
+                       type="button"
+-                      className="btn-link plan-parallel-link"
++                      className="btn btn-sm btn-primary plan-parallel-link"
+                       disabled={!canRunParallel}
+                       title={parallelDisabledReason || undefined}
+                       onClick={() => setConfirmingPlan(plan)}
+@@ -213,7 +252,7 @@ export function PlanList({
+                     </button>
+                     <button
+                       type="button"
+-                      className="btn-link plan-read-link"
++                      className="btn btn-sm plan-read-link"
+                       aria-haspopup="dialog"
+                       aria-controls={readingThisPlan ? readerDialogId : undefined}
+                       aria-expanded={readingThisPlan}
+@@ -224,24 +263,12 @@ export function PlanList({
+                       {disableRead ? '读取中…' : '阅读全文'}
+                     </button>
+                   </div>
+-                }
+-                key={plan.id}
+-                title={plan.file_path}
+-                status={plan.status}
+-                body={
+-                  <div className="plan-list-body">
+-                    {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
+-                    <div className="plan-list-summary">{progressSummary}</div>
+-                    <div className="plan-parallel-summary">
+-                      <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+-                      <span>建议 {suggestion?.batchCount || 0} 批</span>
+-                      <span>串行 {suggestion?.serialTaskCount || 0} 个</span>
+-                      {parallelDisabledReason ? <span title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
+-                    </div>
+-                  </div>
+-                }
+-                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+-              />
++                  {renderPlanControls ? <div className="plan-secondary-actions">{renderPlanControls(plan)}</div> : null}
++                  <span className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}>
++                    验收 {plan.validation_passed ? 'passed' : 'pending'}
++                  </span>
++                </div>
++              </article>
+             );
+           })}
+         </div>
+@@ -369,10 +396,6 @@ export function PlanList({
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+                 </div>
+-                <div className="plan-reader-summary-item">
+-                  <dt>任务拆解</dt>
+-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+-                </div>
+               </dl>
+ 
+               {latestPlanUpdated ? (
+@@ -396,25 +419,6 @@ export function PlanList({
+                   正在读取 Plan 全文…
+                 </div>
+               ) : null}
+-              {!planReading && !planReadError && planReadResult ? (
+-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+-                    {readerTaskParseMessage}
+-                  </div>
+-                  {readerTasks.length ? (
+-                    <ul className="list compact" aria-label="已解析任务列表">
+-                      {readerTasks.map((task) => (
+-                        <li key={task.id} className="task-scope-chip">
+-                          <span className="mono">{task.task_key}</span>
+-                          <span>{task.title}</span>
+-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+-                        </li>
+-                      ))}
+-                    </ul>
+-                  ) : null}
+-                </section>
+-              ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                   <MarkdownReader
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 1
++ rg -n "ReadPlanTask|readPlanTask|hasReaderTaskParseWarning|readerTask ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+warning: in the working copy of 'src/renderer/components/plans/PlanList.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 77f8679e57acdf46f7c13d279c84d012a6044b7c..a41d2c8c5bc8066e44f6b4b8d2270cf493feb4f2
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent, ReactNode } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+ import { formatChinaDateTime } from '../../utils/time';
+@@ -70,25 +70,7 @@
+   if (state === 'running') return 'chip-running';
+   if (state === 'draft') return 'chip-waiting';
+   return 'chip-pending';
+-}
+-
+-function readPlanTaskStatusLabel(status: string) {
+-  if (status === 'completed') return '已完成';
+-  if (status === 'running') return '执行中';
+-  if (status === 'blocked') return '已阻塞';
+-  if (status === 'failed') return '失败';
+-  return '待执行';
+-}
+-
+-function readPlanTaskScopeLabel(task: ReadPlanTask) {
+-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+-}
+-
+-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+-  if (!result) return false;
+-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+ }
+-
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -127,11 +109,6 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+-  const readerTasks = planReadResult?.tasks || [];
+-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -418,10 +395,6 @@
+                   <dd className="mono" title={readerHash}>
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+-                </div>
+-                <div className="plan-reader-summary-item">
+-                  <dt>任务拆解</dt>
+-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                 </div>
+               </dl>
+ 
+@@ -445,25 +418,6 @@
+                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                   正在读取 Plan 全文…
+                 </div>
+-              ) : null}
+-              {!planReading && !planReadError && planReadResult ? (
+-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+-                    {readerTaskParseMessage}
+-                  </div>
+-                  {readerTasks.length ? (
+-                    <ul className="list compact" aria-label="已解析任务列表">
+-                      {readerTasks.map((task) => (
+-                        <li key={task.id} className="task-scope-chip">
+-                          <span className="mono">{task.task_key}</span>
+-                          <span>{task.title}</span>
+-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+-                        </li>
+-                      ))}
+-                    </ul>
+-                  ) : null}
+-                </section>
+               ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+
+**Analyzing command errors**
+
+I’m noticing an interesting command error after running `git diff`. It seems like there's something with the PowerShell alias because it's saying "rg" isn't recognized, even though it did before. Maybe it's a path issue? It ran `git diff` because of the command order. I find it odd that `git diff` shows many previous changes, so I need to clarify that only my changes should be claimed. I might skip running `git diff` entirely and use `Select-String` instead.
+codex
+`rg` 当前环境未识别，我改用 PowerShell 文本查询；不做测试或构建。
+exec
+powershell.exe -Command "Select-String -LiteralPath 'src\\renderer\\components\\plans\\PlanList.tsx' -Pattern 'ReadPlanTask','readPlanTask','hasReaderTaskParseWarning','readerTask','plan-reader-task-summary','任务拆解解析结果','已解析任务列表','task_parse' | ForEach-Object { '{0}:{1}' -f "'$_.LineNumber,$_.Line.Trim() }; git diff --name-only -- src/renderer/components/plans/PlanList.tsx' in D:\project\GitHub\autoplan
+ succeeded in 564ms:
+src/renderer/components/plans/PlanList.tsx
+warning: in the working copy of 'src/renderer/components/plans/PlanList.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 77f8679e57acdf46f7c13d279c84d012a6044b7c..a41d2c8c5bc8066e44f6b4b8d2270cf493feb4f2
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent, ReactNode } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+ import { formatChinaDateTime } from '../../utils/time';
+@@ -70,25 +70,7 @@
+   if (state === 'running') return 'chip-running';
+   if (state === 'draft') return 'chip-waiting';
+   return 'chip-pending';
+-}
+-
+-function readPlanTaskStatusLabel(status: string) {
+-  if (status === 'completed') return '已完成';
+-  if (status === 'running') return '执行中';
+-  if (status === 'blocked') return '已阻塞';
+-  if (status === 'failed') return '失败';
+-  return '待执行';
+-}
+-
+-function readPlanTaskScopeLabel(task: ReadPlanTask) {
+-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+-}
+-
+-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+-  if (!result) return false;
+-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+ }
+-
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -127,11 +109,6 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+-  const readerTasks = planReadResult?.tasks || [];
+-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -418,10 +395,6 @@
+                   <dd className="mono" title={readerHash}>
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+-                </div>
+-                <div className="plan-reader-summary-item">
+-                  <dt>任务拆解</dt>
+-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                 </div>
+               </dl>
+ 
+@@ -445,25 +418,6 @@
+                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                   正在读取 Plan 全文…
+                 </div>
+-              ) : null}
+-              {!planReading && !planReadError && planReadResult ? (
+-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+-                    {readerTaskParseMessage}
+-                  </div>
+-                  {readerTasks.length ? (
+-                    <ul className="list compact" aria-label="已解析任务列表">
+-                      {readerTasks.map((task) => (
+-                        <li key={task.id} className="task-scope-chip">
+-                          <span className="mono">{task.task_key}</span>
+-                          <span>{task.title}</span>
+-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+-                        </li>
+-                      ))}
+-                    </ul>
+-                  ) : null}
+-                </section>
+               ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+
+codex
+限定检查通过：只有 `PlanList.tsx` 在本任务 scope 内涉及本次改动。
+已删除计划阅读弹窗中独立任务拆解摘要与相关未用计算；按要求未运行测试/构建。
+  ✓ 确认当前文件状态
+  ✓ 移除摘要展示区块
+  ✓ 清理未用代码
+  ✓ 检查限定改动
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 77f8679e57acdf46f7c13d279c84d012a6044b7c..a41d2c8c5bc8066e44f6b4b8d2270cf493feb4f2
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent, ReactNode } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+ import { formatChinaDateTime } from '../../utils/time';
+@@ -70,25 +70,7 @@
+   if (state === 'running') return 'chip-running';
+   if (state === 'draft') return 'chip-waiting';
+   return 'chip-pending';
+-}
+-
+-function readPlanTaskStatusLabel(status: string) {
+-  if (status === 'completed') return '已完成';
+-  if (status === 'running') return '执行中';
+-  if (status === 'blocked') return '已阻塞';
+-  if (status === 'failed') return '失败';
+-  return '待执行';
+-}
+-
+-function readPlanTaskScopeLabel(task: ReadPlanTask) {
+-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+-}
+-
+-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+-  if (!result) return false;
+-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+ }
+-
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -127,11 +109,6 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+-  const readerTasks = planReadResult?.tasks || [];
+-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -418,10 +395,6 @@
+                   <dd className="mono" title={readerHash}>
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+-                </div>
+-                <div className="plan-reader-summary-item">
+-                  <dt>任务拆解</dt>
+-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                 </div>
+               </dl>
+ 
+@@ -445,25 +418,6 @@
+                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                   正在读取 Plan 全文…
+                 </div>
+-              ) : null}
+-              {!planReading && !planReadError && planReadResult ? (
+-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+-                    {readerTaskParseMessage}
+-                  </div>
+-                  {readerTasks.length ? (
+-                    <ul className="list compact" aria-label="已解析任务列表">
+-                      {readerTasks.map((task) => (
+-                        <li key={task.id} className="task-scope-chip">
+-                          <span className="mono">{task.task_key}</span>
+-                          <span>{task.title}</span>
+-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+-                        </li>
+-                      ))}
+-                    </ul>
+-                  ) : null}
+-                </section>
+               ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+
+codex
+已完成 P002，仅修改 `src/renderer/components/plans/PlanList.tsx`。
+
+**变更**
+- 移除了计划阅读弹窗顶部摘要里的独立“任务拆解”数量提示。
+- 移除了 Markdown 正文预览前的“任务拆解解析结果”区块、解析提示/警告和已解析任务列表。
+- 清理了因此不再使用的 `ReadPlanTask` 类型、任务状态/Scope 展示 helper、解析警告计算和相关变量。
+
+**保留**
+- 刷新、关闭、读取错误、加载态、文件路径、更新时间、哈希、CLI 摘要继续保留。
+- 任务拆解内容仍通过 `MarkdownReader` 渲染的 Markdown 正文展示。
+
+未修改 plan 文件，未运行测试/构建/lint。
+diff --git a/src/renderer/components/plans/PlanList.tsx b/src/renderer/components/plans/PlanList.tsx
+index 77f8679e57acdf46f7c13d279c84d012a6044b7c..a41d2c8c5bc8066e44f6b4b8d2270cf493feb4f2
+--- a/src/renderer/components/plans/PlanList.tsx
++++ b/src/renderer/components/plans/PlanList.tsx
+@@ -1,6 +1,6 @@
+ import type { KeyboardEvent, ReactNode } from 'react';
+ import { useEffect, useId, useRef, useState } from 'react';
+-import type { Plan, PlanTask, ReadPlanTask, WorkspacePlanReadState } from '../../types';
++import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
+ import { MarkdownReader } from '../MarkdownReader';
+ import { planCliSummaryLabel } from '../shared';
+ import { formatChinaDateTime } from '../../utils/time';
+@@ -70,25 +70,7 @@
+   if (state === 'running') return 'chip-running';
+   if (state === 'draft') return 'chip-waiting';
+   return 'chip-pending';
+-}
+-
+-function readPlanTaskStatusLabel(status: string) {
+-  if (status === 'completed') return '已完成';
+-  if (status === 'running') return '执行中';
+-  if (status === 'blocked') return '已阻塞';
+-  if (status === 'failed') return '失败';
+-  return '待执行';
+-}
+-
+-function readPlanTaskScopeLabel(task: ReadPlanTask) {
+-  return task.scopes?.length ? task.scopes.join(', ') : task.scope || 'unknown';
+-}
+-
+-function hasReaderTaskParseWarning(result: WorkspacePlanReadState['result']) {
+-  if (!result) return false;
+-  return result.task_parse_status === 'parse_empty' || (result.task_parse_has_task_section && !result.task_total);
+ }
+-
+ 
+ export function PlanList({
+   emptyText = '暂无 plan。',
+@@ -127,11 +109,6 @@
+   const readerPlanForSummary = latestReadingPlan || readingPlan;
+   const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+   const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+-  const readerTasks = planReadResult?.tasks || [];
+-  const readerTaskTotal = planReadResult?.task_total ?? readerTasks.length;
+-  const readerTaskCompleted = planReadResult?.task_completed ?? readerTasks.filter((task) => task.status === 'completed').length;
+-  const readerTaskParseMessage = planReadResult?.task_parse_message || '尚未读取任务拆解解析结果。';
+-  const readerTaskParseWarning = hasReaderTaskParseWarning(planReadResult);
+   const readerDialogId = useId();
+   const readerTitleId = useId();
+   const readerDescriptionId = useId();
+@@ -418,10 +395,6 @@
+                   <dd className="mono" title={readerHash}>
+                     {readerHash?.slice(0, 12) || '-'}
+                   </dd>
+-                </div>
+-                <div className="plan-reader-summary-item">
+-                  <dt>任务拆解</dt>
+-                  <dd>{readerTaskTotal ? `${readerTaskCompleted}/${readerTaskTotal}` : '0'}</dd>
+                 </div>
+               </dl>
+ 
+@@ -445,25 +418,6 @@
+                 <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                   正在读取 Plan 全文…
+                 </div>
+-              ) : null}
+-              {!planReading && !planReadError && planReadResult ? (
+-                <section className="plan-reader-task-summary" aria-label="任务拆解解析结果">
+-                  <div className={readerTaskParseWarning ? 'plan-reader-error' : 'hint'} role={readerTaskParseWarning ? 'alert' : 'status'}>
+-                    {readerTaskParseMessage}
+-                  </div>
+-                  {readerTasks.length ? (
+-                    <ul className="list compact" aria-label="已解析任务列表">
+-                      {readerTasks.map((task) => (
+-                        <li key={task.id} className="task-scope-chip">
+-                          <span className="mono">{task.task_key}</span>
+-                          <span>{task.title}</span>
+-                          <small>{readPlanTaskStatusLabel(task.status)}</small>
+-                          <small className="mono">{readPlanTaskScopeLabel(task)}</small>
+-                        </li>
+-                      ))}
+-                    </ul>
+-                  ) : null}
+-                </section>
+               ) : null}
+               {!planReading && !planReadError ? (
+                 <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+
+tokens used
+104,473
+已完成 P002，仅修改 `src/renderer/components/plans/PlanList.tsx`。
+
+**变更**
+- 移除了计划阅读弹窗顶部摘要里的独立“任务拆解”数量提示。
+- 移除了 Markdown 正文预览前的“任务拆解解析结果”区块、解析提示/警告和已解析任务列表。
+- 清理了因此不再使用的 `ReadPlanTask` 类型、任务状态/Scope 展示 helper、解析警告计算和相关变量。
+
+**保留**
+- 刷新、关闭、读取错误、加载态、文件路径、更新时间、哈希、CLI 摘要继续保留。
+- 任务拆解内容仍通过 `MarkdownReader` 渲染的 Markdown 正文展示。
+
+未修改 plan 文件，未运行测试/构建/lint。

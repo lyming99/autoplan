@@ -37,6 +37,7 @@ export function WorkspacePage() {
     interruptIntake,
     latestReadingPlan,
     loopForm,
+    mcpAuthToken,
     navigate,
     openPlanReader,
     openTaskPlanReader,
@@ -54,6 +55,7 @@ export function WorkspacePage() {
     searchQuery,
     selectSearchResult,
     selectTab,
+    setMcpAuthToken,
     setScopeFileOpenSettings,
     setSearchQuery,
     snapshot,
@@ -87,10 +89,7 @@ export function WorkspacePage() {
     : displayTasks;
   const selectedPlanTaskFilter = selectedPlan
     ? {
-        plan: selectedPlan,
         totalTaskCount: selectedPlanAllTasks.length,
-        visibleTaskCount: taskListTasks.length,
-        onClear: planSelectionState.clearSelection,
       }
     : null;
 
@@ -165,17 +164,6 @@ export function WorkspacePage() {
     createRequirement(payload as unknown as string);
   const createFeedbackFromComposer = (payload: string | ComposerSubmitPayload) =>
     createFeedback(payload as unknown as string);
-  const reorderPlansFromList = (orderedPlans: Plan[]) =>
-    runLoopAction(() => {
-      if (!snapshot) throw new Error('工作区快照尚未加载');
-      const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
-      const orderedQueue = [...orderedPlans];
-      const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
-      return (window.autoplan as typeof window.autoplan & {
-        reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
-      }).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
-    });
-
   if (!snapshot) {
     return (
       <div className="workspace-shell">
@@ -350,12 +338,9 @@ export function WorkspacePage() {
                       )
                     }
                     onRefreshReader={refreshPlanReader}
-                    onReorderPlans={reorderPlansFromList}
-                    onClearPlanSelection={planSelectionState.clearSelection}
                     onSelectPlan={planSelectionState.selectPlan}
                     plans={filteredItems.plans}
                     readerState={planReadState}
-                    selectedPlan={planSelectionState.selectedPlan}
                     selectedPlanId={planSelectionState.selectedPlanId}
                     tasks={snapshot.tasks}
                     totalPlanCount={snapshot.plans.length}
@@ -384,8 +369,10 @@ export function WorkspacePage() {
           {activeTab === 'settings' ? (
             <WorkspaceSettingsView
               loopForm={loopForm}
+              mcpAuthToken={mcpAuthToken}
               scopeFileOpenSettings={scopeFileOpenSettings}
               setLoopForm={updateLoopForm}
+              setMcpAuthToken={setMcpAuthToken}
               setScopeFileOpenSettings={setScopeFileOpenSettings}
               mcp={snapshot.mcp}
               onSubmit={submitLoopConfig}

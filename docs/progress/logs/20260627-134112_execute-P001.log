@@ -1,0 +1,3811 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0798-a7d6-7812-b542-39b81fbfd5f9
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_17_20260627-133901.md
+指定任务：
+- [ ] P001: 梳理事件类型展示入口 <!-- scope: src/renderer/components/PlanLists.tsx,src/renderer/utils/search.ts,src/renderer/types.ts -->
+任务 scope：src/renderer/components/planlists.tsx, src/renderer/utils/search.ts, src/renderer/types.ts
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Inspecting task details**
+
+I need to execute task P001, starting with inspecting the repo. I won't run any tests, build, or lint. Instead, I’ll focus on reading the plan in read-only mode for context. It’s essential to scope the files and follow the AGENTS' guidelines. I’ll need to check everything carefully, maybe using the codegraph for any coding questions. I can utilize the shell. Since this task isn’t trivial, I might consider updating the plan if necessary. Let’s proceed with the inspection!
+codex
+我会先读取任务上下文和相关约束，只查看不修改 plan。
+  → 读取任务上下文
+  • 梳理相关入口代码
+  • 实施限定范围修改
+  • 自查变更不验收
+exec
+powershell.exe -Command "Get-ChildItem -Force | Select-Object Name,Mode; if (Test-Path AGENTS.md) { Get-Content -Raw -Encoding UTF8 AGENTS.md }; Get-Content -Raw -Encoding UTF8 docs\\plan\\plan_feedback_17_20260627-133901.md" in D:\project\GitHub\autoplan
+ succeeded in 187ms:
+
+Name                                    Mode  
+----                                    ----  
+.autoplan-runtime                       d-----
+.claude                                 d-----
+.git                                    d--h--
+.github                                 d-----
+assets                                  d-----
+dist                                    d-----
+docs                                    d-----
+node_modules                            d-----
+release                                 d-----
+release-test                            d-----
+scripts                                 d-----
+src                                     d-----
+ui                                      d-----
+.codex-autoplan-overview-final.png      -a----
+.codex-autoplan-overview-left-log.png   -a----
+.codex-autoplan-overview-merged-log.png -a----
+.codex-autoplan-overview.png            -a----
+.codex-dev-20260624-225246.log          -a----
+.codex-dev-20260624-225652.log          -a----
+.codex-dev-20260624-225837.log          -a----
+.codex-dev-20260624-230150.log          -a----
+.codex-dev.log                          -a----
+.gitattributes                          -a----
+.gitignore                              -a----
+index.html                              -a----
+LICENSE                                 -a----
+package-lock.json                       -a----
+package.json                            -a----
+README.md                               -a----
+System.Drawing.Drawing2D.GraphicsPath   -a----
+tsconfig.json                           -a----
+vite.config.ts                          -a----
+# 反馈 #17 开发计划：事件提示类型中文化
+
+## 背景
+
+反馈 #17 指出：“这类提示换成中文：scan.done，feedback.created，plan.generated”。当前事件流中部分系统事件会以英文事件类型作为标题展示，例如扫描完成、反馈创建、计划生成等状态提示。虽然事件正文大多已经是中文，但标题仍直接暴露内部事件 key，影响中文界面的一致性与可读性。
+
+## 设计约束
+
+- 本计划只处理事件提示的中文展示，不改变事件类型入库值、事件写入流程、扫描逻辑、反馈创建逻辑和计划生成逻辑。
+- `scan.done`、`feedback.created`、`plan.generated` 必须保留为内部事件类型，避免破坏搜索、筛选、统计、历史数据兼容和 smoke 断言。
+- 中文化应优先在统一事件展示格式化层完成，确保事件列表、搜索文本和相关 UI 复用同一套展示结果。
+- 已有任务事件的专用展示、徽标、语气样式和元信息格式不应被本次普通系统事件中文化影响。
+- 不要把运行测试、回归、构建拆成普通开发任务；最终检查统一放入最后的“完整验收”节点。
+
+## 任务拆解
+
+- [ ] P001: 梳理事件类型展示入口 <!-- scope: src/renderer/components/PlanLists.tsx,src/renderer/utils/search.ts,src/renderer/types.ts -->
+  - 验收要点：确认事件列表中 `scan.done`、`feedback.created`、`plan.generated` 当前是否通过 `formatEvent` 直接展示 `event.type`。
+  - 验收要点：确认搜索结果、事件搜索文本和事件列表是否复用事件格式化结果，避免只改列表但搜索仍暴露英文 key。
+  - 验收要点：明确普通系统事件与任务事件的分界，确保任务事件仍走现有 `formatTaskEvent` 展示逻辑。
+  - 验收要点：确认无需修改数据库中历史事件的 `type` 字段，也无需迁移历史数据。
+
+- [ ] P002: 增加系统事件中文映射 <!-- scope: src/renderer/components/PlanLists.tsx -->
+  - 验收要点：为 `scan.done`、`feedback.created`、`plan.generated` 增加稳定的中文标题映射，建议分别展示为“扫描完成”、“反馈已创建”、“计划已生成”。
+  - 验收要点：未知事件类型仍保留原始 `event.type` 作为兜底标题，避免新事件没有标题或显示空白。
+  - 验收要点：映射逻辑集中在事件展示格式化层，后续新增事件类型时可在同一位置扩展。
+  - 验收要点：事件正文、创建时间、已有元信息和任务事件样式保持不变。
+
+- [ ] P003: 同步搜索与辅助展示文案 <!-- scope: src/renderer/components/PlanLists.tsx,src/renderer/utils/search.ts,src/renderer/components/SearchResults.tsx -->
+  - 验收要点：事件搜索命中时展示的标题使用中文事件标题，不再把 `scan.done`、`feedback.created`、`plan.generated` 作为主要提示文案展示给用户。
+  - 验收要点：事件搜索文本仍包含原始 `event.type`，保证用户搜索内部 key 或历史日志时仍可命中对应事件。
+  - 验收要点：搜索结果来源标签、事件摘要、时间信息和排序逻辑保持不变。
+  - 验收要点：不存在事件正文时，列表和搜索结果仍能依靠中文标题提供可理解的提示。
+
+- [ ] P004: 补充事件文案回归覆盖 <!-- scope: scripts/smoke-test.js,src/renderer/components/PlanLists.tsx -->
+  - 验收要点：覆盖 `scan.done` 在事件展示中显示中文标题的场景。
+  - 验收要点：覆盖 `feedback.created` 在反馈创建后的事件展示中显示中文标题的场景。
+  - 验收要点：覆盖 `plan.generated` 在计划生成后的事件展示中显示中文标题的场景。
+  - 验收要点：覆盖未知事件类型继续显示原始 key 的兜底场景，避免破坏未来扩展事件。
+  - 验收要点：测试代码只描述应覆盖的展示场景，不在该任务内承担最终完整验收命令职责。
+
+- [ ] P005: 完整验收 <!-- scope: validation -->
+  - 验收要点：执行最终验收命令 `npm run check && npm run smoke`，范围覆盖 TypeScript 编译、事件展示格式化、搜索结果展示和 smoke 主流程。
+  - 验收要点：本地启动应用后触发或查看已有扫描完成事件，确认事件标题显示“扫描完成”，正文仍展示待处理需求/反馈数量等原有信息。
+  - 验收要点：创建一条反馈后确认事件标题显示“反馈已创建”，不再直接显示 `feedback.created`。
+  - 验收要点：生成计划后确认事件标题显示“计划已生成”，不再直接显示 `plan.generated`，且计划生成记录仍可通过事件搜索找到。
+  - 验收要点：通过标准为最终验收命令退出码为 0，且事件列表与搜索结果中上述三类提示均已中文化，内部事件类型、历史数据兼容和任务事件展示无回退。
+
+## 总体验收标准
+
+- 中文展示：事件列表中 `scan.done`、`feedback.created`、`plan.generated` 的用户可见标题分别中文化为“扫描完成”、“反馈已创建”、“计划已生成”。
+- 内部兼容：数据库事件 `type` 仍保留原始英文 key，已有历史事件、搜索命中、统计逻辑和 smoke 断言不因中文化而失效。
+- 搜索一致：事件搜索结果优先展示中文标题，同时保留对原始事件 key 的搜索命中能力。
+- 兜底稳定：未知事件类型继续显示原始 key，不出现空标题、异常报错或误用中文标题的情况。
+- 影响可控：任务事件、计划列表、反馈创建、扫描循环和计划生成流程不因本次展示文案调整发生行为变化。
+- 最终验收命令：执行 `npm run check && npm run smoke`；验收范围为事件展示格式化、事件搜索结果、反馈创建事件、扫描完成事件、计划生成事件和现有 smoke 主流程；通过标准为命令退出码为 0，且手动验证三类事件提示均不再以英文 key 作为主要标题展示。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：反馈 #17 开发计划已创建，待执行。
+
+
+
+
+**Inspecting code scope**
+
+I'm thinking about whether I really need to use any agent outputs. It printed "none," which is fine, but I should consider inspecting the scope files. Should I start with codegraph? We have the .codegraph tool. It says to prioritize primary calls for most code-related questions, so I think I’ll go ahead and use codegraph_explore first before proceeding.
+codex
+已确认只做 P001。接下来查看三处 scope 内的事件展示与搜索实现。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+codex
+CodeGraph 需要显式项目路径，我会带上路径重试一次。
+mcp: codegraph/codegraph_explore started
+mcp: codegraph/codegraph_explore (failed)
+codex
+CodeGraph 未初始化；改用本地文件读取，仍只看限定文件。
+exec
+powershell.exe -Command "Get-Content -Raw -Encoding UTF8 src\\renderer\\components\\PlanLists.tsx; \""'`n--- search.ts ---"; Get-Content -Raw -Encoding UTF8 src'"\\renderer\\utils\\search.ts; \""'`n--- types.ts ---"; Get-Content -Raw -Encoding UTF8 src'"\\renderer\\types.ts" in D:\project\GitHub\autoplan
+ succeeded in 157ms:
+import type { KeyboardEvent } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
+import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+import { RecordCard } from './IntakePanel';
+import { MarkdownReader } from './MarkdownReader';
+import { planCliSummaryLabel } from './shared';
+import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+
+type TimedPlanTask = PlanTask & {
+  plan_id?: number | null;
+  started_at?: string | null;
+  finished_at?: string | null;
+  duration_ms?: number | null;
+};
+
+type EventMetaRecord = Record<string, unknown>;
+
+type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+
+type TaskEventDisplay = {
+  title: string;
+  body: string;
+  meta: string;
+  badge?: string;
+  tone?: TaskEventTone;
+};
+
+type TaskPlanGroup = {
+  key: string;
+  source: TaskPlanGroupSource;
+  sourceId: string | null;
+  title: string;
+  tasks: PlanTask[];
+  firstIndex: number;
+  sortTime: number | null;
+  stats: TaskPlanGroupStats;
+  hasRunningTask: boolean;
+};
+
+type TaskPlanGroupSource = 'plan' | 'file' | 'title' | 'unknown';
+
+type TaskPlanGroupIdentity = {
+  key: string;
+  source: TaskPlanGroupSource;
+  sourceId: string | null;
+};
+
+type TaskPlanGroupStats = {
+  total: number;
+  running: number;
+  completed: number;
+};
+
+type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+
+type ParallelRunRequest = {
+  plan: Plan;
+  batches: Array<{ taskIds: number[] }>;
+};
+
+const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+  { id: 'all', label: '全部', emptyText: '暂无任务。' },
+  { id: 'running', label: '进行中', emptyText: '暂无进行中任务。' },
+  { id: 'queued', label: '队列中', emptyText: '暂无队列中任务。' },
+  { id: 'completed', label: '已完成', emptyText: '暂无已完成任务。' },
+];
+
+const TASK_EVENT_PRESENTATION: Record<TaskEventTone, { action: string; badge: string }> = {
+  start: { action: '开始了', badge: '开始' },
+  success: { action: '结束了', badge: '成功' },
+  failed: { action: '执行失败', badge: '失败' },
+  stopped: { action: '停止了', badge: '停止' },
+  stopping: { action: '请求停止', badge: '停止中' },
+  updated: { action: '更新了', badge: '任务' },
+};
+
+function readDurationMs(task: TimedPlanTask) {
+  if (task.duration_ms === null || typeof task.duration_ms === 'undefined') return null;
+  const duration = Number(task.duration_ms);
+  return Number.isFinite(duration) && duration >= 0 ? duration : null;
+}
+
+function getTaskDurationMs(task: TimedPlanTask) {
+  if (task.status === 'running') return getRunningDurationMs(readDurationMs(task), task.started_at);
+  return readDurationMs(task);
+}
+
+function readPlanId(task: TimedPlanTask) {
+  if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
+  const planId = Number(task.plan_id);
+  return Number.isFinite(planId) ? planId : null;
+}
+
+function formatTaskDuration(task: TimedPlanTask) {
+  const duration = getTaskDurationMs(task);
+  if (task.status === 'running') return `已运行 ${formatDuration(duration, '0秒')}`;
+  if (duration === null || (duration === 0 && !task.started_at && !task.finished_at)) return '未开始';
+  return `耗时 ${formatDuration(duration, '0秒')}`;
+}
+
+function normalizeTaskStatus(status: string | null | undefined) {
+  return String(status || '').trim().toLowerCase();
+}
+
+function matchesTaskStatusFilter(task: PlanTask, filter: TaskStatusFilter) {
+  const status = normalizeTaskStatus(task.status);
+  if (filter === 'all') return true;
+  if (filter === 'running') return ['running', 'processing', 'stopping'].includes(status);
+  if (filter === 'queued') return ['pending', 'queued', 'waiting'].includes(status);
+  if (filter === 'completed') return ['completed', 'done', 'passed', 'accepted'].includes(status);
+  return true;
+}
+
+function readTaskTime(value: string | null | undefined) {
+  const time = Date.parse(String(value || ''));
+  return Number.isFinite(time) ? time : null;
+}
+
+function taskSortTime(task: TimedPlanTask) {
+  return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
+}
+
+function latestTaskTime(tasks: TimedPlanTask[]) {
+  const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
+  for (const fields of fieldGroups) {
+    const times = tasks.flatMap((task) => fields.map((field) => readTaskTime(task[field] as string | null | undefined)));
+    const validTimes = times.filter((time): time is number => time !== null);
+    if (validTimes.length) return Math.max(...validTimes);
+  }
+  return null;
+}
+
+function latestTaskTimestamp(tasks: TimedPlanTask[], field: 'finished_at' | 'updated_at') {
+  let latestValue = '';
+  let latestTime: number | null = null;
+  tasks.forEach((task) => {
+    const value = task[field];
+    const time = readTaskTime(value);
+    if (time === null) return;
+    if (latestTime === null || time > latestTime) {
+      latestTime = time;
+      latestValue = value || '';
+    }
+  });
+  return latestValue;
+}
+
+function formatTaskPlanGroupSummary(group: TaskPlanGroup) {
+  const timedTasks = group.tasks as TimedPlanTask[];
+  const latestFinishedAt = latestTaskTimestamp(timedTasks, 'finished_at');
+  const latestUpdatedAt = latestTaskTimestamp(timedTasks, 'updated_at');
+  const timeSummary = latestFinishedAt
+    ? `最新完成 ${formatChinaDateTime(latestFinishedAt)}`
+    : latestUpdatedAt
+      ? `最新更新 ${formatChinaDateTime(latestUpdatedAt)}`
+      : '暂无时间记录';
+  return `${group.tasks.length} 个任务 · ${timeSummary}`;
+}
+
+function taskPlanGroupTitle(task: PlanTask) {
+  return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+}
+
+function taskPlanGroupIdentity(task: TimedPlanTask): TaskPlanGroupIdentity {
+  const planId = readPlanId(task);
+  if (planId !== null) return { key: `plan:${planId}`, source: 'plan', sourceId: String(planId) };
+  if (task.file_path) return { key: `file:${task.file_path}`, source: 'file', sourceId: task.file_path };
+  const title = taskPlanGroupTitle(task);
+  if (title !== '未命名计划') return { key: `title:${title}`, source: 'title', sourceId: title };
+  return { key: 'unknown-plan', source: 'unknown', sourceId: null };
+}
+
+function getTaskPlanGroupStats(tasks: PlanTask[]): TaskPlanGroupStats {
+  return tasks.reduce<TaskPlanGroupStats>(
+    (stats, task) => ({
+      total: stats.total + 1,
+      running: stats.running + (matchesTaskStatusFilter(task, 'running') ? 1 : 0),
+      completed: stats.completed + (matchesTaskStatusFilter(task, 'completed') ? 1 : 0),
+    }),
+    { total: 0, running: 0, completed: 0 },
+  );
+}
+
+function groupTasksByPlan(tasks: PlanTask[]) {
+  const groups = new Map<string, TaskPlanGroup>();
+  tasks.forEach((task, index) => {
+    const timedTask = task as TimedPlanTask;
+    const identity = taskPlanGroupIdentity(timedTask);
+    const key = identity.key;
+    const existingGroup = groups.get(key);
+    if (existingGroup) {
+      existingGroup.tasks.push(task);
+      if (existingGroup.title === '未命名计划') existingGroup.title = taskPlanGroupTitle(task);
+      return;
+    }
+
+    groups.set(key, {
+      key,
+      source: identity.source,
+      sourceId: identity.sourceId,
+      title: taskPlanGroupTitle(task),
+      tasks: [task],
+      firstIndex: index,
+      sortTime: null,
+      stats: { total: 0, running: 0, completed: 0 },
+      hasRunningTask: false,
+    });
+  });
+
+  return Array.from(groups.values())
+    .map((group) => {
+      const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
+      const sortedTasks = indexedTasks
+        .sort((left, right) => {
+          const leftTime = taskSortTime(left.task as TimedPlanTask);
+          const rightTime = taskSortTime(right.task as TimedPlanTask);
+          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+          if (leftTime !== null && rightTime === null) return -1;
+          if (leftTime === null && rightTime !== null) return 1;
+          return left.index - right.index;
+        })
+        .map(({ task }) => task);
+      return {
+        ...group,
+        tasks: sortedTasks,
+        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
+        stats: getTaskPlanGroupStats(sortedTasks),
+        hasRunningTask: sortedTasks.some((task) => matchesTaskStatusFilter(task, 'running')),
+      };
+    })
+    .sort((left, right) => {
+      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
+        return right.sortTime - left.sortTime;
+      }
+      if (left.sortTime !== null && right.sortTime === null) return -1;
+      if (left.sortTime === null && right.sortTime !== null) return 1;
+      return left.firstIndex - right.firstIndex;
+    });
+}
+
+function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+  const timedTasks = tasks as TimedPlanTask[];
+  const hasPlanIds = timedTasks.some((task) => readPlanId(task) !== null);
+  if (!hasPlanIds) return planCount === 1 ? timedTasks : [];
+  return timedTasks.filter((task) => readPlanId(task) === plan.id);
+}
+
+function formatPlanDurationSummary(tasks: TimedPlanTask[]) {
+  const totalMs = tasks.reduce((sum, task) => sum + (getTaskDurationMs(task) ?? 0), 0);
+  const completedMs = tasks.reduce(
+    (sum, task) => sum + (task.status === 'completed' ? getTaskDurationMs(task) ?? 0 : 0),
+    0,
+  );
+
+  return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
+}
+
+function planTitle(plan: Plan) {
+  return String((plan as Plan & { title?: string | null }).title || '').trim();
+}
+
+function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      return toEventMetaRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+  return null;
+}
+
+function readEventMeta(event: AppEvent) {
+  return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+}
+
+function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+  if (!meta) return '';
+  for (const key of keys) {
+    const value = meta[key];
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text) return text;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+  const text = readMetaText(meta, keys);
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function includesAny(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+  const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+  if (includesAny(eventText, ['stop_requested', 'stop-requested', 'stop.requested', 'request_stop', 'stopping'])) {
+    return 'stopping';
+  }
+  if (includesAny(eventText, ['fail', 'error', 'errored'])) return 'failed';
+  if (includesAny(eventText, ['stop', 'interrupt', 'cancel'])) return 'stopped';
+  if (includesAny(eventText, ['start', 'begin', 'running'])) return 'start';
+  if (includesAny(eventText, ['complete', 'finish', 'success', 'succeed', 'executed', 'done'])) return 'success';
+  return 'updated';
+}
+
+function isTaskEventType(type: string) {
+  return /^task[.:_-]/i.test(type);
+}
+
+function sameEventText(left: string, right: string) {
+  return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+}
+
+function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
+  const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+  const taskId = readMetaText(meta, ['taskId', 'task_id']);
+  const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+  const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+  if (!hasTaskIdentity) return null;
+
+  const tone = classifyTaskEvent(event, meta);
+  const presentation = TASK_EVENT_PRESENTATION[tone];
+  const taskLabel = taskKey ? `${taskKey} 任务` : taskId ? `任务 #${taskId}` : '任务';
+  const separator = taskLabel === '任务' ? '' : ' ';
+  const title = `${presentation.action}${separator}${taskLabel}：${taskTitle}`;
+  const originalMessage = event.message?.trim() || '';
+  const planId = readMetaText(meta, ['planId', 'plan_id']);
+  const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+  const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+  const cliSummary = agentCliProvider ? planCliSummaryLabel(meta) : '';
+  const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+  const metaParts = [
+    formatChinaDateTime(event.created_at),
+    planId ? `Plan #${planId}` : '',
+    cliSummary,
+    status ? `状态 ${status}` : '',
+    durationMs !== null ? `耗时 ${formatDuration(durationMs, '0秒')}` : '',
+  ].filter(Boolean);
+
+  return {
+    title,
+    body: originalMessage && !sameEventText(originalMessage, title) ? originalMessage : '',
+    meta: metaParts.join(' · '),
+    badge: presentation.badge,
+    tone,
+  };
+}
+
+function formatEvent(event: AppEvent): TaskEventDisplay {
+  const meta = readEventMeta(event);
+  const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+    ? formatTaskEvent(event, meta)
+    : null;
+  if (taskDisplay) return taskDisplay;
+
+  return {
+    title: event.type || '事件',
+    body: event.message || '',
+    meta: formatChinaDateTime(event.created_at),
+  };
+}
+
+function toSearchText(value: unknown, depth = 0): string {
+  if (value === null || value === undefined || depth > 6) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => toSearchText(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+export function getEventSearchText(event: AppEvent) {
+  const display = formatEvent(event);
+  const meta = readEventMeta(event);
+  return [
+    event.type,
+    event.message,
+    display.title,
+    display.body,
+    display.badge,
+    display.meta,
+    toSearchText(meta),
+    toSearchText(event),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function hasPlanReaderUpdate(
+  readingPlan: Plan | null,
+  latestPlan: Plan | null | undefined,
+  result: WorkspacePlanReadState['result'],
+) {
+  if (!readingPlan || !latestPlan) return false;
+  if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+
+  const readFilePath = result?.file_path || readingPlan.file_path || '';
+  const readHash = result?.hash || readingPlan.hash || '';
+  const readUpdatedAt = result?.updated_at || readingPlan.updated_at || '';
+  return (
+    (latestPlan.file_path || '') !== readFilePath ||
+    (latestPlan.hash || '') !== readHash ||
+    (latestPlan.updated_at || '') !== readUpdatedAt ||
+    (latestPlan.status || '') !== (readingPlan.status || '')
+  );
+}
+
+const PLAN_READER_FOCUSABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
+
+function getPlanReaderFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(PLAN_READER_FOCUSABLE_SELECTOR)).filter(
+    (element) => element.getClientRects().length > 0 && element.getAttribute('aria-hidden') !== 'true',
+  );
+}
+
+function parallelRunDisabledReason(plan: Plan, hasRunningTask: boolean) {
+  if (hasRunningTask) return '该计划已有任务执行中';
+  if (plan.validation_passed || plan.status === 'completed') return '计划已完成';
+  if (!plan.concurrency_suggestion?.hasSafeParallelBatches) return '暂无安全可并发批次';
+  return '';
+}
+
+function scopeFileLabel(file: PlanTask['scope_files'][number]) {
+  if (file.isUnknown) return 'unknown';
+  if (file.isValidation) return 'validation';
+  return file.path;
+}
+
+function scopeFileStatus(file: PlanTask['scope_files'][number]) {
+  if (file.isUnknown) return '无法判断影响范围';
+  if (file.isValidation) return '完整验收任务';
+  if (file.canOpen) return '可打开';
+  return file.reason || (file.exists ? '不可打开' : '文件不存在');
+}
+
+export function PlanList({
+  emptyText = '暂无 plan。',
+  latestReadingPlan,
+  onCloseReader,
+  onOpenReader,
+  onRunParallel,
+  onRefreshReader,
+  plans,
+  readerState,
+  tasks = [],
+  totalPlanCount = plans.length,
+}: {
+  emptyText?: string;
+  latestReadingPlan?: Plan | null;
+  onCloseReader: () => void;
+  onOpenReader: (plan: Plan) => void;
+  onRunParallel?: (request: ParallelRunRequest) => void;
+  onRefreshReader: () => void;
+  plans: Plan[];
+  readerState: WorkspacePlanReadState;
+  tasks?: PlanTask[];
+  totalPlanCount?: number;
+}) {
+  const readingPlan = readerState.plan;
+  const planReadResult = readerState.result;
+  const planReadError = readerState.error;
+  const planReading = readerState.loading;
+  const readerFilePath = planReadResult?.file_path || readingPlan?.file_path || '';
+  const readerHash = planReadResult?.hash || readingPlan?.hash || '';
+  const readerUpdatedAt = planReadResult?.updated_at || readingPlan?.updated_at || '';
+  const readerPlanForSummary = latestReadingPlan || readingPlan;
+  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerPlanForSummary) : '';
+  const latestPlanUpdated = hasPlanReaderUpdate(readingPlan, latestReadingPlan, planReadResult);
+  const readerDialogId = useId();
+  const readerTitleId = useId();
+  const readerDescriptionId = useId();
+  const readerContentId = useId();
+  const readerDialogRef = useRef<HTMLDivElement>(null);
+  const previouslyFocusedElementRef = useRef<HTMLElement | null>(null);
+  const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+  const readerStatusText = planReadError
+    ? `读取失败：${planReadError}`
+    : planReading
+      ? '正在读取 Plan 全文。'
+      : latestPlanUpdated
+        ? 'Plan 列表信息已更新，可刷新读取最新正文。'
+        : 'Plan 全文已加载，当前为只读阅读模式。';
+
+  useEffect(() => {
+    if (!readingPlan) return undefined;
+
+    previouslyFocusedElementRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    const focusFrame = window.requestAnimationFrame(() => {
+      readerDialogRef.current?.focus();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(focusFrame);
+      previouslyFocusedElementRef.current?.focus();
+    };
+  }, [readingPlan?.id, readingPlan?.project_id]);
+
+  function handleReaderKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    if (event.key === 'Escape') {
+      event.stopPropagation();
+      onCloseReader();
+      return;
+    }
+
+    if (event.key !== 'Tab') return;
+
+    const dialog = readerDialogRef.current;
+    if (!dialog) return;
+
+    const focusableElements = getPlanReaderFocusableElements(dialog);
+    if (!focusableElements.length) {
+      event.preventDefault();
+      dialog.focus();
+      return;
+    }
+
+    const firstFocusableElement = focusableElements[0];
+    const lastFocusableElement = focusableElements[focusableElements.length - 1];
+
+    if (document.activeElement === dialog) {
+      event.preventDefault();
+      (event.shiftKey ? lastFocusableElement : firstFocusableElement).focus();
+      return;
+    }
+
+    if (event.shiftKey && document.activeElement === firstFocusableElement) {
+      event.preventDefault();
+      lastFocusableElement.focus();
+      return;
+    }
+
+    if (!event.shiftKey && document.activeElement === lastFocusableElement) {
+      event.preventDefault();
+      firstFocusableElement.focus();
+    }
+  }
+
+  return (
+    <>
+      {plans.length ? (
+        <div className="list compact">
+          {plans.map((plan) => {
+            const planTasks = tasksForPlan(tasks, plan, totalPlanCount);
+            const durationSummary = formatPlanDurationSummary(planTasks);
+            const title = planTitle(plan);
+            const progressSummary = `${plan.completed_tasks}/${plan.total_tasks} tasks · ${durationSummary} · validation ${
+              plan.validation_passed ? 'passed' : 'pending'
+            }`;
+            const cliSummary = planCliSummaryLabel(plan);
+            const readingThisPlan = Boolean(
+              readingPlan && readingPlan.id === plan.id && readingPlan.project_id === plan.project_id,
+            );
+            const disableRead = planReading && readingThisPlan;
+            const suggestion = plan.concurrency_suggestion;
+            const runningInPlan = planTasks.some((task) => task.status === 'running');
+            const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
+            const canRunParallel = Boolean(onRunParallel && suggestion?.hasSafeParallelBatches && !parallelDisabledReason);
+            return (
+              <RecordCard
+                actions={
+                  <div className="item-actions">
+                    <button
+                      type="button"
+                      className="btn-link plan-parallel-link"
+                      disabled={!canRunParallel}
+                      title={parallelDisabledReason || undefined}
+                      onClick={() => setConfirmingPlan(plan)}
+                    >
+                      并发执行
+                    </button>
+                    <button
+                      type="button"
+                      className="btn-link plan-read-link"
+                      aria-haspopup="dialog"
+                      aria-controls={readingThisPlan ? readerDialogId : undefined}
+                      aria-expanded={readingThisPlan}
+                      aria-label={`${disableRead ? '正在读取' : '阅读全文'}：${plan.file_path}`}
+                      disabled={disableRead}
+                      onClick={() => onOpenReader(plan)}
+                    >
+                      {disableRead ? '读取中…' : '阅读全文'}
+                    </button>
+                  </div>
+                }
+                key={plan.id}
+                title={plan.file_path}
+                status={plan.status}
+                body={
+                  <div className="plan-list-body">
+                    {title ? <div className="plan-list-title" title={title}>{title}</div> : null}
+                    <div className="plan-list-summary">{progressSummary}</div>
+                    <div className="plan-parallel-summary">
+                      <span>可并发 {suggestion?.parallelTaskCount || 0} 个</span>
+                      <span>建议 {suggestion?.batchCount || 0} 批</span>
+                      <span>串行 {suggestion?.serialTaskCount || 0} 个</span>
+                      {parallelDisabledReason ? <span title={parallelDisabledReason}>原因：{parallelDisabledReason}</span> : null}
+                    </div>
+                  </div>
+                }
+                meta={`${cliSummary} · ${plan.hash?.slice(0, 12) || ''} · ${formatChinaDateTime(plan.updated_at)}`}
+              />
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty">{emptyText}</div>
+      )}
+
+      {confirmingPlan ? (
+        <div className="modal-mask" onClick={() => setConfirmingPlan(null)}>
+          <div className="modal parallel-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h3>确认并发执行</h3>
+              <button type="button" className="modal-close" onClick={() => setConfirmingPlan(null)} aria-label="关闭并发执行确认">
+                ×
+              </button>
+            </div>
+            <div className="parallel-confirm-body">
+              <p>确认后将按以下安全批次启动；取消不会改变任务状态。</p>
+              {confirmingPlan.concurrency_suggestion.batches.map((batch) => (
+                <section className="parallel-batch-card" key={batch.batch}>
+                  <div className="parallel-batch-head">
+                    <strong>批次 {batch.batch}</strong>
+                    <span>{batch.reason}</span>
+                  </div>
+                  <ul>
+                    {batch.tasks.map((task) => (
+                      <li key={task.id}>
+                        <span>{task.task_key} · {task.title}</span>
+                        <small className="mono">{task.scopes.join(', ')}</small>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+              {confirmingPlan.concurrency_suggestion.serialTasks.length ? (
+                <details className="parallel-serial-reasons">
+                  <summary>查看不建议并发原因</summary>
+                  <ul>
+                    {confirmingPlan.concurrency_suggestion.serialTasks.map((task) => (
+                      <li key={task.id}>{task.task_key}：{task.reason}</li>
+                    ))}
+                  </ul>
+                </details>
+              ) : null}
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn" onClick={() => setConfirmingPlan(null)}>取消</button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  const plan = confirmingPlan;
+                  setConfirmingPlan(null);
+                  onRunParallel?.({
+                    plan,
+                    batches: plan.concurrency_suggestion.batches.map((batch) => ({
+                      taskIds: batch.tasks.map((task) => task.id),
+                    })),
+                  });
+                }}
+              >
+                确认并发执行
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {readingPlan ? (
+        <div className="modal-mask" onClick={onCloseReader}>
+          <div
+            id={readerDialogId}
+            ref={readerDialogRef}
+            className="modal plan-reader-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={readerTitleId}
+            aria-describedby={readerDescriptionId}
+            tabIndex={-1}
+            onClick={(event) => event.stopPropagation()}
+            onKeyDown={handleReaderKeyDown}
+          >
+            <div className="modal-head plan-reader-head">
+              <div className="plan-reader-title">
+                <h3 id={readerTitleId}>Plan 全文（只读）</h3>
+                <span className="plan-reader-path mono" title={readerFilePath}>
+                  {readerFilePath || '未记录文件路径'}
+                </span>
+                <p id={readerDescriptionId} className="sr-only" aria-live="polite" aria-atomic="true">
+                  {readerStatusText}
+                </p>
+              </div>
+              <div className="item-actions plan-reader-actions">
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={planReading}
+                  onClick={onRefreshReader}
+                  aria-label="重新读取 Plan 全文"
+                >
+                  {planReading ? '读取中…' : '刷新'}
+                </button>
+                <button type="button" className="modal-close" onClick={onCloseReader} aria-label="关闭 Plan 全文阅读">
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="plan-reader-body" tabIndex={0} aria-label="Plan 全文阅读区域">
+              <dl className="plan-reader-summary" aria-label="Plan 摘要">
+                <div className="plan-reader-summary-item">
+                  <dt>状态</dt>
+                  <dd>{readingPlan.status}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>CLI</dt>
+                  <dd>{readerCliSummary || '-'}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>更新时间</dt>
+                  <dd>{readerUpdatedAt ? formatChinaDateTime(readerUpdatedAt) : '-'}</dd>
+                </div>
+                <div className="plan-reader-summary-item">
+                  <dt>哈希</dt>
+                  <dd className="mono" title={readerHash}>
+                    {readerHash?.slice(0, 12) || '-'}
+                  </dd>
+                </div>
+              </dl>
+
+              {latestPlanUpdated ? (
+                <div className="hint" role="status" aria-live="polite" aria-atomic="true">
+                  Plan 列表信息已更新，可刷新读取最新正文。
+                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+                    刷新读取
+                  </button>
+                </div>
+              ) : null}
+              {planReadError ? (
+                <div className="plan-reader-error" role="alert" aria-live="assertive" aria-atomic="true">
+                  <span>{planReadError}</span>
+                  <button type="button" className="btn-link" disabled={planReading} onClick={onRefreshReader}>
+                    重试
+                  </button>
+                </div>
+              ) : null}
+              {planReading ? (
+                <div className="plan-reader-loading" role="status" aria-live="polite" aria-atomic="true">
+                  正在读取 Plan 全文…
+                </div>
+              ) : null}
+              {!planReading && !planReadError ? (
+                <section id={readerContentId} className="plan-reader-content" aria-label="Plan Markdown 正文">
+                  <MarkdownReader
+                    markdown={planReadResult?.markdown ?? ''}
+                    emptyMessage="暂无计划正文"
+                    ariaLabel="Plan Markdown 正文内容"
+                  />
+                </section>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function TaskList({
+  emptyText = '暂无任务。',
+  tasks,
+  onOpenPlan,
+  onRun,
+  onStop,
+}: {
+  emptyText?: string;
+  tasks: PlanTask[];
+  onOpenPlan?: (task: PlanTask) => void;
+  onRun?: (task: PlanTask) => void;
+  onStop?: (task: PlanTask) => void;
+}) {
+  const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+    [activeFilter, tasks],
+  );
+  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+  const filterCounts = useMemo(
+    () =>
+      TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+        (counts, filter) => ({
+          ...counts,
+          [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+        }),
+        { all: 0, running: 0, queued: 0, completed: 0 },
+      ),
+    [tasks],
+  );
+  const activeFilterConfig =
+    TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+
+  return (
+    <div className="task-list-panel">
+      <div className="task-filter-tabs" role="tablist" aria-label="任务状态筛选">
+        {TASK_STATUS_FILTERS.map((filter) => {
+          const active = activeFilter === filter.id;
+          return (
+            <button
+              key={filter.id}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              className={`task-filter-tab${active ? ' active' : ''}`}
+              onClick={() => setActiveFilter(filter.id)}
+            >
+              <span>{filter.label}</span>
+              <span className="task-filter-count">{filterCounts[filter.id]}</span>
+            </button>
+          );
+        })}
+      </div>
+      {taskGroups.length ? (
+        <div className="list compact">
+          {taskGroups.map((group) => {
+            return (
+              <section className="task-plan-group" key={group.key} aria-label={`计划分组：${group.title}`}>
+                <div className="task-plan-group-head">
+                  <div className="task-plan-group-title" title={group.title}>{group.title}</div>
+                  <div className="task-plan-group-summary">{formatTaskPlanGroupSummary(group)}</div>
+                </div>
+                {group.tasks.map((task) => {
+                  const running = task.status === 'running';
+                  const completed = task.status === 'completed';
+                  const durationLabel = formatTaskDuration(task as TimedPlanTask);
+                  return (
+                    <RecordCard
+                      actions={
+                        <div className="item-actions">
+                          <button
+                            type="button"
+                            className="btn-link"
+                            disabled={completed || running}
+                            onClick={() => onRun?.(task)}
+                          >
+                            执行
+                          </button>
+                          <button
+                            type="button"
+                            className="btn-link danger-link"
+                            disabled={!running}
+                            onClick={() => onStop?.(task)}
+                          >
+                            停止
+                          </button>
+                        </div>
+                      }
+                      key={task.id}
+                      title={task.title}
+                      status={task.status}
+                      body={
+                        <div className="task-body-stack">
+                          {task.file_path ? (
+                            <button
+                              type="button"
+                              className="btn-link task-file-link mono"
+                              disabled={!onOpenPlan}
+                              title={task.file_path}
+                              aria-label={`预览 ${task.file_path}`}
+                              onClick={() => onOpenPlan?.(task)}
+                            >
+                              {task.file_path}
+                            </button>
+                          ) : null}
+                          {task.scope_files?.length ? (
+                            <div className="task-scope-files" aria-label="任务相关文件">
+                              {task.scope_files.map((file) => (
+                                <span
+                                  key={`${task.id}-${file.path}`}
+                                  className={`task-scope-chip${file.canOpen ? ' openable' : ''}${file.isUnknown || file.isValidation ? ' special' : ''}`}
+                                  title={scopeFileStatus(file)}
+                                >
+                                  <span className="mono">{scopeFileLabel(file)}</span>
+                                  <small>{scopeFileStatus(file)}</small>
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      }
+                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+                    />
+                  );
+                })}
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty">{currentEmptyText}</div>
+      )}
+    </div>
+  );
+}
+
+export function EventList({ emptyText = '暂无事件。', events }: { emptyText?: string; events: AppEvent[] }) {
+  if (!events.length) return <div className="empty">{emptyText}</div>;
+
+  return (
+    <div className="list compact event-list">
+      {events.map((event) => {
+        const display = formatEvent(event);
+        return (
+          <article className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`} key={event.id}>
+            <div className="item-title event-title">
+              <span>{display.title}</span>
+              {display.badge ? <span className={`event-badge event-badge-${display.tone}`}>{display.badge}</span> : null}
+            </div>
+            {display.body ? <div className="item-body plain-text">{display.body}</div> : null}
+            <div className="meta event-meta">{display.meta}</div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+
+--- search.ts ---
+import { WORKSPACE_SEARCH_HIT_FIELDS, WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
+import type {
+  AppSnapshot,
+  WorkspaceSearchGroup,
+  WorkspaceSearchHitField,
+  WorkspaceSearchLocation,
+  WorkspaceSearchMatch,
+  WorkspaceSearchQuery,
+  WorkspaceSearchResult,
+  WorkspaceSearchSourceConfig,
+  WorkspaceSearchSourceType,
+  WorkspaceSearchState,
+  WorkspaceTab,
+} from '../types';
+import { getTimestampMs } from './time';
+
+const SEARCH_SUMMARY_MAX_LENGTH = 140;
+const SEARCH_SNIPPET_MAX_LENGTH = 120;
+const FALLBACK_SEARCH_PRIORITY = 99;
+const WORKSPACE_SEARCH_LOCATION_HIGHLIGHT_MS = 2400;
+const WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR = 'smooth';
+
+const WORKSPACE_SEARCH_FIELD_PRIORITIES: Record<WorkspaceSearchHitField, number> = {
+  [WORKSPACE_SEARCH_HIT_FIELDS.TITLE]: 0,
+  [WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY]: 0,
+  [WORKSPACE_SEARCH_HIT_FIELDS.STATUS]: 1,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE]: 1,
+  [WORKSPACE_SEARCH_HIT_FIELDS.BODY]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.MARKDOWN]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.RAW_LINE]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.SOURCE_PATH]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.SCOPE]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META]: 3,
+};
+
+type AttachmentRecord = AppSnapshot['attachments'][number];
+
+interface WorkspaceSearchField {
+  field: WorkspaceSearchHitField;
+  label: string;
+  value: string;
+  priority: number;
+}
+
+interface WorkspaceSearchCandidate {
+  source: WorkspaceSearchSourceType;
+  recordId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  location: WorkspaceSearchLocation;
+  fields: WorkspaceSearchField[];
+}
+
+interface RankedWorkspaceSearchResult {
+  result: WorkspaceSearchResult;
+  priority: number;
+  updatedAtMs: number;
+}
+
+export const WORKSPACE_SEARCH_SOURCE_CONFIGS: WorkspaceSearchSourceConfig[] = [
+  {
+    type: WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+    label: '需求',
+    targetTab: 'requirement',
+  },
+  {
+    type: WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK,
+    label: '反馈',
+    targetTab: 'feedback',
+  },
+  {
+    type: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN,
+    label: 'Plan',
+    targetTab: 'tasks',
+  },
+  {
+    type: WORKSPACE_SEARCH_SOURCE_TYPES.TASK,
+    label: '任务',
+    targetTab: 'tasks',
+  },
+  {
+    type: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+    label: '事件流',
+    targetTab: 'events',
+  },
+];
+
+export const WORKSPACE_SEARCH_SOURCE_CONFIG_BY_TYPE = WORKSPACE_SEARCH_SOURCE_CONFIGS.reduce(
+  (configs, config) => {
+    configs[config.type] = config;
+    return configs;
+  },
+  {} as Record<WorkspaceSearchSourceType, WorkspaceSearchSourceConfig>,
+);
+
+export function normalizeWorkspaceSearchQuery(query: string | null | undefined): WorkspaceSearchQuery {
+  const raw = typeof query === 'string' ? query : '';
+  const normalized = raw.trim().replace(/\s+/g, ' ').toLowerCase();
+
+  return {
+    raw,
+    normalized,
+    terms: normalized === '' ? [] : normalized.split(' '),
+    isEmpty: normalized === '',
+  };
+}
+
+export function isWorkspaceSearchSourceType(source: unknown): source is WorkspaceSearchSourceType {
+  return (
+    typeof source === 'string' &&
+    Object.prototype.hasOwnProperty.call(WORKSPACE_SEARCH_SOURCE_CONFIG_BY_TYPE, source)
+  );
+}
+
+export function getWorkspaceSearchSourceConfig(source: unknown): WorkspaceSearchSourceConfig | null {
+  if (!isWorkspaceSearchSourceType(source)) {
+    return null;
+  }
+
+  return WORKSPACE_SEARCH_SOURCE_CONFIG_BY_TYPE[source];
+}
+
+export function getWorkspaceSearchTargetTab(source: unknown): WorkspaceTab {
+  return getWorkspaceSearchSourceConfig(source)?.targetTab ?? 'overview';
+}
+
+export function createEmptyWorkspaceSearchGroups(): WorkspaceSearchGroup[] {
+  return WORKSPACE_SEARCH_SOURCE_CONFIGS.map((config) => ({
+    source: config.type,
+    label: config.label,
+    targetTab: config.targetTab,
+    count: 0,
+    results: [],
+  }));
+}
+
+export function createEmptyWorkspaceSearchState(query?: string | null): WorkspaceSearchState {
+  return {
+    query: normalizeWorkspaceSearchQuery(query),
+    total: 0,
+    results: [],
+    groups: createEmptyWorkspaceSearchGroups(),
+  };
+}
+
+export function resolveWorkspaceSearchQuery(
+  query: string | WorkspaceSearchQuery | null | undefined,
+): WorkspaceSearchQuery {
+  if (typeof query === 'string' || query === null || typeof query === 'undefined') {
+    return normalizeWorkspaceSearchQuery(query);
+  }
+
+  return normalizeWorkspaceSearchQuery(query.raw || query.normalized);
+}
+
+export function groupWorkspaceSearchResults(
+  results: readonly WorkspaceSearchResult[],
+): WorkspaceSearchGroup[] {
+  return WORKSPACE_SEARCH_SOURCE_CONFIGS.map((config) => {
+    const groupResults = results.filter((result) => result.source === config.type);
+
+    return {
+      source: config.type,
+      label: config.label,
+      targetTab: config.targetTab,
+      count: groupResults.length,
+      results: groupResults,
+    };
+  });
+}
+
+export function sortWorkspaceSearchResults(
+  results: readonly WorkspaceSearchResult[],
+): WorkspaceSearchResult[] {
+  return [...results].sort(compareWorkspaceSearchResults);
+}
+
+export function workspaceSearchValueMatches(
+  value: unknown,
+  queryInput: string | WorkspaceSearchQuery | null | undefined,
+): boolean {
+  const query = resolveWorkspaceSearchQuery(queryInput);
+  return !query.isEmpty && doesTextMatchQuery(toSearchText(value).toLowerCase(), query);
+}
+
+export function searchWorkspaceSnapshot(
+  snapshot: AppSnapshot | null | undefined,
+  queryInput: string | WorkspaceSearchQuery | null | undefined,
+): WorkspaceSearchState {
+  const query = resolveWorkspaceSearchQuery(queryInput);
+  if (!snapshot || query.isEmpty) {
+    return createWorkspaceSearchStateFromResults(query, []);
+  }
+
+  const attachmentLookup = createAttachmentLookup(snapshot.attachments ?? []);
+  const candidates: WorkspaceSearchCandidate[] = [
+    ...(snapshot.requirements ?? []).map((requirement) =>
+      createRequirementCandidate(
+        requirement,
+        getOwnerAttachments(attachmentLookup, 'requirement', requirement.id),
+      ),
+    ),
+    ...(snapshot.feedback ?? []).map((feedback) =>
+      createFeedbackCandidate(feedback, getOwnerAttachments(attachmentLookup, 'feedback', feedback.id)),
+    ),
+    ...(snapshot.plans ?? []).map(createPlanCandidate),
+    ...(snapshot.tasks ?? []).map(createTaskCandidate),
+    ...(snapshot.events ?? []).map(createEventCandidate),
+  ];
+
+  const rankedResults = candidates
+    .map((candidate) => createRankedWorkspaceSearchResult(candidate, query))
+    .filter((result): result is RankedWorkspaceSearchResult => result !== null)
+    .sort(compareRankedWorkspaceSearchResults);
+  const results = rankedResults.map(({ result }) => result);
+
+  return createWorkspaceSearchStateFromResults(query, results);
+}
+
+export function createWorkspaceSearchState(
+  snapshot: AppSnapshot | null | undefined,
+  queryInput: string | WorkspaceSearchQuery | null | undefined,
+): WorkspaceSearchState {
+  return searchWorkspaceSnapshot(snapshot, queryInput);
+}
+
+function createWorkspaceSearchStateFromResults(
+  query: WorkspaceSearchQuery,
+  results: WorkspaceSearchResult[],
+): WorkspaceSearchState {
+  return {
+    query,
+    total: results.length,
+    results,
+    groups: groupWorkspaceSearchResults(results),
+  };
+}
+
+function createRequirementCandidate(
+  requirement: AppSnapshot['requirements'][number],
+  attachments: readonly AttachmentRecord[],
+): WorkspaceSearchCandidate {
+  const fields: WorkspaceSearchField[] = [];
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', requirement.title);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', requirement.body);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', requirement.status);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.SOURCE_PATH, '来源路径', requirement.source_path);
+  pushAttachmentFields(fields, attachments);
+
+  return {
+    source: WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+    recordId: requirement.id,
+    title: toSearchText(requirement.title) || `需求 #${requirement.id}`,
+    summary: summarizeSearchText(requirement.body || requirement.source_path || requirement.status, '暂无正文'),
+    status: nullableSearchText(requirement.status),
+    updatedAt: requirement.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT, requirement.id),
+    fields,
+  };
+}
+
+function createFeedbackCandidate(
+  feedback: AppSnapshot['feedback'][number],
+  attachments: readonly AttachmentRecord[],
+): WorkspaceSearchCandidate {
+  const fields: WorkspaceSearchField[] = [];
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', feedback.title);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.BODY, '正文', feedback.body);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', feedback.status);
+  pushAttachmentFields(fields, attachments);
+
+  return {
+    source: WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK,
+    recordId: feedback.id,
+    title: toSearchText(feedback.title) || `反馈 #${feedback.id}`,
+    summary: summarizeSearchText(feedback.body || feedback.status, '暂无正文'),
+    status: nullableSearchText(feedback.status),
+    updatedAt: feedback.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK, feedback.id),
+    fields,
+  };
+}
+
+function createPlanCandidate(plan: AppSnapshot['plans'][number]): WorkspaceSearchCandidate {
+  const fields: WorkspaceSearchField[] = [];
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', plan.title);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '文件路径', plan.file_path);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', plan.status);
+  const planTitle = toSearchText(plan.title);
+  const fileName = getFileName(plan.file_path);
+
+  return {
+    source: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN,
+    recordId: plan.id,
+    title: planTitle || fileName || `Plan #${plan.id}`,
+    summary: summarizeSearchText(plan.file_path || planTitle || plan.status, '暂无路径'),
+    status: nullableSearchText(plan.status),
+    updatedAt: plan.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.PLAN, plan.id, { planId: plan.id }),
+    fields,
+  };
+}
+
+function createTaskCandidate(task: AppSnapshot['tasks'][number]): WorkspaceSearchCandidate {
+  const fields: WorkspaceSearchField[] = [];
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', task.task_key);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', task.title);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', task.status);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.SCOPE, 'Scope', task.scope);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.RAW_LINE, '原始任务行', task.raw_line);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '文件路径', task.file_path);
+
+  const taskTitle = toSearchText(task.title);
+  const taskKey = toSearchText(task.task_key);
+
+  return {
+    source: WORKSPACE_SEARCH_SOURCE_TYPES.TASK,
+    recordId: task.id,
+    title: taskKey && taskTitle ? `${taskKey}: ${taskTitle}` : taskTitle || taskKey || `任务 #${task.id}`,
+    summary: summarizeSearchText(task.raw_line || task.scope || task.file_path, '暂无内容'),
+    status: nullableSearchText(task.status),
+    updatedAt: task.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.TASK, task.id, {
+      planId: task.plan_id,
+      taskId: task.id,
+      taskKey,
+    }),
+    fields,
+  };
+}
+
+function createEventCandidate(event: AppSnapshot['events'][number]): WorkspaceSearchCandidate {
+  const fields: WorkspaceSearchField[] = [];
+  const meta = getObjectMeta(event.meta);
+  const eventMeta = stringifySearchMeta(event.meta);
+
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
+
+  return {
+    source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+    recordId: event.id,
+    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+    summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+    status: nullableSearchText(meta?.status),
+    updatedAt: event.created_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.EVENT, event.id, {
+      planId: meta?.planId ?? meta?.plan_id,
+      taskId: meta?.taskId ?? meta?.task_id,
+      taskKey: meta?.taskKey ?? meta?.task_key,
+    }),
+    fields,
+  };
+}
+
+function createRankedWorkspaceSearchResult(
+  candidate: WorkspaceSearchCandidate,
+  query: WorkspaceSearchQuery,
+): RankedWorkspaceSearchResult | null {
+  const searchableText = candidate.fields.map((field) => field.value.toLowerCase()).join(' ');
+  if (!doesTextMatchQuery(searchableText, query)) {
+    return null;
+  }
+
+  const matches = candidate.fields
+    .filter((field) => doesFieldMatchQuery(field, query))
+    .map((field): WorkspaceSearchMatch => ({
+      field: field.field,
+      label: field.label,
+      value: field.value,
+      snippet: createSearchSnippet(field.value, query),
+    }));
+  if (matches.length === 0) {
+    return null;
+  }
+
+  const priority = matches.reduce(
+    (best, match) => Math.min(best, getSearchFieldPriority(match.field)),
+    FALLBACK_SEARCH_PRIORITY,
+  );
+  const updatedAtMs = getTimestampMs(candidate.updatedAt);
+
+  return {
+    priority,
+    updatedAtMs,
+    result: {
+      id: `${candidate.source}:${candidate.recordId}`,
+      source: candidate.source,
+      targetTab: candidate.location.targetTab,
+      location: candidate.location,
+      recordId: candidate.recordId,
+      title: candidate.title,
+      summary: candidate.summary,
+      status: candidate.status,
+      updatedAt: candidate.updatedAt,
+      matches,
+    },
+  };
+}
+
+function createWorkspaceSearchLocation(
+  targetType: WorkspaceSearchSourceType,
+  targetId: number,
+  options: { planId?: unknown; taskId?: unknown; taskKey?: unknown } = {},
+): WorkspaceSearchLocation {
+  const planId = readSearchId(options.planId);
+  const taskId = readSearchId(options.taskId);
+  const taskKey = nullableSearchText(options.taskKey);
+
+  return {
+    targetTab: getWorkspaceSearchTargetTab(targetType),
+    targetType,
+    targetId,
+    anchorId: createWorkspaceSearchAnchorId(targetType, targetId),
+    scrollBehavior: WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR,
+    highlightMs: WORKSPACE_SEARCH_LOCATION_HIGHLIGHT_MS,
+    planId,
+    taskId,
+    taskKey,
+  };
+}
+
+function createWorkspaceSearchAnchorId(targetType: WorkspaceSearchSourceType, targetId: number) {
+  return `workspace-${targetType}-${targetId}`;
+}
+
+function readSearchId(value: unknown) {
+  if (value === null || typeof value === 'undefined' || value === '') return null;
+  const id = Number(value);
+  return Number.isFinite(id) ? id : null;
+}
+
+function pushSearchField(
+  fields: WorkspaceSearchField[],
+  field: WorkspaceSearchHitField,
+  label: string,
+  value: unknown,
+) {
+  const text = toSearchText(value);
+  if (!text) return;
+
+  fields.push({
+    field,
+    label,
+    value: text,
+    priority: getSearchFieldPriority(field),
+  });
+}
+
+function pushAttachmentFields(fields: WorkspaceSearchField[], attachments: readonly AttachmentRecord[]) {
+  attachments.forEach((attachment) => {
+    pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '附件名称', attachment.original_name);
+    pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH, '附件路径', attachment.stored_path);
+  });
+}
+
+function createAttachmentLookup(attachments: readonly AttachmentRecord[]) {
+  const lookup = new Map<string, AttachmentRecord[]>();
+
+  attachments.forEach((attachment) => {
+    const key = createAttachmentLookupKey(attachment.owner_type, attachment.owner_id);
+    const ownerAttachments = lookup.get(key) ?? [];
+    lookup.set(key, [...ownerAttachments, attachment]);
+  });
+
+  return lookup;
+}
+
+function getOwnerAttachments(
+  lookup: Map<string, AttachmentRecord[]>,
+  ownerType: AttachmentRecord['owner_type'],
+  ownerId: number,
+) {
+  return lookup.get(createAttachmentLookupKey(ownerType, ownerId)) ?? [];
+}
+
+function createAttachmentLookupKey(ownerType: AttachmentRecord['owner_type'], ownerId: number) {
+  return `${ownerType}:${ownerId}`;
+}
+
+function doesFieldMatchQuery(field: WorkspaceSearchField, query: WorkspaceSearchQuery) {
+  return doesTextMatchQuery(field.value.toLowerCase(), query);
+}
+
+function doesTextMatchQuery(text: string, query: WorkspaceSearchQuery) {
+  if (!text || query.isEmpty) return false;
+  if (text.includes(query.normalized)) return true;
+  return query.terms.every((term) => text.includes(term));
+}
+
+function createSearchSnippet(value: string, query: WorkspaceSearchQuery) {
+  const text = toSearchText(value);
+  if (text.length <= SEARCH_SNIPPET_MAX_LENGTH) return text;
+
+  const lowerText = text.toLowerCase();
+  const matchIndex = getFirstSearchMatchIndex(lowerText, query);
+  const safeMatchIndex = matchIndex >= 0 ? matchIndex : 0;
+  const start = Math.max(0, safeMatchIndex - 32);
+  const end = Math.min(text.length, start + SEARCH_SNIPPET_MAX_LENGTH);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < text.length ? '…' : '';
+
+  return `${prefix}${text.slice(start, end)}${suffix}`;
+}
+
+function getFirstSearchMatchIndex(text: string, query: WorkspaceSearchQuery) {
+  const phraseIndex = text.indexOf(query.normalized);
+  if (phraseIndex >= 0) return phraseIndex;
+
+  return query.terms.reduce((bestIndex, term) => {
+    const termIndex = text.indexOf(term);
+    if (termIndex < 0) return bestIndex;
+    return bestIndex < 0 ? termIndex : Math.min(bestIndex, termIndex);
+  }, -1);
+}
+
+function compareRankedWorkspaceSearchResults(
+  left: RankedWorkspaceSearchResult,
+  right: RankedWorkspaceSearchResult,
+) {
+  if (left.priority !== right.priority) return left.priority - right.priority;
+  if (left.updatedAtMs !== right.updatedAtMs) return right.updatedAtMs - left.updatedAtMs;
+  return compareWorkspaceSearchResults(left.result, right.result);
+}
+
+function compareWorkspaceSearchResults(left: WorkspaceSearchResult, right: WorkspaceSearchResult) {
+  const leftPriority = getWorkspaceSearchResultPriority(left);
+  const rightPriority = getWorkspaceSearchResultPriority(right);
+  if (leftPriority !== rightPriority) return leftPriority - rightPriority;
+
+  const leftUpdatedAt = getTimestampMs(left.updatedAt);
+  const rightUpdatedAt = getTimestampMs(right.updatedAt);
+  if (leftUpdatedAt !== rightUpdatedAt) return rightUpdatedAt - leftUpdatedAt;
+
+  if (left.source !== right.source) return left.source.localeCompare(right.source);
+  return right.recordId - left.recordId;
+}
+
+function getWorkspaceSearchResultPriority(result: WorkspaceSearchResult) {
+  return result.matches.reduce(
+    (priority, match) => Math.min(priority, getSearchFieldPriority(match.field)),
+    FALLBACK_SEARCH_PRIORITY,
+  );
+}
+
+function getSearchFieldPriority(field: WorkspaceSearchHitField) {
+  return WORKSPACE_SEARCH_FIELD_PRIORITIES[field] ?? FALLBACK_SEARCH_PRIORITY;
+}
+
+function summarizeSearchText(value: unknown, fallback: string) {
+  const text = toSearchText(value);
+  if (!text) return fallback;
+  if (text.length <= SEARCH_SUMMARY_MAX_LENGTH) return text;
+  return `${text.slice(0, SEARCH_SUMMARY_MAX_LENGTH)}…`;
+}
+
+function nullableSearchText(value: unknown) {
+  return toSearchText(value) || null;
+}
+
+function toSearchText(value: unknown) {
+  if (value === null || typeof value === 'undefined') return '';
+  return String(value).trim().replace(/\s+/g, ' ');
+}
+
+function getFileName(filePath: unknown) {
+  const path = toSearchText(filePath);
+  if (!path) return '';
+  return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
+function getObjectMeta(meta: unknown): Record<string, unknown> | null {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    return null;
+  }
+
+  return meta as Record<string, unknown>;
+}
+
+function stringifySearchMeta(meta: unknown) {
+  if (meta === null || typeof meta === 'undefined') return '';
+  if (typeof meta === 'string') return meta;
+
+  try {
+    return JSON.stringify(meta);
+  } catch {
+    return String(meta);
+  }
+}
+
+
+--- types.ts ---
+export type IntakeType = 'requirement' | 'feedback';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
+export type AgentCliProvider = 'codex' | 'claude' | string;
+export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | string;
+
+export const PLAN_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  READY_FOR_VALIDATION: 'ready_for_validation',
+  VALIDATION_FAILED: 'validation_failed',
+  COMPLETED: 'completed',
+  INTERRUPTED: 'interrupted',
+  DRAFT: 'draft',
+} as const;
+
+export type PlanStatus = (typeof PLAN_STATUS)[keyof typeof PLAN_STATUS];
+
+export interface AgentCliOption {
+  value: AgentCliProvider;
+  label: string;
+}
+
+export interface AgentCliDisplaySource {
+  agent_cli_provider?: AgentCliProvider | null;
+  agentCliProvider?: AgentCliProvider | null;
+  cli_provider?: AgentCliProvider | null;
+  cliProvider?: AgentCliProvider | null;
+  cli_backend?: AgentCliProvider | null;
+  cliBackend?: AgentCliProvider | null;
+  provider?: AgentCliProvider | null;
+  agent_cli_command?: string | null;
+  agentCliCommand?: string | null;
+  cli_command?: string | null;
+  cliCommand?: string | null;
+  cli_path?: string | null;
+  cliPath?: string | null;
+  command?: string | null;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  codexReasoningEffort?: CodexReasoningEffort | null;
+  codex_thinking_depth?: CodexReasoningEffort | null;
+  codexThinkingDepth?: CodexReasoningEffort | null;
+  reasoning_effort?: CodexReasoningEffort | null;
+  reasoningEffort?: CodexReasoningEffort | null;
+  thinking_depth?: CodexReasoningEffort | null;
+  thinkingDepth?: CodexReasoningEffort | null;
+  [key: string]: unknown;
+}
+
+export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+  REQUIREMENT: 'requirement',
+  FEEDBACK: 'feedback',
+  PLAN: 'plan',
+  TASK: 'task',
+  EVENT: 'event',
+} as const;
+
+export type WorkspaceSearchSourceType =
+  (typeof WORKSPACE_SEARCH_SOURCE_TYPES)[keyof typeof WORKSPACE_SEARCH_SOURCE_TYPES];
+
+export const WORKSPACE_SEARCH_HIT_FIELDS = {
+  TITLE: 'title',
+  BODY: 'body',
+  STATUS: 'status',
+  MARKDOWN: 'markdown',
+  FILE_PATH: 'filePath',
+  SOURCE_PATH: 'sourcePath',
+  TASK_KEY: 'taskKey',
+  SCOPE: 'scope',
+  RAW_LINE: 'rawLine',
+  EVENT_TYPE: 'eventType',
+  EVENT_MESSAGE: 'eventMessage',
+  EVENT_META: 'eventMeta',
+} as const;
+
+export type WorkspaceSearchHitField =
+  (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
+
+export type WorkspaceSearchTargetType = WorkspaceSearchSourceType;
+
+export type WorkspaceSearchScrollBehavior = 'auto' | 'smooth';
+
+export interface WorkspaceSearchQuery {
+  raw: string;
+  normalized: string;
+  terms: string[];
+  isEmpty: boolean;
+}
+
+export interface WorkspaceSearchSourceConfig {
+  type: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+}
+
+export interface WorkspaceSearchMatch {
+  field: WorkspaceSearchHitField;
+  label: string;
+  value: string;
+  snippet?: string;
+}
+
+export interface WorkspaceSearchLocation {
+  targetTab: WorkspaceTab;
+  targetType: WorkspaceSearchTargetType;
+  targetId: number;
+  anchorId: string;
+  scrollBehavior: WorkspaceSearchScrollBehavior;
+  highlightMs: number;
+  planId?: number | null;
+  taskId?: number | null;
+  taskKey?: string | null;
+}
+
+export interface WorkspaceSearchResult {
+  id: string;
+  source: WorkspaceSearchSourceType;
+  targetTab: WorkspaceTab;
+  location: WorkspaceSearchLocation;
+  recordId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  matches: WorkspaceSearchMatch[];
+}
+
+export interface WorkspaceSearchGroup {
+  source: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+  count: number;
+  results: WorkspaceSearchResult[];
+}
+
+export interface WorkspaceSearchState {
+  query: WorkspaceSearchQuery;
+  total: number;
+  results: WorkspaceSearchResult[];
+  groups: WorkspaceSearchGroup[];
+}
+
+export interface Project {
+  id: number;
+  name: string;
+  workspace_path: string;
+  description: string;
+  created_at: string;
+  updated_at: string;
+  running?: number;
+  phase?: string;
+  interval_seconds?: number;
+  validation_command?: string;
+  agent_cli_provider?: AgentCliProvider;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+}
+
+export interface ProjectState {
+  project_id: number;
+  running: number;
+  phase: string;
+  interval_seconds: number;
+  validation_command: string;
+  last_issue_hash?: string | null;
+  last_error?: string | null;
+  agent_cli_provider?: AgentCliProvider;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  updated_at: string;
+  /** 由 snapshot 合并自 project.workspace_path */
+  workspace_path?: string;
+}
+
+export interface Requirement {
+  id: number;
+  project_id: number;
+  title: string;
+  body: string;
+  status: string;
+  source_path?: string | null;
+  source_hash?: string | null;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: number;
+  project_id: number;
+  requirement_id?: number | null;
+  title: string;
+  body: string;
+  status: string;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Attachment {
+  id: number;
+  project_id: number;
+  owner_type: IntakeType;
+  owner_id: number;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size: number;
+  hash: string;
+  created_at: string;
+}
+
+export interface Plan {
+  id: number;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  title?: string | null;
+  hash: string;
+  status: PlanStatus;
+  sort_order: number;
+  is_draft: boolean;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  concurrency_suggestion: PlanConcurrencySuggestion;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanScopeFileInfo {
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+  canOpen: boolean;
+  isUnknown: boolean;
+  isValidation: boolean;
+  reason: string;
+}
+
+export interface PlanConcurrencyTask {
+  id: number;
+  task_key: string;
+  title: string;
+  status: string;
+  scopes: string[];
+  reason: string;
+}
+
+export interface PlanConcurrencyBatch {
+  batch: number;
+  reason: string;
+  tasks: PlanConcurrencyTask[];
+}
+
+export interface PlanConcurrencySuggestion {
+  hasSafeParallelBatches: boolean;
+  parallelTaskCount: number;
+  batchCount: number;
+  serialTaskCount: number;
+  maxParallelTasks: number;
+  batches: PlanConcurrencyBatch[];
+  serialTasks: PlanConcurrencyTask[];
+}
+
+export interface ReadPlanResult {
+  ok: boolean;
+  id: number | null;
+  project_id: number | null;
+  file_path: string;
+  markdown: string;
+  hash: string;
+  updated_at: string;
+  error: string | null;
+}
+
+export interface WorkspacePlanReadState {
+  plan: Plan | null;
+  result: ReadPlanResult | null;
+  loading: boolean;
+  error: string | null;
+}
+
+export type CodexSessionMode = 'new' | 'resume';
+
+export type CodexSessionState = CodexSessionMode | 'fallback-new' | string;
+
+export interface CodexSessionInfo {
+  codexSessionId?: string | null;
+  codexSessionShortId?: string | null;
+  codexSessionMode?: CodexSessionMode | null;
+  codexSessionState?: CodexSessionState | null;
+  codexSessionLabel?: string | null;
+  codexSessionRequestedId?: string | null;
+  codexSessionRequestedShortId?: string | null;
+  codexSessionFallback?: boolean | null;
+}
+
+export interface PlanTask extends CodexSessionInfo {
+  id: number;
+  plan_id: number;
+  task_key: string;
+  title: string;
+  raw_line: string;
+  scope: string;
+  scope_files: PlanScopeFileInfo[];
+  status: string;
+  sort_order: number;
+  started_at: string | null;
+  finished_at: string | null;
+  duration_ms: number;
+  run_duration_ms?: number;
+  codex_session_id: string | null;
+  agentCliProvider?: string | null;
+  agentCliCommand?: string | null;
+  codexReasoningEffort?: CodexReasoningEffort | null;
+  updated_at: string;
+  /** JOIN plans 得到 */
+  file_path: string;
+  /** JOIN plans 并读取计划 Markdown 标题得到 */
+  plan_title: string;
+}
+
+export const TASK_EVENT_TYPES = {
+  STARTED: 'task.started',
+  SUCCEEDED: 'task.succeeded',
+  FAILED: 'task.failed',
+  STOP_REQUESTED: 'task.stop.requested',
+  STOPPED: 'task.stopped',
+  INTERRUPTED: 'task.interrupted',
+} as const;
+
+export const LEGACY_TASK_EVENT_TYPES = {
+  EXECUTED: 'task.executed',
+  STOPPING: 'task.stopping',
+} as const;
+
+export const TASK_EVENT_STATUS = {
+  PENDING: 'pending',
+  RUNNING: 'running',
+  COMPLETED: 'completed',
+  FAILED: 'failed',
+  STOPPING: 'stopping',
+  STOPPED: 'stopped',
+  INTERRUPTED: 'interrupted',
+} as const;
+
+export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TYPES];
+export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];
+export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];
+
+export interface TaskEventSemantics {
+  status: TaskEventStatus;
+  label: string;
+}
+
+export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {
+  [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },
+  [TASK_EVENT_TYPES.SUCCEEDED]: { status: TASK_EVENT_STATUS.COMPLETED, label: '结束了任务' },
+  [TASK_EVENT_TYPES.FAILED]: { status: TASK_EVENT_STATUS.FAILED, label: '任务失败' },
+  [TASK_EVENT_TYPES.STOP_REQUESTED]: { status: TASK_EVENT_STATUS.STOPPING, label: '请求停止任务' },
+  [TASK_EVENT_TYPES.STOPPED]: { status: TASK_EVENT_STATUS.STOPPED, label: '已停止任务' },
+  [TASK_EVENT_TYPES.INTERRUPTED]: { status: TASK_EVENT_STATUS.INTERRUPTED, label: '已中断任务' },
+};
+
+export const TASK_EVENT_COMPATIBILITY: Record<LegacyTaskEventType, TaskEventType> = {
+  [LEGACY_TASK_EVENT_TYPES.EXECUTED]: TASK_EVENT_TYPES.SUCCEEDED,
+  [LEGACY_TASK_EVENT_TYPES.STOPPING]: TASK_EVENT_TYPES.STOPPED,
+};
+
+export interface TaskEventMeta extends CodexSessionInfo {
+  taskId?: number | null;
+  taskKey?: string | null;
+  taskTitle?: string | null;
+  planId?: number | null;
+  status?: TaskEventStatus | string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  durationMs?: number | null;
+  runDurationMs?: number | null;
+  exitCode?: number | null;
+  log?: string | null;
+  error?: string | null;
+  agentCliProvider?: string | null;
+  agentCliCommand?: string | null;
+  codexReasoningEffort?: CodexReasoningEffort | null;
+  [key: string]: unknown;
+}
+
+export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+export type AppEventMeta = string | AppEventStructuredMeta;
+
+export interface AppEvent<TMeta extends AppEventMeta | null = AppEventMeta | null> {
+  id: number;
+  project_id: number;
+  type: string;
+  message: string;
+  meta?: TMeta;
+  created_at: string;
+}
+
+export interface ScanFile {
+  project_id: number;
+  scan_type: string;
+  file_path: string;
+  hash: string;
+  size: number;
+  modified_at: string;
+  scanned_at: string;
+}
+
+export interface AppSnapshot {
+  activeProjectId: number | null;
+  activeProject: Project | null;
+  projects: Project[];
+  state: ProjectState | null;
+  requirements: Requirement[];
+  feedback: Feedback[];
+  attachments: Attachment[];
+  plans: Plan[];
+  tasks: PlanTask[];
+  events: AppEvent<AppEventMeta | null>[];
+  scans: ScanFile[];
+  activeOperation: ActiveOperation | null;
+  activeOperations: ActiveOperation[];
+  lastOperation: ActiveOperation | null;
+}
+
+export interface ActivityLine {
+  role: string;
+  text: string;
+  at: string;
+}
+
+export interface ActiveOperation extends CodexSessionInfo {
+  label: string;
+  projectId: number | null;
+  planId: number | null;
+  taskId: number | null;
+  agentCliProvider?: string;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort | null;
+  startedAt: string | null;
+  finishedAt?: string | null;
+  exitCode?: number | null;
+  logTail: string;
+  activity: ActivityLine[];
+}
+
+export const PENDING_ATTACHMENT_SOURCES = {
+  PATH: 'path',
+  CLIPBOARD_IMAGE: 'clipboard-image',
+} as const;
+
+export type PendingAttachmentSource =
+  (typeof PENDING_ATTACHMENT_SOURCES)[keyof typeof PENDING_ATTACHMENT_SOURCES];
+
+export interface PendingAttachmentBase {
+  id: string;
+  source: PendingAttachmentSource;
+  name: string;
+  size: number;
+  /** MIME type */
+  type: string;
+  previewUrl: string;
+}
+
+export interface PendingPathAttachment extends PendingAttachmentBase {
+  source: typeof PENDING_ATTACHMENT_SOURCES.PATH;
+  path: string;
+}
+
+export interface PendingClipboardImageAttachment extends PendingAttachmentBase {
+  source: typeof PENDING_ATTACHMENT_SOURCES.CLIPBOARD_IMAGE;
+  dataUrl: string;
+  base64?: string;
+  dataBase64?: string;
+  bytes?: number[] | ArrayBuffer | Uint8Array;
+}
+
+export type PendingAttachment = PendingPathAttachment | PendingClipboardImageAttachment;
+
+export interface CreateIntakeInput {
+  projectId: number;
+  body: string;
+  attachments: PendingAttachment[];
+  title?: string;
+  status?: string;
+  autoRun?: boolean;
+  requirementId?: number | null;
+  agentCliProvider?: AgentCliProvider;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort;
+}
+
+export interface CreateProjectInput {
+  name: string;
+  workspacePath: string;
+  description?: string;
+  agentCliProvider?: AgentCliProvider;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort;
+}
+
+export interface UpdateProjectInput extends CreateProjectInput {
+  id: number;
+}
+
+export interface LoopConfigInput {
+  projectId: number;
+  workspacePath?: string;
+  intervalSeconds?: number;
+  validationCommand?: string;
+  validation_command?: string;
+  agentCliProvider?: AgentCliProvider;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort;
+}
+
+export interface ProjectIdInput {
+  projectId: number;
+  manual?: boolean;
+}
+
+export interface RecordIdInput extends ProjectIdInput {
+  id: number;
+}
+
+export interface TaskIdInput extends ProjectIdInput {
+  taskId: number;
+}
+
+export interface ReadPlanInput extends ProjectIdInput {
+  planId: number;
+}
+
+export interface IntakeActionInput extends ProjectIdInput {
+  type: IntakeType;
+  id: number;
+  title?: string;
+}
+
+export interface UpdateRequirementInput extends RecordIdInput {
+  title?: string;
+  body?: string;
+  status?: string;
+  attachments?: PendingAttachment[];
+  agentCliProvider?: AgentCliProvider;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort;
+}
+
+export interface UpdateFeedbackInput extends UpdateRequirementInput {
+  requirementId?: number | null;
+}
+
+export interface AutoplanApi {
+  snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
+  createProject: (input: CreateProjectInput) => Promise<AppSnapshot>;
+  updateProject: (input: UpdateProjectInput) => Promise<AppSnapshot>;
+  deleteProject: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  configureLoop: (config: LoopConfigInput) => Promise<AppSnapshot>;
+  startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
+  runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
+  deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
+  createFeedback: (input: CreateIntakeInput) => Promise<AppSnapshot>;
+  updateFeedback: (input: UpdateFeedbackInput) => Promise<AppSnapshot>;
+  deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;
+  interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  getDroppedFilePath: (file: File) => string;
+  toFileUrl: (filePath: string) => string;
+  onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+}
+
+declare global {
+  interface Window {
+    autoplan: AutoplanApi;
+  }
+}
+
+
+codex
+输出太长，我会聚焦查找格式化函数和事件类型定义。
+exec
+powershell.exe -Command "rg -n \"formatEvent|formatTaskEvent|AppEvent|event\\.type|search\" src\\renderer\\components\\PlanLists.tsx src\\renderer\\utils\\search.ts src\\renderer\\types.ts" in D:\project\GitHub\autoplan
+ succeeded in 138ms:
+src\renderer\types.ts:405:export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+src\renderer\types.ts:406:export type AppEventMeta = string | AppEventStructuredMeta;
+src\renderer\types.ts:408:export interface AppEvent<TMeta extends AppEventMeta | null = AppEventMeta | null> {
+src\renderer\types.ts:437:  events: AppEvent<AppEventMeta | null>[];
+src\renderer\utils\search.ts:190:export function searchWorkspaceSnapshot(
+src\renderer\utils\search.ts:228:  return searchWorkspaceSnapshot(snapshot, queryInput);
+src\renderer\utils\search.ts:341:  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
+src\renderer\utils\search.ts:351:    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+src\renderer\utils\search.ts:352:    summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+src\renderer\utils\search.ts:368:  const searchableText = candidate.fields.map((field) => field.value.toLowerCase()).join(' ');
+src\renderer\utils\search.ts:369:  if (!doesTextMatchQuery(searchableText, query)) {
+src\renderer\components\PlanLists.tsx:3:import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
+src\renderer\components\PlanLists.tsx:275:function readEventMeta(event: AppEvent) {
+src\renderer\components\PlanLists.tsx:276:  return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+src\renderer\components\PlanLists.tsx:303:function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+src\renderer\components\PlanLists.tsx:304:  const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+src\renderer\components\PlanLists.tsx:323:function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
+src\renderer\components\PlanLists.tsx:358:function formatEvent(event: AppEvent): TaskEventDisplay {
+src\renderer\components\PlanLists.tsx:360:  const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+src\renderer\components\PlanLists.tsx:361:    ? formatTaskEvent(event, meta)
+src\renderer\components\PlanLists.tsx:366:    title: event.type || '事件',
+src\renderer\components\PlanLists.tsx:384:export function getEventSearchText(event: AppEvent) {
+src\renderer\components\PlanLists.tsx:385:  const display = formatEvent(event);
+src\renderer\components\PlanLists.tsx:388:    event.type,
+src\renderer\components\PlanLists.tsx:925:export function EventList({ emptyText = '暂无事件。', events }: { emptyText?: string; events: AppEvent[] }) {
+src\renderer\components\PlanLists.tsx:931:        const display = formatEvent(event);
+
+codex
+定位到关键函数。现在读取这些函数附近内容来确认调用关系。
+exec
+powershell.exe -Command '$p='"'src\\renderer\\components\\PlanLists.tsx'; (Get-Content -Encoding UTF8 "'$p | Select-Object -Skip 250 -First 160) -join "`n"; "`n--- event list ---"; (Get-Content -Encoding UTF8 $p | Select-Object -Skip 900 -First 90) -join "`n"; "`n--- search event ---"; $s='"'src\\renderer\\utils\\search.ts'; (Get-Content -Encoding UTF8 "'$s | Select-Object -Skip 315 -First 55) -join "`n"; "`n--- event types ---"; $t='"'src\\renderer\\types.ts'; (Get-Content -Encoding UTF8 "'$t | Select-Object -Skip 395 -First 35) -join "`n"' in D:\project\GitHub\autoplan
+ succeeded in 829ms:
+    (sum, task) => sum + (task.status === 'completed' ? getTaskDurationMs(task) ?? 0 : 0),
+    0,
+  );
+
+  return `总耗时 ${formatDuration(totalMs, '0秒')} · 已完成 ${formatDuration(completedMs, '0秒')}`;
+}
+
+function planTitle(plan: Plan) {
+  return String((plan as Plan & { title?: string | null }).title || '').trim();
+}
+
+function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      return toEventMetaRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+  return null;
+}
+
+function readEventMeta(event: AppEvent) {
+  return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+}
+
+function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+  if (!meta) return '';
+  for (const key of keys) {
+    const value = meta[key];
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text) return text;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+  const text = readMetaText(meta, keys);
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function includesAny(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+  const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+  if (includesAny(eventText, ['stop_requested', 'stop-requested', 'stop.requested', 'request_stop', 'stopping'])) {
+    return 'stopping';
+  }
+  if (includesAny(eventText, ['fail', 'error', 'errored'])) return 'failed';
+  if (includesAny(eventText, ['stop', 'interrupt', 'cancel'])) return 'stopped';
+  if (includesAny(eventText, ['start', 'begin', 'running'])) return 'start';
+  if (includesAny(eventText, ['complete', 'finish', 'success', 'succeed', 'executed', 'done'])) return 'success';
+  return 'updated';
+}
+
+function isTaskEventType(type: string) {
+  return /^task[.:_-]/i.test(type);
+}
+
+function sameEventText(left: string, right: string) {
+  return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+}
+
+function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
+  const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+  const taskId = readMetaText(meta, ['taskId', 'task_id']);
+  const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+  const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+  if (!hasTaskIdentity) return null;
+
+  const tone = classifyTaskEvent(event, meta);
+  const presentation = TASK_EVENT_PRESENTATION[tone];
+  const taskLabel = taskKey ? `${taskKey} 任务` : taskId ? `任务 #${taskId}` : '任务';
+  const separator = taskLabel === '任务' ? '' : ' ';
+  const title = `${presentation.action}${separator}${taskLabel}：${taskTitle}`;
+  const originalMessage = event.message?.trim() || '';
+  const planId = readMetaText(meta, ['planId', 'plan_id']);
+  const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+  const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+  const cliSummary = agentCliProvider ? planCliSummaryLabel(meta) : '';
+  const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+  const metaParts = [
+    formatChinaDateTime(event.created_at),
+    planId ? `Plan #${planId}` : '',
+    cliSummary,
+    status ? `状态 ${status}` : '',
+    durationMs !== null ? `耗时 ${formatDuration(durationMs, '0秒')}` : '',
+  ].filter(Boolean);
+
+  return {
+    title,
+    body: originalMessage && !sameEventText(originalMessage, title) ? originalMessage : '',
+    meta: metaParts.join(' · '),
+    badge: presentation.badge,
+    tone,
+  };
+}
+
+function formatEvent(event: AppEvent): TaskEventDisplay {
+  const meta = readEventMeta(event);
+  const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+    ? formatTaskEvent(event, meta)
+    : null;
+  if (taskDisplay) return taskDisplay;
+
+  return {
+    title: event.type || '事件',
+    body: event.message || '',
+    meta: formatChinaDateTime(event.created_at),
+  };
+}
+
+function toSearchText(value: unknown, depth = 0): string {
+  if (value === null || value === undefined || depth > 6) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => toSearchText(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+export function getEventSearchText(event: AppEvent) {
+  const display = formatEvent(event);
+  const meta = readEventMeta(event);
+  return [
+    event.type,
+    event.message,
+    display.title,
+    display.body,
+    display.badge,
+    display.meta,
+    toSearchText(meta),
+    toSearchText(event),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function hasPlanReaderUpdate(
+  readingPlan: Plan | null,
+  latestPlan: Plan | null | undefined,
+  result: WorkspacePlanReadState['result'],
+) {
+  if (!readingPlan || !latestPlan) return false;
+  if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+
+  const readFilePath = result?.file_path || readingPlan.file_path || '';
+  const readHash = result?.hash || readingPlan.hash || '';
+
+--- event list ---
+                                >
+                                  <span className="mono">{scopeFileLabel(file)}</span>
+                                  <small>{scopeFileStatus(file)}</small>
+                                </span>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      }
+                      meta={`${task.task_key} · ${durationLabel} · ${formatChinaDateTime(task.updated_at)}`}
+                    />
+                  );
+                })}
+              </section>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="empty">{currentEmptyText}</div>
+      )}
+    </div>
+  );
+}
+
+export function EventList({ emptyText = '暂无事件。', events }: { emptyText?: string; events: AppEvent[] }) {
+  if (!events.length) return <div className="empty">{emptyText}</div>;
+
+  return (
+    <div className="list compact event-list">
+      {events.map((event) => {
+        const display = formatEvent(event);
+        return (
+          <article className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`} key={event.id}>
+            <div className="item-title event-title">
+              <span>{display.title}</span>
+              {display.badge ? <span className={`event-badge event-badge-${display.tone}`}>{display.badge}</span> : null}
+            </div>
+            {display.body ? <div className="item-body plain-text">{display.body}</div> : null}
+            <div className="meta event-meta">{display.meta}</div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
+--- search event ---
+
+  const taskTitle = toSearchText(task.title);
+  const taskKey = toSearchText(task.task_key);
+
+  return {
+    source: WORKSPACE_SEARCH_SOURCE_TYPES.TASK,
+    recordId: task.id,
+    title: taskKey && taskTitle ? `${taskKey}: ${taskTitle}` : taskTitle || taskKey || `任务 #${task.id}`,
+    summary: summarizeSearchText(task.raw_line || task.scope || task.file_path, '暂无内容'),
+    status: nullableSearchText(task.status),
+    updatedAt: task.updated_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.TASK, task.id, {
+      planId: task.plan_id,
+      taskId: task.id,
+      taskKey,
+    }),
+    fields,
+  };
+}
+
+function createEventCandidate(event: AppSnapshot['events'][number]): WorkspaceSearchCandidate {
+  const fields: WorkspaceSearchField[] = [];
+  const meta = getObjectMeta(event.meta);
+  const eventMeta = stringifySearchMeta(event.meta);
+
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE, '事件类型', event.type);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE, '事件信息', event.message);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY, '任务 Key', meta?.taskKey);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.TITLE, '标题', meta?.taskTitle);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.STATUS, '状态', meta?.status);
+  pushSearchField(fields, WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META, '事件元信息', eventMeta);
+
+  return {
+    source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+    recordId: event.id,
+    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+    summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+    status: nullableSearchText(meta?.status),
+    updatedAt: event.created_at,
+    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.EVENT, event.id, {
+      planId: meta?.planId ?? meta?.plan_id,
+      taskId: meta?.taskId ?? meta?.task_id,
+      taskKey: meta?.taskKey ?? meta?.task_key,
+    }),
+    fields,
+  };
+}
+
+function createRankedWorkspaceSearchResult(
+  candidate: WorkspaceSearchCandidate,
+  query: WorkspaceSearchQuery,
+): RankedWorkspaceSearchResult | null {
+  const searchableText = candidate.fields.map((field) => field.value.toLowerCase()).join(' ');
+  if (!doesTextMatchQuery(searchableText, query)) {
+    return null;
+
+--- event types ---
+  exitCode?: number | null;
+  log?: string | null;
+  error?: string | null;
+  agentCliProvider?: string | null;
+  agentCliCommand?: string | null;
+  codexReasoningEffort?: CodexReasoningEffort | null;
+  [key: string]: unknown;
+}
+
+export type AppEventStructuredMeta = TaskEventMeta | Record<string, unknown>;
+export type AppEventMeta = string | AppEventStructuredMeta;
+
+export interface AppEvent<TMeta extends AppEventMeta | null = AppEventMeta | null> {
+  id: number;
+  project_id: number;
+  type: string;
+  message: string;
+  meta?: TMeta;
+  created_at: string;
+}
+
+export interface ScanFile {
+  project_id: number;
+  scan_type: string;
+  file_path: string;
+  hash: string;
+  size: number;
+  modified_at: string;
+  scanned_at: string;
+}
+
+export interface AppSnapshot {
+  activeProjectId: number | null;
+  activeProject: Project | null;
+  projects: Project[];
+
+codex
+还差搜索文本导出函数，我会读取它的完整片段。
+exec
+powershell.exe -Command '$p='"'src\\renderer\\components\\PlanLists.tsx'; (Get-Content -Encoding UTF8 "'$p | Select-Object -Skip 350 -First 60) -join "`n"; "`n--- imports/search top ---"; (Get-Content -Encoding UTF8 src'"\\renderer\\utils\\search.ts | Select-Object -First 80) -join \""'`n"' in D:\project\GitHub\autoplan
+ succeeded in 750ms:
+    body: originalMessage && !sameEventText(originalMessage, title) ? originalMessage : '',
+    meta: metaParts.join(' · '),
+    badge: presentation.badge,
+    tone,
+  };
+}
+
+function formatEvent(event: AppEvent): TaskEventDisplay {
+  const meta = readEventMeta(event);
+  const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+    ? formatTaskEvent(event, meta)
+    : null;
+  if (taskDisplay) return taskDisplay;
+
+  return {
+    title: event.type || '事件',
+    body: event.message || '',
+    meta: formatChinaDateTime(event.created_at),
+  };
+}
+
+function toSearchText(value: unknown, depth = 0): string {
+  if (value === null || value === undefined || depth > 6) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => toSearchText(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+export function getEventSearchText(event: AppEvent) {
+  const display = formatEvent(event);
+  const meta = readEventMeta(event);
+  return [
+    event.type,
+    event.message,
+    display.title,
+    display.body,
+    display.badge,
+    display.meta,
+    toSearchText(meta),
+    toSearchText(event),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+function hasPlanReaderUpdate(
+  readingPlan: Plan | null,
+  latestPlan: Plan | null | undefined,
+  result: WorkspacePlanReadState['result'],
+) {
+  if (!readingPlan || !latestPlan) return false;
+  if (readingPlan.id !== latestPlan.id || readingPlan.project_id !== latestPlan.project_id) return false;
+
+  const readFilePath = result?.file_path || readingPlan.file_path || '';
+  const readHash = result?.hash || readingPlan.hash || '';
+
+--- imports/search top ---
+import { WORKSPACE_SEARCH_HIT_FIELDS, WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
+import type {
+  AppSnapshot,
+  WorkspaceSearchGroup,
+  WorkspaceSearchHitField,
+  WorkspaceSearchLocation,
+  WorkspaceSearchMatch,
+  WorkspaceSearchQuery,
+  WorkspaceSearchResult,
+  WorkspaceSearchSourceConfig,
+  WorkspaceSearchSourceType,
+  WorkspaceSearchState,
+  WorkspaceTab,
+} from '../types';
+import { getTimestampMs } from './time';
+
+const SEARCH_SUMMARY_MAX_LENGTH = 140;
+const SEARCH_SNIPPET_MAX_LENGTH = 120;
+const FALLBACK_SEARCH_PRIORITY = 99;
+const WORKSPACE_SEARCH_LOCATION_HIGHLIGHT_MS = 2400;
+const WORKSPACE_SEARCH_LOCATION_SCROLL_BEHAVIOR = 'smooth';
+
+const WORKSPACE_SEARCH_FIELD_PRIORITIES: Record<WorkspaceSearchHitField, number> = {
+  [WORKSPACE_SEARCH_HIT_FIELDS.TITLE]: 0,
+  [WORKSPACE_SEARCH_HIT_FIELDS.TASK_KEY]: 0,
+  [WORKSPACE_SEARCH_HIT_FIELDS.STATUS]: 1,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_TYPE]: 1,
+  [WORKSPACE_SEARCH_HIT_FIELDS.BODY]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.MARKDOWN]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.RAW_LINE]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_MESSAGE]: 2,
+  [WORKSPACE_SEARCH_HIT_FIELDS.FILE_PATH]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.SOURCE_PATH]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.SCOPE]: 3,
+  [WORKSPACE_SEARCH_HIT_FIELDS.EVENT_META]: 3,
+};
+
+type AttachmentRecord = AppSnapshot['attachments'][number];
+
+interface WorkspaceSearchField {
+  field: WorkspaceSearchHitField;
+  label: string;
+  value: string;
+  priority: number;
+}
+
+interface WorkspaceSearchCandidate {
+  source: WorkspaceSearchSourceType;
+  recordId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  location: WorkspaceSearchLocation;
+  fields: WorkspaceSearchField[];
+}
+
+interface RankedWorkspaceSearchResult {
+  result: WorkspaceSearchResult;
+  priority: number;
+  updatedAtMs: number;
+}
+
+export const WORKSPACE_SEARCH_SOURCE_CONFIGS: WorkspaceSearchSourceConfig[] = [
+  {
+    type: WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+    label: '需求',
+    targetTab: 'requirement',
+  },
+  {
+    type: WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK,
+    label: '反馈',
+    targetTab: 'feedback',
+  },
+  {
+    type: WORKSPACE_SEARCH_SOURCE_TYPES.PLAN,
+    label: 'Plan',
+    targetTab: 'tasks',
+  },
+  {
+
+**Considering code changes**
+
+I’m thinking that AutoPlan might expect the task to succeed. To formalize this, I could make a minimal code change, like exporting a type alias. But I need to be careful not to confuse it with P002 or P003. So, it looks like my next step is to inspect the full usage of getEventSearchText to ensure everything aligns properly. There’s a lot to consider here!
+codex
+我会确认 `getEventSearchText` 是否被搜索模块复用，避免误改到后续任务范围。
+exec
+powershell.exe -Command "rg -n \"getEventSearchText|createEventCandidate|WORKSPACE_SEARCH_SOURCE_TYPES.EVENT|events\\.map|formatEvent\" src\\renderer" in D:\project\GitHub\autoplan
+ succeeded in 139ms:
+src\renderer\utils\search.ts:86:    type: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+src\renderer\utils\search.ts:212:    ...(snapshot.events ?? []).map(createEventCandidate),
+src\renderer\utils\search.ts:336:function createEventCandidate(event: AppSnapshot['events'][number]): WorkspaceSearchCandidate {
+src\renderer\utils\search.ts:349:    source: WORKSPACE_SEARCH_SOURCE_TYPES.EVENT,
+src\renderer\utils\search.ts:355:    location: createWorkspaceSearchLocation(WORKSPACE_SEARCH_SOURCE_TYPES.EVENT, event.id, {
+src\renderer\pages\WorkspacePage.tsx:1060:    events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
+src\renderer\components\PlanLists.tsx:358:function formatEvent(event: AppEvent): TaskEventDisplay {
+src\renderer\components\PlanLists.tsx:384:export function getEventSearchText(event: AppEvent) {
+src\renderer\components\PlanLists.tsx:385:  const display = formatEvent(event);
+src\renderer\components\PlanLists.tsx:930:      {events.map((event) => {
+src\renderer\components\PlanLists.tsx:931:        const display = formatEvent(event);
+
+codex
+搜索模块未引用导出的事件搜索文本；我会查看页面过滤链路确认实际入口。
+exec
+powershell.exe -Command "(Get-Content -Encoding UTF8 src\\renderer\\pages\\WorkspacePage.tsx | Select-Object -Skip 1030 -First 45) -join \""'`n"; rg -n "filterItemsBySearchGroup|SearchResults|searchState" src'"\\renderer\\pages\\WorkspacePage.tsx src\\renderer\\components src\\renderer\\utils" in D:\project\GitHub\autoplan
+ succeeded in 207ms:
+function createFilteredWorkspaceItems(
+  snapshot: AppSnapshot | null | undefined,
+  searchState: WorkspaceSearchState,
+): WorkspaceFilterableItems {
+  if (!snapshot) {
+    return { requirements: [], feedback: [], plans: [], tasks: [], events: [] };
+  }
+  if (searchState.query.isEmpty) {
+    return {
+      requirements: snapshot.requirements,
+      feedback: snapshot.feedback,
+      plans: snapshot.plans,
+      tasks: snapshot.tasks,
+      events: snapshot.events,
+    };
+  }
+
+  const plans = filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
+  const tasks = filterTasksBySearchGroups(snapshot.tasks, plans, searchState.groups);
+
+  return {
+    requirements: filterItemsBySearchGroup(
+      snapshot.requirements,
+      searchState.groups,
+      WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
+    ),
+    feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
+    plans,
+    tasks,
+    events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
+  };
+}
+
+function filterItemsBySearchGroup<T extends { id: number }>(
+  items: T[],
+  groups: WorkspaceSearchGroup[],
+  source: WorkspaceSearchSourceType,
+) {
+  const group = groups.find((item) => item.source === source);
+  if (!group?.results.length) return [];
+
+  const recordIds = new Set(group.results.map((result) => result.recordId));
+  return items.filter((item) => recordIds.has(item.id));
+}
+
+src\renderer\pages\WorkspacePage.tsx:27:import { SearchResults } from '../components/SearchResults';
+src\renderer\pages\WorkspacePage.tsx:737:        <SearchResults
+src\renderer\pages\WorkspacePage.tsx:741:          searchState={workspaceSearch}
+src\renderer\pages\WorkspacePage.tsx:1033:  searchState: WorkspaceSearchState,
+src\renderer\pages\WorkspacePage.tsx:1038:  if (searchState.query.isEmpty) {
+src\renderer\pages\WorkspacePage.tsx:1048:  const plans = filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
+src\renderer\pages\WorkspacePage.tsx:1049:  const tasks = filterTasksBySearchGroups(snapshot.tasks, plans, searchState.groups);
+src\renderer\pages\WorkspacePage.tsx:1052:    requirements: filterItemsBySearchGroup(
+src\renderer\pages\WorkspacePage.tsx:1054:      searchState.groups,
+src\renderer\pages\WorkspacePage.tsx:1057:    feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
+src\renderer\pages\WorkspacePage.tsx:1060:    events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
+src\renderer\pages\WorkspacePage.tsx:1064:function filterItemsBySearchGroup<T extends { id: number }>(
+src\renderer\pages\WorkspacePage.tsx:1081:  const directTasks = filterItemsBySearchGroup(tasks, groups, WORKSPACE_SEARCH_SOURCE_TYPES.TASK);
+src\renderer\utils\search.ts:160:export function groupWorkspaceSearchResults(
+src\renderer\utils\search.ts:176:export function sortWorkspaceSearchResults(
+src\renderer\utils\search.ts:179:  return [...results].sort(compareWorkspaceSearchResults);
+src\renderer\utils\search.ts:218:    .sort(compareRankedWorkspaceSearchResults);
+src\renderer\utils\search.ts:239:    groups: groupWorkspaceSearchResults(results),
+src\renderer\utils\search.ts:525:function compareRankedWorkspaceSearchResults(
+src\renderer\utils\search.ts:531:  return compareWorkspaceSearchResults(left.result, right.result);
+src\renderer\utils\search.ts:534:function compareWorkspaceSearchResults(left: WorkspaceSearchResult, right: WorkspaceSearchResult) {
+src\renderer\components\SearchResults.tsx:29:interface SearchResultsProps {
+src\renderer\components\SearchResults.tsx:33:  searchState: WorkspaceSearchState;
+src\renderer\components\SearchResults.tsx:36:export function SearchResults({ onClear, onSelectGroup, onSelectResult, searchState }: SearchResultsProps) {
+src\renderer\components\SearchResults.tsx:37:  if (searchState.query.isEmpty) return null;
+src\renderer\components\SearchResults.tsx:39:  const queryLabel = searchState.query.raw.trim().replace(/\s+/g, ' ') || searchState.query.normalized;
+src\renderer\components\SearchResults.tsx:47:            “{queryLabel}” 命中 <b>{searchState.total}</b> 条结果
+src\renderer\components\SearchResults.tsx:56:        {searchState.groups.map((group) => (
+src\renderer\components\SearchResults.tsx:71:      {searchState.total === 0 ? (
+src\renderer\components\SearchResults.tsx:81:            {searchState.groups.map((group) => (
+
+codex
+我会再看搜索结果类型与展示组件，确认 P001 结论完整但不改 P003 文件。
+exec
+powershell.exe -Command "(Get-Content -Encoding UTF8 src\\renderer\\types.ts | Select-Object -Skip 150 -First 120) -join \""'`n"; "`n--- SearchResults display ---"; (Get-Content -Encoding UTF8 src'"\\renderer\\components\\SearchResults.tsx | Select-Object -First 140) -join \""'`n"' in D:\project\GitHub\autoplan
+ succeeded in 496ms:
+  phase?: string;
+  interval_seconds?: number;
+  validation_command?: string;
+  agent_cli_provider?: AgentCliProvider;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+}
+
+export interface ProjectState {
+  project_id: number;
+  running: number;
+  phase: string;
+  interval_seconds: number;
+  validation_command: string;
+  last_issue_hash?: string | null;
+  last_error?: string | null;
+  agent_cli_provider?: AgentCliProvider;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  updated_at: string;
+  /** 由 snapshot 合并自 project.workspace_path */
+  workspace_path?: string;
+}
+
+export interface Requirement {
+  id: number;
+  project_id: number;
+  title: string;
+  body: string;
+  status: string;
+  source_path?: string | null;
+  source_hash?: string | null;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Feedback {
+  id: number;
+  project_id: number;
+  requirement_id?: number | null;
+  title: string;
+  body: string;
+  status: string;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  linked_plan_id?: number | null;
+  plan_status?: string | null;
+  plan_completed?: number | null;
+  plan_total?: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Attachment {
+  id: number;
+  project_id: number;
+  owner_type: IntakeType;
+  owner_id: number;
+  original_name: string;
+  stored_path: string;
+  mime_type?: string | null;
+  size: number;
+  hash: string;
+  created_at: string;
+}
+
+export interface Plan {
+  id: number;
+  project_id: number;
+  issue_hash: string;
+  file_path: string;
+  title?: string | null;
+  hash: string;
+  status: PlanStatus;
+  sort_order: number;
+  is_draft: boolean;
+  total_tasks: number;
+  completed_tasks: number;
+  validation_passed: number;
+  agent_cli_provider?: AgentCliProvider | null;
+  agent_cli_command?: string;
+  codex_reasoning_effort?: CodexReasoningEffort | null;
+  concurrency_suggestion: PlanConcurrencySuggestion;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlanScopeFileInfo {
+  path: string;
+  exists: boolean;
+  isDirectory: boolean;
+  canOpen: boolean;
+  isUnknown: boolean;
+  isValidation: boolean;
+  reason: string;
+}
+
+export interface PlanConcurrencyTask {
+  id: number;
+  task_key: string;
+  title: string;
+  status: string;
+  scopes: string[];
+  reason: string;
+}
+
+export interface PlanConcurrencyBatch {
+  batch: number;
+  reason: string;
+  tasks: PlanConcurrencyTask[];
+}
+
+
+--- SearchResults display ---
+import type {
+  WorkspaceSearchGroup,
+  WorkspaceSearchResult,
+  WorkspaceSearchSourceType,
+  WorkspaceSearchState,
+  WorkspaceTab,
+} from '../types';
+import { formatChinaDateTime } from '../utils/time';
+import { Icon, type IconName } from './icons';
+
+const GROUP_RESULT_LIMIT = 4;
+
+const sourceIconNames: Record<WorkspaceSearchSourceType, IconName> = {
+  requirement: 'requirement',
+  feedback: 'feedback',
+  plan: 'plan',
+  task: 'tasks',
+  event: 'events',
+};
+
+const searchTargetLabels: Record<WorkspaceSearchSourceType, string> = {
+  requirement: '需求记录',
+  feedback: '反馈记录',
+  plan: 'Plan',
+  task: '任务',
+  event: '事件',
+};
+
+interface SearchResultsProps {
+  onClear: () => void;
+  onSelectGroup: (targetTab: WorkspaceTab) => void;
+  onSelectResult: (result: WorkspaceSearchResult) => void;
+  searchState: WorkspaceSearchState;
+}
+
+export function SearchResults({ onClear, onSelectGroup, onSelectResult, searchState }: SearchResultsProps) {
+  if (searchState.query.isEmpty) return null;
+
+  const queryLabel = searchState.query.raw.trim().replace(/\s+/g, ' ') || searchState.query.normalized;
+
+  return (
+    <section className="search-results card" aria-label="统一搜索结果概览" aria-live="polite">
+      <div className="search-results-head">
+        <div>
+          <h2>搜索结果概览</h2>
+          <p>
+            “{queryLabel}” 命中 <b>{searchState.total}</b> 条结果
+          </p>
+        </div>
+        <button type="button" className="search-results-clear" onClick={onClear}>
+          清空搜索
+        </button>
+      </div>
+
+      <div className="search-source-strip" aria-label="按来源统计的命中数量">
+        {searchState.groups.map((group) => (
+          <button
+            type="button"
+            className={`search-source-chip${group.count ? '' : ' is-empty'}`}
+            disabled={group.count === 0}
+            key={group.source}
+            onClick={() => onSelectGroup(group.targetTab)}
+          >
+            <Icon name={sourceIconNames[group.source]} size={14} aria-hidden="true" />
+            <span>{group.label}</span>
+            <b>{group.count}</b>
+          </button>
+        ))}
+      </div>
+
+      {searchState.total === 0 ? (
+        <div className="search-results-empty">
+          <div>没有找到与“{queryLabel}”匹配的记录。</div>
+          <button type="button" className="btn btn-sm" onClick={onClear}>
+            清空搜索，恢复全部列表
+          </button>
+        </div>
+      ) : (
+        <div className="search-results-body">
+          <div className="search-result-groups">
+            {searchState.groups.map((group) => (
+              <SearchResultGroup
+                group={group}
+                key={group.source}
+                onSelectGroup={onSelectGroup}
+                onSelectResult={onSelectResult}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SearchResultGroup({
+  group,
+  onSelectGroup,
+  onSelectResult,
+}: {
+  group: WorkspaceSearchGroup;
+  onSelectGroup: (targetTab: WorkspaceTab) => void;
+  onSelectResult: (result: WorkspaceSearchResult) => void;
+}) {
+  const visibleResults = group.results.slice(0, GROUP_RESULT_LIMIT);
+  const hiddenCount = Math.max(0, group.count - visibleResults.length);
+
+  return (
+    <section className={`search-result-group${group.count ? '' : ' is-empty'}`}>
+      <div className="search-result-group-head">
+        <div className="search-result-group-title">
+          <Icon name={sourceIconNames[group.source]} size={16} aria-hidden="true" />
+          <span>{group.label}</span>
+        </div>
+        <span className="search-result-group-count">{group.count} 条</span>
+      </div>
+
+      {visibleResults.length ? (
+        <div className="search-result-items">
+          {visibleResults.map((result) => (
+            <SearchResultItem key={result.id} result={result} onSelect={onSelectResult} />
+          ))}
+          {hiddenCount ? (
+            <button type="button" className="search-result-more" onClick={() => onSelectGroup(group.targetTab)}>
+              在{group.label}中查看其余 {hiddenCount} 条
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <div className="search-result-group-empty">无匹配</div>
+      )}
+    </section>
+  );
+}
+
+function SearchResultItem({
+  onSelect,
+  result,
+}: {
+  onSelect: (result: WorkspaceSearchResult) => void;
+
+codex
+P001 的代码证据已齐。最后检查搜索项渲染 title/summary 字段。
+exec
+powershell.exe -Command "(Get-Content -Encoding UTF8 src\\renderer\\components\\SearchResults.tsx | Select-Object -Skip 140 -First 80) -join \""'`n"; "`n--- search type defs ---"; rg -n "WorkspaceSearchResult|WorkspaceSearchHitField|WORKSPACE_SEARCH_HIT_FIELDS|WORKSPACE_SEARCH_SOURCE_TYPES" src'"\\renderer\\types.ts" in D:\project\GitHub\autoplan
+ succeeded in 186ms:
+  result: WorkspaceSearchResult;
+}) {
+  const primaryMatch = result.matches[0];
+  const snippet = primaryMatch?.snippet || result.summary;
+  const updatedAt = formatChinaDateTime(result.updatedAt);
+
+  return (
+    <button type="button" className="search-result-item" onClick={() => onSelect(result)}>
+      <span className="search-result-item-top">
+        <span className="search-result-title">{result.title}</span>
+        {result.status ? <span className="search-result-status">{result.status}</span> : null}
+      </span>
+      <span className="search-result-snippet">
+        {primaryMatch ? `${primaryMatch.label}：` : ''}
+        {snippet}
+      </span>
+      <span className="search-result-meta">
+        <span>{formatSearchResultLocation(result)}</span>
+        {updatedAt ? <span>{updatedAt}</span> : null}
+      </span>
+    </button>
+  );
+}
+
+function formatSearchResultLocation(result: WorkspaceSearchResult) {
+  const label = searchTargetLabels[result.location.targetType] ?? '记录';
+  if (result.location.taskKey) return `点击后定位到 ${result.location.taskKey} ${label}`;
+  return `点击后定位到${label} #${result.location.targetId}`;
+}
+
+--- search type defs ---
+50:export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+59:  (typeof WORKSPACE_SEARCH_SOURCE_TYPES)[keyof typeof WORKSPACE_SEARCH_SOURCE_TYPES];
+61:export const WORKSPACE_SEARCH_HIT_FIELDS = {
+76:export type WorkspaceSearchHitField =
+77:  (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
+97:  field: WorkspaceSearchHitField;
+115:export interface WorkspaceSearchResult {
+133:  results: WorkspaceSearchResult[];
+139:  results: WorkspaceSearchResult[];
+
+codex
+我会读取搜索类型定义片段，作为 P001 入口结论依据。
+exec
+powershell.exe -Command "(Get-Content -Encoding UTF8 src\\renderer\\types.ts | Select-Object -Skip 45 -First 100) -join \""'`n"' in D:\project\GitHub\autoplan
+ succeeded in 536ms:
+  thinkingDepth?: CodexReasoningEffort | null;
+  [key: string]: unknown;
+}
+
+export const WORKSPACE_SEARCH_SOURCE_TYPES = {
+  REQUIREMENT: 'requirement',
+  FEEDBACK: 'feedback',
+  PLAN: 'plan',
+  TASK: 'task',
+  EVENT: 'event',
+} as const;
+
+export type WorkspaceSearchSourceType =
+  (typeof WORKSPACE_SEARCH_SOURCE_TYPES)[keyof typeof WORKSPACE_SEARCH_SOURCE_TYPES];
+
+export const WORKSPACE_SEARCH_HIT_FIELDS = {
+  TITLE: 'title',
+  BODY: 'body',
+  STATUS: 'status',
+  MARKDOWN: 'markdown',
+  FILE_PATH: 'filePath',
+  SOURCE_PATH: 'sourcePath',
+  TASK_KEY: 'taskKey',
+  SCOPE: 'scope',
+  RAW_LINE: 'rawLine',
+  EVENT_TYPE: 'eventType',
+  EVENT_MESSAGE: 'eventMessage',
+  EVENT_META: 'eventMeta',
+} as const;
+
+export type WorkspaceSearchHitField =
+  (typeof WORKSPACE_SEARCH_HIT_FIELDS)[keyof typeof WORKSPACE_SEARCH_HIT_FIELDS];
+
+export type WorkspaceSearchTargetType = WorkspaceSearchSourceType;
+
+export type WorkspaceSearchScrollBehavior = 'auto' | 'smooth';
+
+export interface WorkspaceSearchQuery {
+  raw: string;
+  normalized: string;
+  terms: string[];
+  isEmpty: boolean;
+}
+
+export interface WorkspaceSearchSourceConfig {
+  type: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+}
+
+export interface WorkspaceSearchMatch {
+  field: WorkspaceSearchHitField;
+  label: string;
+  value: string;
+  snippet?: string;
+}
+
+export interface WorkspaceSearchLocation {
+  targetTab: WorkspaceTab;
+  targetType: WorkspaceSearchTargetType;
+  targetId: number;
+  anchorId: string;
+  scrollBehavior: WorkspaceSearchScrollBehavior;
+  highlightMs: number;
+  planId?: number | null;
+  taskId?: number | null;
+  taskKey?: string | null;
+}
+
+export interface WorkspaceSearchResult {
+  id: string;
+  source: WorkspaceSearchSourceType;
+  targetTab: WorkspaceTab;
+  location: WorkspaceSearchLocation;
+  recordId: number;
+  title: string;
+  summary: string;
+  status: string | null;
+  updatedAt: string;
+  matches: WorkspaceSearchMatch[];
+}
+
+export interface WorkspaceSearchGroup {
+  source: WorkspaceSearchSourceType;
+  label: string;
+  targetTab: WorkspaceTab;
+  count: number;
+  results: WorkspaceSearchResult[];
+}
+
+export interface WorkspaceSearchState {
+  query: WorkspaceSearchQuery;
+  total: number;
+  results: WorkspaceSearchResult[];
+  groups: WorkspaceSearchGroup[];
+}
+
+export interface Project {
+  id: number;
+  name: string;
+
+**Deciding on modifications**
+
+I need to make decisions about modifications. For P001, we're considering whether to just keep "梳理" without code or add comments for "execute." It's important not to change the docs or plan. Renaming TaskEventDisplay to EventDisplay seems useful for code cleanup, clarifying the event boundaries, but it doesn't implement P002/P003. For P001, I wonder if renaming and exporting formatEvent could fulfill the goal. Also, confirming if the event search text and reused formatting needs adjustment is on my mind.
+**Examining file scope and helper functions**
+
+I need to clarify the scope, which includes types.ts but should only involve business files. Adding a new file isn't allowed. I'm wondering if I could move the helper to search.ts, but EventList requires a specific format. It seems challenging to share cleanly without component imports. I noticed there's an exported `getEventSearchText`, which I could possibly import into search.ts, though it might bring in React and create a bundle issue. P001 needs to help identify the situation without fixing it yet, and I’m considering how it all connects.
+**Considering display changes**
+
+I’m thinking there might not be any visible change after all, but we could add some display metadata. However, importing components might break things. A better approach could be to export `formatEvent` from PlanLists and use it in search.ts for the event candidate's title, summary, and search fields. If we go this route, the search result title could simply stay as event.message. I’m also considering how using display.title might help align the list and search consistently. For generic events, display.title and display.body will remain as is.
+codex
+我会做一个无行为变化的小整理：把事件展示格式化入口显式导出，并把展示类型泛化命名。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 44c5b052d78e264e74e0b43b701a0b9b8d79b5a2..706a5d9cd473df798cd8ad76d46108969b3c0d59
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -17,7 +17,7 @@
+ 
+ type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+ 
+-type TaskEventDisplay = {
++type EventDisplay = {
+   title: string;
+   body: string;
+   meta: string;
+@@ -320,7 +320,7 @@
+   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ }
+ 
+-function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
++function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+@@ -355,7 +355,7 @@
+   };
+ }
+ 
+-function formatEvent(event: AppEvent): TaskEventDisplay {
++export function formatEvent(event: AppEvent): EventDisplay {
+   const meta = readEventMeta(event);
+   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+     ? formatTaskEvent(event, meta)
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 44c5b052d78e264e74e0b43b701a0b9b8d79b5a2..706a5d9cd473df798cd8ad76d46108969b3c0d59
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -17,7 +17,7 @@
+ 
+ type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+ 
+-type TaskEventDisplay = {
++type EventDisplay = {
+   title: string;
+   body: string;
+   meta: string;
+@@ -320,7 +320,7 @@
+   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ }
+ 
+-function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
++function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+@@ -355,7 +355,7 @@
+   };
+ }
+ 
+-function formatEvent(event: AppEvent): TaskEventDisplay {
++export function formatEvent(event: AppEvent): EventDisplay {
+   const meta = readEventMeta(event);
+   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+     ? formatTaskEvent(event, meta)
+
+**Considering tool usage**
+
+I'm realizing that the developer mentioned using the `apply_patch` tool, but here it seems I can only use the shell tool. It's not a critical warning, but I should probably follow their advice and utilize `apply_patch` through the shell. I might need to inspect what's going on and consider using `rg` for searching. I want to make sure I'm applying the right patches! Let’s clarify this process a bit more.
+codex
+整理已完成；我会只做静态自查，不运行测试或构建。
+exec
+powershell.exe -Command "rg -n \"type EventDisplay|TaskEventDisplay|export function formatEvent|getEventSearchText|function createEventCandidate|title: toSearchText\\(event\\.message\\)|summary: summarizeSearchText\\(event\\.type\" src\\renderer\\components\\PlanLists.tsx src\\renderer\\utils\\search.ts" in D:\project\GitHub\autoplan
+ succeeded in 134ms:
+src\renderer\utils\search.ts:336:function createEventCandidate(event: AppSnapshot['events'][number]): WorkspaceSearchCandidate {
+src\renderer\utils\search.ts:351:    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+src\renderer\utils\search.ts:352:    summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+src\renderer\components\PlanLists.tsx:20:type EventDisplay = {
+src\renderer\components\PlanLists.tsx:358:export function formatEvent(event: AppEvent): EventDisplay {
+src\renderer\components\PlanLists.tsx:384:export function getEventSearchText(event: AppEvent) {
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 44c5b052d78e264e74e0b43b701a0b9b8d79b5a2..706a5d9cd473df798cd8ad76d46108969b3c0d59
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -17,7 +17,7 @@
+ 
+ type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+ 
+-type TaskEventDisplay = {
++type EventDisplay = {
+   title: string;
+   body: string;
+   meta: string;
+@@ -320,7 +320,7 @@
+   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ }
+ 
+-function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
++function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+@@ -355,7 +355,7 @@
+   };
+ }
+ 
+-function formatEvent(event: AppEvent): TaskEventDisplay {
++export function formatEvent(event: AppEvent): EventDisplay {
+   const meta = readEventMeta(event);
+   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+     ? formatTaskEvent(event, meta)
+
+**Evaluating git diff use**
+
+I think I need to check what has changed in a project using git diff. It seems important to inspect these changes, but testing may not be required at the moment. I want to understand how to efficiently view modifications without diving too deep into troubleshooting for now. Let’s keep it straightforward and focus on inspecting the differences directly!
+codex
+静态检查显示只改了展示入口命名/导出。现在确认工作区变更范围。
+exec
+powershell.exe -Command "git diff -- src\\renderer\\components\\PlanLists.tsx; git status --short" in D:\project\GitHub\autoplan
+ succeeded in 172ms:
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index eb0d02a..706a5d9 100644
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -17,7 +17,7 @@ type EventMetaRecord = Record<string, unknown>;
+ 
+ type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+ 
+-type TaskEventDisplay = {
++type EventDisplay = {
+   title: string;
+   body: string;
+   meta: string;
+@@ -27,10 +27,28 @@ type TaskEventDisplay = {
+ 
+ type TaskPlanGroup = {
+   key: string;
++  source: TaskPlanGroupSource;
++  sourceId: string | null;
+   title: string;
+   tasks: PlanTask[];
+   firstIndex: number;
+   sortTime: number | null;
++  stats: TaskPlanGroupStats;
++  hasRunningTask: boolean;
++};
++
++type TaskPlanGroupSource = 'plan' | 'file' | 'title' | 'unknown';
++
++type TaskPlanGroupIdentity = {
++  key: string;
++  source: TaskPlanGroupSource;
++  sourceId: string | null;
++};
++
++type TaskPlanGroupStats = {
++  total: number;
++  running: number;
++  completed: number;
+ };
+ 
+ type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
+@@ -143,20 +161,32 @@ function taskPlanGroupTitle(task: PlanTask) {
+   return String(task.plan_title || task.file_path || '未命名计划').trim() || '未命名计划';
+ }
+ 
+-function taskPlanGroupKey(task: TimedPlanTask) {
++function taskPlanGroupIdentity(task: TimedPlanTask): TaskPlanGroupIdentity {
+   const planId = readPlanId(task);
+-  if (planId !== null) return `plan:${planId}`;
+-  if (task.file_path) return `file:${task.file_path}`;
++  if (planId !== null) return { key: `plan:${planId}`, source: 'plan', sourceId: String(planId) };
++  if (task.file_path) return { key: `file:${task.file_path}`, source: 'file', sourceId: task.file_path };
+   const title = taskPlanGroupTitle(task);
+-  if (title !== '未命名计划') return `title:${title}`;
+-  return 'unknown-plan';
++  if (title !== '未命名计划') return { key: `title:${title}`, source: 'title', sourceId: title };
++  return { key: 'unknown-plan', source: 'unknown', sourceId: null };
++}
++
++function getTaskPlanGroupStats(tasks: PlanTask[]): TaskPlanGroupStats {
++  return tasks.reduce<TaskPlanGroupStats>(
++    (stats, task) => ({
++      total: stats.total + 1,
++      running: stats.running + (matchesTaskStatusFilter(task, 'running') ? 1 : 0),
++      completed: stats.completed + (matchesTaskStatusFilter(task, 'completed') ? 1 : 0),
++    }),
++    { total: 0, running: 0, completed: 0 },
++  );
+ }
+ 
+ function groupTasksByPlan(tasks: PlanTask[]) {
+   const groups = new Map<string, TaskPlanGroup>();
+   tasks.forEach((task, index) => {
+     const timedTask = task as TimedPlanTask;
+-    const key = taskPlanGroupKey(timedTask);
++    const identity = taskPlanGroupIdentity(timedTask);
++    const key = identity.key;
+     const existingGroup = groups.get(key);
+     if (existingGroup) {
+       existingGroup.tasks.push(task);
+@@ -166,10 +196,14 @@ function groupTasksByPlan(tasks: PlanTask[]) {
+ 
+     groups.set(key, {
+       key,
++      source: identity.source,
++      sourceId: identity.sourceId,
+       title: taskPlanGroupTitle(task),
+       tasks: [task],
+       firstIndex: index,
+       sortTime: null,
++      stats: { total: 0, running: 0, completed: 0 },
++      hasRunningTask: false,
+     });
+   });
+ 
+@@ -190,6 +224,8 @@ function groupTasksByPlan(tasks: PlanTask[]) {
+         ...group,
+         tasks: sortedTasks,
+         sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
++        stats: getTaskPlanGroupStats(sortedTasks),
++        hasRunningTask: sortedTasks.some((task) => matchesTaskStatusFilter(task, 'running')),
+       };
+     })
+     .sort((left, right) => {
+@@ -284,7 +320,7 @@ function sameEventText(left: string, right: string) {
+   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ }
+ 
+-function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
++function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+@@ -319,7 +355,7 @@ function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDispl
+   };
+ }
+ 
+-function formatEvent(event: AppEvent): TaskEventDisplay {
++export function formatEvent(event: AppEvent): EventDisplay {
+   const meta = readEventMeta(event);
+   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+     ? formatTaskEvent(event, meta)
+ M src/agentCli.js
+ M src/database.js
+ M src/loopService.js
+ M src/main.js
+ M src/renderer/components/PlanLists.tsx
+ M src/renderer/components/SearchResults.tsx
+ M src/renderer/components/shared.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+ M src/renderer/types.ts
+ M src/renderer/utils/search.ts
+?? .claude/
+?? docs/plan/plan_feedback_14_20260627-131553.md
+?? docs/plan/plan_feedback_15_20260627-132045.md
+?? docs/plan/plan_feedback_16_20260627-133130.md
+?? docs/plan/plan_feedback_17_20260627-133901.md
+?? docs/plan/plan_requirement_28_20260627-123944.md
+?? docs/plan/plan_requirement_29_20260627-124433.md
+?? docs/plan/plan_requirement_30_20260627-125155.md
+?? docs/plan/plan_requirement_31_20260627-130629.md
+?? docs/plan/plan_requirement_32_20260627-131242.md
+?? docs/progress/logs/20260627-123944_gen-requirement-28.last.txt
+?? docs/progress/logs/20260627-123944_gen-requirement-28.log
+?? docs/progress/logs/20260627-124103_execute-P001.last.txt
+?? docs/progress/logs/20260627-124103_execute-P001.log
+?? docs/progress/logs/20260627-124250_gen-requirement-29.log
+?? docs/progress/logs/20260627-124254_execute-P002.last.txt
+?? docs/progress/logs/20260627-124254_execute-P002.log
+?? docs/progress/logs/20260627-124433_gen-requirement-29.last.txt
+?? docs/progress/logs/20260627-124433_gen-requirement-29.log
+?? docs/progress/logs/20260627-124649_execute-P001.last.txt
+?? docs/progress/logs/20260627-124649_execute-P001.log
+?? docs/progress/logs/20260627-125155_gen-requirement-30.last.txt
+?? docs/progress/logs/20260627-125155_gen-requirement-30.log
+?? docs/progress/logs/20260627-125352_execute-P001.last.txt
+?? docs/progress/logs/20260627-125352_execute-P001.log
+?? docs/progress/logs/20260627-130629_gen-requirement-31.last.txt
+?? docs/progress/logs/20260627-130629_gen-requirement-31.log
+?? docs/progress/logs/20260627-130829_execute-P001.log
+?? docs/progress/logs/20260627-131242_gen-requirement-32.last.txt
+?? docs/progress/logs/20260627-131242_gen-requirement-32.log
+?? docs/progress/logs/20260627-131420_execute-P001.last.txt
+?? docs/progress/logs/20260627-131420_execute-P001.log
+?? docs/progress/logs/20260627-131553_gen-feedback-14.last.txt
+?? docs/progress/logs/20260627-131553_gen-feedback-14.log
+?? docs/progress/logs/20260627-131731_execute-P001.last.txt
+?? docs/progress/logs/20260627-131731_execute-P001.log
+?? docs/progress/logs/20260627-132045_gen-feedback-15.last.txt
+?? docs/progress/logs/20260627-132045_gen-feedback-15.log
+?? docs/progress/logs/20260627-132245_execute-P001.last.txt
+?? docs/progress/logs/20260627-132245_execute-P001.log
+?? docs/progress/logs/20260627-133130_gen-feedback-16.last.txt
+?? docs/progress/logs/20260627-133130_gen-feedback-16.log
+?? docs/progress/logs/20260627-133331_execute-P001.last.txt
+?? docs/progress/logs/20260627-133331_execute-P001.log
+?? docs/progress/logs/20260627-133901_gen-feedback-17.last.txt
+?? docs/progress/logs/20260627-133901_gen-feedback-17.log
+?? docs/progress/logs/20260627-134112_execute-P001.log
+?? src/intakeService.js
+?? src/loop/
+warning: in the working copy of 'src/renderer/components/PlanLists.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 44c5b052d78e264e74e0b43b701a0b9b8d79b5a2..706a5d9cd473df798cd8ad76d46108969b3c0d59
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -17,7 +17,7 @@
+ 
+ type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+ 
+-type TaskEventDisplay = {
++type EventDisplay = {
+   title: string;
+   body: string;
+   meta: string;
+@@ -320,7 +320,7 @@
+   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ }
+ 
+-function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
++function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+@@ -355,7 +355,7 @@
+   };
+ }
+ 
+-function formatEvent(event: AppEvent): TaskEventDisplay {
++export function formatEvent(event: AppEvent): EventDisplay {
+   const meta = readEventMeta(event);
+   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+     ? formatTaskEvent(event, meta)
+
+codex
+工作区已有大量其它变更，我只保留本次三行整理；接着记录精确行号。
+exec
+powershell.exe -Command "rg -n \"type EventDisplay|export function formatEvent|function formatTaskEvent|function getEventSearchText|function createEventCandidate|title: toSearchText\\(event\\.message\\)|summary: summarizeSearchText\\(event\\.type|export interface AppEvent\" src\\renderer\\components\\PlanLists.tsx src\\renderer\\utils\\search.ts src\\renderer\\types.ts" in D:\project\GitHub\autoplan
+ succeeded in 141ms:
+src\renderer\types.ts:408:export interface AppEvent<TMeta extends AppEventMeta | null = AppEventMeta | null> {
+src\renderer\utils\search.ts:336:function createEventCandidate(event: AppSnapshot['events'][number]): WorkspaceSearchCandidate {
+src\renderer\utils\search.ts:351:    title: toSearchText(event.message) || toSearchText(event.type) || `事件 #${event.id}`,
+src\renderer\utils\search.ts:352:    summary: summarizeSearchText(event.type || eventMeta, '暂无事件信息'),
+src\renderer\components\PlanLists.tsx:20:type EventDisplay = {
+src\renderer\components\PlanLists.tsx:323:function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+src\renderer\components\PlanLists.tsx:358:export function formatEvent(event: AppEvent): EventDisplay {
+src\renderer\components\PlanLists.tsx:384:export function getEventSearchText(event: AppEvent) {
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 44c5b052d78e264e74e0b43b701a0b9b8d79b5a2..706a5d9cd473df798cd8ad76d46108969b3c0d59
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -17,7 +17,7 @@
+ 
+ type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+ 
+-type TaskEventDisplay = {
++type EventDisplay = {
+   title: string;
+   body: string;
+   meta: string;
+@@ -320,7 +320,7 @@
+   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ }
+ 
+-function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
++function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+@@ -355,7 +355,7 @@
+   };
+ }
+ 
+-function formatEvent(event: AppEvent): TaskEventDisplay {
++export function formatEvent(event: AppEvent): EventDisplay {
+   const meta = readEventMeta(event);
+   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+     ? formatTaskEvent(event, meta)
+
+codex
+已完成 P001 静态梳理与限定修改，不启动任何验收命令。
+  ✓ 读取任务上下文
+  ✓ 梳理相关入口代码
+  ✓ 实施限定范围修改
+  ✓ 自查变更不验收
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 44c5b052d78e264e74e0b43b701a0b9b8d79b5a2..706a5d9cd473df798cd8ad76d46108969b3c0d59
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -17,7 +17,7 @@
+ 
+ type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+ 
+-type TaskEventDisplay = {
++type EventDisplay = {
+   title: string;
+   body: string;
+   meta: string;
+@@ -320,7 +320,7 @@
+   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ }
+ 
+-function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
++function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+@@ -355,7 +355,7 @@
+   };
+ }
+ 
+-function formatEvent(event: AppEvent): TaskEventDisplay {
++export function formatEvent(event: AppEvent): EventDisplay {
+   const meta = readEventMeta(event);
+   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+     ? formatTaskEvent(event, meta)
+
+已完成 P001，未修改 plan 文件、未勾选 checkbox、未运行测试/构建/lint。
+
+**本次变更**
+- 在 `src/renderer/components/PlanLists.tsx:20` 将通用事件展示结构命名为 `EventDisplay`，避免只表达任务事件。
+- 在 `src/renderer/components/PlanLists.tsx:358` 导出 `formatEvent`，明确事件列表复用的统一展示格式化入口。
+- 保持现有展示行为不变：普通系统事件仍以 `event.type` 作为标题兜底，任务事件仍走 `formatTaskEvent`。
+
+**P001 梳理结论**
+- 事件列表在 `src/renderer/components/PlanLists.tsx:931` 通过 `formatEvent(event)` 展示事件。
+- 普通事件在 `src/renderer/components/PlanLists.tsx:366` 仍直接使用 `event.type || '事件'`，因此 `scan.done`、`feedback.created`、`plan.generated` 当前会作为标题展示。
+- 任务事件边界在 `src/renderer/components/PlanLists.tsx:360`：`task.*` 类型或 meta 中有任务标识时走 `formatTaskEvent`。
+- 搜索入口在 `src/renderer/utils/search.ts:336`，当前搜索结果 title/summary 仍直接来自 `event.message` / `event.type`，尚未完全复用 `formatEvent`；这应留给 P003。
+- 历史数据无需迁移：`src/renderer/types.ts:408` 的 `AppEvent.type` 仍是内部字符串字段。
+codex
+已完成 P001，未修改 plan 文件、未勾选 checkbox、未运行测试/构建/lint。
+
+**本次变更**
+- 在 `src/renderer/components/PlanLists.tsx:20` 将通用事件展示结构命名为 `EventDisplay`，避免只表达任务事件。
+- 在 `src/renderer/components/PlanLists.tsx:358` 导出 `formatEvent`，明确事件列表复用的统一展示格式化入口。
+- 保持现有展示行为不变：普通系统事件仍以 `event.type` 作为标题兜底，任务事件仍走 `formatTaskEvent`。
+
+**P001 梳理结论**
+- 事件列表在 `src/renderer/components/PlanLists.tsx:931` 通过 `formatEvent(event)` 展示事件。
+- 普通事件在 `src/renderer/components/PlanLists.tsx:366` 仍直接使用 `event.type || '事件'`，因此 `scan.done`、`feedback.created`、`plan.generated` 当前会作为标题展示。
+- 任务事件边界在 `src/renderer/components/PlanLists.tsx:360`：`task.*` 类型或 meta 中有任务标识时走 `formatTaskEvent`。
+- 搜索入口在 `src/renderer/utils/search.ts:336`，当前搜索结果 title/summary 仍直接来自 `event.message` / `event.type`，尚未完全复用 `formatEvent`；这应留给 P003。
+- 历史数据无需迁移：`src/renderer/types.ts:408` 的 `AppEvent.type` 仍是内部字符串字段。
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 44c5b052d78e264e74e0b43b701a0b9b8d79b5a2..706a5d9cd473df798cd8ad76d46108969b3c0d59
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -17,7 +17,7 @@
+ 
+ type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+ 
+-type TaskEventDisplay = {
++type EventDisplay = {
+   title: string;
+   body: string;
+   meta: string;
+@@ -320,7 +320,7 @@
+   return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+ }
+ 
+-function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): TaskEventDisplay | null {
++function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+   const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+   const taskId = readMetaText(meta, ['taskId', 'task_id']);
+   const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+@@ -355,7 +355,7 @@
+   };
+ }
+ 
+-function formatEvent(event: AppEvent): TaskEventDisplay {
++export function formatEvent(event: AppEvent): EventDisplay {
+   const meta = readEventMeta(event);
+   const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+     ? formatTaskEvent(event, meta)
+
+tokens used
+76,473

@@ -1,0 +1,2076 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0782-f8b8-7a51-bc95-f420c8f2068d
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_14_20260627-131553.md
+指定任务：
+- [ ] P003: 修正 GitHub Actions macOS 发布流程 <!-- scope: .github/workflows/release.yml -->
+任务 scope：.github/workflows/release.yml
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Evaluating notarization process**
+
+I’m considering if notarization credentials are complete, and that seems good. However, I might run into an issue if I'm in formal mode without a keychain certificate, but there’s the CSC_LINK. Maybe there’s no import step needed, which sounds fine. I just want to ensure everything's in order. It’s crucial to double-check all the steps, so I’m hoping there won’t be any bumps along the way!
+codex
+我会只改 release workflow，把 macOS 签名/公证做成“secret 完整才走正式路径”，非 macOS 打包保持原样。
+  → 检查当前 workflow 打包段
+  • 添加 macOS 模式判定
+  • 接入签名证书准备
+  • 拆分平台打包环境
+  • 确认 scope 状态
+codex
+沿用前序结论，我先读取当前 workflow 的相关行号，避免误改其他任务范围。
+exec
+powershell.exe -Command '$i=1; Get-Content -LiteralPath '"'.github/workflows/release.yml' -Encoding UTF8 | ForEach-Object { '{0,4}: {1}' -f "'$i++, $_ }' in D:\project\GitHub\autoplan
+ succeeded in 451ms:
+   1: name: Release
+   2: 
+   3: on:
+   4:   push:
+   5:     tags:
+   6:       - 'v*'
+   7:   workflow_dispatch:
+   8:     inputs:
+   9:       tag:
+  10:         description: 'Release tag to build and publish, for example v0.2.0'
+  11:         required: true
+  12:         type: string
+  13:       release_notes:
+  14:         description: 'Release notes body. Leave empty to use a default message.'
+  15:         required: false
+  16:         type: string
+  17:         default: ''
+  18: 
+  19: permissions:
+  20:   contents: write
+  21: 
+  22: concurrency:
+  23:   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  24:   cancel-in-progress: false
+  25: 
+  26: jobs:
+  27:   build:
+  28:     name: Build ${{ matrix.platform }}
+  29:     runs-on: ${{ matrix.runner }}
+  30:     strategy:
+  31:       fail-fast: false
+  32:       matrix:
+  33:         include:
+  34:           - platform: windows
+  35:             runner: windows-latest
+  36:             package_script: package:win
+  37:           - platform: macos
+  38:             runner: macos-latest
+  39:             package_script: package:mac
+  40:           - platform: linux
+  41:             runner: ubuntu-24.04
+  42:             package_script: package:linux
+  43: 
+  44:     steps:
+  45:       - name: Checkout
+  46:         uses: actions/checkout@v4
+  47:         with:
+  48:           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  49: 
+  50:       - name: Setup Node.js
+  51:         uses: actions/setup-node@v4
+  52:         with:
+  53:           node-version: 22
+  54:           cache: npm
+  55: 
+  56:       - name: Install dependencies
+  57:         run: npm ci
+  58: 
+  59:       - name: Install Linux packaging dependencies
+  60:         if: matrix.platform == 'linux'
+  61:         run: |
+  62:           sudo apt-get update
+  63:           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+  64:           sudo gem install --no-document fpm
+  65: 
+  66:       - name: Package ${{ matrix.platform }}
+  67:         run: npm run ${{ matrix.package_script }} -- --publish never
+  68:         env:
+  69:           CSC_IDENTITY_AUTO_DISCOVERY: false
+  70: 
+  71:       - name: Upload ${{ matrix.platform }} artifacts
+  72:         uses: actions/upload-artifact@v4
+  73:         with:
+  74:           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+  75:           path: |
+  76:             release/*.exe
+  77:             release/*.blockmap
+  78:             release/*.dmg
+  79:             release/*.zip
+  80:             release/*.AppImage
+  81:             release/*.deb
+  82:             release/latest*.yml
+  83:           if-no-files-found: error
+  84:           retention-days: 14
+  85: 
+  86:   release:
+  87:     name: Publish GitHub Release
+  88:     runs-on: ubuntu-latest
+  89:     needs: build
+  90:     env:
+  91:       GH_TOKEN: ${{ github.token }}
+  92:       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  93: 
+  94:     steps:
+  95:       - name: Checkout tag metadata
+  96:         uses: actions/checkout@v4
+  97:         with:
+  98:           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  99:           fetch-depth: 0
+ 100: 
+ 101:       - name: Download packaged artifacts
+ 102:         uses: actions/download-artifact@v4
+ 103:         with:
+ 104:           path: dist-artifacts
+ 105: 
+ 106:       - name: Resolve release notes
+ 107:         shell: bash
+ 108:         env:
+ 109:           DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+ 110:         run: |
+ 111:           set -euo pipefail
+ 112: 
+ 113:           if [[ -n "${DISPATCH_NOTES}" ]]; then
+ 114:             printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
+ 115:           elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
+ 116:             git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
+ 117:           else
+ 118:             git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
+ 119:           fi
+ 120: 
+ 121:           if [[ ! -s release-notes.md ]]; then
+ 122:             printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+ 123:           fi
+ 124: 
+ 125:       - name: Create or update release
+ 126:         shell: bash
+ 127:         run: |
+ 128:           set -euo pipefail
+ 129: 
+ 130:           mapfile -d '' files < <(
+ 131:             find dist-artifacts -type f \( \
+ 132:               -name '*.exe' -o \
+ 133:               -name '*.blockmap' -o \
+ 134:               -name '*.dmg' -o \
+ 135:               -name '*.zip' -o \
+ 136:               -name '*.AppImage' -o \
+ 137:               -name '*.deb' -o \
+ 138:               -name 'latest*.yml' \
+ 139:             \) -print0
+ 140:           )
+ 141:           if [[ ${#files[@]} -eq 0 ]]; then
+ 142:             echo "No release artifacts found." >&2
+ 143:             exit 1
+ 144:           fi
+ 145: 
+ 146:           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+ 147:             gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+ 148:             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+ 149:           else
+ 150:             gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+ 151:           fi
+
+codex
+现在替换单一 Package 步骤：macOS 单独处理 secret 完整性，Windows/Linux 继续原环境。
+  ✓ 检查当前 workflow 打包段
+  → 添加 macOS 模式判定
+  • 接入签名证书准备
+  • 拆分平台打包环境
+  • 确认 scope 状态
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\.github\workflows\release.yml
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..9bf416ac86787d3a375dc85c194d5b7e262e84b4
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,128 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/[ \" ]//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..9bf416ac86787d3a375dc85c194d5b7e262e84b4
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,128 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/[ \" ]//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+**Evaluating environment settings**
+
+I'm considering the issue around the "MACOS_RELEASE_MODE." It seems like it's being used in the package but not set in the environment block. I'm fairly certain that variables from GITHUB_ENV are accessible to the shell environment even without being explicitly included in the env block. I think I might need to update my plan to address this and ensure everything runs smoothly. Let's see what adjustments are necessary!
+codex
+workflow 已拆分 macOS 与非 macOS 打包；我检查缩进和关键行号，仍不执行构建/校验。
+  ✓ 检查当前 workflow 打包段
+  ✓ 添加 macOS 模式判定
+  ✓ 接入签名证书准备
+  → 拆分平台打包环境
+  • 确认 scope 状态
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..9bf416ac86787d3a375dc85c194d5b7e262e84b4
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,128 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/[ \" ]//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+exec
+powershell.exe -Command '$i=1; Get-Content -LiteralPath '"'.github/workflows/release.yml' -Encoding UTF8 | ForEach-Object { if ("'$i -ge 56 -and $i -le 190) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- scoped status ---'; git status --short -- .github/workflows/release.yml docs/plan/plan_feedback_14_20260627-131553.md" in D:\project\GitHub\autoplan
+ succeeded in 540ms:
+  56:       - name: Install dependencies
+  57:         run: npm ci
+  58: 
+  59:       - name: Install Linux packaging dependencies
+  60:         if: matrix.platform == 'linux'
+  61:         run: |
+  62:           sudo apt-get update
+  63:           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+  64:           sudo gem install --no-document fpm
+  65: 
+  66:       - name: Resolve macOS signing and notarization mode
+  67:         if: matrix.platform == 'macos'
+  68:         shell: bash
+  69:         env:
+  70:           CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
+  71:           CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
+  72:           MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+  73:           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+  74:           APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+  75:           APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+  76:           APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+  77:           APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+  78:           APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
+  79:           APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
+  80:           APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
+  81:           APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
+  82:           APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
+  83:         run: |
+  84:           set -euo pipefail
+  85: 
+  86:           signing_source=none
+  87:           if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
+  88:             signing_source=csc-link
+  89:           elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
+  90:             signing_source=keychain-import
+  91:           fi
+  92: 
+  93:           notarization_source=none
+  94:           if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
+  95:             notarization_source=keychain-profile
+  96:           elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
+  97:             notarization_source=app-store-connect-api-key
+  98:           elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
+  99:             notarization_source=apple-id-password
+ 100:           fi
+ 101: 
+ 102:           if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
+ 103:             release_mode=signed-notarized
+ 104:             csc_auto_discovery=true
+ 105:             notarize_required=true
+ 106:             skip_notarize=false
+ 107:           else
+ 108:             release_mode=unsigned-test
+ 109:             csc_auto_discovery=false
+ 110:             notarize_required=false
+ 111:             skip_notarize=true
+ 112:           fi
+ 113: 
+ 114:           {
+ 115:             echo "MACOS_RELEASE_MODE=${release_mode}"
+ 116:             echo "MACOS_SIGNING_SOURCE=${signing_source}"
+ 117:             echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
+ 118:             echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
+ 119:             echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
+ 120:             echo "SKIP_NOTARIZE=${skip_notarize}"
+ 121:           } >> "${GITHUB_ENV}"
+ 122: 
+ 123:           echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
+ 124:           if [[ "${release_mode}" != "signed-notarized" ]]; then
+ 125:             echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
+ 126:           fi
+ 127: 
+ 128:       - name: Import macOS signing certificate
+ 129:         if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
+ 130:         shell: bash
+ 131:         env:
+ 132:           MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+ 133:           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+ 134:         run: |
+ 135:           set -euo pipefail
+ 136: 
+ 137:           certificate_path="${RUNNER_TEMP}/build_certificate.p12"
+ 138:           keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
+ 139:           keychain_password="$(uuidgen)"
+ 140: 
+ 141:           if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
+ 142:             printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
+ 143:           fi
+ 144: 
+ 145:           security create-keychain -p "${keychain_password}" "${keychain_path}"
+ 146:           security set-keychain-settings -lut 21600 "${keychain_path}"
+ 147:           security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+ 148:           security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
+ 149:           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
+ 150:           existing_keychains="$(security list-keychains -d user | sed 's/[ \" ]//g')"
+ 151:           security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
+ 152:           security find-identity -v -p codesigning "${keychain_path}"
+ 153: 
+ 154:           echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
+ 155: 
+ 156:       - name: Package macOS
+ 157:         if: matrix.platform == 'macos'
+ 158:         shell: bash
+ 159:         env:
+ 160:           CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
+ 161:           CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
+ 162:           CSC_LINK: ${{ secrets.CSC_LINK }}
+ 163:           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+ 164:           SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
+ 165:           MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
+ 166:           APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+ 167:           APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
+ 168:           APPLE_ID: ${{ secrets.APPLE_ID }}
+ 169:           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+ 170:           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+ 171:           APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+ 172:           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+ 173:           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+ 174:           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+ 175:           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+ 176:           DEBUG: electron-notarize*
+ 177:         run: |
+ 178:           set -euo pipefail
+ 179:           echo "::group::macOS package, signing, notarization, and staple"
+ 180:           echo "Release mode: ${MACOS_RELEASE_MODE}"
+ 181:           echo "Signing source: ${MACOS_SIGNING_SOURCE}"
+ 182:           echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
+ 183:           npm run ${{ matrix.package_script }} -- --publish never
+ 184:           echo "::endgroup::"
+ 185: 
+ 186:       - name: Package ${{ matrix.platform }}
+ 187:         if: matrix.platform != 'macos'
+ 188:         run: npm run ${{ matrix.package_script }} -- --publish never
+ 189:         env:
+ 190:           CSC_IDENTITY_AUTO_DISCOVERY: false
+--- scoped status ---
+ M .github/workflows/release.yml
+?? docs/plan/plan_feedback_14_20260627-131553.md
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..9bf416ac86787d3a375dc85c194d5b7e262e84b4
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,128 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/[ \" ]//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+**Considering electron-builder signing**
+
+I'm thinking about how electron-builder handles signing. Even if `CSC_IDENTITY_AUTO_DISCOVERY` is set to false, it might still sign using `CSC_LINK` if that's explicitly provided. It seems like this configuration could allow signing to happen regardless. I'll need to double-check this setup to ensure everything works as expected. It’s really important to clarify how these environment variables interact!
+codex
+我发现 unsigned-test 模式仍会把 `CSC_LINK` 传入子进程；这会误签名。现在仅在正式模式保留 secrets。
+  ✓ 检查当前 workflow 打包段
+  ✓ 添加 macOS 模式判定
+  ✓ 接入签名证书准备
+  → 拆分平台打包环境
+  • 确认 scope 状态
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..9bf416ac86787d3a375dc85c194d5b7e262e84b4
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,128 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/[ \" ]//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+codex
+同时把 keychain 列表处理稍微收紧，避免 sed 规则误删路径空格。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\.github\workflows\release.yml
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..f17cb9291e2bb0524e591558553fc8138b881fd2
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,135 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/"//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          if [[ "${MACOS_RELEASE_MODE}" != "signed-notarized" ]]; then
++            unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
++            unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
++            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
++            unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
++          fi
++
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..f17cb9291e2bb0524e591558553fc8138b881fd2
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,135 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/"//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          if [[ "${MACOS_RELEASE_MODE}" != "signed-notarized" ]]; then
++            unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
++            unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
++            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
++            unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
++          fi
++
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+codex
+修正完成；最后只看 workflow 相关段落和 scope 状态。
+  ✓ 检查当前 workflow 打包段
+  ✓ 添加 macOS 模式判定
+  ✓ 接入签名证书准备
+  ✓ 拆分平台打包环境
+  → 确认 scope 状态
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..f17cb9291e2bb0524e591558553fc8138b881fd2
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,135 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/"//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          if [[ "${MACOS_RELEASE_MODE}" != "signed-notarized" ]]; then
++            unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
++            unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
++            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
++            unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
++          fi
++
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+codex
+我不会执行 workflow 校验，只做文本级确认当前 scope 变更。
+exec
+powershell.exe -Command '$i=1; Get-Content -LiteralPath '"'.github/workflows/release.yml' -Encoding UTF8 | ForEach-Object { if ("'$i -ge 66 -and $i -le 201) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- scoped status ---'; git status --short -- .github/workflows/release.yml docs/plan/plan_feedback_14_20260627-131553.md" in D:\project\GitHub\autoplan
+ succeeded in 527ms:
+  66:       - name: Resolve macOS signing and notarization mode
+  67:         if: matrix.platform == 'macos'
+  68:         shell: bash
+  69:         env:
+  70:           CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
+  71:           CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
+  72:           MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+  73:           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+  74:           APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+  75:           APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
+  76:           APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+  77:           APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
+  78:           APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
+  79:           APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
+  80:           APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
+  81:           APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
+  82:           APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
+  83:         run: |
+  84:           set -euo pipefail
+  85: 
+  86:           signing_source=none
+  87:           if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
+  88:             signing_source=csc-link
+  89:           elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
+  90:             signing_source=keychain-import
+  91:           fi
+  92: 
+  93:           notarization_source=none
+  94:           if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
+  95:             notarization_source=keychain-profile
+  96:           elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
+  97:             notarization_source=app-store-connect-api-key
+  98:           elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
+  99:             notarization_source=apple-id-password
+ 100:           fi
+ 101: 
+ 102:           if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
+ 103:             release_mode=signed-notarized
+ 104:             csc_auto_discovery=true
+ 105:             notarize_required=true
+ 106:             skip_notarize=false
+ 107:           else
+ 108:             release_mode=unsigned-test
+ 109:             csc_auto_discovery=false
+ 110:             notarize_required=false
+ 111:             skip_notarize=true
+ 112:           fi
+ 113: 
+ 114:           {
+ 115:             echo "MACOS_RELEASE_MODE=${release_mode}"
+ 116:             echo "MACOS_SIGNING_SOURCE=${signing_source}"
+ 117:             echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
+ 118:             echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
+ 119:             echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
+ 120:             echo "SKIP_NOTARIZE=${skip_notarize}"
+ 121:           } >> "${GITHUB_ENV}"
+ 122: 
+ 123:           echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
+ 124:           if [[ "${release_mode}" != "signed-notarized" ]]; then
+ 125:             echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
+ 126:           fi
+ 127: 
+ 128:       - name: Import macOS signing certificate
+ 129:         if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
+ 130:         shell: bash
+ 131:         env:
+ 132:           MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
+ 133:           MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+ 134:         run: |
+ 135:           set -euo pipefail
+ 136: 
+ 137:           certificate_path="${RUNNER_TEMP}/build_certificate.p12"
+ 138:           keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
+ 139:           keychain_password="$(uuidgen)"
+ 140: 
+ 141:           if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
+ 142:             printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
+ 143:           fi
+ 144: 
+ 145:           security create-keychain -p "${keychain_password}" "${keychain_path}"
+ 146:           security set-keychain-settings -lut 21600 "${keychain_path}"
+ 147:           security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+ 148:           security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
+ 149:           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
+ 150:           existing_keychains="$(security list-keychains -d user | sed 's/"//g')"
+ 151:           security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
+ 152:           security find-identity -v -p codesigning "${keychain_path}"
+ 153: 
+ 154:           echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
+ 155: 
+ 156:       - name: Package macOS
+ 157:         if: matrix.platform == 'macos'
+ 158:         shell: bash
+ 159:         env:
+ 160:           CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
+ 161:           CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
+ 162:           CSC_LINK: ${{ secrets.CSC_LINK }}
+ 163:           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+ 164:           SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
+ 165:           MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
+ 166:           APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
+ 167:           APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
+ 168:           APPLE_ID: ${{ secrets.APPLE_ID }}
+ 169:           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+ 170:           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+ 171:           APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
+ 172:           APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+ 173:           APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
+ 174:           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+ 175:           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+ 176:           DEBUG: electron-notarize*
+ 177:         run: |
+ 178:           set -euo pipefail
+ 179:           if [[ "${MACOS_RELEASE_MODE}" != "signed-notarized" ]]; then
+ 180:             unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
+ 181:             unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
+ 182:             unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+ 183:             unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
+ 184:           fi
+ 185: 
+ 186:           echo "::group::macOS package, signing, notarization, and staple"
+ 187:           echo "Release mode: ${MACOS_RELEASE_MODE}"
+ 188:           echo "Signing source: ${MACOS_SIGNING_SOURCE}"
+ 189:           echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
+ 190:           npm run ${{ matrix.package_script }} -- --publish never
+ 191:           echo "::endgroup::"
+ 192: 
+ 193:       - name: Package ${{ matrix.platform }}
+ 194:         if: matrix.platform != 'macos'
+ 195:         run: npm run ${{ matrix.package_script }} -- --publish never
+ 196:         env:
+ 197:           CSC_IDENTITY_AUTO_DISCOVERY: false
+ 198: 
+ 199:       - name: Upload ${{ matrix.platform }} artifacts
+ 200:         uses: actions/upload-artifact@v4
+ 201:         with:
+--- scoped status ---
+ M .github/workflows/release.yml
+?? docs/plan/plan_feedback_14_20260627-131553.md
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..f17cb9291e2bb0524e591558553fc8138b881fd2
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,135 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/"//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          if [[ "${MACOS_RELEASE_MODE}" != "signed-notarized" ]]; then
++            unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
++            unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
++            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
++            unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
++          fi
++
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+**Updating secret handling**
+
+I’m thinking about how “explicit inject secrets” includes the profile, and I might need to consider "only secret complete" when handling things like signing and notarization with the App Store API key. I need to ensure that "MACOS_CERTIFICATE_BASE64" and "MACOS_CERTIFICATE_PASSWORD" are expected variables. The documentation shows some future plans. I realize I don’t need tests right now, but I definitely need to finalize my update plan.
+codex
+scope 状态确认完毕；按要求不运行任何 workflow 或构建验证。
+  ✓ 检查当前 workflow 打包段
+  ✓ 添加 macOS 模式判定
+  ✓ 接入签名证书准备
+  ✓ 拆分平台打包环境
+  ✓ 确认 scope 状态
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..f17cb9291e2bb0524e591558553fc8138b881fd2
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,135 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/"//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          if [[ "${MACOS_RELEASE_MODE}" != "signed-notarized" ]]; then
++            unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
++            unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
++            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
++            unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
++          fi
++
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+codex
+已完成 P003，仅修改 `.github/workflows/release.yml`，未修改 plan/checkbox/进度区。
+
+**变更**
+- `.github/workflows/release.yml:66` 新增 macOS 签名/公证模式判定：只有签名 secret 与公证 secret 都完整时进入 `signed-notarized`，否则标记为 `unsigned-test`。
+- `.github/workflows/release.yml:128` 新增 macOS 证书导入步骤，支持 `MACOS_CERTIFICATE_BASE64` + `MACOS_CERTIFICATE_PASSWORD` 导入临时 keychain。
+- `.github/workflows/release.yml:156` 单独拆出 macOS 打包步骤，正式模式才保留签名/公证 secret；测试模式会 unset，避免误生成“已签名但未公证”的伪正式包。
+- `.github/workflows/release.yml:193` Windows/Linux 打包保持原 `CSC_IDENTITY_AUTO_DISCOVERY: false`，避免非预期影响。
+- `.github/workflows/release.yml:199` artifact 上传阶段保持独立，日志阶段现在可区分模式判定、证书导入、打包/签名/公证/staple、上传。
+
+**验证**
+- 按要求未运行测试、构建、lint、analyze、coverage、e2e、benchmark 或 workflow 校验命令。
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index 6c7e3d82367adabf0fb188c2b14d0f5f0ed8d44c..f17cb9291e2bb0524e591558553fc8138b881fd2
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -63,7 +63,135 @@
+           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+           sudo gem install --no-document fpm
+ 
++      - name: Resolve macOS signing and notarization mode
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_LINK_SECRET: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD_SECRET: ${{ secrets.CSC_KEY_PASSWORD }}
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++          APPLE_KEYCHAIN_PROFILE_SECRET: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_ID_SECRET: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD_SECRET: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID_SECRET: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH_SECRET: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY_SECRET: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64_SECRET: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID_SECRET: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER_SECRET: ${{ secrets.APPLE_API_ISSUER }}
++        run: |
++          set -euo pipefail
++
++          signing_source=none
++          if [[ -n "${CSC_LINK_SECRET}" && -n "${CSC_KEY_PASSWORD_SECRET}" ]]; then
++            signing_source=csc-link
++          elif [[ -n "${MACOS_CERTIFICATE_BASE64}" && -n "${MACOS_CERTIFICATE_PASSWORD}" ]]; then
++            signing_source=keychain-import
++          fi
++
++          notarization_source=none
++          if [[ -n "${APPLE_KEYCHAIN_PROFILE_SECRET}" ]]; then
++            notarization_source=keychain-profile
++          elif [[ ( -n "${APPLE_API_KEY_PATH_SECRET}" || -n "${APPLE_API_KEY_SECRET}" || -n "${APPLE_API_KEY_BASE64_SECRET}" ) && -n "${APPLE_API_KEY_ID_SECRET}" && -n "${APPLE_API_ISSUER_SECRET}" ]]; then
++            notarization_source=app-store-connect-api-key
++          elif [[ -n "${APPLE_ID_SECRET}" && -n "${APPLE_APP_SPECIFIC_PASSWORD_SECRET}" && -n "${APPLE_TEAM_ID_SECRET}" ]]; then
++            notarization_source=apple-id-password
++          fi
++
++          if [[ "${signing_source}" != "none" && "${notarization_source}" != "none" ]]; then
++            release_mode=signed-notarized
++            csc_auto_discovery=true
++            notarize_required=true
++            skip_notarize=false
++          else
++            release_mode=unsigned-test
++            csc_auto_discovery=false
++            notarize_required=false
++            skip_notarize=true
++          fi
++
++          {
++            echo "MACOS_RELEASE_MODE=${release_mode}"
++            echo "MACOS_SIGNING_SOURCE=${signing_source}"
++            echo "MACOS_NOTARIZATION_SOURCE=${notarization_source}"
++            echo "CSC_IDENTITY_AUTO_DISCOVERY=${csc_auto_discovery}"
++            echo "MAC_NOTARIZE_REQUIRED=${notarize_required}"
++            echo "SKIP_NOTARIZE=${skip_notarize}"
++          } >> "${GITHUB_ENV}"
++
++          echo "::notice title=macOS release mode::${release_mode}; signing=${signing_source}; notarization=${notarization_source}"
++          if [[ "${release_mode}" != "signed-notarized" ]]; then
++            echo "::warning title=macOS unsigned test package::Configure complete signing and notarization secrets to publish a Gatekeeper-ready macOS package."
++          fi
++
++      - name: Import macOS signing certificate
++        if: matrix.platform == 'macos' && env.MACOS_RELEASE_MODE == 'signed-notarized' && env.MACOS_SIGNING_SOURCE == 'keychain-import'
++        shell: bash
++        env:
++          MACOS_CERTIFICATE_BASE64: ${{ secrets.MACOS_CERTIFICATE_BASE64 }}
++          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
++        run: |
++          set -euo pipefail
++
++          certificate_path="${RUNNER_TEMP}/build_certificate.p12"
++          keychain_path="${RUNNER_TEMP}/app-signing.keychain-db"
++          keychain_password="$(uuidgen)"
++
++          if ! printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}" 2>/dev/null; then
++            printf '%s' "${MACOS_CERTIFICATE_BASE64}" | base64 -D > "${certificate_path}"
++          fi
++
++          security create-keychain -p "${keychain_password}" "${keychain_path}"
++          security set-keychain-settings -lut 21600 "${keychain_path}"
++          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
++          security import "${certificate_path}" -P "${MACOS_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
++          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "${keychain_password}" "${keychain_path}"
++          existing_keychains="$(security list-keychains -d user | sed 's/"//g')"
++          security list-keychains -d user -s "${keychain_path}" ${existing_keychains}
++          security find-identity -v -p codesigning "${keychain_path}"
++
++          echo "CSC_KEYCHAIN=${keychain_path}" >> "${GITHUB_ENV}"
++
++      - name: Package macOS
++        if: matrix.platform == 'macos'
++        shell: bash
++        env:
++          CSC_IDENTITY_AUTO_DISCOVERY: ${{ env.CSC_IDENTITY_AUTO_DISCOVERY }}
++          CSC_KEYCHAIN: ${{ env.CSC_KEYCHAIN }}
++          CSC_LINK: ${{ secrets.CSC_LINK }}
++          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
++          SKIP_NOTARIZE: ${{ env.SKIP_NOTARIZE }}
++          MAC_NOTARIZE_REQUIRED: ${{ env.MAC_NOTARIZE_REQUIRED }}
++          APPLE_KEYCHAIN_PROFILE: ${{ secrets.APPLE_KEYCHAIN_PROFILE }}
++          APPLE_KEYCHAIN: ${{ secrets.APPLE_KEYCHAIN }}
++          APPLE_ID: ${{ secrets.APPLE_ID }}
++          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
++          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
++          APPLE_API_KEY_PATH: ${{ secrets.APPLE_API_KEY_PATH }}
++          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
++          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
++          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
++          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
++          DEBUG: electron-notarize*
++        run: |
++          set -euo pipefail
++          if [[ "${MACOS_RELEASE_MODE}" != "signed-notarized" ]]; then
++            unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
++            unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
++            unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
++            unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
++          fi
++
++          echo "::group::macOS package, signing, notarization, and staple"
++          echo "Release mode: ${MACOS_RELEASE_MODE}"
++          echo "Signing source: ${MACOS_SIGNING_SOURCE}"
++          echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
++          npm run ${{ matrix.package_script }} -- --publish never
++          echo "::endgroup::"
++
+       - name: Package ${{ matrix.platform }}
++        if: matrix.platform != 'macos'
+         run: npm run ${{ matrix.package_script }} -- --publish never
+         env:
+           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+已完成 P003，仅修改 `.github/workflows/release.yml`，未修改 plan/checkbox/进度区。
+
+**变更**
+- `.github/workflows/release.yml:66` 新增 macOS 签名/公证模式判定：只有签名 secret 与公证 secret 都完整时进入 `signed-notarized`，否则标记为 `unsigned-test`。
+- `.github/workflows/release.yml:128` 新增 macOS 证书导入步骤，支持 `MACOS_CERTIFICATE_BASE64` + `MACOS_CERTIFICATE_PASSWORD` 导入临时 keychain。
+- `.github/workflows/release.yml:156` 单独拆出 macOS 打包步骤，正式模式才保留签名/公证 secret；测试模式会 unset，避免误生成“已签名但未公证”的伪正式包。
+- `.github/workflows/release.yml:193` Windows/Linux 打包保持原 `CSC_IDENTITY_AUTO_DISCOVERY: false`，避免非预期影响。
+- `.github/workflows/release.yml:199` artifact 上传阶段保持独立，日志阶段现在可区分模式判定、证书导入、打包/签名/公证/staple、上传。
+
+**验证**
+- 按要求未运行测试、构建、lint、analyze、coverage、e2e、benchmark 或 workflow 校验命令。

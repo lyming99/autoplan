@@ -1,0 +1,2020 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0782-f8b8-7a51-bc95-f420c8f2068d
+--------
+user
+你是开发执行者。
+请只执行指定任务 P001，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_14_20260627-131553.md
+指定任务：
+- [ ] P001: 定位 macOS 损坏提示根因 <!-- scope: .github/workflows/release.yml,package.json,docs/release/macos.md -->
+任务 scope：.github/workflows/release.yml, package.json, docs/release/macos.md
+
+完成后必须：
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会先读取任务说明和相关规范，只看不改 plan。然后定位 scope 内的 macOS 打包配置根因。
+  → 读取任务与项目约束
+  • 检查 macOS 发布配置
+  • 修正损坏提示根因
+  • 汇总变更与验证限制
+exec
+powershell.exe -Command "Get-ChildItem -Force -Filter AGENTS.md -Recurse | Select-Object -ExpandProperty FullName; Write-Host '---PLAN---'; Get-Content -LiteralPath 'D:\\project\\GitHub\\autoplan\\docs\\plan\\plan_feedback_14_20260627-131553.md' -Encoding UTF8; Write-Host '---FILES---'; Get-Item -LiteralPath '.github/workflows/release.yml','package.json','docs/release/macos.md' | Select-Object FullName,Length" in D:\project\GitHub\autoplan
+2026-06-27T05:17:50.079189Z ERROR codex_core::tools::router: error={"output":"---PLAN---\n# 反馈 #14 开发计划：修复 macOS 发布包提示损坏\r\n\r\n## 背景\r\n\r\n反馈 #14 指出：macOS 下载 GitHub Action 编译出的安装包后提示“已损坏/无法打开”，怀疑发布流水线存在路径、格式或打包问题。结合当前发布配置，macOS 包由 GitHub Actions 的 `macos-latest` 执行 `npm run package:mac` 生成 `dmg` 和 `zip`，且流水线设置了 `CSC_IDENTITY_AUTO_DISCOVERY=false`，这会显式禁用自动签名发现。该问题高概率与 macOS Gatekeeper 对未签名、未公证、签名不完整或下载产物损坏的拦截有关，也需要排查产物上传/下载路径、架构产物命名和 release 附件格式是否导致用户拿到错误文件。\r\n\r\n## 设计约束\r\n\r\n- 本计划只处理 macOS 发布包“提示损坏/无法打开”的构建、签名、公证、产物校验和发布说明问题，不改动业务功能逻辑。\r\n- 优先修复根因：签名、公证、entitlements、artifact 上传路径和 release 产物完整性；不要仅依赖用户执行 `xattr -dr com.apple.quarantine` 作为正式解决方案。\r\n- 若项目暂时无法配置 Apple Developer 证书和公证密钥，必须让 CI 明确区分“未签名测试包”和“正式签名公证包”，避免用户误以为未签名包可直接安装。\r\n- macOS x64 与 arm64 产物必须能清晰区分，避免 GitHub Release 中同名覆盖、下载错架构或 zip/dmg 混用导致误判为损坏。\r\n- 不要把运行测试、构建、回归验证拆成普通开发任务；最终验证统一放到最后“完整验收”节点。\r\n\r\n## 任务拆解\r\n\r\n- [ ] P001: 定位 macOS 损坏提示根因 <!-- scope: .github/workflows/release.yml,package.json,docs/release/macos.md -->\r\n  - 验收要点：梳理 macOS 包从 `npm run package:mac`、`electron-builder` 输出、artifact 上传、release 上传到用户下载的完整链路。\r\n  - 验收要点：确认当前 `CSC_IDENTITY_AUTO_DISCOVERY=false` 对 macOS 签名的影响，并判断“提示损坏”是否由未签名/未公证、签名破坏、下载产物不完整或架构不匹配触发。\r\n  - 验收要点：记录需要保留的发布产物类型和命名规则，包括 `dmg`、`zip`、x64、arm64 以及 `latest-mac.yml` 的关系。\r\n  - 验收要点：形成排查结论文档，明确后续任务应修复的配置点，不修改业务代码。\r\n\r\n- [ ] P002: 完善 macOS 签名与公证配置 <!-- scope: package.json,build/entitlements.mac.plist,build/entitlements.mac.inherit.plist,scripts/notarize-mac.js -->\r\n  - 验收要点：`electron-builder` 的 macOS 配置包含明确的 hardened runtime、entitlements、gatekeeper assess 以及签名/公证所需字段。\r\n  - 验收要点：新增或更新 entitlements 文件时，仅开放 Electron 应用实际需要的权限，不引入过宽授权。\r\n  - 验收要点：公证脚本支持从 CI 环境变量读取 Apple ID、Team ID、app-specific password 或 App Store Connect API key，缺失时给出明确错误或跳过原因。\r\n  - 验收要点：正式发布包完成签名与公证后，Gatekeeper 不应再把包识别为损坏；未配置证书时不得伪装成正式可安装包。\r\n\r\n- [ ] P003: 修正 GitHub Actions macOS 发布流程 <!-- scope: .github/workflows/release.yml -->\r\n  - 验收要点：macOS job 明确注入签名和公证所需 secret，并只在 secret 完整时执行正式签名公证发布路径。\r\n  - 验收要点：移除或条件化会阻断 macOS 正式签名的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免 CI 永久生成未签名包。\r\n  - 验收要点：CI 日志能区分签名、公证、staple、artifact 上传阶段，失败时可定位到具体阶段。\r\n  - 验收要点：Windows/Linux 的打包行为不因 macOS 签名改动而发生非预期变化。\r\n\r\n- [ ] P004: 规范 macOS 产物命名与上传范围 <!-- scope: package.json,.github/workflows/release.yml -->\r\n  - 验收要点：x64 与 arm64 的 `dmg`、`zip` 产物命名唯一且可读，不会在 `release/` 或 GitHub Release 中互相覆盖。\r\n  - 验收要点：artifact 上传路径只包含预期发布产物、blockmap 和更新元数据，不上传临时目录、未完成文件或错误架构文件。\r\n  - 验收要点：release 上传脚本能保留 macOS 产物目录结构或通过文件名准确表达平台与架构，用户可明确选择正确下载项。\r\n  - 验收要点：`latest-mac.yml` 与实际发布产物名称保持一致，避免自动更新或下载链接指向不存在/错误文件。\r\n\r\n- [ ] P005: 增加发布产物完整性校验 <!-- scope: scripts/verify-release-artifacts.js,package.json,.github/workflows/release.yml -->\r\n  - 验收要点：新增校验脚本能检查 macOS 产物是否存在、文件大小非零、命名包含平台和架构、数量符合预期。\r\n  - 验收要点：在 macOS runner 上校验 `.app`、`.dmg` 或 `.zip` 的签名状态、公证票据/staple 状态和基本可挂载/可解压能力。\r\n  - 验收要点：校验失败会让 GitHub Action 失败，避免损坏或未完成的 macOS 包进入 Release。\r\n  - 验收要点：校验脚本只负责产物结构、签名和完整性检查，不承担最终完整验收命令的职责。\r\n\r\n- [ ] P006: 更新 macOS 发布与安装说明 <!-- scope: docs/release/macos.md,README.md -->\r\n  - 验收要点：文档说明正式 macOS 包需要签名和公证，以及 CI 所需 GitHub Secrets 名称、用途和配置入口。\r\n  - 验收要点：文档说明用户应根据芯片选择 arm64 或 x64 产物，并解释 `dmg` 与 `zip` 的推荐使用方式。\r\n  - 验收要点：若提供未签名开发包，文档必须明确标记为开发/测试用途，并说明它可能触发 Gatekeeper 提示。\r\n  - 验收要点：安装故障排查包含“损坏提示”的判断路径，但不把绕过 Gatekeeper 作为正式发布包的主要安装方式。\r\n\r\n- [ ] P007: 完整验收 <!-- scope: validation -->\r\n  - 验收要点：执行最终验收命令 `npm run check`，并在 GitHub Actions 中通过 `workflow_dispatch` 触发一次 macOS 发布验证；范围覆盖静态检查、macOS 打包、签名、公证、产物上传和 release 附件生成。\r\n  - 验收要点：在 macOS runner 上对生成产物执行 `codesign --verify --deep --strict --verbose=2`、`spctl --assess --type execute --verbose`、DMG 挂载检查和 zip 解压检查。\r\n  - 验收要点：通过标准为本地 `npm run check` 退出码为 0，macOS GitHub Action job 退出码为 0，release 中 x64/arm64 的 dmg/zip 文件名唯一且大小非零。\r\n  - 验收要点：最终手动验收需在一台未设置开发者绕过策略的 macOS 设备上下载正式 dmg，打开、拖拽安装并首次启动 AutoPlan，不再出现“已损坏/无法打开”提示。\r\n\r\n## 总体验收标准\r\n\r\n- 根因明确：能够说明 macOS 损坏提示来自签名/公证、产物完整性、路径上传或架构命名中的哪一类问题，并在文档中留存结论。\r\n- 正式包可信：配置 Apple Developer 凭据后，GitHub Actions 生成的 macOS 正式包完成签名、公证和 staple，Gatekeeper 可正常放行。\r\n- 产物不混淆：GitHub Release 中 macOS x64 与 arm64、dmg 与 zip 文件名唯一、格式正确、大小非零，用户不会因命名或路径问题下载错包。\r\n- CI 可阻断坏包：macOS 产物缺失、未签名、公证失败、DMG 不可挂载或 ZIP 不可解压时，发布流程失败并阻止上传正式 Release。\r\n- 文档可操作：维护者能按文档配置发布 secrets，用户能按文档选择正确架构并安装正式包。\r\n- 最终验收命令：执行 `npm run check`，并通过 GitHub Actions `workflow_dispatch` 运行 Release workflow 的 macOS job；验收范围为 macOS 打包配置、签名公证、产物完整性、上传路径和安装启动；通过标准为命令/job 退出码均为 0，且 macOS 正式 dmg 首次打开不再提示“已损坏/无法打开”。\r\n\r\n## 进度区\r\n\r\n- 2026-06-27 AutoPlan 生成：反馈 #14 开发计划已创建，待执行。\r\n---FILES---\n\r\nFullName                                                 Length\r\n--------                                                 ------\r\nD:\\project\\GitHub\\autoplan\\.github\\workflows\\release.yml   4651\r\nD:\\project\\GitHub\\autoplan\\package.json                    2962\r\n\r\n\r\nGet-Item : 找不到路径“docs/release/macos.md”，因为该路径不存在。\r\n所在位置 行:2 字符: 258\r\n+ ... -FILES---'; Get-Item -LiteralPath '.github/workflows/release.yml','pa ...\r\n+                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\r\n    + CategoryInfo          : ObjectNotFound: (docs/release/macos.md:String) [Get-Item], ItemNotFoundException\r\n    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetItemCommand\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":0.4}}
+ exited 1 in 363ms:
+---PLAN---
+# 反馈 #14 开发计划：修复 macOS 发布包提示损坏
+
+## 背景
+
+反馈 #14 指出：macOS 下载 GitHub Action 编译出的安装包后提示“已损坏/无法打开”，怀疑发布流水线存在路径、格式或打包问题。结合当前发布配置，macOS 包由 GitHub Actions 的 `macos-latest` 执行 `npm run package:mac` 生成 `dmg` 和 `zip`，且流水线设置了 `CSC_IDENTITY_AUTO_DISCOVERY=false`，这会显式禁用自动签名发现。该问题高概率与 macOS Gatekeeper 对未签名、未公证、签名不完整或下载产物损坏的拦截有关，也需要排查产物上传/下载路径、架构产物命名和 release 附件格式是否导致用户拿到错误文件。
+
+## 设计约束
+
+- 本计划只处理 macOS 发布包“提示损坏/无法打开”的构建、签名、公证、产物校验和发布说明问题，不改动业务功能逻辑。
+- 优先修复根因：签名、公证、entitlements、artifact 上传路径和 release 产物完整性；不要仅依赖用户执行 `xattr -dr com.apple.quarantine` 作为正式解决方案。
+- 若项目暂时无法配置 Apple Developer 证书和公证密钥，必须让 CI 明确区分“未签名测试包”和“正式签名公证包”，避免用户误以为未签名包可直接安装。
+- macOS x64 与 arm64 产物必须能清晰区分，避免 GitHub Release 中同名覆盖、下载错架构或 zip/dmg 混用导致误判为损坏。
+- 不要把运行测试、构建、回归验证拆成普通开发任务；最终验证统一放到最后“完整验收”节点。
+
+## 任务拆解
+
+- [ ] P001: 定位 macOS 损坏提示根因 <!-- scope: .github/workflows/release.yml,package.json,docs/release/macos.md -->
+  - 验收要点：梳理 macOS 包从 `npm run package:mac`、`electron-builder` 输出、artifact 上传、release 上传到用户下载的完整链路。
+  - 验收要点：确认当前 `CSC_IDENTITY_AUTO_DISCOVERY=false` 对 macOS 签名的影响，并判断“提示损坏”是否由未签名/未公证、签名破坏、下载产物不完整或架构不匹配触发。
+  - 验收要点：记录需要保留的发布产物类型和命名规则，包括 `dmg`、`zip`、x64、arm64 以及 `latest-mac.yml` 的关系。
+  - 验收要点：形成排查结论文档，明确后续任务应修复的配置点，不修改业务代码。
+
+- [ ] P002: 完善 macOS 签名与公证配置 <!-- scope: package.json,build/entitlements.mac.plist,build/entitlements.mac.inherit.plist,scripts/notarize-mac.js -->
+  - 验收要点：`electron-builder` 的 macOS 配置包含明确的 hardened runtime、entitlements、gatekeeper assess 以及签名/公证所需字段。
+  - 验收要点：新增或更新 entitlements 文件时，仅开放 Electron 应用实际需要的权限，不引入过宽授权。
+  - 验收要点：公证脚本支持从 CI 环境变量读取 Apple ID、Team ID、app-specific password 或 App Store Connect API key，缺失时给出明确错误或跳过原因。
+  - 验收要点：正式发布包完成签名与公证后，Gatekeeper 不应再把包识别为损坏；未配置证书时不得伪装成正式可安装包。
+
+- [ ] P003: 修正 GitHub Actions macOS 发布流程 <!-- scope: .github/workflows/release.yml -->
+  - 验收要点：macOS job 明确注入签名和公证所需 secret，并只在 secret 完整时执行正式签名公证发布路径。
+  - 验收要点：移除或条件化会阻断 macOS 正式签名的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免 CI 永久生成未签名包。
+  - 验收要点：CI 日志能区分签名、公证、staple、artifact 上传阶段，失败时可定位到具体阶段。
+  - 验收要点：Windows/Linux 的打包行为不因 macOS 签名改动而发生非预期变化。
+
+- [ ] P004: 规范 macOS 产物命名与上传范围 <!-- scope: package.json,.github/workflows/release.yml -->
+  - 验收要点：x64 与 arm64 的 `dmg`、`zip` 产物命名唯一且可读，不会在 `release/` 或 GitHub Release 中互相覆盖。
+  - 验收要点：artifact 上传路径只包含预期发布产物、blockmap 和更新元数据，不上传临时目录、未完成文件或错误架构文件。
+  - 验收要点：release 上传脚本能保留 macOS 产物目录结构或通过文件名准确表达平台与架构，用户可明确选择正确下载项。
+  - 验收要点：`latest-mac.yml` 与实际发布产物名称保持一致，避免自动更新或下载链接指向不存在/错误文件。
+
+- [ ] P005: 增加发布产物完整性校验 <!-- scope: scripts/verify-release-artifacts.js,package.json,.github/workflows/release.yml -->
+  - 验收要点：新增校验脚本能检查 macOS 产物是否存在、文件大小非零、命名包含平台和架构、数量符合预期。
+  - 验收要点：在 macOS runner 上校验 `.app`、`.dmg` 或 `.zip` 的签名状态、公证票据/staple 状态和基本可挂载/可解压能力。
+  - 验收要点：校验失败会让 GitHub Action 失败，避免损坏或未完成的 macOS 包进入 Release。
+  - 验收要点：校验脚本只负责产物结构、签名和完整性检查，不承担最终完整验收命令的职责。
+
+- [ ] P006: 更新 macOS 发布与安装说明 <!-- scope: docs/release/macos.md,README.md -->
+  - 验收要点：文档说明正式 macOS 包需要签名和公证，以及 CI 所需 GitHub Secrets 名称、用途和配置入口。
+  - 验收要点：文档说明用户应根据芯片选择 arm64 或 x64 产物，并解释 `dmg` 与 `zip` 的推荐使用方式。
+  - 验收要点：若提供未签名开发包，文档必须明确标记为开发/测试用途，并说明它可能触发 Gatekeeper 提示。
+  - 验收要点：安装故障排查包含“损坏提示”的判断路径，但不把绕过 Gatekeeper 作为正式发布包的主要安装方式。
+
+- [ ] P007: 完整验收 <!-- scope: validation -->
+  - 验收要点：执行最终验收命令 `npm run check`，并在 GitHub Actions 中通过 `workflow_dispatch` 触发一次 macOS 发布验证；范围覆盖静态检查、macOS 打包、签名、公证、产物上传和 release 附件生成。
+  - 验收要点：在 macOS runner 上对生成产物执行 `codesign --verify --deep --strict --verbose=2`、`spctl --assess --type execute --verbose`、DMG 挂载检查和 zip 解压检查。
+  - 验收要点：通过标准为本地 `npm run check` 退出码为 0，macOS GitHub Action job 退出码为 0，release 中 x64/arm64 的 dmg/zip 文件名唯一且大小非零。
+  - 验收要点：最终手动验收需在一台未设置开发者绕过策略的 macOS 设备上下载正式 dmg，打开、拖拽安装并首次启动 AutoPlan，不再出现“已损坏/无法打开”提示。
+
+## 总体验收标准
+
+- 根因明确：能够说明 macOS 损坏提示来自签名/公证、产物完整性、路径上传或架构命名中的哪一类问题，并在文档中留存结论。
+- 正式包可信：配置 Apple Developer 凭据后，GitHub Actions 生成的 macOS 正式包完成签名、公证和 staple，Gatekeeper 可正常放行。
+- 产物不混淆：GitHub Release 中 macOS x64 与 arm64、dmg 与 zip 文件名唯一、格式正确、大小非零，用户不会因命名或路径问题下载错包。
+- CI 可阻断坏包：macOS 产物缺失、未签名、公证失败、DMG 不可挂载或 ZIP 不可解压时，发布流程失败并阻止上传正式 Release。
+- 文档可操作：维护者能按文档配置发布 secrets，用户能按文档选择正确架构并安装正式包。
+- 最终验收命令：执行 `npm run check`，并通过 GitHub Actions `workflow_dispatch` 运行 Release workflow 的 macOS job；验收范围为 macOS 打包配置、签名公证、产物完整性、上传路径和安装启动；通过标准为命令/job 退出码均为 0，且 macOS 正式 dmg 首次打开不再提示“已损坏/无法打开”。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：反馈 #14 开发计划已创建，待执行。
+---FILES---
+
+FullName                                                 Length
+--------                                                 ------
+D:\project\GitHub\autoplan\.github\workflows\release.yml   4651
+D:\project\GitHub\autoplan\package.json                    2962
+
+
+Get-Item : 找不到路径“docs/release/macos.md”，因为该路径不存在。
+所在位置 行:2 字符: 258
++ ... -FILES---'; Get-Item -LiteralPath '.github/workflows/release.yml','pa ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (docs/release/macos.md:String) [Get-Item], ItemNotFoundException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetItemCommand
+ 
+
+codex
+plan 已确认只读；`docs/release/macos.md` 目前不存在。接着检查发布 workflow 和打包配置。
+  ✓ 读取任务与项目约束
+  → 检查 macOS 发布配置
+  • 修正损坏提示根因
+  • 汇总变更与验证限制
+exec
+powershell.exe -Command "Write-Host '--- release.yml ---'; Get-Content -LiteralPath '.github/workflows/release.yml' -Encoding UTF8; Write-Host '--- package.json ---'; Get-Content -LiteralPath 'package.json' -Encoding UTF8; Write-Host '--- docs tree ---'; if (Test-Path -LiteralPath 'docs') { Get-ChildItem -LiteralPath 'docs' -Recurse -File | Select-Object -ExpandProperty FullName }" in D:\project\GitHub\autoplan
+ succeeded in 226ms:
+--- release.yml ---
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish, for example v0.2.0'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes body. Leave empty to use a default message.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            package_script: package:win
+          - platform: macos
+            runner: macos-latest
+            package_script: package:mac
+          - platform: linux
+            runner: ubuntu-24.04
+            package_script: package:linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Linux packaging dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+          sudo gem install --no-document fpm
+
+      - name: Package ${{ matrix.platform }}
+        run: npm run ${{ matrix.package_script }} -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload ${{ matrix.platform }} artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/latest*.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout tag metadata
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Resolve release notes
+        shell: bash
+        env:
+          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${DISPATCH_NOTES}" ]]; then
+            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
+          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
+            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
+          else
+            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
+          fi
+
+          if [[ ! -s release-notes.md ]]; then
+            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+          fi
+
+      - name: Create or update release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' files < <(
+            find dist-artifacts -type f \( \
+              -name '*.exe' -o \
+              -name '*.blockmap' -o \
+              -name '*.dmg' -o \
+              -name '*.zip' -o \
+              -name '*.AppImage' -o \
+              -name '*.deb' -o \
+              -name 'latest*.yml' \
+            \) -print0
+          )
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No release artifacts found." >&2
+            exit 1
+          fi
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+            gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+          fi
+--- package.json ---
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+--- docs tree ---
+D:\project\GitHub\autoplan\docs\release.md
+D:\project\GitHub\autoplan\docs\plan\plan_feedback_10_20260626-034659.md
+D:\project\GitHub\autoplan\docs\plan\plan_feedback_13_20260627-033001.md
+D:\project\GitHub\autoplan\docs\plan\plan_feedback_14_20260627-131553.md
+D:\project\GitHub\autoplan\docs\plan\plan_feedback_5_20260625-040346.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_11_20260625-035545.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_12_20260625-202919.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_21_20260626-033033.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_23_20260626-132134.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_24_20260626-134137.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_25_20260626-134812.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_26_20260626-140018.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_27_20260626-153548.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_28_20260627-123944.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_29_20260627-124433.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_30_20260627-125155.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_31_20260627-130629.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_32_20260627-131242.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_4_20260625-030248.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_5_20260625-031229.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_6_20260625-032502.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_7_20260625-033918.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_8_20260625-034659.md
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-030248_gen-requirement-4.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-030248_gen-requirement-4.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-030632_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-030632_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-030632_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-030632_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-031229_gen-requirement-5.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-031229_gen-requirement-5.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-031550_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-031550_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-031550_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-031550_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-032502_gen-requirement-6.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-032502_gen-requirement-6.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-032739_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-032739_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-032739_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-032739_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-033918_gen-requirement-7.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-033918_gen-requirement-7.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-034308_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-034308_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-034308_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-034308_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-034659_gen-requirement-8.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-034659_gen-requirement-8.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035016_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035016_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035016_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035016_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035545_gen-requirement-11.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035545_gen-requirement-11.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035825_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035825_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035825_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-035825_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-040346_gen-feedback-5.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-040346_gen-feedback-5.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-040538_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-040538_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-040736_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-040736_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-041737_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-041737_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-042222_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-042222_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-042658_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-042658_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-042828_validate-7.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-042833_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-042833_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-043619_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-043619_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-044209_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-044209_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-044655_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-044655_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-044805_validate-8.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-044810_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-044810_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-045220_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-045220_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-045535_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-045535_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-045941_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-045946_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-045946_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-050857_validate-9.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-050902_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-050902_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-051637_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-051637_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-052248_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-052248_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053244_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053249_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053254_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053259_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053304_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053309_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053314_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053319_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053324_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053329_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053329_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053950_execute-P007.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-053950_execute-P007.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-054130_validate-11.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-054135_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-054135_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-054135_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-054135_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-055036_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-055036_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-055911_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-055911_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-060522_validate-13.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-060527_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-060527_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-060952_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-060952_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-061843_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-061843_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-062639_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-062639_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-063200_validate-15.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-063205_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-063205_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-063350_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-063350_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-063740_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-063740_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-064216_validate-16.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-202919_gen-requirement-12.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-202919_gen-requirement-12.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-203240_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260625-203240_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-021830_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-021830_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-021831_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-021831_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-022356_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-022356_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-022356_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-022356_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-024158_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-024158_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-024158_execute-P008.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-024158_execute-P008.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-030145_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-030145_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-033033_gen-requirement-21.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-033033_gen-requirement-21.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-033820_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-033820_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-033820_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-033820_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-034659_gen-feedback-10.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-034659_gen-feedback-10.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-035035_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-035035_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-040216_execute-P007.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-040216_execute-P007.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-041848_validate-17.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-041853_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-041853_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-041853_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-041853_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-042954_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-042954_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-043900_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-043900_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-044210_validate-21.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-044215_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-044215_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-050107_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-050107_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-050107_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-050107_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-053955_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-053955_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-055807_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-055807_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-061148_validate-23.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-132134_gen-requirement-23.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-132134_gen-requirement-23.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-132337_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-132337_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-132540_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-132540_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-132725_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-132725_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-133011_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-133011_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-133306_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-133306_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-133531_validate-31.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-134137_gen-requirement-24.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-134137_gen-requirement-24.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-134437_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-134437_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-134812_gen-requirement-25.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-134812_gen-requirement-25.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-135130_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-135130_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-140018_gen-requirement-26.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-140018_gen-requirement-26.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-140338_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-140338_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-141500_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-141500_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-141840_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-141840_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-142151_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-142151_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-142821_validate-32.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-142826_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-142826_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-143432_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-143432_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-144433_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-144433_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-145759_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-145759_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-150100_execute-P006.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-150100_execute-P006.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-150810_validate-33.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-150815_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-150815_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-151411_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-151411_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-151841_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-151841_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-152137_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-152137_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-152847_validate-34.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-153548_gen-requirement-27.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-153548_gen-requirement-27.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-153657_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-153657_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-153903_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-153903_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-154049_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-154049_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-154154_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-154154_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260626-154259_validate-35.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033001_gen-feedback-13.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033001_gen-feedback-13.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033141_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033141_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033457_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033457_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033648_execute-P003.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033648_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033909_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033915_execute-P003.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033936_execute-P004.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-033936_execute-P004.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-034316_execute-P005.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-034316_execute-P005.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-034802_validate-38.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-123944_gen-requirement-28.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-123944_gen-requirement-28.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124103_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124103_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124250_gen-requirement-29.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124254_execute-P002.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124254_execute-P002.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124433_gen-requirement-29.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124433_gen-requirement-29.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124649_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-124649_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-125155_gen-requirement-30.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-125155_gen-requirement-30.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-125352_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-125352_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-130629_gen-requirement-31.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-130629_gen-requirement-31.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-130829_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-131242_gen-requirement-32.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-131242_gen-requirement-32.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-131420_execute-P001.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-131420_execute-P001.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-131553_gen-feedback-14.last.txt
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-131553_gen-feedback-14.log
+D:\project\GitHub\autoplan\docs\progress\logs\20260627-131731_execute-P001.log
+
+codex
+输出被日志目录截断了；我会只读取关键 JSON 字段和 workflow 片段。
+exec
+powershell.exe -Command '$pkg = Get-Content -LiteralPath '"'package.json' -Raw -Encoding UTF8 | ConvertFrom-Json; Write-Host '--- scripts ---'; "'$pkg.scripts | Format-List | Out-String -Width 200; Write-Host '"'--- build ---'; "'$pkg.build | ConvertTo-Json -Depth 20; Write-Host '"'--- release line numbers ---'; "'$i=1; Get-Content -LiteralPath '"'.github/workflows/release.yml' -Encoding UTF8 | ForEach-Object { '{0,4}: {1}' -f "'$i++, $_ }' in D:\project\GitHub\autoplan
+ succeeded in 263ms:
+--- scripts ---
+
+
+start         : npm run dev
+dev           : node scripts/dev.js
+build         : tsc --noEmit && vite build
+package:win   : npm run build && electron-builder --win nsis --x64
+package:mac   : npm run build && electron-builder --mac dmg zip --x64 --arm64
+package:linux : npm run build && electron-builder --linux AppImage deb --x64
+package:all   : npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64
+check         : tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node -
+                -check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js
+smoke         : node scripts/smoke-test.js
+
+
+
+
+--- build ---
+{
+    "appId":  "com.autoplan.desktop",
+    "productName":  "AutoPlan",
+    "directories":  {
+                        "output":  "release"
+                    },
+    "files":  [
+                  "assets/**/*",
+                  "dist/**/*",
+                  "src/**/*",
+                  "package.json"
+              ],
+    "asarUnpack":  [
+                       "node_modules/sql.js/dist/*.wasm"
+                   ],
+    "toolsets":  {
+                     "appimage":  "1.0.3"
+                 },
+    "win":  {
+                "icon":  "assets/icon.ico",
+                "target":  [
+                               {
+                                   "target":  "nsis",
+                                   "arch":  [
+                                                "x64"
+                                            ]
+                               }
+                           ],
+                "artifactName":  "${productName}-${version}-win-${arch}-Setup.${ext}"
+            },
+    "mac":  {
+                "target":  [
+                               {
+                                   "target":  "dmg",
+                                   "arch":  [
+                                                "x64",
+                                                "arm64"
+                                            ]
+                               },
+                               {
+                                   "target":  "zip",
+                                   "arch":  [
+                                                "x64",
+                                                "arm64"
+                                            ]
+                               }
+                           ],
+                "artifactName":  "${productName}-${version}-mac-${arch}.${ext}"
+            },
+    "linux":  {
+                  "icon":  "assets/icon.png",
+                  "target":  [
+                                 {
+                                     "target":  "AppImage",
+                                     "arch":  [
+                                                  "x64"
+                                              ]
+                                 },
+                                 {
+                                     "target":  "deb",
+                                     "arch":  [
+                                                  "x64"
+                                              ]
+                                 }
+                             ],
+                  "category":  "Utility",
+                  "artifactName":  "${productName}-${version}-linux-${arch}.${ext}"
+              },
+    "nsis":  {
+                 "oneClick":  false,
+                 "perMachine":  false,
+                 "allowToChangeInstallationDirectory":  true
+             }
+}
+--- release line numbers ---
+   1: name: Release
+   2: 
+   3: on:
+   4:   push:
+   5:     tags:
+   6:       - 'v*'
+   7:   workflow_dispatch:
+   8:     inputs:
+   9:       tag:
+  10:         description: 'Release tag to build and publish, for example v0.2.0'
+  11:         required: true
+  12:         type: string
+  13:       release_notes:
+  14:         description: 'Release notes body. Leave empty to use a default message.'
+  15:         required: false
+  16:         type: string
+  17:         default: ''
+  18: 
+  19: permissions:
+  20:   contents: write
+  21: 
+  22: concurrency:
+  23:   group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  24:   cancel-in-progress: false
+  25: 
+  26: jobs:
+  27:   build:
+  28:     name: Build ${{ matrix.platform }}
+  29:     runs-on: ${{ matrix.runner }}
+  30:     strategy:
+  31:       fail-fast: false
+  32:       matrix:
+  33:         include:
+  34:           - platform: windows
+  35:             runner: windows-latest
+  36:             package_script: package:win
+  37:           - platform: macos
+  38:             runner: macos-latest
+  39:             package_script: package:mac
+  40:           - platform: linux
+  41:             runner: ubuntu-24.04
+  42:             package_script: package:linux
+  43: 
+  44:     steps:
+  45:       - name: Checkout
+  46:         uses: actions/checkout@v4
+  47:         with:
+  48:           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  49: 
+  50:       - name: Setup Node.js
+  51:         uses: actions/setup-node@v4
+  52:         with:
+  53:           node-version: 22
+  54:           cache: npm
+  55: 
+  56:       - name: Install dependencies
+  57:         run: npm ci
+  58: 
+  59:       - name: Install Linux packaging dependencies
+  60:         if: matrix.platform == 'linux'
+  61:         run: |
+  62:           sudo apt-get update
+  63:           sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+  64:           sudo gem install --no-document fpm
+  65: 
+  66:       - name: Package ${{ matrix.platform }}
+  67:         run: npm run ${{ matrix.package_script }} -- --publish never
+  68:         env:
+  69:           CSC_IDENTITY_AUTO_DISCOVERY: false
+  70: 
+  71:       - name: Upload ${{ matrix.platform }} artifacts
+  72:         uses: actions/upload-artifact@v4
+  73:         with:
+  74:           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+  75:           path: |
+  76:             release/*.exe
+  77:             release/*.blockmap
+  78:             release/*.dmg
+  79:             release/*.zip
+  80:             release/*.AppImage
+  81:             release/*.deb
+  82:             release/latest*.yml
+  83:           if-no-files-found: error
+  84:           retention-days: 14
+  85: 
+  86:   release:
+  87:     name: Publish GitHub Release
+  88:     runs-on: ubuntu-latest
+  89:     needs: build
+  90:     env:
+  91:       GH_TOKEN: ${{ github.token }}
+  92:       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  93: 
+  94:     steps:
+  95:       - name: Checkout tag metadata
+  96:         uses: actions/checkout@v4
+  97:         with:
+  98:           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  99:           fetch-depth: 0
+ 100: 
+ 101:       - name: Download packaged artifacts
+ 102:         uses: actions/download-artifact@v4
+ 103:         with:
+ 104:           path: dist-artifacts
+ 105: 
+ 106:       - name: Resolve release notes
+ 107:         shell: bash
+ 108:         env:
+ 109:           DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+ 110:         run: |
+ 111:           set -euo pipefail
+ 112: 
+ 113:           if [[ -n "${DISPATCH_NOTES}" ]]; then
+ 114:             printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
+ 115:           elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
+ 116:             git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
+ 117:           else
+ 118:             git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
+ 119:           fi
+ 120: 
+ 121:           if [[ ! -s release-notes.md ]]; then
+ 122:             printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+ 123:           fi
+ 124: 
+ 125:       - name: Create or update release
+ 126:         shell: bash
+ 127:         run: |
+ 128:           set -euo pipefail
+ 129: 
+ 130:           mapfile -d '' files < <(
+ 131:             find dist-artifacts -type f \( \
+ 132:               -name '*.exe' -o \
+ 133:               -name '*.blockmap' -o \
+ 134:               -name '*.dmg' -o \
+ 135:               -name '*.zip' -o \
+ 136:               -name '*.AppImage' -o \
+ 137:               -name '*.deb' -o \
+ 138:               -name 'latest*.yml' \
+ 139:             \) -print0
+ 140:           )
+ 141:           if [[ ${#files[@]} -eq 0 ]]; then
+ 142:             echo "No release artifacts found." >&2
+ 143:             exit 1
+ 144:           fi
+ 145: 
+ 146:           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+ 147:             gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+ 148:             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+ 149:           else
+ 150:             gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+ 151:           fi
+
+codex
+根因已基本锁定在签名/公证链路；我再看下 docs 风格后补排查文档。
+exec
+powershell.exe -Command "if (Test-Path -LiteralPath 'docs') { Get-ChildItem -LiteralPath 'docs' -Directory | Select-Object -ExpandProperty Name; Write-Host '--- markdown samples ---'; Get-ChildItem -LiteralPath 'docs' -Recurse -File -Filter '*.md' | Select-Object -First 8 -ExpandProperty FullName | ForEach-Object { Write-Host '###' "'$_; Get-Content -LiteralPath $_ -Encoding UTF8 -TotalCount 25 } }' in D:\project\GitHub\autoplan
+ succeeded in 238ms:
+issues
+plan
+progress
+--- markdown samples ---
+### D:\project\GitHub\autoplan\docs\release.md
+# 发布说明
+
+AutoPlan 使用 GitHub Actions + electron-builder 发布桌面端安装包。当前发布流程覆盖 Windows、macOS、Linux 三个平台，支持推送 tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+
+## 发布前检查
+
+发布前请确认：
+
+- 依赖已安装且项目能够在本地正常开发运行。
+- `package.json` 中的 `version` 已更新为目标版本。
+- Git 工作区干净，没有未提交或未跟踪文件。
+- 当前仓库已配置可推送的远端，默认远端名为 `origin`。
+- GitHub 仓库的 Actions 权限允许 workflow 读写 `contents`，以便内置 `GITHUB_TOKEN` 创建或更新 Release。
+- tag 使用 `v` 前缀，例如 `v0.2.0`。
+
+## GitHub Actions 触发方式
+
+Release workflow 位于 `.github/workflows/release.yml`，触发方式如下：
+
+- 推送匹配 `v*` 的 tag 时自动触发，例如 `git push origin v0.2.0`。
+- 在 GitHub Actions 页面手动运行 `Release` workflow，并填写 `tag`。
+- 手动触发时可填写 `release_notes`；为空时 workflow 会读取 tag message 或使用兜底说明。
+
+workflow 会在三个 runner 上分别构建：
+
+### D:\project\GitHub\autoplan\docs\plan\plan_feedback_10_20260626-034659.md
+# 反馈 #10 开发计划：验收命令默认空、单条需求/反馈 CLI 配置与 Codex 思考深度
+
+## 背景
+
+当前 AutoPlan 已支持项目级 CLI 后端选择，并通过验收命令完成任务闭环。但反馈 #10 指出三个需要细化到输入与执行链路的行为：验收命令默认应为空；每条需求、每条反馈在输入框下方都应能单独选择 CLI 后端（Codex/Claude）；Codex 后端还应支持切换思考模式深度。目标是在不破坏项目级默认配置的前提下，为单条需求/反馈提供可覆盖的执行配置，并让计划生成、任务执行、修复与验收能稳定使用该配置。
+
+## 设计约束
+
+- 验收命令默认值必须为空字符串；历史已有命令的项目不应被清空，新建项目与初始化状态不再自动填入示例命令。
+- 项目级 CLI 配置仍作为默认值；需求/反馈未单独配置时继承项目级配置，单独配置后优先使用单条记录配置。
+- 需求输入框与反馈输入框下方都要展示 CLI 选择控件，交互位置、样式和保存行为保持一致。
+- CLI 后端至少支持 `codex` 与 `claude`；非法值需要归一化为默认 Codex，避免进入执行链路。
+- Codex 思考深度仅对 Codex CLI 生效；选择 Claude 时该控件应隐藏、禁用或明确提示不适用。
+- 思考深度需要有明确枚举值与默认值，执行命令参数、日志展示和快照数据保持一致。
+- 不应影响附件、粘贴图片、正文提交、计划任务 scope 解析、任务并发与 existing progress 更新链路。
+
+## 任务拆解
+
+- [x] P001: 调整验收命令默认值为空 <!-- scope: src/database.js,src/loopService.js,src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts,README.md -->
+  - 验收要点：新建项目、首次进入循环控制状态、未填写验收命令时，`validation_command` 均保存和展示为空字符串，不再出现默认 `npm run check`、`npm test` 或其他占位命令。
+  - 验收要点：已有项目已经保存的验收命令在升级后保持原值，不被迁移逻辑或状态初始化覆盖为空。
+  - 验收要点：执行计划验收时，空验收命令保持当前“跳过/不执行外部验收命令”的安全行为，并有可读事件或日志说明。
+  - 验收要点：循环控制表单、项目状态快照和 TypeScript 类型对空字符串处理一致，不出现 `undefined` 与空字符串混用导致的 UI 抖动。
+
+- [x] P002: 扩展需求反馈执行配置模型 <!-- scope: src/database.js,src/main.js,src/preload.js,src/renderer/types.ts,src/loopService.js -->
+### D:\project\GitHub\autoplan\docs\plan\plan_feedback_13_20260627-033001.md
+# 反馈 #13 开发计划：修复思考深度与验收命令修改后被刷新回退
+
+## 背景
+
+反馈 #13 指出：项目配置中的 Codex 思考深度修改无效，验收命令修改无效，修改后会被自动刷新回原值。该问题说明 UI 表单输入、保存 IPC、主进程持久化、状态快照刷新之间存在不同步或覆盖关系。目标是让用户在循环控制/项目配置中修改思考深度和验收命令后，保存结果立即进入持久化状态，并在后续自动刷新、快照轮询、页面切换和计划执行链路中保持一致。
+
+## 设计约束
+
+- 本计划只修复“项目级配置保存后被刷新回退”的根因，不扩展新的 CLI 后端或新的思考深度枚举。
+- 验收命令允许为空字符串；空字符串是有效保存值，不能被 `undefined`、旧值、默认值或快照归一化覆盖。
+- Codex 思考深度仅在 Codex provider 下生效；选择 Claude 时不能把旧 Codex 深度错误写回或展示为已生效。
+- 自动刷新、轮询快照、保存后 reload、跨组件 state 同步都必须以数据库/主进程持久化结果为准，不能用旧闭包状态覆盖用户刚保存的表单值。
+- 保存失败必须有明确错误提示或日志，不允许 UI 先显示成功再被刷新回退且无原因。
+- 不要把运行测试、构建、回归验证拆成普通开发任务；最终验证统一放到最后“完整验收”节点。
+
+## 任务拆解
+
+- [x] P001: 梳理配置保存与刷新链路 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/main.js,src/preload.js,src/loopService.js,src/database.js -->
+  - 验收要点：明确验收命令和 Codex 思考深度从 UI 表单、IPC 入参、`loop.configure`、数据库更新到状态快照返回的完整字段映射。
+  - 验收要点：定位导致保存后自动刷新回旧值的覆盖点，例如 effect 依赖、快照轮询、空字符串合并、字段命名不一致或主进程未返回新值。
+  - 验收要点：形成修复边界，只覆盖项目级 `validation_command`、`agent_cli_provider`、`agent_cli_command`、`codex_reasoning_effort` 的保存同步问题。
+
+- [x] P002: 修复主进程配置持久化 <!-- scope: src/loopService.js,src/database.js,src/main.js -->
+  - 验收要点：`validationCommand: ''` 被视为显式保存空值，写入 `validation_command` 后不会被当前值、默认值或空值归一化逻辑替换。
+  - 验收要点：Codex provider 下保存 `codexReasoningEffort` 时，会规范化为合法枚举并写入 `codex_reasoning_effort`；非法值使用明确默认值而不是旧值。
+### D:\project\GitHub\autoplan\docs\plan\plan_feedback_14_20260627-131553.md
+# 反馈 #14 开发计划：修复 macOS 发布包提示损坏
+
+## 背景
+
+反馈 #14 指出：macOS 下载 GitHub Action 编译出的安装包后提示“已损坏/无法打开”，怀疑发布流水线存在路径、格式或打包问题。结合当前发布配置，macOS 包由 GitHub Actions 的 `macos-latest` 执行 `npm run package:mac` 生成 `dmg` 和 `zip`，且流水线设置了 `CSC_IDENTITY_AUTO_DISCOVERY=false`，这会显式禁用自动签名发现。该问题高概率与 macOS Gatekeeper 对未签名、未公证、签名不完整或下载产物损坏的拦截有关，也需要排查产物上传/下载路径、架构产物命名和 release 附件格式是否导致用户拿到错误文件。
+
+## 设计约束
+
+- 本计划只处理 macOS 发布包“提示损坏/无法打开”的构建、签名、公证、产物校验和发布说明问题，不改动业务功能逻辑。
+- 优先修复根因：签名、公证、entitlements、artifact 上传路径和 release 产物完整性；不要仅依赖用户执行 `xattr -dr com.apple.quarantine` 作为正式解决方案。
+- 若项目暂时无法配置 Apple Developer 证书和公证密钥，必须让 CI 明确区分“未签名测试包”和“正式签名公证包”，避免用户误以为未签名包可直接安装。
+- macOS x64 与 arm64 产物必须能清晰区分，避免 GitHub Release 中同名覆盖、下载错架构或 zip/dmg 混用导致误判为损坏。
+- 不要把运行测试、构建、回归验证拆成普通开发任务；最终验证统一放到最后“完整验收”节点。
+
+## 任务拆解
+
+- [ ] P001: 定位 macOS 损坏提示根因 <!-- scope: .github/workflows/release.yml,package.json,docs/release/macos.md -->
+  - 验收要点：梳理 macOS 包从 `npm run package:mac`、`electron-builder` 输出、artifact 上传、release 上传到用户下载的完整链路。
+  - 验收要点：确认当前 `CSC_IDENTITY_AUTO_DISCOVERY=false` 对 macOS 签名的影响，并判断“提示损坏”是否由未签名/未公证、签名破坏、下载产物不完整或架构不匹配触发。
+  - 验收要点：记录需要保留的发布产物类型和命名规则，包括 `dmg`、`zip`、x64、arm64 以及 `latest-mac.yml` 的关系。
+  - 验收要点：形成排查结论文档，明确后续任务应修复的配置点，不修改业务代码。
+
+- [ ] P002: 完善 macOS 签名与公证配置 <!-- scope: package.json,build/entitlements.mac.plist,build/entitlements.mac.inherit.plist,scripts/notarize-mac.js -->
+  - 验收要点：`electron-builder` 的 macOS 配置包含明确的 hardened runtime、entitlements、gatekeeper assess 以及签名/公证所需字段。
+  - 验收要点：新增或更新 entitlements 文件时，仅开放 Electron 应用实际需要的权限，不引入过宽授权。
+### D:\project\GitHub\autoplan\docs\plan\plan_feedback_5_20260625-040346.md
+# 反馈 #5 开发计划：日志卡片粘底滚动优化
+
+## 背景
+
+当前执行日志卡片由 `CodexLog` 展示实时日志或结构化活动行。现有逻辑在 `log` 或 `activity` 更新时直接把日志容器滚动到底部，这能保证用户看到最新日志，但也会在用户主动向上查看前面日志时被新日志打断，导致阅读历史输出不稳定。
+
+反馈 #5 要求：“日志卡片优化一下，如果内容在底部，则添加日志时自动滚动到底部，避免查看前面日志时自动滚动到底部”。本计划默认实现为：日志容器进入“粘底”状态时继续跟随新日志；用户滚动离开底部后暂停自动滚动；用户再次滚动到底部或初次打开日志时恢复自动跟随。
+
+## 任务拆解
+
+- [x] P001: 建立日志底部判定机制 <!-- scope: src/renderer/components/CodexLog.tsx -->
+  - 验收要点：在日志滚动容器内定义“接近底部”的判定逻辑，例如允许 16-32px 容差，避免因小数像素或字体渲染导致误判。
+  - 验收要点：组件能记录用户当前是否处于底部，不依赖全局状态，不影响 `WorkspacePage` 的运行状态、日志标题和统计信息。
+  - 验收要点：用户手动向上滚动超过容差后，组件状态切换为非粘底；用户滚回底部后，状态恢复为粘底。
+  - 验收要点：空日志、仅一屏日志、超出一屏日志都能得到稳定判定，不出现滚动高度为 0 时的异常。
+
+- [x] P002: 实现仅粘底时自动滚动 <!-- scope: src/renderer/components/CodexLog.tsx -->
+  - 验收要点：当用户位于底部时，新增日志或活动行后自动滚动到最新内容底部，保持实时跟随体验。
+  - 验收要点：当用户正在查看前面日志且不在底部时，新增日志或活动行不会修改 `scrollTop`，当前阅读位置保持稳定。
+  - 验收要点：组件初次挂载、从空日志变为有日志、切换到新的日志内容时默认展示底部，避免进入页面后停留在旧内容顶部。
+  - 验收要点：自动滚动在 React 渲染完成后执行，避免内容更新前读取旧 `scrollHeight` 造成滚动不到底。
+
+- [x] P003: 覆盖原始日志与活动行两种模式 <!-- scope: src/renderer/components/CodexLog.tsx -->
+  - 验收要点：`activity` 有内容时的结构化活动行模式遵循同一粘底策略，新增活动行不打断用户查看历史活动。
+  - 验收要点：`activity` 为空时的原始 `logTail` 模式遵循同一粘底策略，追加原始日志时行为一致。
+### D:\project\GitHub\autoplan\docs\plan\plan_requirement_11_20260625-035545.md
+# 需求 #11 开发计划：Plan 支持全文 Markdown 阅读
+
+## 背景
+
+当前 AutoPlan 工作区的“任务与计划”区域中，Plan 列表仅展示文件路径、任务完成数、耗时、校验状态、哈希和更新时间等摘要信息；计划草稿虽然可以在 textarea 中查看和编辑原始 Markdown，但已确认加入任务系统的正式 Plan 缺少“阅读全文”的入口。随着计划内容变长，用户无法直接在应用内阅读完整计划，也无法按 Markdown 结构查看标题、列表、任务勾选项、代码块和链接等内容。
+
+需求 #11 要求“plan 计划，要支持阅读全文；用 markdown 组件阅读”。本计划默认实现为：在当前项目工作区的正式 Plan 列表中提供“阅读全文”入口，按需从工作区内的 Plan 文件读取 Markdown 全文，并通过专用 Markdown 阅读组件渲染；同时保留现有 Plan 摘要、任务执行、计划草稿编辑和搜索/过滤行为。
+
+## 任务拆解
+
+- [x] P001: 定义 Plan 全文读取接口 <!-- scope: src/main.js,src/preload.js,src/renderer/types.ts -->
+  - 验收要点：新增前后端 IPC 能力，例如 `plans:read` / `readPlan`，入参至少包含 `projectId` 与 `planId`，返回 Plan id、文件路径、Markdown 全文、哈希、更新时间和可读错误信息。
+  - 验收要点：主进程读取计划文件时必须通过数据库中的 `plans.file_path` 和项目 `workspace_path` 解析真实路径，禁止读取当前项目工作区外的文件。
+  - 验收要点：缺失 Plan、缺失项目、文件不存在、路径越界和读取失败时返回可展示的错误状态，不导致渲染进程崩溃。
+  - 验收要点：不把所有 Plan 全文塞进常规 `snapshot()`，避免长文档随轮询高频刷新造成 UI 卡顿和 IPC 负担。
+
+- [x] P002: 引入 Markdown 阅读组件 <!-- scope: package.json,package-lock.json,src/renderer/components/MarkdownReader.tsx,src/styles.css -->
+  - 验收要点：新增可复用 `MarkdownReader` 组件，使用明确的 Markdown 渲染方案渲染正文，支持标题、段落、列表、任务勾选项、引用、行内代码、代码块、表格和链接等常见计划内容。
+  - 验收要点：Markdown 中的原始 HTML 默认不执行脚本或危险事件；外部链接具备安全属性，避免引入 XSS 或 opener 风险。
+  - 验收要点：空 Markdown、纯空白 Markdown 和超长 Markdown 均有稳定展示，空内容显示“暂无计划正文”类提示。
+  - 验收要点：组件样式复用现有色彩、字号、圆角和阴影变量，代码块、表格和长链接在窄屏下不撑破布局。
+
+- [x] P003: 增加 Plan 全文阅读入口 <!-- scope: src/renderer/components/PlanLists.tsx,src/styles.css -->
+  - 验收要点：每个正式 Plan 卡片在现有摘要信息旁新增“阅读全文”按钮或链接，按钮文案清晰且不会与任务执行按钮混淆。
+  - 验收要点：点击“阅读全文”后能打开对应 Plan 的全文阅读区域、抽屉或弹窗，并显示 Plan 文件路径、状态、更新时间和 Markdown 正文。
+### D:\project\GitHub\autoplan\docs\plan\plan_requirement_12_20260625-202919.md
+# 需求 #12 开发计划：增加 Claude CLI 支持
+
+## 背景
+
+当前 AutoPlan 的计划生成、任务执行、修复与验收流程主要通过 `codex exec` 调用 Codex CLI。需求 #12 要求“增加 claude cli 支持”，本计划默认目标是：在不破坏现有 Codex 默认行为、任务上下文复用、并发 scope 控制和日志展示的前提下，为项目级配置增加 Claude CLI 作为可选执行后端。
+
+## 设计约束
+
+- 默认后端保持 Codex，历史项目和旧数据库升级后无需重新配置即可继续运行。
+- Claude CLI 作为项目级选项保存，允许不同项目选择不同 CLI 后端。
+- Codex 的 session 复用能力仅在 Codex 后端启用；切换到 Claude 时不得把历史 `codex_session_id` 传给 Claude CLI。
+- Claude CLI 调用必须使用当前项目 `workspace_path` 作为工作目录，并接收与 Codex 相同语义的 prompt。
+- CLI 不存在、认证失效、非零退出、用户停止等状态必须回写到现有事件、活动日志和任务状态链路。
+
+## 任务拆解
+
+- [x] P001: 增加项目级 CLI 后端配置 <!-- scope: src/database.js,src/renderer/types.ts -->
+  - 验收要点：`project_states` 或等价配置表新增 CLI 后端字段，至少支持 `codex` 与 `claude`，历史数据默认值为 `codex`。
+  - 验收要点：配置字段通过现有迁移机制兼容旧数据库，应用启动、项目快照和项目列表不会因缺少字段报错。
+  - 验收要点：前端类型新增 CLI 后端、命令路径或命令名等字段，`Project`、`Snapshot`、`ActiveOperation` 等相关类型不出现类型缺口。
+  - 验收要点：非法后端值会被规范化或拒绝保存，不会进入执行链路导致 spawn 未知命令。
+
+- [ ] P002: 打通配置保存与 IPC 链路 <!-- scope: src/main.js,src/preload.js,src/loopService.js -->
+  - 验收要点：项目创建、项目更新和运行配置更新接口能够读写 CLI 后端配置，并随 `snapshot` 返回最新值。
+  - 验收要点：`loop.configure` 保留现有 `workspacePath`、`intervalSeconds`、`validationCommand` 行为，同时支持更新 CLI 后端配置。
+### D:\project\GitHub\autoplan\docs\plan\plan_requirement_21_20260626-033033.md
+# 需求 #21 开发计划：需求/反馈输入框支持粘贴图片并确保附件可读
+
+## 背景
+
+当前需求、反馈界面已经支持通过文件选择和拖拽添加附件，附件会持久化到本地附件目录并在快照中返回。但输入框尚未明确支持从剪贴板直接粘贴图片；同时，需求/反馈进入计划生成流程时，AI 工具只看到正文内容，附件路径与可读取说明没有被稳定注入到 prompt 或计划上下文中。
+
+本需求目标是：用户可以在需求、反馈输入框内直接粘贴截图或图片，图片按附件进入现有保存链路；当这些需求/反馈触发计划生成和后续开发执行时，工具能看到附件清单、读取到附件文件内容，并能在必要时基于图片内容整理计划。
+
+## 设计约束
+
+- 需求与反馈共用同一套输入组件能力，不能只支持其中一个页面。
+- 粘贴纯文本、输入正文、Enter 发送、文件选择、拖拽上传等既有交互不能回归。
+- 粘贴图片应进入现有待提交附件列表，提交前允许预览和移除；只粘贴图片、正文为空时仍允许提交。
+- 剪贴板图片通常没有稳定文件路径，保存链路需要支持无路径的二进制图片来源，不能依赖 `File.path`。
+- 附件保存后需要继续记录原始名称、MIME、大小、hash、持久化路径，并保持现有快照与搜索/展示行为兼容。
+- 计划生成 prompt 必须包含需求/反馈附件清单和可读取路径；如果附件缺失或读取失败，要有可追踪的日志或事件提示。
+- 不应把大体积图片直接内联进 prompt；prompt 中传路径、hash、MIME 和读取说明，由工具按需读取文件内容。
+
+## 任务拆解
+
+- [ ] P001: 统一粘贴图片附件数据模型 <!-- scope: src/renderer/types.ts,src/renderer/components/Composer.tsx,src/renderer/pages/WorkspacePage.tsx -->
+  - 验收要点：`PendingAttachment` 或等价类型能够区分路径附件与剪贴板图片附件，至少包含来源类型、名称、MIME、大小、预览所需信息和保存所需载荷。
+  - 验收要点：`WorkspacePage` 的待提交附件状态可以同时容纳文件选择/拖拽附件和粘贴图片附件，去重、移除、提交后清空逻辑均不破坏现有路径附件。
+  - 验收要点：需求与反馈两个 `Composer` 实例使用相同的数据模型和回调，不出现一端可粘贴、一端不可粘贴的分叉实现。
+  - 验收要点：TypeScript 类型检查能覆盖 create/update 入参中的两类附件来源，避免主进程收到结构不明的附件对象。
+
+**Investigating release details**
+
+I need to check the `docs/release.md` file because it might have information about the release chain. It feels like it could be relevant, especially for macOS, so I'll inspect it further. I want to make sure I'm thorough and understand everything correctly. I'll just take a closer look to gather any important details I might need to share or consider! It’s always better to be well-informed, right?
+exec
+powershell.exe -Command '$i=1; Get-Content -LiteralPath '"'docs/release.md' -Encoding UTF8 | ForEach-Object { '{0,4}: {1}' -f "'$i++, $_ } | Select-Object -First 220' in D:\project\GitHub\autoplan
+ succeeded in 187ms:
+   1: # 发布说明
+   2: 
+   3: AutoPlan 使用 GitHub Actions + electron-builder 发布桌面端安装包。当前发布流程覆盖 Windows、macOS、Linux 三个平台，支持推送 tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+   4: 
+   5: ## 发布前检查
+   6: 
+   7: 发布前请确认：
+   8: 
+   9: - 依赖已安装且项目能够在本地正常开发运行。
+  10: - `package.json` 中的 `version` 已更新为目标版本。
+  11: - Git 工作区干净，没有未提交或未跟踪文件。
+  12: - 当前仓库已配置可推送的远端，默认远端名为 `origin`。
+  13: - GitHub 仓库的 Actions 权限允许 workflow 读写 `contents`，以便内置 `GITHUB_TOKEN` 创建或更新 Release。
+  14: - tag 使用 `v` 前缀，例如 `v0.2.0`。
+  15: 
+  16: ## GitHub Actions 触发方式
+  17: 
+  18: Release workflow 位于 `.github/workflows/release.yml`，触发方式如下：
+  19: 
+  20: - 推送匹配 `v*` 的 tag 时自动触发，例如 `git push origin v0.2.0`。
+  21: - 在 GitHub Actions 页面手动运行 `Release` workflow，并填写 `tag`。
+  22: - 手动触发时可填写 `release_notes`；为空时 workflow 会读取 tag message 或使用兜底说明。
+  23: 
+  24: workflow 会在三个 runner 上分别构建：
+  25: 
+  26: | 平台 | Runner | 打包命令 | 主要产物 |
+  27: | --- | --- | --- | --- |
+  28: | Windows | `windows-latest` | `npm run package:win` | NSIS 安装包 |
+  29: | macOS | `macos-latest` | `npm run package:mac` | DMG、ZIP |
+  30: | Linux | `ubuntu-latest` | `npm run package:linux` | AppImage、DEB |
+  31: 
+  32: 每个平台的构建结果会先上传为 workflow artifact，随后发布 job 使用仓库内置 `GITHUB_TOKEN` 创建或更新 GitHub Release，并把三端产物附加到 Release。
+  33: 
+  34: ## 产物命名与位置
+  35: 
+  36: 本地和 CI 打包输出目录均为 `release/`。产物命名包含产品名、版本、平台和架构，避免不同平台互相覆盖：
+  37: 
+  38: - Windows：`AutoPlan-<version>-win-<arch>-Setup.<ext>`
+  39: - macOS：`AutoPlan-<version>-mac-<arch>.<ext>`
+  40: - Linux：`AutoPlan-<version>-linux-<arch>.<ext>`
+  41: 
+  42: GitHub Release 页面会展示最终附件；Actions 页面中也可以查看各平台上传的临时 artifact。
+  43: 
+  44: ## 本地一键发布脚本
+  45: 
+  46: 本地发布脚本位于 `scripts/release.py`。脚本只负责编排 tag 创建与推送，不在本地执行三端构建；三端构建由 GitHub Actions 完成。
+  47: 
+  48: 常用示例：
+  49: 
+  50: ```bash
+  51: python scripts/release.py --tag v0.2.0 --notes "发布说明"
+  52: python scripts/release.py --tag v0.2.0 --notes-file docs/release-notes/v0.2.0.md
+  53: python scripts/release.py --tag v0.2.0 --notes "test release" --dry-run
+  54: python scripts/release.py --tag v0.2.0 --notes-file notes.md --yes
+  55: ```
+  56: 
+  57: 脚本会检查以下常见失败场景并给出提示：
+  58: 
+  59: - 未安装 Git，或当前目录不是 Git 仓库。
+  60: - 工作区不干净。
+  61: - 指定远端不存在，默认检查 `origin`。
+  62: - tag 格式不符合 Git ref 规范。
+  63: - 本地或远端已存在同名 tag。
+  64: - 推送远端失败。
+  65: - 未检测到 GitHub CLI 时会给出提示；基础 tag 推送不强制依赖 `gh`。
+  66: 
+  67: 默认情况下，脚本会在真正创建并推送 tag 前要求交互确认。使用 `--dry-run` 只执行检查，不创建本地 tag，也不推送远端；使用 `--yes` 可跳过确认。
+  68: 
+  69: ## 版本说明传递
+  70: 
+  71: 版本说明支持两种本地输入方式：
+  72: 
+  73: - `--notes`：直接传入短文本。
+  74: - `--notes-file`：从 UTF-8 文本文件读取，适合包含换行、中文、Markdown 列表或链接的长说明。
+  75: 
+  76: 脚本会把版本说明写入 annotated tag message。tag 推送触发 workflow 后，发布 job 会按以下优先级生成 Release 正文：
+  77: 
+  78: 1. 手动触发 workflow 时填写的 `release_notes`。
+  79: 2. tag 中的 annotated message。
+  80: 3. 最近一次提交摘要。
+  81: 4. 默认模板 `Automated release for <tag>.`。
+  82: 
+  83: 如果同一 tag 的 Release 已存在，workflow 会更新 Release 标题和正文，并使用 `--clobber` 覆盖同名附件。
+  84: 
+  85: ## 当前能力边界
+  86: 
+  87: 当前发布流程不包含以下能力：
+  88: 
+  89: - 代码签名。
+  90: - macOS 公证。
+  91: - 自动更新服务器或增量更新分发。
+  92: - 私有证书、密钥或额外 token 的管理。
+  93: 
+  94: 这些能力可在后续任务中补充；当前基础发布只依赖 GitHub Actions、electron-builder 和仓库内置 `GITHUB_TOKEN`。
+
+**Inspecting package-lock for versioning**
+
+I want to look at the package-lock to find out which version of electron-builder is being used. This can help me understand if there are updates or compatibility issues that I need to be aware of. It's a straightforward task, but double-checking the version can prevent future problems. I’ll make sure to find the right entry in the file and confirm the version listed there.
+codex
+我会把 P001 结论写入新的 macOS 发布排查文档，不改 workflow/package 配置。
+exec
+powershell.exe -Command "if (Test-Path -LiteralPath 'package-lock.json') { "'$lock = Get-Content -LiteralPath '"'package-lock.json' -Raw -Encoding UTF8 | ConvertFrom-Json; "'$root = $lock.packages.'"''; Write-Host 'root dev deps electron-builder:' "'$root.devDependencies.'"'electron-builder'; Write-Host 'lock electron-builder:' "'$lock.packages.'"'node_modules/electron-builder'.version } else { Write-Host 'no package-lock.json' }" in D:\project\GitHub\autoplan
+ succeeded in 343ms:
+root dev deps electron-builder: 
+lock electron-builder: 
+ConvertFrom-Json : Cannot process argument because the value of argument "name" is not valid. Change the value of the "
+name" argument and run the operation again.
+At line:2 char:126
++ ... th 'package-lock.json' -Raw -Encoding UTF8 | ConvertFrom-Json; $root  ...
++                                                  ~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [ConvertFrom-Json], PSArgumentException
+    + FullyQualifiedErrorId : Argument,Microsoft.PowerShell.Commands.ConvertFromJsonCommand
+ 
+
+codex
+PowerShell JSON 解析遇到 lockfile 字段名问题；我改用文本检索版本信息。
+exec
+powershell.exe -Command "Select-String -LiteralPath 'package.json','package-lock.json' -Pattern 'electron-builder|electron-updater|electron' -Context 0,1 | Select-Object -First 40 | ForEach-Object { \"{0}:{1}: {2}\" -f "'$_.Path,$_.LineNumber,$_.Line.Trim() }' in D:\project\GitHub\autoplan
+ succeeded in 193ms:
+D:\project\GitHub\autoplan\package.json:4: "description": "Electron app for issue-driven autonomous planning and development loops.",
+D:\project\GitHub\autoplan\package.json:12: "package:win": "npm run build && electron-builder --win nsis --x64",
+D:\project\GitHub\autoplan\package.json:13: "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+D:\project\GitHub\autoplan\package.json:14: "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+D:\project\GitHub\autoplan\package.json:15: "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+D:\project\GitHub\autoplan\package.json:105: "electron": "^33.3.2",
+D:\project\GitHub\autoplan\package.json:106: "electron-builder": "^26.15.3",
+D:\project\GitHub\autoplan\package-lock.json:22: "electron": "^33.3.2",
+D:\project\GitHub\autoplan\package-lock.json:23: "electron-builder": "^26.15.3",
+D:\project\GitHub\autoplan\package-lock.json:28: "node_modules/@electron/asar": {
+D:\project\GitHub\autoplan\package-lock.json:30: "resolved": "https://registry.npmmirror.com/@electron/asar/-/asar-3.4.1.tgz",
+D:\project\GitHub\autoplan\package-lock.json:46: "node_modules/@electron/asar/node_modules/balanced-match": {
+D:\project\GitHub\autoplan\package-lock.json:53: "node_modules/@electron/asar/node_modules/brace-expansion": {
+D:\project\GitHub\autoplan\package-lock.json:64: "node_modules/@electron/asar/node_modules/minimatch": {
+D:\project\GitHub\autoplan\package-lock.json:77: "node_modules/@electron/fuses": {
+D:\project\GitHub\autoplan\package-lock.json:79: "resolved": "https://registry.npmmirror.com/@electron/fuses/-/fuses-1.8.0.tgz",
+D:\project\GitHub\autoplan\package-lock.json:89: "electron-fuses": "dist/bin.js"
+D:\project\GitHub\autoplan\package-lock.json:92: "node_modules/@electron/fuses/node_modules/fs-extra": {
+D:\project\GitHub\autoplan\package-lock.json:108: "node_modules/@electron/fuses/node_modules/jsonfile": {
+D:\project\GitHub\autoplan\package-lock.json:121: "node_modules/@electron/fuses/node_modules/universalify": {
+D:\project\GitHub\autoplan\package-lock.json:131: "node_modules/@electron/get": {
+D:\project\GitHub\autoplan\package-lock.json:133: "resolved": "https://registry.npmmirror.com/@electron/get/-/get-2.0.3.tgz",
+D:\project\GitHub\autoplan\package-lock.json:153: "node_modules/@electron/notarize": {
+D:\project\GitHub\autoplan\package-lock.json:155: "resolved": "https://registry.npmmirror.com/@electron/notarize/-/notarize-2.5.0.tgz",
+D:\project\GitHub\autoplan\package-lock.json:168: "node_modules/@electron/notarize/node_modules/fs-extra": {
+D:\project\GitHub\autoplan\package-lock.json:184: "node_modules/@electron/notarize/node_modules/jsonfile": {
+D:\project\GitHub\autoplan\package-lock.json:197: "node_modules/@electron/notarize/node_modules/universalify": {
+D:\project\GitHub\autoplan\package-lock.json:207: "node_modules/@electron/osx-sign": {
+D:\project\GitHub\autoplan\package-lock.json:209: "resolved": "https://registry.npmmirror.com/@electron/osx-sign/-/osx-sign-1.3.3.tgz",
+D:\project\GitHub\autoplan\package-lock.json:222: "electron-osx-flat": "bin/electron-osx-flat.js",
+D:\project\GitHub\autoplan\package-lock.json:223: "electron-osx-sign": "bin/electron-osx-sign.js"
+D:\project\GitHub\autoplan\package-lock.json:229: "node_modules/@electron/osx-sign/node_modules/fs-extra": {
+D:\project\GitHub\autoplan\package-lock.json:244: "node_modules/@electron/osx-sign/node_modules/isbinaryfile": {
+D:\project\GitHub\autoplan\package-lock.json:257: "node_modules/@electron/osx-sign/node_modules/jsonfile": {
+D:\project\GitHub\autoplan\package-lock.json:270: "node_modules/@electron/osx-sign/node_modules/universalify": {
+D:\project\GitHub\autoplan\package-lock.json:280: "node_modules/@electron/rebuild": {
+D:\project\GitHub\autoplan\package-lock.json:282: "resolved": "https://registry.npmmirror.com/@electron/rebuild/-/rebuild-4.0.4.tgz",
+D:\project\GitHub\autoplan\package-lock.json:295: "electron-rebuild": "lib/cli.js"
+D:\project\GitHub\autoplan\package-lock.json:301: "node_modules/@electron/universal": {
+D:\project\GitHub\autoplan\package-lock.json:303: "resolved": "https://registry.npmmirror.com/@electron/universal/-/universal-2.0.3.tgz",
+
+**Considering document creation**
+
+I think I might need to consult the documentation for guidance. Should I cite the official resources? For the final output, maybe I shouldn’t cite web sources at all. I need to create a document using New-Item and Set-Content or by using apply_patch, which seems okay to apply. I also need to ensure it’s UTF-8. Should I create a directory too? It looks like I have to make sure it exists before applying the patch.
+codex
+准备创建 `docs/release/macos.md`，记录链路、根因判断和后续修复点。
+exec
+powershell.exe -Command "New-Item -ItemType Directory -Force -Path 'docs/release' | Out-Null
+apply_patch @'
+*** Begin Patch
+*** Add File: docs/release/macos.md
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 "'`.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+*** End Patch
+'"'@" in D:\project\GitHub\autoplan
+2026-06-27T05:19:18.248630Z ERROR codex_core::tools::router: error={"output":"Invalid patch: The last line of the patch must be '*** End Patch'\n","metadata":{"exit_code":1,"duration_seconds":0.2}}
+ exited 1 in 186ms:
+Invalid patch: The last line of the patch must be '*** End Patch'
+
+codex
+目录已创建，刚才补丁封装格式不被接受；我直接用标准 `apply_patch` 重试。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\docs\release\macos.md
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+**Inspecting file changes**
+
+It looks like the tool is giving me a warning, but it seems to be applied. I think I might need to check the created file's line numbers. Maybe a git diff could help, but I don’t need the full diff; perhaps just using git status with line numbers would work. I don't need any tests right now. I need to ensure I'm only looking at the modified file using git status --short. Let's see if I can get the line numbers from the document.
+codex
+P001 文档已落地；我只检查文件状态和关键行号，不运行任何验证命令。
+  ✓ 读取任务与项目约束
+  ✓ 检查 macOS 发布配置
+  → 修正损坏提示根因
+  • 汇总变更与验证限制
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+exec
+powershell.exe -Command "git status --short -- .github/workflows/release.yml package.json docs/release/macos.md docs/plan/plan_feedback_14_20260627-131553.md; Write-Host '--- macos.md lines ---'; "'$i=1; Get-Content -LiteralPath '"'docs/release/macos.md' -Encoding UTF8 | ForEach-Object { '{0,4}: {1}' -f "'$i++, $_ }' in D:\project\GitHub\autoplan
+ succeeded in 221ms:
+?? docs/plan/plan_feedback_14_20260627-131553.md
+--- macos.md lines ---
+   1: # macOS 发布包损坏提示排查结论
+   2: 
+   3: 本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
+   4: 
+   5: ## 当前发布链路
+   6: 
+   7: 1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+   8: 2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+   9: 3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+  10: 4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+  11: 5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+  12: 6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+  13: 7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
+  14: 
+  15: ## 当前配置观察
+  16: 
+  17: - `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+  18: - `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+  19: - 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+  20: - macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+  21: - workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
+  22: 
+  23: ## 根因判断
+  24: 
+  25: 当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
+  26: 
+  27: 关键判断如下：
+  28: 
+  29: - `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+  30: - `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+  31: - GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+  32: - macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+  33: - 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
+  34: 
+  35: ## 需要保留的 macOS 产物
+  36: 
+  37: - `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+  38: - `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+  39: - `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+  40: - `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+  41: - `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
+  42: 
+  43: ## 后续修复点
+  44: 
+  45: - 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+  46: - 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+  47: - 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+  48: - 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+  49: - 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+**Checking git status**
+
+I’m considering why the status only shows an untracked plan. Maybe macos.md isn’t listed because docs/release is ignored? I need to check what's in .gitignore. It’s important that modifications are tracked, or the user might miss them. I should run a command like git status --short --ignored for docs/release/macos.md to verify its status. That should help clarify what’s happening!
+codex
+状态显示 plan 文件是既有未跟踪上下文；我再确认新增文档是否被忽略。
+exec
+powershell.exe -Command 'git status --short --ignored -- docs/release/macos.md docs/release; git check-ignore -v docs/release/macos.md' in D:\project\GitHub\autoplan
+ succeeded in 169ms:
+!! docs/release/
+.gitignore:1:release/	docs/release/macos.md
+
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+codex
+`docs/release/` 被现有 `.gitignore` 的 `release/` 规则忽略；按 scope 限制我不改 `.gitignore`。接着收尾记录。
+  ✓ 读取任务与项目约束
+  ✓ 检查 macOS 发布配置
+  ✓ 修正损坏提示根因
+  → 汇总变更与验证限制
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+codex
+我只读 `.gitignore` 的相关规则，确认为什么新增文档未出现在常规状态里。
+exec
+powershell.exe -Command '$i=1; Get-Content -LiteralPath '"'.gitignore' -Encoding UTF8 | ForEach-Object { if ("'$_ -match '"'release') { '{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- scoped status ---'; git status --short --ignored -- .github/workflows/release.yml package.json docs/release/macos.md docs/plan/plan_feedback_14_20260627-131553.md" in D:\project\GitHub\autoplan
+ succeeded in 233ms:
+   1: release/
+   2: release-test/
+--- scoped status ---
+?? docs/plan/plan_feedback_14_20260627-131553.md
+!! docs/release/
+
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+codex
+收尾完成：未改 workflow/package，也未触碰 plan 文件内容。
+  ✓ 读取任务与项目约束
+  ✓ 检查 macOS 发布配置
+  ✓ 修正损坏提示根因
+  ✓ 汇总变更与验证限制
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+codex
+已完成 P001，仅做定位与文档记录，未修改 plan/checkbox/进度区。
+
+**变更**
+- 新增 `docs/release/macos.md:1`，梳理 macOS 从 `npm run package:mac`、`electron-builder` 输出、artifact 上传、Release 上传到用户下载的完整链路。
+- 记录根因判断：当前最高概率是 CI 产物未完成 Developer ID 签名与 Apple 公证，且 `.github/workflows/release.yml` 中 `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻断自动签名发现。
+- 记录需保留产物规则：`dmg`、`zip`、`x64`、`arm64`、`latest-mac.yml` 的用途和后续风险点。
+
+**注意**
+- `docs/release/` 当前被 `.gitignore:1` 的 `release/` 规则忽略；按本任务 scope 限制，我没有修改 `.gitignore`。
+- 按要求未运行测试、构建、lint、analyze 或验收命令。
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..4a77ef6d7babf852611c01219719e5d50bec9608
+--- /dev/null
++++ b/docs/release/macos.md
+@@ -0,0 +1,49 @@
++# macOS 发布包损坏提示排查结论
++
++本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++
++## 当前发布链路
++
++1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
++2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
++3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
++4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
++5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
++6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
++7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++
++## 当前配置观察
++
++- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
++- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
++- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
++- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
++- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++
++## 根因判断
++
++当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++
++关键判断如下：
++
++- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
++- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
++- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
++- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
++- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++
++## 需要保留的 macOS 产物
++
++- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
++- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
++- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
++- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
++- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++
++## 后续修复点
++
++- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
++- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
++- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
++- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
++- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+tokens used
+71,581
+已完成 P001，仅做定位与文档记录，未修改 plan/checkbox/进度区。
+
+**变更**
+- 新增 `docs/release/macos.md:1`，梳理 macOS 从 `npm run package:mac`、`electron-builder` 输出、artifact 上传、Release 上传到用户下载的完整链路。
+- 记录根因判断：当前最高概率是 CI 产物未完成 Developer ID 签名与 Apple 公证，且 `.github/workflows/release.yml` 中 `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻断自动签名发现。
+- 记录需保留产物规则：`dmg`、`zip`、`x64`、`arm64`、`latest-mac.yml` 的用途和后续风险点。
+
+**注意**
+- `docs/release/` 当前被 `.gitignore:1` 的 `release/` 规则忽略；按本任务 scope 限制，我没有修改 `.gitignore`。
+- 按要求未运行测试、构建、lint、analyze 或验收命令。

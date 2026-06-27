@@ -1,0 +1,1313 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0782-f8b8-7a51-bc95-f420c8f2068d
+--------
+user
+你是开发执行者。
+请只执行指定任务 P004，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_14_20260627-131553.md
+指定任务：
+- [ ] P004: 规范 macOS 产物命名与上传范围 <!-- scope: package.json,.github/workflows/release.yml -->
+任务 scope：package.json, .github/workflows/release.yml
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Considering upload paths**
+
+I'm thinking about how to separate upload steps by platform and scope the release. I need to potentially avoid uploading certain files from Windows. For instance, I might not want to include `release/*.zip` from Windows systems. I could set matrix paths for uploads, like specifying different file types for Windows, macOS, and Linux. I might need to simplify the process with separate upload steps for each platform. I just want to make sure it's organized and efficient.
+**Examining electron-builder settings**
+
+I’m looking into the "artifactName" in the mac configuration for electron-builder. It might apply at both the target and top level. I see samples for mac targets where I can define the artifact name based on product name, version, architecture, and extension. I think the zip target uses MacOptions for artifactName, possibly explaining its inclusion. I'll also consider the P004 scope for upload paths and release publish flattening. I may need to inspect the current files after P003 regarding release uploads.
+codex
+我会沿用前序签名结论，只处理命名和上传范围，先读取当前 `package.json` 与 release workflow 相关段落。
+  → 检查产物命名现状
+  • 收紧 artifact 上传范围
+  • 收紧 release 附件范围
+  • 完善 mac 元数据处理
+  • 确认 scope 状态
+codex
+先看 scope 文件的关键片段，不触碰 plan。
+exec
+powershell.exe -Command "Write-Host '--- package build lines ---'; "'$i=1; Get-Content -LiteralPath '"'package.json' -Encoding UTF8 | ForEach-Object { if ("'$i -ge 20 -and $i -le 85) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- workflow build/release lines ---'; "'$i=1; Get-Content -LiteralPath '"'.github/workflows/release.yml' -Encoding UTF8 | ForEach-Object { if (("'$i -ge 180 -and $i -le 225) -or ($i -ge 255 -and $i -le 285)) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }' in D:\project\GitHub\autoplan
+ succeeded in 523ms:
+--- package build lines ---
+  20:     "smoke": "node scripts/smoke-test.js"
+  21:   },
+  22:   "build": {
+  23:     "appId": "com.autoplan.desktop",
+  24:     "productName": "AutoPlan",
+  25:     "directories": {
+  26:       "output": "release"
+  27:     },
+  28:     "afterSign": "scripts/notarize-mac.js",
+  29:     "files": [
+  30:       "assets/**/*",
+  31:       "dist/**/*",
+  32:       "src/**/*",
+  33:       "package.json"
+  34:     ],
+  35:     "asarUnpack": [
+  36:       "node_modules/sql.js/dist/*.wasm"
+  37:     ],
+  38:     "toolsets": {
+  39:       "appimage": "1.0.3"
+  40:     },
+  41:     "win": {
+  42:       "icon": "assets/icon.ico",
+  43:       "target": [
+  44:         {
+  45:           "target": "nsis",
+  46:           "arch": [
+  47:             "x64"
+  48:           ]
+  49:         }
+  50:       ],
+  51:       "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+  52:     },
+  53:     "mac": {
+  54:       "category": "public.app-category.productivity",
+  55:       "hardenedRuntime": true,
+  56:       "gatekeeperAssess": false,
+  57:       "entitlements": "build/entitlements.mac.plist",
+  58:       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+  59:       "target": [
+  60:         {
+  61:           "target": "dmg",
+  62:           "arch": [
+  63:             "x64",
+  64:             "arm64"
+  65:           ]
+  66:         },
+  67:         {
+  68:           "target": "zip",
+  69:           "arch": [
+  70:             "x64",
+  71:             "arm64"
+  72:           ]
+  73:         }
+  74:       ],
+  75:       "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+  76:     },
+  77:     "linux": {
+  78:       "icon": "assets/icon.png",
+  79:       "target": [
+  80:         {
+  81:           "target": "AppImage",
+  82:           "arch": [
+  83:             "x64"
+  84:           ]
+  85:         },
+--- workflow build/release lines ---
+ 180:             unset CSC_LINK CSC_KEY_PASSWORD CSC_KEYCHAIN
+ 181:             unset APPLE_KEYCHAIN_PROFILE APPLE_KEYCHAIN
+ 182:             unset APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+ 183:             unset APPLE_API_KEY_PATH APPLE_API_KEY APPLE_API_KEY_BASE64 APPLE_API_KEY_ID APPLE_API_ISSUER
+ 184:           fi
+ 185: 
+ 186:           echo "::group::macOS package, signing, notarization, and staple"
+ 187:           echo "Release mode: ${MACOS_RELEASE_MODE}"
+ 188:           echo "Signing source: ${MACOS_SIGNING_SOURCE}"
+ 189:           echo "Notarization source: ${MACOS_NOTARIZATION_SOURCE}"
+ 190:           npm run ${{ matrix.package_script }} -- --publish never
+ 191:           echo "::endgroup::"
+ 192: 
+ 193:       - name: Package ${{ matrix.platform }}
+ 194:         if: matrix.platform != 'macos'
+ 195:         run: npm run ${{ matrix.package_script }} -- --publish never
+ 196:         env:
+ 197:           CSC_IDENTITY_AUTO_DISCOVERY: false
+ 198: 
+ 199:       - name: Upload ${{ matrix.platform }} artifacts
+ 200:         uses: actions/upload-artifact@v4
+ 201:         with:
+ 202:           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+ 203:           path: |
+ 204:             release/*.exe
+ 205:             release/*.blockmap
+ 206:             release/*.dmg
+ 207:             release/*.zip
+ 208:             release/*.AppImage
+ 209:             release/*.deb
+ 210:             release/latest*.yml
+ 211:           if-no-files-found: error
+ 212:           retention-days: 14
+ 213: 
+ 214:   release:
+ 215:     name: Publish GitHub Release
+ 216:     runs-on: ubuntu-latest
+ 217:     needs: build
+ 218:     env:
+ 219:       GH_TOKEN: ${{ github.token }}
+ 220:       RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+ 221: 
+ 222:     steps:
+ 223:       - name: Checkout tag metadata
+ 224:         uses: actions/checkout@v4
+ 225:         with:
+ 255:         run: |
+ 256:           set -euo pipefail
+ 257: 
+ 258:           mapfile -d '' files < <(
+ 259:             find dist-artifacts -type f \( \
+ 260:               -name '*.exe' -o \
+ 261:               -name '*.blockmap' -o \
+ 262:               -name '*.dmg' -o \
+ 263:               -name '*.zip' -o \
+ 264:               -name '*.AppImage' -o \
+ 265:               -name '*.deb' -o \
+ 266:               -name 'latest*.yml' \
+ 267:             \) -print0
+ 268:           )
+ 269:           if [[ ${#files[@]} -eq 0 ]]; then
+ 270:             echo "No release artifacts found." >&2
+ 271:             exit 1
+ 272:           fi
+ 273: 
+ 274:           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+ 275:             gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+ 276:             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+ 277:           else
+ 278:             gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+ 279:           fi
+
+**Normalizing macOS update metadata**
+
+I'm considering adding a "Normalize macOS update metadata" step after the Package macOS step in my release.yml file. This could involve checking if the `latest-mac.yml` references arch-specific zip artifacts. If it doesn’t, I want to issue a warning. I also think about whether the current path is too broad and if I should include platform-specific artifact paths. I wonder if YAML supports multiline in the matrix include. Overall, I need to tighten things up!
+**Evaluating package configuration**
+
+I'm considering that latest-mac.yml might be outdated if the package fails. I should upload it after ensuring the package succeeds. It seems I could adjust the artifact names in package.json, perhaps by adding `"generateUpdatesFilesForAllChannels": true`. 
+
+I’m not seeing a "publish" configuration, which could mean latest-mac.yml isn't being generated properly. If electron-builder only creates it with the publish configured, there might be conflicts with multi-arch settings. I think I can set separate commands for building x64 and arm64, but I’ll need to confirm they run correctly.
+**Considering workflow changes**
+
+I'm thinking about whether I should modify the workflow to run package:mac:x64 followed by package:mac:arm64. However, building twice might be cost-prohibitive. I also have to consider that the P003 package mode expects a matrix script. I should evaluate if there's a more efficient way to accomplish this without incurring extra costs or deviations from what's expected. It's tricky trying to balance the needs of the build process with resource use.
+codex
+现有 mac 文件名已含架构；我重点收紧 artifact/release 匹配，避免上传宽泛临时文件。
+  ✓ 检查产物命名现状
+  → 收紧 artifact 上传范围
+  • 收紧 release 附件范围
+  • 完善 mac 元数据处理
+  • 确认 scope 状态
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\.github\workflows\release.yml
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..32aa2159dfa9a323760d5cc75c69455662e5bc39
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..32aa2159dfa9a323760d5cc75c69455662e5bc39
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+
+codex
+artifact 上传范围已按平台收紧；接着同步收紧 GitHub Release 附件筛选。
+  ✓ 检查产物命名现状
+  ✓ 收紧 artifact 上传范围
+  → 收紧 release 附件范围
+  • 完善 mac 元数据处理
+  • 确认 scope 状态
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..32aa2159dfa9a323760d5cc75c69455662e5bc39
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\.github\workflows\release.yml
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..11f580b897cefaa12f7c18118989fb63a9da43d0
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,13 +269,22 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
+             \) -print0
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..11f580b897cefaa12f7c18118989fb63a9da43d0
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,13 +269,22 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
+             \) -print0
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+
+**Considering macOS artifact handling**
+
+I need to improve how I'm processing macOS metadata. Maybe I should add a step to show macOS artifact names, but I'm not sure if that's necessary. I might need to change the `package.json` or include the mac file name in the package. Inspecting artifact paths in the matrix block could help, and using multiline expressions seems like a reasonable approach. Additionally, I could add a step to summarize macOS release artifacts; it won't be validation but may serve as verification in the workflow.
+**Evaluating upload workflow**
+
+The current logging helps, but I'm noticing that the message "当前阶段 no run" isn't really about adding workflow commands. P004's acceptance criteria require an upload path, which seems acceptable for this step. However, I think P005 may introduce a verification step that I shouldn't implement just yet. P004 also indicates that the release upload script should maintain consistency in file structure or names across platforms. While I considered using `sed`, it might not be necessary.
+**Refining package.json for artifacts**
+
+I think I need to explicitly set the `artifactName` in `package.json` to "AutoPlan-${version}-mac-${arch}.${ext}". Even if the final decision says there's no package change, the task scope covers the package, so I'm wondering if that's acceptable. We may need to modify the package to satisfy P004, which includes the package but isn't mandatory. Although the task suggests files could be affected, I think we should keep the `mac` naming in mind. Adding a top-level property for "compression" doesn't seem necessary either.
+codex
+release 附件筛选已同步收紧；我再做一个小调整，让上传文件顺序稳定。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\.github\workflows\release.yml
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..4ead25aa882bf1ab03ebbdf7c70fee57c0d8eb41
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,14 +269,23 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
+-            \) -print0
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
++            \) -print0 | sort -z
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..4ead25aa882bf1ab03ebbdf7c70fee57c0d8eb41
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,14 +269,23 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
+-            \) -print0
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
++            \) -print0 | sort -z
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+
+**Updating metadata handling plan**
+
+I need to consider updating the plan for "mac metadata handling," but I haven’t explicitly done it yet. It would be a good idea to add the mac upload path to the latest-mac.yml line and include a release filter. I should inspect the relevant lines to ensure everything is correct and look at packaging unchanged elements. Let’s make sure we cover all bases to avoid any issues.
+codex
+命名/上传规则已就位；最后只查看 scope 状态和关键行号，不跑任何命令验证。
+  ✓ 检查产物命名现状
+  ✓ 收紧 artifact 上传范围
+  ✓ 收紧 release 附件范围
+  ✓ 完善 mac 元数据处理
+  → 确认 scope 状态
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..4ead25aa882bf1ab03ebbdf7c70fee57c0d8eb41
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,14 +269,23 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
+-            \) -print0
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
++            \) -print0 | sort -z
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+
+exec
+powershell.exe -Command "Write-Host '--- matrix/upload lines ---'; "'$i=1; Get-Content -LiteralPath '"'.github/workflows/release.yml' -Encoding UTF8 | ForEach-Object { if (("'$i -ge 30 -and $i -le 65) -or ($i -ge 210 -and $i -le 220) -or ($i -ge 280 -and $i -le 310)) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- package mac naming ---'; "'$i=1; Get-Content -LiteralPath '"'package.json' -Encoding UTF8 | ForEach-Object { if ("'$i -ge 53 -and $i -le 76) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- scoped status ---'; git status --short -- package.json .github/workflows/release.yml docs/plan/plan_feedback_14_20260627-131553.md" in D:\project\GitHub\autoplan
+ succeeded in 546ms:
+--- matrix/upload lines ---
+  30:     strategy:
+  31:       fail-fast: false
+  32:       matrix:
+  33:         include:
+  34:           - platform: windows
+  35:             runner: windows-latest
+  36:             package_script: package:win
+  37:             artifact_paths: |
+  38:               release/*-win-*-Setup.exe
+  39:               release/*-win-*-Setup.exe.blockmap
+  40:               release/latest.yml
+  41:           - platform: macos
+  42:             runner: macos-latest
+  43:             package_script: package:mac
+  44:             artifact_paths: |
+  45:               release/*-mac-x64.dmg
+  46:               release/*-mac-x64.dmg.blockmap
+  47:               release/*-mac-x64.zip
+  48:               release/*-mac-x64.zip.blockmap
+  49:               release/*-mac-arm64.dmg
+  50:               release/*-mac-arm64.dmg.blockmap
+  51:               release/*-mac-arm64.zip
+  52:               release/*-mac-arm64.zip.blockmap
+  53:               release/latest-mac.yml
+  54:           - platform: linux
+  55:             runner: ubuntu-24.04
+  56:             package_script: package:linux
+  57:             artifact_paths: |
+  58:               release/*-linux-x64.AppImage
+  59:               release/*-linux-x64.AppImage.blockmap
+  60:               release/*-linux-x64.deb
+  61:               release/latest-linux.yml
+  62: 
+  63:     steps:
+  64:       - name: Checkout
+  65:         uses: actions/checkout@v4
+ 210:           echo "::endgroup::"
+ 211: 
+ 212:       - name: Package ${{ matrix.platform }}
+ 213:         if: matrix.platform != 'macos'
+ 214:         run: npm run ${{ matrix.package_script }} -- --publish never
+ 215:         env:
+ 216:           CSC_IDENTITY_AUTO_DISCOVERY: false
+ 217: 
+ 218:       - name: Upload ${{ matrix.platform }} artifacts
+ 219:         uses: actions/upload-artifact@v4
+ 220:         with:
+ 280:               -name '*-mac-arm64.zip' -o \
+ 281:               -name '*-mac-arm64.zip.blockmap' -o \
+ 282:               -name '*-linux-x64.AppImage' -o \
+ 283:               -name '*-linux-x64.AppImage.blockmap' -o \
+ 284:               -name '*-linux-x64.deb' -o \
+ 285:               -name 'latest.yml' -o \
+ 286:               -name 'latest-mac.yml' -o \
+ 287:               -name 'latest-linux.yml' \
+ 288:             \) -print0 | sort -z
+ 289:           )
+ 290:           if [[ ${#files[@]} -eq 0 ]]; then
+ 291:             echo "No release artifacts found." >&2
+ 292:             exit 1
+ 293:           fi
+ 294: 
+ 295:           if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+ 296:             gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+ 297:             gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+ 298:           else
+ 299:             gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+ 300:           fi
+--- package mac naming ---
+  53:     "mac": {
+  54:       "category": "public.app-category.productivity",
+  55:       "hardenedRuntime": true,
+  56:       "gatekeeperAssess": false,
+  57:       "entitlements": "build/entitlements.mac.plist",
+  58:       "entitlementsInherit": "build/entitlements.mac.inherit.plist",
+  59:       "target": [
+  60:         {
+  61:           "target": "dmg",
+  62:           "arch": [
+  63:             "x64",
+  64:             "arm64"
+  65:           ]
+  66:         },
+  67:         {
+  68:           "target": "zip",
+  69:           "arch": [
+  70:             "x64",
+  71:             "arm64"
+  72:           ]
+  73:         }
+  74:       ],
+  75:       "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+  76:     },
+--- scoped status ---
+ M .github/workflows/release.yml
+ M package.json
+?? docs/plan/plan_feedback_14_20260627-131553.md
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..4ead25aa882bf1ab03ebbdf7c70fee57c0d8eb41
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,14 +269,23 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
+-            \) -print0
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
++            \) -print0 | sort -z
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+
+codex
+补看 upload path 具体行，方便交付时引用。
+exec
+powershell.exe -Command '$i=1; Get-Content -LiteralPath '"'.github/workflows/release.yml' -Encoding UTF8 | ForEach-Object { if ("'$i -ge 218 -and $i -le 226) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }' in D:\project\GitHub\autoplan
+ succeeded in 450ms:
+ 218:       - name: Upload ${{ matrix.platform }} artifacts
+ 219:         uses: actions/upload-artifact@v4
+ 220:         with:
+ 221:           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+ 222:           path: ${{ matrix.artifact_paths }}
+ 223:           if-no-files-found: error
+ 224:           retention-days: 14
+ 225: 
+ 226:   release:
+
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..4ead25aa882bf1ab03ebbdf7c70fee57c0d8eb41
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,14 +269,23 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
+-            \) -print0
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
++            \) -print0 | sort -z
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+
+codex
+P004 处理完毕；未启动任何验证进程。
+  ✓ 检查产物命名现状
+  ✓ 收紧 artifact 上传范围
+  ✓ 收紧 release 附件范围
+  ✓ 完善 mac 元数据处理
+  ✓ 确认 scope 状态
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..4ead25aa882bf1ab03ebbdf7c70fee57c0d8eb41
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,14 +269,23 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
+-            \) -print0
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
++            \) -print0 | sort -z
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+
+codex
+已完成 P004，未修改 plan/checkbox/进度区，也未执行任何测试或构建。
+
+**变更**
+- `.github/workflows/release.yml:37` 为 matrix 增加平台专属 `artifact_paths`，避免所有平台共用宽泛 `release/*` 上传规则。
+- `.github/workflows/release.yml:44` macOS 仅上传 `mac-x64` / `mac-arm64` 的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`。
+- `.github/workflows/release.yml:222` artifact 上传改为使用 `matrix.artifact_paths`。
+- `.github/workflows/release.yml:269` GitHub Release 附件筛选改为明确文件名模式，并排序后上传，避免临时文件、错误架构或无关格式混入。
+- `package.json:75` 已保持 macOS 产物命名为 `${productName}-${version}-mac-${arch}.${ext}`，可区分 x64/arm64 与 dmg/zip。
+
+**验证**
+- 按要求未运行测试、构建、lint、analyze、coverage、e2e、benchmark 或 workflow 校验命令。
+diff --git a/.github/workflows/release.yml b/.github/workflows/release.yml
+index f17cb9291e2bb0524e591558553fc8138b881fd2..4ead25aa882bf1ab03ebbdf7c70fee57c0d8eb41
+--- a/.github/workflows/release.yml
++++ b/.github/workflows/release.yml
+@@ -34,12 +34,31 @@
+           - platform: windows
+             runner: windows-latest
+             package_script: package:win
++            artifact_paths: |
++              release/*-win-*-Setup.exe
++              release/*-win-*-Setup.exe.blockmap
++              release/latest.yml
+           - platform: macos
+             runner: macos-latest
+             package_script: package:mac
++            artifact_paths: |
++              release/*-mac-x64.dmg
++              release/*-mac-x64.dmg.blockmap
++              release/*-mac-x64.zip
++              release/*-mac-x64.zip.blockmap
++              release/*-mac-arm64.dmg
++              release/*-mac-arm64.dmg.blockmap
++              release/*-mac-arm64.zip
++              release/*-mac-arm64.zip.blockmap
++              release/latest-mac.yml
+           - platform: linux
+             runner: ubuntu-24.04
+             package_script: package:linux
++            artifact_paths: |
++              release/*-linux-x64.AppImage
++              release/*-linux-x64.AppImage.blockmap
++              release/*-linux-x64.deb
++              release/latest-linux.yml
+ 
+     steps:
+       - name: Checkout
+@@ -200,14 +219,7 @@
+         uses: actions/upload-artifact@v4
+         with:
+           name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+-          path: |
+-            release/*.exe
+-            release/*.blockmap
+-            release/*.dmg
+-            release/*.zip
+-            release/*.AppImage
+-            release/*.deb
+-            release/latest*.yml
++          path: ${{ matrix.artifact_paths }}
+           if-no-files-found: error
+           retention-days: 14
+ 
+@@ -257,14 +269,23 @@
+ 
+           mapfile -d '' files < <(
+             find dist-artifacts -type f \( \
+-              -name '*.exe' -o \
+-              -name '*.blockmap' -o \
+-              -name '*.dmg' -o \
+-              -name '*.zip' -o \
+-              -name '*.AppImage' -o \
+-              -name '*.deb' -o \
+-              -name 'latest*.yml' \
+-            \) -print0
++              -name '*-win-*-Setup.exe' -o \
++              -name '*-win-*-Setup.exe.blockmap' -o \
++              -name '*-mac-x64.dmg' -o \
++              -name '*-mac-x64.dmg.blockmap' -o \
++              -name '*-mac-x64.zip' -o \
++              -name '*-mac-x64.zip.blockmap' -o \
++              -name '*-mac-arm64.dmg' -o \
++              -name '*-mac-arm64.dmg.blockmap' -o \
++              -name '*-mac-arm64.zip' -o \
++              -name '*-mac-arm64.zip.blockmap' -o \
++              -name '*-linux-x64.AppImage' -o \
++              -name '*-linux-x64.AppImage.blockmap' -o \
++              -name '*-linux-x64.deb' -o \
++              -name 'latest.yml' -o \
++              -name 'latest-mac.yml' -o \
++              -name 'latest-linux.yml' \
++            \) -print0 | sort -z
+           )
+           if [[ ${#files[@]} -eq 0 ]]; then
+             echo "No release artifacts found." >&2
+
+已完成 P004，未修改 plan/checkbox/进度区，也未执行任何测试或构建。
+
+**变更**
+- `.github/workflows/release.yml:37` 为 matrix 增加平台专属 `artifact_paths`，避免所有平台共用宽泛 `release/*` 上传规则。
+- `.github/workflows/release.yml:44` macOS 仅上传 `mac-x64` / `mac-arm64` 的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`。
+- `.github/workflows/release.yml:222` artifact 上传改为使用 `matrix.artifact_paths`。
+- `.github/workflows/release.yml:269` GitHub Release 附件筛选改为明确文件名模式，并排序后上传，避免临时文件、错误架构或无关格式混入。
+- `package.json:75` 已保持 macOS 产物命名为 `${productName}-${version}-mac-${arch}.${ext}`，可区分 x64/arm64 与 dmg/zip。
+
+**验证**
+- 按要求未运行测试、构建、lint、analyze、coverage、e2e、benchmark 或 workflow 校验命令。
+tokens used
+200,033

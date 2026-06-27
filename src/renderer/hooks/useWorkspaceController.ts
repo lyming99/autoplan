@@ -65,6 +65,8 @@ export function useWorkspaceController() {
     codexReasoningEffort: defaultCodexReasoningEffort,
   });
   const [loopFormDirty, setLoopFormDirty] = useState(false);
+  const [mcpAuthToken, setMcpAuthToken] = useState('');
+  const [mcpAuthTokenDirty, setMcpAuthTokenDirty] = useState(false);
   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
     try {
       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
@@ -115,6 +117,11 @@ export function useWorkspaceController() {
     setLoopForm(action);
   }, []);
 
+  const updateMcpAuthToken: Dispatch<SetStateAction<string>> = useCallback((action) => {
+    setMcpAuthTokenDirty(true);
+    setMcpAuthToken(action);
+  }, []);
+
   useEffect(() => {
     if (!state || Number(state.project_id) !== Number(projectId)) return;
     const nextForm = loopFormFromProjectState(state);
@@ -123,7 +130,13 @@ export function useWorkspaceController() {
 
   useEffect(() => {
     setLoopFormDirty(false);
+    setMcpAuthTokenDirty(false);
   }, [projectId]);
+
+  useEffect(() => {
+    if (mcpAuthTokenDirty) return;
+    setMcpAuthToken(snapshot?.mcp?.authToken || '');
+  }, [mcpAuthTokenDirty, snapshot?.mcp?.authToken]);
 
   useEffect(() => {
     const defaultProvider = state?.agent_cli_provider || 'codex';
@@ -327,11 +340,16 @@ export function useWorkspaceController() {
   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
+      const next = await window.autoplan.configureLoop({
+        ...loopConfigurePayloadFromForm(projectId, loopForm),
+        mcpAuthToken,
+      });
       if (next.state && Number(next.state.project_id) === Number(projectId)) {
         setLoopForm(loopFormFromProjectState(next.state));
       }
+      setMcpAuthToken(next.mcp?.authToken || mcpAuthToken);
       setLoopFormDirty(false);
+      setMcpAuthTokenDirty(false);
       setSnapshot(next);
       setError(null);
     } catch (e) {
@@ -489,6 +507,7 @@ export function useWorkspaceController() {
     isSearching,
     latestReadingPlan,
     loopForm,
+    mcpAuthToken,
     navigate,
     openPlanReader,
     openTaskPlanReader,
@@ -506,6 +525,7 @@ export function useWorkspaceController() {
     searchQuery,
     selectSearchResult,
     selectTab,
+    setMcpAuthToken: updateMcpAuthToken,
     setScopeFileOpenSettings,
     setSearchQuery,
     snapshot,

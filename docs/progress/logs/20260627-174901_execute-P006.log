@@ -1,0 +1,2601 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0782-f8b8-7a51-bc95-f420c8f2068d
+--------
+user
+你是开发执行者。
+请只执行指定任务 P006，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_14_20260627-131553.md
+指定任务：
+- [ ] P006: 更新 macOS 发布与安装说明 <!-- scope: docs/release/macos.md,README.md -->
+任务 scope：docs/release/macos.md, readme.md
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Clarifying project scope**
+
+I need to focus on P006, which involves checking the scope documents like README.md and docs/release/macos.md. The user wrote "readme.md," which seems lower case, but I need to verify if the correct file is actually README.md. I remember that P001 created docs/release/macos.md, which is ignored by .gitignore, but I still need to update it. I'll also need to inspect both README and the macOS documentation while considering the modifications with .gitignore.
+codex
+我会沿用前序签名/公证与产物校验结论，只更新 macOS 发布/安装文档和 README 入口。
+  → 读取现有发布文档
+  • 补充 macOS 发布说明
+  • 更新 README 入口
+  • 确认 scope 状态
+codex
+先查看当前 macOS 文档和 README 结构，不触碰 plan。
+exec
+powershell.exe -Command "Write-Host '--- macos doc ---'; if (Test-Path -LiteralPath 'docs/release/macos.md') { "'$i=1; Get-Content -LiteralPath '"'docs/release/macos.md' -Encoding UTF8 | ForEach-Object { '{0,4}: {1}' -f "'$i++, $_ } } else { Write-Host '"'missing docs/release/macos.md' }; Write-Host '--- README head ---'; if (Test-Path -LiteralPath 'README.md') { "'$i=1; Get-Content -LiteralPath '"'README.md' -Encoding UTF8 | ForEach-Object { if ("'$i -le 220) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ } } else { Get-ChildItem -Name | Where-Object { $_ -match '"'"'^readme'"\\.md"'$'"' } }" in D:\project\GitHub\autoplan
+ succeeded in 521ms:
+--- macos doc ---
+   1: # macOS 发布包损坏提示排查结论
+   2: 
+   3: 本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
+   4: 
+   5: ## 当前发布链路
+   6: 
+   7: 1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+   8: 2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+   9: 3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+  10: 4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+  11: 5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+  12: 6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+  13: 7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
+  14: 
+  15: ## 当前配置观察
+  16: 
+  17: - `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+  18: - `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+  19: - 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+  20: - macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+  21: - workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
+  22: 
+  23: ## 根因判断
+  24: 
+  25: 当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
+  26: 
+  27: 关键判断如下：
+  28: 
+  29: - `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+  30: - `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+  31: - GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+  32: - macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+  33: - 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
+  34: 
+  35: ## 需要保留的 macOS 产物
+  36: 
+  37: - `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+  38: - `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+  39: - `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+  40: - `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+  41: - `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
+  42: 
+  43: ## 后续修复点
+  44: 
+  45: - 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+  46: - 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+  47: - 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+  48: - 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+  49: - 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+--- README head ---
+   1: # AutoPlan
+   2: 
+   3: Electron 桌面应用：基于 issue/需求驱动的自主规划与开发循环。收集需求与反馈，自动生成开发计划，调用 AI CLI 后端逐个执行任务，并通过验收命令闭环。
+   4: 
+   5: ## 需求与反馈附件
+   6: 
+   7: 需求和反馈输入框共用同一套附件能力，适合提交截图、设计稿或日志文件作为上下文：
+   8: 
+   9: - **添加方式**：支持从文件选择器添加、拖拽文件到输入区，以及在输入框内直接粘贴剪贴板图片（如截图、PNG、JPEG、WebP）。
+  10: - **提交方式**：附件会先进入待提交列表，可预览和移除；可以和正文一起提交，也可以在正文为空时只提交附件。
+  11: - **失败重试**：发送失败时会保留待提交附件，便于修正正文或网络问题后再次提交。
+  12: - **计划上下文**：生成计划时，需求/反馈绑定的附件会作为“附件清单”注入给 AI 工具，包含原始名称、MIME、大小、SHA256 和持久化本地路径。
+  13: - **读取边界**：图片或其他大文件不会以内联二进制写入 prompt；AI 工具会按需通过清单中的本地文件路径读取附件内容，以控制上下文体积并明确本机文件访问边界。
+  14: 
+  15: ## CLI 后端
+  16: 
+  17: AutoPlan 的计划生成、任务执行、修复与验收通过外部 AI CLI 完成。支持**项目级**与**单条需求/反馈级**选择后端，不同项目和不同记录可使用不同 CLI：
+  18: 
+  19: | 后端 | 默认命令 | 说明 |
+  20: | --- | --- | --- |
+  21: | **Codex CLI**（默认） | `codex` | 通过 `codex exec` 非交互执行，支持会话（session）复用，失败任务重试时延续上下文 |
+  22: | **Claude CLI** | `claude` | 通过 `claude -p` 非交互 print 模式执行，prompt 经 stdin 传入，不使用 Codex 会话机制 |
+  23: 
+  24: - **默认仍是 Codex**：未配置过的历史项目升级后继续使用 Codex，无需重新配置。
+  25: - **项目级切换**：进入项目 →「任务与计划」→「循环控制」表单，选择「CLI 后端」并保存；也可在创建/编辑项目时选择。命令路径留空时使用上表默认命令名。
+  26: - **单条配置优先**：需求输入框和反馈输入框下方都可单独选择 CLI 后端、命令路径和 Codex 思考深度。单条记录已配置时，计划生成、任务执行、失败修复和验收重试优先使用该记录生成计划时的配置；未配置时继承项目级默认配置。
+  27: - **Codex 思考深度**：Codex 支持 `low`、`medium`、`high` 三档思考深度，默认 `medium`，执行时转换为 Codex CLI 的 `model_reasoning_effort` 配置；Claude 不使用该参数，选择 Claude 时思考深度不会参与提交或执行。
+  28: - **计划级 CLI 快照**：每个计划会保存生成该计划时实际解析出的 CLI 后端、命令路径和 Codex 思考深度，用于计划列表与 Plan 全文阅读器展示；后续切换项目默认配置不会改变历史计划显示。
+  29: - **历史计划兼容**：早期计划缺少计划级 CLI 字段时，展示按 Codex CLI + `medium` 思考深度降级；Claude 计划只显示 Claude CLI，不展示可误解的 Codex 思考深度。
+  30: - **验收命令默认空**：新建项目不会预填验收命令；留空时任务完成后跳过外部验收命令，已保存的历史命令保持不变。
+  31: - **Claude 前置条件**：需在本机已安装 `claude` CLI 并完成认证（`claude` 已可正常登录调用）。若命令不在 PATH，可在「CLI 命令路径」填写完整路径。
+  32: - **会话隔离**：Codex 的会话复用仅在 Codex 后端启用；切换到 Claude 不会把历史 `codex_session_id` 传给 Claude，两类上下文物理隔离。
+  33: - **可观测性**：运行中日志、事件流、任务卡片和概览会显示当前使用的 CLI 后端，CLI 缺失、认证失败、命令失败等问题有可读提示和日志可追踪。
+  34: 
+  35: ### 回归验证场景
+  36: 
+  37: `npm run smoke` 使用 stub 覆盖反馈 #10 的关键路径，不依赖真实 `claude` 二进制：
+  38: 
+  39: - 空验收命令保持为空字符串，并在计划完成后跳过外部验收命令。
+  40: - 项目默认 Codex 时，单条需求可覆盖为 Codex + `high` 思考深度，生成计划时携带 `model_reasoning_effort="high"`。
+  41: - 同一项目内单条反馈可覆盖为 Claude，生成计划时使用 `claude --print`，且不携带 Codex session 或思考深度参数。
+  42: - 计划生成后快照会记录本次实际使用的后端与命令；Codex 计划记录规范化后的思考深度，Claude 计划不写入 Codex 思考深度；历史空字段按 Codex + `medium` 展示。
+  43: 
+  44: 手动验证推荐组合：项目默认选择 Codex、验收命令留空；提交一条需求并选择 Codex + `high`，再提交一条反馈并选择 Claude。分别生成计划后，确认事件/日志中需求显示 Codex 与 `high` 思考深度，反馈显示 Claude，且任务完成时空验收命令被跳过。
+  45: 
+  46: ## MCP 外部接入
+  47: 
+  48: AutoPlan 内置本机 MCP 服务，方便其它 MCP 客户端在不打开 GUI 表单的情况下创建项目、提交需求和提交反馈。桌面应用启动并完成数据库初始化后会启动 MCP 服务；启动失败不会影响 GUI，错误会进入事件流并显示在「设置 → MCP 外部接入」卡片。
+  49: 
+  50: ### 默认连接方式
+  51: 
+  52: | 项 | 默认值 | 说明 |
+  53: | --- | --- | --- |
+  54: | 传输方式 | `http` | 使用 Streamable HTTP MCP 端点 |
+  55: | 地址 | `127.0.0.1` | 默认仅绑定本机，不暴露公网 |
+  56: | 端口 | `43847` | 连接地址为 `http://127.0.0.1:43847/mcp` |
+  57: | stdio | `npm run mcp:stdio` | 供需要 stdio 的 MCP 客户端按进程方式启动 |
+  58: 
+  59: 可通过环境变量覆盖默认值：`AUTOPLAN_MCP_ENABLED=0` 禁用服务，`AUTOPLAN_MCP_TRANSPORT=stdio|http` 切换传输方式，`AUTOPLAN_MCP_HOST`、`AUTOPLAN_MCP_PORT`、`AUTOPLAN_MCP_PATH` 调整 HTTP 监听。HTTP 默认只允许本机地址；若显式绑定非本机地址，需同时设置 `AUTOPLAN_MCP_ALLOW_REMOTE=1`，并自行承担网络访问控制。
+  60: 
+  61: ### 工具清单与示例
+  62: 
+  63: MCP 工具返回 `content[0].text` 中的 JSON 字符串，并在支持的客户端中提供 `structuredContent`。返回字段包含目标 `projectId`、可选 `requirementId` / `feedbackId`，以及最新 `snapshot` 摘要（当前项目、运行状态和记录数量）。
+  64: 
+  65: #### `create_project`
+  66: 
+  67: ```json
+  68: {
+  69:   "name": "My App",
+  70:   "workspacePath": "D:/project/my-app",
+  71:   "description": "外部 MCP 创建的项目",
+  72:   "agentCliProvider": "codex",
+  73:   "agentCliCommand": "",
+  74:   "codexReasoningEffort": "high"
+  75: }
+  76: ```
+  77: 
+  78: #### `create_requirement`
+  79: 
+  80: ```json
+  81: {
+  82:   "projectId": 1,
+  83:   "title": "实现登录页",
+  84:   "body": "请增加邮箱登录、错误提示和基础表单校验。",
+  85:   "attachments": [
+  86:     { "name": "login-sketch.png", "path": "D:/tmp/login-sketch.png", "type": "image/png" }
+  87:   ],
+  88:   "autoRun": true,
+  89:   "agentCliProvider": "codex",
+  90:   "codexReasoningEffort": "high"
+  91: }
+  92: ```
+  93: 
+  94: #### `create_feedback`
+  95: 
+  96: ```json
+  97: {
+  98:   "projectId": 1,
+  99:   "requirementId": 12,
+ 100:   "title": "登录页反馈",
+ 101:   "body": "错误提示需要展示在输入框下方。",
+ 102:   "attachments": [
+ 103:     { "name": "feedback-placeholder.txt", "size": 0 }
+ 104:   ],
+ 105:   "autoRun": false,
+ 106:   "agentCliProvider": "claude"
+ 107: }
+ 108: ```
+ 109: 
+ 110: ### 附件、安全与错误处理
+ 111: 
+ 112: - **附件支持范围**：`attachments` 支持本机 `path` 文件、`dataUrl`、`base64` / `dataBase64`、`bytes`，也支持仅提供 `name` / `size` 的占位信息；仅占位附件会进入工具入参校验，但不会复制为持久化文件。
+ 113: - **安全边界**：HTTP MCP 默认监听 `127.0.0.1`，不会默认暴露公网；附件路径由本机 AutoPlan 进程读取，请只传入可信路径。
+ 114: - **关联校验**：`create_feedback.requirementId` 可为空；若需求不存在或属于其它项目，会返回明确错误，不会误写跨项目关联。
+ 115: - **常见错误**：必填字段缺失、字符串超长、`autoRun` 非布尔值、CLI 后端或 Codex 思考深度枚举非法、项目 ID 非正整数，都会以可修正的中文错误返回。
+ 116: 
+ 117: `npm run smoke` 覆盖 MCP 工具创建项目、提交需求/反馈、反馈关联需求、`autoRun`、CLI 配置规范化、附件保存和无效入参错误；真实 MCP 客户端连通性留给最终手动验收。
+ 118: 
+ 119: ## 计划并发执行与 scope 文件
+ 120: 
+ 121: AutoPlan 生成计划时要求每个任务行携带固定格式的 `scope` 注释，例如：
+ 122: 
+ 123: ```md
+ 124: - [ ] P001: 修改数据模型 <!-- scope: src/database.js,src/loopService.js -->
+ 125: - [ ] P007: 完整验收 <!-- scope: validation -->
+ 126: ```
+ 127: 
+ 128: ### 并发建议规则
+ 129: 
+ 130: - **核心依据是 scope 冲突检测**：只有待执行任务的规范化 scope 文件集合互不重叠时，才会进入同一建议并发批次。
+ 131: - **不会自动并发的任务**：`unknown`、`validation`、空 scope、无法解析 scope、标题包含验收/测试/发布等串行关键词，或与同批任务 scope 重叠的任务都会被归为需串行任务。
+ 132: - **路径归一化**：同一任务内重复 scope、Windows/Unix 分隔符差异、首尾空格会被稳定归一化，不影响原始任务标题和 plan 正文展示。
+ 133: - **建议可追踪**：计划列表会展示可并发任务数、建议批次数、需串行任务数，并在确认弹窗中列出每批任务和不建议并发原因。
+ 134: 
+ 135: ### 手动并发执行流程
+ 136: 
+ 137: 1. 进入项目 →「任务与计划」，在 Plan 列表查看并发建议摘要。
+ 138: 2. 当计划存在安全并发批次、计划未完成且没有任务运行中时，「并发执行」按钮可点击。
+ 139: 3. 点击后先查看建议批次和串行原因；只有点击「确认并发执行」才会启动任务，取消不会改变任务状态。
+ 140: 4. 并发执行复用普通任务链路：任务状态、日志文件、事件流、失败记录和计划进度都会继续追踪。
+ 141: 5. 若某一批中有任务失败，后续批次不会继续启动，事件流会记录失败任务和是否继续下一批。
+ 142: 
+ 143: ### scope 文件打开配置
+ 144: 
+ 145: Plan 全文阅读器会把任务行 `scope` 注释中的文件路径渲染为可点击链接。点击前主进程会校验路径必须位于当前项目工作区内，且目标必须是存在的普通文件；不存在、目录、越界路径、权限不足或命令失败都会返回明确提示。
+ 146: 
+ 147: 打开方式在项目「设置」中配置，默认使用系统默认方式：
+ 148: 
+ 149: | 打开方式 | 说明 | 示例配置 |
+ 150: | --- | --- | --- |
+ 151: | 系统默认方式 | 调用系统默认应用打开文件 | 无需填写命令 |
+ 152: | 系统文件夹定位 | 在文件管理器中定位该文件 | 无需填写命令 |
+ 153: | VSCode | 调用 VSCode CLI 打开文件 | 命令留空默认 `code`，或填写完整 `code` 路径 |
+ 154: | 第三方编辑器命令 | 调用自定义编辑器 | `cursor {file}`、`notepad++ {file}` 或 `zed {file}` |
+ 155: 
+ 156: 请确保 scope 路径相对项目工作区填写且尽量精确。无法判断影响范围时应写 `unknown`，完整验收任务应写 `validation`，避免把无法安全判断的任务错误放入并发批次。
+ 157: 
+ 158: ## 发布
+ 159: 
+ 160: 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 161: 
+ 162: 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 163: 
+ 164: ```bash
+ 165: python scripts/release.py --tag v0.2.0 --notes "发布说明"
+ 166: python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ 167: ```
+ 168: 
+ 169: 发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+ 170: ## 开发
+ 171: 
+ 172: ```bash
+ 173: npm install
+ 174: npm run dev        # 启动开发模式（Vite + Electron）
+ 175: npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
+ 176: npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度与 MCP 工具 stub 覆盖）
+ 177: npm run package:win  # 打包 Windows 安装包
+ 178: ```
+ 179: 
+ 180: > 真实的 Claude CLI 调用需要本机安装并认证 `claude`；真实 MCP 客户端连通性需手动验证。`npm run smoke` 通过 stub 覆盖后端路由、会话隔离、Codex 思考深度参数转换和 MCP 工具写入核心分支，不依赖真实二进制或外部 MCP 客户端。
+ 181: 
+
+**Updating documentation strategy**
+
+I need to truncate the README output but make sure it still contains enough information. The current macOS documentation is outdated, stating no modifications, but I need to update it with the current final configuration. I might replace the entire docs/release/macos.md with the updated version since it's being overlooked, even though it falls within the scope. I'm considering whether to use Set-Content or apply_patch to delete/update the documentation. Replacing might be the best option.
+**Clarifying macOS package requirements**
+
+I need to include details about the formal macOS package, which requires Developer ID signing and notarization. There are two signing options: Option A uses CSC_LINK and CSC_KEY_PASSWORD with electron-builder, while Option B uses MACOS_CERTIFICATE_BASE64 and MACOS_CERTIFICATE_PASSWORD for P12 import. For notarization, I have different methods involving Apple ID, API keys, and keychain profiles. The workflow validates only signed and notarized builds while managing artifact naming conventions and user installation recommendations for Apple Silicon versus Intel. I might also discuss potential Gatekeeper issues and integrity verification processes.
+**Updating README and documentation notes**
+
+I need to update the release section of the README on line 169 to include a link to the macOS documentation and maybe mention the Mac DMG. I'm also wondering if I should note that docs/release is ignored by .gitignore but not modify it. P006 wants the macOS documentation, which is still ignored. Is that acceptable? Maybe AutoPlan can still see the file. Additionally, I need to ensure the “readme.md” is lowercased, considering Windows is case-insensitive but the actual filename is README.md. I’ll apply changes by replacing the file without outputting the full diff.
+codex
+`docs/release/macos.md` 还是 P001 诊断稿；我会把它更新为面向维护者和用户的发布/安装说明。
+  ✓ 读取现有发布文档
+  → 补充 macOS 发布说明
+  • 更新 README 入口
+  • 确认 scope 状态
+codex
+准备替换 macOS 文档内容，覆盖正式包、测试包、Secrets、架构选择和损坏提示排查。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\docs\release\macos.md
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+deleted file mode 100644
+index 4a77ef6d7babf852611c01219719e5d50bec9608..0000000000000000000000000000000000000000
+--- a/docs/release/macos.md
++++ /dev/null
+@@ -1,49 +0,0 @@
+-# macOS 发布包损坏提示排查结论
+-
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
+-
+-## 当前发布链路
+-
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
+-
+-## 当前配置观察
+-
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
+-
+-## 根因判断
+-
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
+-
+-关键判断如下：
+-
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
+-
+-## 需要保留的 macOS 产物
+-
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
+-
+-## 后续修复点
+-
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+deleted file mode 100644
+index 4a77ef6d7babf852611c01219719e5d50bec9608..0000000000000000000000000000000000000000
+--- a/docs/release/macos.md
++++ /dev/null
+@@ -1,49 +0,0 @@
+-# macOS 发布包损坏提示排查结论
+-
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
+-
+-## 当前发布链路
+-
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
+-
+-## 当前配置观察
+-
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
+-
+-## 根因判断
+-
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
+-
+-关键判断如下：
+-
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
+-
+-## 需要保留的 macOS 产物
+-
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
+-
+-## 后续修复点
+-
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
+
+codex
+旧诊断稿已移除，马上写入更新后的 macOS 发布说明。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\docs\release\macos.md
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+**Updating README section**
+
+I need to revise the README to include the release section. I want to add a link to the macOS documentation and mention that it's signed, notarized, and archived. I should use the apply patch line around 169. I think it would be helpful to include the exact snippet there. The idea is to make sure I replace the paragraph on line 169 effectively! Let's get started on that!
+codex
+macOS 文档已更新；接着在 README 发布段落加入 macOS 指引入口。
+  ✓ 读取现有发布文档
+  ✓ 补充 macOS 发布说明
+  → 更新 README 入口
+  • 确认 scope 状态
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+codex
+只改 README 发布小节，补链接和用户选择架构提示。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\README.md
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..7aab5ff0d4b7b16584723931d4d5350cb1d4bc07
+--- a/README.md
++++ b/README.md
+@@ -166,7 +166,7 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
+ ## 开发
+ 
+ ```bash
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..7aab5ff0d4b7b16584723931d4d5350cb1d4bc07
+--- a/README.md
++++ b/README.md
+@@ -166,7 +166,7 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
+ ## 开发
+ 
+ ```bash
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+**Inspecting line references**
+
+I'm checking the status of the line references. I'll need to run a command like `git status --ignored` to see what's being tracked and what has been ignored in my current setup. It’s important to ensure that I’m catching everything, especially any ignored files, which can sometimes make a difference in the big picture. I want to get a clear view of this before proceeding!
+codex
+README 入口已补；最后只查看 scope 状态和文档关键行号，不运行验证。
+  ✓ 读取现有发布文档
+  ✓ 补充 macOS 发布说明
+  ✓ 更新 README 入口
+  → 确认 scope 状态
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..7aab5ff0d4b7b16584723931d4d5350cb1d4bc07
+--- a/README.md
++++ b/README.md
+@@ -166,7 +166,7 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
+ ## 开发
+ 
+ ```bash
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+codex
+我会确认 `docs/release/` 仍受忽略规则影响，按 scope 不修改 `.gitignore`。
+exec
+powershell.exe -Command "Write-Host '--- macos doc key lines ---'; "'$i=1; Get-Content -LiteralPath '"'docs/release/macos.md' -Encoding UTF8 | ForEach-Object { if ("'$i -le 35 -or ($i -ge 85 -and $i -le 135)) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- README release lines ---'; "'$i=1; Get-Content -LiteralPath '"'README.md' -Encoding UTF8 | ForEach-Object { if ("'$i -ge 158 -and $i -le 171) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- scoped status ---'; git status --short --ignored -- docs/release/macos.md README.md docs/plan/plan_feedback_14_20260627-131553.md" in D:\project\GitHub\autoplan
+ succeeded in 563ms:
+--- macos doc key lines ---
+   1: # macOS 发布与安装说明
+   2: 
+   3: 本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
+   4: 
+   5: ## 结论
+   6: 
+   7: GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
+   8: 
+   9: Release workflow 会根据 GitHub Secrets 自动区分两种模式：
+  10: 
+  11: - `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
+  12: - `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
+  13: 
+  14: ## GitHub Secrets
+  15: 
+  16: 签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
+  17: 
+  18: ### 签名凭据
+  19: 
+  20: 任选一种方式：
+  21: 
+  22: | Secret | 用途 |
+  23: | --- | --- |
+  24: | `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
+  25: | `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
+  26: 
+  27: 或：
+  28: 
+  29: | Secret | 用途 |
+  30: | --- | --- |
+  31: | `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
+  32: | `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
+  33: 
+  34: ### 公证凭据
+  35: 
+  85: 1. 从 GitHub Release 下载匹配架构的 `dmg`。
+  86: 2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
+  87: 3. 从 `Applications` 首次启动 AutoPlan。
+  88: 
+  89: 正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+  90: 
+  91: ## “已损坏/无法打开”排查
+  92: 
+  93: 维护者按以下顺序排查：
+  94: 
+  95: 1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
+  96: 2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
+  97: 3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
+  98: 4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
+  99: 5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 100: 
+ 101: 用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+--- README release lines ---
+ 158: ## 发布
+ 159: 
+ 160: 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 161: 
+ 162: 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 163: 
+ 164: ```bash
+ 165: python scripts/release.py --tag v0.2.0 --notes "发布说明"
+ 166: python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ 167: ```
+ 168: 
+ 169: 发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
+ 170: ## 开发
+ 171: 
+--- scoped status ---
+ M README.md
+?? docs/plan/plan_feedback_14_20260627-131553.md
+!! docs/release/
+
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..7aab5ff0d4b7b16584723931d4d5350cb1d4bc07
+--- a/README.md
++++ b/README.md
+@@ -166,7 +166,7 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
+ ## 开发
+ 
+ ```bash
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+**Considering README updates**
+
+It seems like I need to ensure line 169 in the README isn't missing a blank line before the heading on line 170. Adding a blank line would help improve markdown formatting. I also wonder about whether to lower "readme.md" references, but I think it's fine as is. Then there's the .gitignore document; it's crucial that it remains in the scope, especially since the user wants to include specific release notes. If ignored, it leads to potential problems. So, it’s clear I really need to add that blank line!
+codex
+README 发布段落后缺少空行，我在当前 scope 内补一处 Markdown 间距。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\README.md
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..a3a01a079a535821bd6846acc8975294884290e7
+--- a/README.md
++++ b/README.md
+@@ -166,8 +166,9 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+-## 开发
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
++
++## 开发
+ 
+ ```bash
+ npm install
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..a3a01a079a535821bd6846acc8975294884290e7
+--- a/README.md
++++ b/README.md
+@@ -166,8 +166,9 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+-## 开发
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
++
++## 开发
+ 
+ ```bash
+ npm install
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+codex
+文档更新已完成；最后确认 scope 状态，不运行任何验证命令。
+  ✓ 读取现有发布文档
+  ✓ 补充 macOS 发布说明
+  ✓ 更新 README 入口
+  → 确认 scope 状态
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..a3a01a079a535821bd6846acc8975294884290e7
+--- a/README.md
++++ b/README.md
+@@ -166,8 +166,9 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+-## 开发
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
++
++## 开发
+ 
+ ```bash
+ npm install
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+codex
+只看最终行号和状态，便于交付说明。
+exec
+powershell.exe -Command "Write-Host '--- README release lines ---'; "'$i=1; Get-Content -LiteralPath '"'README.md' -Encoding UTF8 | ForEach-Object { if ("'$i -ge 158 -and $i -le 172) { '"'{0,4}: {1}' -f "'$i, $_ }; $i++ }; Write-Host '"'--- macos doc sections ---'; Select-String -LiteralPath 'docs/release/macos.md' -Pattern '"'^## |''^### '"' | ForEach-Object { '{0}: {1}' -f "'$_.LineNumber, $_.Line }; Write-Host '"'--- scoped status ---'; git status --short --ignored -- docs/release/macos.md README.md docs/plan/plan_feedback_14_20260627-131553.md" in D:\project\GitHub\autoplan
+ succeeded in 557ms:
+--- README release lines ---
+ 158: ## 发布
+ 159: 
+ 160: 项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
+ 161: 
+ 162: 本地一键发布脚本只负责创建并推送 tag，三端构建由 GitHub Actions 完成：
+ 163: 
+ 164: ```bash
+ 165: python scripts/release.py --tag v0.2.0 --notes "发布说明"
+ 166: python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ 167: ```
+ 168: 
+ 169: 发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
+ 170: 
+ 171: ## 开发
+ 172: 
+--- macos doc sections ---
+5: ## 结论
+14: ## GitHub Secrets
+18: ### 签名凭据
+34: ### 公证凭据
+61: ## 发布链路
+70: ## 产物选择
+83: ## 安装步骤
+91: ## “已损坏/无法打开”排查
+--- scoped status ---
+ M README.md
+?? docs/plan/plan_feedback_14_20260627-131553.md
+!! docs/release/
+
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..a3a01a079a535821bd6846acc8975294884290e7
+--- a/README.md
++++ b/README.md
+@@ -166,8 +166,9 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+-## 开发
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
++
++## 开发
+ 
+ ```bash
+ npm install
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+codex
+P006 已完成；注意 `docs/release/` 仍被现有忽略规则隐藏。
+  ✓ 读取现有发布文档
+  ✓ 补充 macOS 发布说明
+  ✓ 更新 README 入口
+  ✓ 确认 scope 状态
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..a3a01a079a535821bd6846acc8975294884290e7
+--- a/README.md
++++ b/README.md
+@@ -166,8 +166,9 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+-## 开发
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
++
++## 开发
+ 
+ ```bash
+ npm install
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+codex
+已完成 P006，未修改 plan/checkbox/进度区，也未运行任何验证命令。
+
+**变更**
+- `docs/release/macos.md:1` 更新为完整 macOS 发布与安装说明，覆盖正式签名公证包、`unsigned-test` 测试包、Secrets 配置、发布链路、产物选择、安装步骤和“已损坏/无法打开”排查。
+- `docs/release/macos.md:14` 记录 CI 所需签名/公证 Secrets，包括 `CSC_LINK`、`MACOS_CERTIFICATE_BASE64`、Apple ID、App Store Connect API key、Keychain profile 等路径。
+- `docs/release/macos.md:70` 说明用户如何按芯片选择 `mac-arm64.dmg` 或 `mac-x64.dmg`，并区分 `dmg`、`zip`、`blockmap`、`latest-mac.yml`。
+- `README.md:169` 在发布小节加入 macOS 说明入口，指向 `docs/release/macos.md`。
+
+**注意**
+- `docs/release/` 仍被现有 `.gitignore` 的 `release/` 规则忽略；按本任务 scope 限制，我没有修改 `.gitignore`。
+已完成 P006，未修改 plan/checkbox/进度区，也未运行任何验证命令。
+
+**变更**
+- `docs/release/macos.md:1` 更新为完整 macOS 发布与安装说明，覆盖正式签名公证包、`unsigned-test` 测试包、Secrets 配置、发布链路、产物选择、安装步骤和“已损坏/无法打开”排查。
+- `docs/release/macos.md:14` 记录 CI 所需签名/公证 Secrets，包括 `CSC_LINK`、`MACOS_CERTIFICATE_BASE64`、Apple ID、App Store Connect API key、Keychain profile 等路径。
+- `docs/release/macos.md:70` 说明用户如何按芯片选择 `mac-arm64.dmg` 或 `mac-x64.dmg`，并区分 `dmg`、`zip`、`blockmap`、`latest-mac.yml`。
+- `README.md:169` 在发布小节加入 macOS 说明入口，指向 `docs/release/macos.md`。
+
+**注意**
+- `docs/release/` 仍被现有 `.gitignore` 的 `release/` 规则忽略；按本任务 scope 限制，我没有修改 `.gitignore`。
+diff --git a/README.md b/README.md
+index a9da0516cc23b104d6ca9f921fb14cfe4a398c00..a3a01a079a535821bd6846acc8975294884290e7
+--- a/README.md
++++ b/README.md
+@@ -166,8 +166,9 @@
+ python scripts/release.py --tag v0.2.0 --notes-file notes.md --dry-run
+ ```
+ 
+-发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。
+-## 开发
++发布前请确认版本号已更新、工作区干净、远端可推送，并且仓库 Actions 权限允许 `GITHUB_TOKEN` 写入 Release。完整流程、产物说明、权限要求和能力边界见 [发布说明](docs/release.md)。macOS 正式包需要 Developer ID 签名和 Apple 公证；维护者配置 GitHub Secrets、用户选择 `arm64`/`x64` 产物以及“已损坏/无法打开”排查流程见 [macOS 发布与安装说明](docs/release/macos.md)。
++
++## 开发
+ 
+ ```bash
+ npm install
+diff --git a/docs/release/macos.md b/docs/release/macos.md
+index 4a77ef6d7babf852611c01219719e5d50bec9608..ed14a18dad81a0b294a604991979c0d63d9ba9ff
+--- a/docs/release/macos.md
++++ b/docs/release/macos.md
+@@ -1,49 +1,101 @@
+-# macOS 发布包损坏提示排查结论
++# macOS 发布与安装说明
++
++本文说明 AutoPlan macOS 发布包的签名、公证、产物命名、安装选择和“已损坏/无法打开”排查路径。
++
++## 结论
++
++GitHub Release 中面向普通用户的 macOS 正式包必须完成 Developer ID 签名、Apple 公证和 staple。未签名或未公证的 Electron 应用从网络下载后会带有 quarantine 属性，macOS Gatekeeper 可能显示“已损坏，无法打开”或“无法验证开发者”等提示。
++
++Release workflow 会根据 GitHub Secrets 自动区分两种模式：
++
++- `signed-notarized`：签名凭据和公证凭据都完整，生成正式可分发包，并在上传前执行完整性、挂载、解压、签名、公证票据和 Gatekeeper 校验。
++- `unsigned-test`：签名或公证凭据不完整，只能作为开发/测试包。该模式会跳过签名和公证，可能触发 Gatekeeper 拦截，不应作为普通用户安装包宣传。
++
++## GitHub Secrets
++
++签名凭据和公证凭据各至少配置一组，workflow 才会进入 `signed-notarized` 模式。
++
++### 签名凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `CSC_LINK` | electron-builder 可读取的 Developer ID Application 证书链接、base64 p12 或本地路径。 |
++| `CSC_KEY_PASSWORD` | `CSC_LINK` 对应证书密码。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `MACOS_CERTIFICATE_BASE64` | Developer ID Application `.p12` 证书的 base64 内容。 |
++| `MACOS_CERTIFICATE_PASSWORD` | `.p12` 证书密码。 |
++
++### 公证凭据
++
++任选一种方式：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_ID` | Apple Developer 账号邮箱。 |
++| `APPLE_APP_SPECIFIC_PASSWORD` | Apple ID app-specific password。 |
++| `APPLE_TEAM_ID` | Apple Developer Team ID。 |
++
++或：
+ 
+-本文记录反馈 #14 / P001 的排查结论。当前任务只定位根因和梳理发布链路，不修改打包、签名、公证或上传配置。
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_API_KEY_PATH` | App Store Connect API `.p8` key 在 runner 上的路径。 |
++| `APPLE_API_KEY` | `.p8` key 路径或原始文本内容。 |
++| `APPLE_API_KEY_BASE64` | `.p8` key 的 base64 内容。 |
++| `APPLE_API_KEY_ID` | App Store Connect API Key ID。 |
++| `APPLE_API_ISSUER` | App Store Connect API Issuer ID。 |
++
++或：
++
++| Secret | 用途 |
++| --- | --- |
++| `APPLE_KEYCHAIN_PROFILE` | `xcrun notarytool store-credentials` 预先保存的 profile 名称。 |
++| `APPLE_KEYCHAIN` | 可选，保存该 profile 的 keychain 名称或路径。 |
++
++## 发布链路
+ 
+-## 当前发布链路
++1. `.github/workflows/release.yml` 的 macOS job 执行 `npm run package:mac -- --publish never`。
++2. `package.json` 使用 `electron-builder --mac dmg zip --x64 --arm64` 生成 Intel 与 Apple Silicon 产物。
++3. macOS 配置启用 hardened runtime，并使用 `build/entitlements.mac.plist` 与 `build/entitlements.mac.inherit.plist`。
++4. `scripts/notarize-mac.js` 在 `afterSign` 阶段读取公证凭据；正式模式缺失凭据会失败，测试模式会明确跳过。
++5. `scripts/verify-release-artifacts.js` 在上传前检查 macOS 产物数量、大小、命名、blockmap、`latest-mac.yml` 引用、DMG 挂载、ZIP 解压，以及正式模式下的签名、公证票据和 Gatekeeper assess。
++6. 通过校验后，workflow 只上传预期的 `dmg`、`zip`、`blockmap` 和更新元数据。
+ 
+-1. Release workflow 在 `.github/workflows/release.yml` 中由 `v*` tag push 或 `workflow_dispatch` 触发。
+-2. macOS matrix 使用 `macos-latest` runner，执行 `npm run package:mac -- --publish never`。
+-3. `package.json` 中的 `package:mac` 先执行 `npm run build`，再执行 `electron-builder --mac dmg zip --x64 --arm64`。
+-4. `electron-builder` 根据 `build.mac.target` 同时生成 x64、arm64 的 `dmg` 与 `zip`，输出目录是 `release/`。
+-5. macOS job 通过 `actions/upload-artifact` 上传 `release/*.dmg`、`release/*.zip`、`release/*.blockmap` 和 `release/latest*.yml`。
+-6. `release` job 下载所有平台 artifact 后，使用 `gh release create/upload` 把匹配到的文件附加到 GitHub Release。
+-7. 用户从 GitHub Release 下载 macOS 附件后，由 macOS Gatekeeper、签名校验和公证状态决定能否正常打开。
++## 产物选择
+ 
+-## 当前配置观察
++macOS Release 附件命名格式为：
+ 
+-- `.github/workflows/release.yml` 在所有平台打包步骤中设置了 `CSC_IDENTITY_AUTO_DISCOVERY: false`。
+-- `package.json` 的 `build.mac` 只声明了 `dmg`、`zip` target 和 `artifactName`，没有声明 hardened runtime、entitlements、签名 identity 或公证配置。
+-- 当前仓库已有 `@electron/notarize`、`@electron/osx-sign` 等依赖进入 lockfile，但发布配置没有把它们接入 macOS release 链路。
+-- macOS 产物命名为 `AutoPlan-<version>-mac-<arch>.<ext>`，x64 与 arm64、dmg 与 zip 在文件名上可区分。
+-- workflow 上传范围包含 `latest*.yml`，但当前命名规则没有按架构区分 `latest-mac.yml`；后续需要确认多架构构建时该元数据是否被覆盖或只指向其中一个架构。
++- `AutoPlan-<version>-mac-arm64.dmg`：Apple Silicon Mac 推荐下载项。
++- `AutoPlan-<version>-mac-x64.dmg`：Intel Mac 推荐下载项。
++- `AutoPlan-<version>-mac-arm64.zip`：Apple Silicon 自动更新或高级场景使用。
++- `AutoPlan-<version>-mac-x64.zip`：Intel 自动更新或高级场景使用。
++- `*.blockmap`：增量更新元数据，普通手动安装不需要下载。
++- `latest-mac.yml`：macOS 自动更新元数据，必须引用实际发布的 zip 文件名。
+ 
+-## 根因判断
++普通用户优先下载与芯片架构匹配的 `dmg`。不确定芯片类型时，在 macOS 菜单「关于本机」中查看：显示 Apple M 系列时选择 `arm64`，显示 Intel 时选择 `x64`。
+ 
+-当前“已损坏/无法打开”的最高概率根因是 macOS 正式发布包未完成 Developer ID 签名和 Apple 公证，而不是业务代码损坏。
++## 安装步骤
+ 
+-关键判断如下：
++1. 从 GitHub Release 下载匹配架构的 `dmg`。
++2. 打开 DMG，把 `AutoPlan.app` 拖入 `Applications`。
++3. 从 `Applications` 首次启动 AutoPlan。
+ 
+-- `CSC_IDENTITY_AUTO_DISCOVERY=false` 会阻止 electron-builder 在 macOS runner 上自动发现可用签名身份；即使 runner 或 keychain 中存在证书，该步骤也会按未签名路径产出安装包。
+-- `build.mac` 未配置 hardened runtime、entitlements 和 notarize 钩子，说明当前链路不会生成可被 Gatekeeper 视为正式可信的签名公证包。
+-- GitHub Actions 下载/上传路径当前覆盖 `dmg`、`zip`、`blockmap` 与 `latest*.yml`，未发现会直接截断产物的路径错误；但缺少产物完整性校验，无法在 CI 阶段阻断零字节、不可挂载或不可解压文件。
+-- macOS x64/arm64 文件名当前包含 `${arch}`，用户下载错架构会更可能表现为无法运行或架构不兼容，不是本轮“损坏提示”的首要原因。
+-- 未签名或未公证的 Electron app 从网络下载后带有 quarantine 属性，Gatekeeper 可能用“已损坏，无法打开”这类文案拦截；这与当前 CI 显式禁用签名发现的配置吻合。
++正式 `signed-notarized` 包首次启动不应提示“已损坏/无法打开”。如果出现该提示，优先按下方排查，不要把绕过 Gatekeeper 当成正式发布包的主要安装方式。
+ 
+-## 需要保留的 macOS 产物
++## “已损坏/无法打开”排查
+ 
+-- `dmg`：面向用户手动下载安装，应作为 GitHub Release 的主要 macOS 安装包。
+-- `zip`：保留给 Electron macOS 自动更新或后续更新元数据使用，不应与用户安装说明混淆。
+-- `x64`：面向 Intel Mac，文件名必须持续包含 `mac-x64`。
+-- `arm64`：面向 Apple Silicon Mac，文件名必须持续包含 `mac-arm64`。
+-- `latest-mac.yml`：属于更新元数据，必须与实际 zip/dmg 文件名保持一致；如果继续同时发布 x64 与 arm64，需要避免单一文件被不同架构覆盖或误指向错误架构产物。
++维护者按以下顺序排查：
+ 
+-## 后续修复点
++1. 在 GitHub Actions 日志中确认 macOS job 的 release mode 是 `signed-notarized`，不是 `unsigned-test`。
++2. 确认 `Verify macOS release artifacts` 步骤通过，尤其是 `codesign`、`spctl`、`stapler`、DMG 挂载和 ZIP 解压检查。
++3. 确认 Release 附件包含正确架构的 `dmg`、`zip`、对应 `blockmap` 和 `latest-mac.yml`，且文件大小非零。
++4. 确认用户下载的架构正确：Apple Silicon 下载 `mac-arm64.dmg`，Intel 下载 `mac-x64.dmg`。
++5. 若正式包仍触发 Gatekeeper，重新检查 Apple Developer 证书、Team ID、公证凭据、staple 日志和是否下载到旧附件。
+ 
+-- 在 macOS 打包配置中补齐 Developer ID 签名、hardened runtime、entitlements 与公证流程。
+-- 让 CI 仅在 Apple 证书和公证 secret 完整时生成正式签名公证包；未配置 secret 时明确标记为未签名测试包。
+-- 移除或条件化 macOS 正式发布路径中的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免永久生成未签名包。
+-- 增加 macOS 产物完整性校验，覆盖文件存在性、大小、DMG 挂载、ZIP 解压、签名校验、公证票据和 Gatekeeper assess。
+-- 复核 `latest-mac.yml` 的多架构生成策略，确保更新元数据不会被覆盖，也不会指向不存在或错误架构文件。
++用户侧可先重新下载正确架构的正式 `dmg`。只有在明确使用 `unsigned-test` 开发/测试包时，才可能需要临时绕过 Gatekeeper；这不适用于正式发布包的常规安装说明。
+
+tokens used
+354,605

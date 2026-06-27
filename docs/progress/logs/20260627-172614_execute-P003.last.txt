@@ -1,0 +1,11 @@
+已完成 P003，仅修改 `.github/workflows/release.yml`，未修改 plan/checkbox/进度区。
+
+**变更**
+- `.github/workflows/release.yml:66` 新增 macOS 签名/公证模式判定：只有签名 secret 与公证 secret 都完整时进入 `signed-notarized`，否则标记为 `unsigned-test`。
+- `.github/workflows/release.yml:128` 新增 macOS 证书导入步骤，支持 `MACOS_CERTIFICATE_BASE64` + `MACOS_CERTIFICATE_PASSWORD` 导入临时 keychain。
+- `.github/workflows/release.yml:156` 单独拆出 macOS 打包步骤，正式模式才保留签名/公证 secret；测试模式会 unset，避免误生成“已签名但未公证”的伪正式包。
+- `.github/workflows/release.yml:193` Windows/Linux 打包保持原 `CSC_IDENTITY_AUTO_DISCOVERY: false`，避免非预期影响。
+- `.github/workflows/release.yml:199` artifact 上传阶段保持独立，日志阶段现在可区分模式判定、证书导入、打包/签名/公证/staple、上传。
+
+**验证**
+- 按要求未运行测试、构建、lint、analyze、coverage、e2e、benchmark 或 workflow 校验命令。

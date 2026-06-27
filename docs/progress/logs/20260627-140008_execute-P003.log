@@ -1,0 +1,1557 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0761-9673-7b40-b163-23963d2bbe7e
+--------
+user
+你是开发执行者。
+请只执行指定任务 P003，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_28_20260627-123944.md
+指定任务：
+- [ ] P003: 补齐展示与数据流兼容 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/shared.tsx,src/database.js -->
+任务 scope：src/renderer/pages/workspacepage.tsx, src/renderer/components/shared.tsx, src/database.js
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用前序改动，只检查 P003 范围里的展示标签和数据库归一化链路。
+  → 定位 P003 数据流位置
+  • 补齐 xhigh 展示标签
+  • 补齐数据库兼容归一化
+  • 检查范围内变更
+exec
+powershell.exe -Command "Select-String -Path 'src\\renderer\\components\\shared.tsx','src\\renderer\\pages\\WorkspacePage.tsx','src\\database.js' -Pattern 'codexReasoningEffortLabel|normalizeCodexReasoningEffort|codex_reasoning_effort|codexReasoningEffort|reasoning_effort|thinking_depth|low|medium|high|xhigh'" in D:\project\GitHub\autoplan
+ succeeded in 592ms:
+
+src\renderer\components\shared.tsx:39:  const value = String(provider || '').trim().toLowerCase();
+src\renderer\components\shared.tsx:45:export function codexReasoningEffortLabel(effort?: string | null): string {
+src\renderer\components\shared.tsx:46:  const value = String(effort || '').trim().toLowerCase();
+src\renderer\components\shared.tsx:47:  if (value === 'low') return 'low';
+src\renderer\components\shared.tsx:48:  if (value === 'high') return 'high';
+src\renderer\components\shared.tsx:49:  return 'medium';
+src\renderer\components\shared.tsx:56:  const effort = readCodexReasoningEffort(source) || 'medium';
+src\renderer\components\shared.tsx:57:  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
+src\renderer\components\shared.tsx:72:export function readCodexReasoningEffort(source?: object | null): string | null {
+src\renderer\components\shared.tsx:75:  return normalizeCodexReasoningEffort(readFirstString(source, [
+src\renderer\components\shared.tsx:76:    'codex_reasoning_effort',
+src\renderer\components\shared.tsx:77:    'codexReasoningEffort',
+src\renderer\components\shared.tsx:78:    'codex_thinking_depth',
+src\renderer\components\shared.tsx:80:    'reasoning_effort',
+src\renderer\components\shared.tsx:82:    'thinking_depth',
+src\renderer\components\shared.tsx:97:  const value = String(provider || '').trim().toLowerCase();
+src\renderer\components\shared.tsx:103:function normalizeCodexReasoningEffort(effort?: string | null): string {
+src\renderer\components\shared.tsx:104:  const value = String(effort || '').trim().toLowerCase();
+src\renderer\components\shared.tsx:105:  if (value === 'low' || value === 'high' || value === 'xhigh') return value;
+src\renderer\components\shared.tsx:106:  return 'medium';
+src\renderer\components\shared.tsx:111:  const s = status.toLowerCase();
+src\renderer\pages\WorkspacePage.tsx:15:  CodexReasoningEffort,
+src\renderer\pages\WorkspacePage.tsx:41:  codexReasoningEffortLabel,
+src\renderer\pages\WorkspacePage.tsx:43:  readCodexReasoningEffort,
+src\renderer\pages\WorkspacePage.tsx:59:  { value: 'low', label: '低 · 快速' },
+src\renderer\pages\WorkspacePage.tsx:60:  { value: 'medium', label: '中 · 默认' },
+src\renderer\pages\WorkspacePage.tsx:61:  { value: 'high', label: '高 · 深入' },
+src\renderer\pages\WorkspacePage.tsx:62:  { value: 'xhigh', label: '超高 · 最深入' },
+src\renderer\pages\WorkspacePage.tsx:65:const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+src\renderer\pages\WorkspacePage.tsx:72:const defaultComposerCodexReasoning: Record<IntakeType, CodexReasoningEffort> =
+ {
+src\renderer\pages\WorkspacePage.tsx:73:  requirement: defaultCodexReasoningEffort,
+src\renderer\pages\WorkspacePage.tsx:74:  feedback: defaultCodexReasoningEffort,
+src\renderer\pages\WorkspacePage.tsx:94:  codexReasoningEffort: CodexReasoningEffort;
+src\renderer\pages\WorkspacePage.tsx:137:  return subtype.replace(/[^a-z0-9]+/gi, '').toLowerCase() || 'png';
+src\renderer\pages\WorkspacePage.tsx:205:function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningE
+ffort {
+src\renderer\pages\WorkspacePage.tsx:206:  const effort = String(value || '').trim().toLowerCase();
+src\renderer\pages\WorkspacePage.tsx:207:  if (effort === 'low' || effort === 'high' || effort === 'xhigh') return effo
+rt;
+src\renderer\pages\WorkspacePage.tsx:208:  return defaultCodexReasoningEffort;
+src\renderer\pages\WorkspacePage.tsx:218:    codexReasoningEffort: normalizeCodexReasoningEffort(state.codex_reasoning_
+effort),
+src\renderer\pages\WorkspacePage.tsx:232:    payload.codexReasoningEffort = form.codexReasoningEffort;
+src\renderer\pages\WorkspacePage.tsx:243:    && left.codexReasoningEffort === right.codexReasoningEffort;
+src\renderer\pages\WorkspacePage.tsx:259:    useState<Record<IntakeType, CodexReasoningEffort>>(defaultComposerCodexRea
+soning);
+src\renderer\pages\WorkspacePage.tsx:266:    codexReasoningEffort: defaultCodexReasoningEffort,
+src\renderer\pages\WorkspacePage.tsx:324:  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, stat
+e?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reaso
+ning_effort, state]);
+src\renderer\pages\WorkspacePage.tsx:332:    const defaultReasoning = normalizeCodexReasoningEffort(state?.codex_reason
+ing_effort);
+src\renderer\pages\WorkspacePage.tsx:341:  }, [projectId, state?.agent_cli_provider, state?.codex_reasoning_effort]);
+src\renderer\pages\WorkspacePage.tsx:352:      onReasoningChange: (type: IntakeType, effort: CodexReasoningEffort) => {
+src\renderer\pages\WorkspacePage.tsx:353:        setComposerCodexReasoning((current) => ({ ...current, [type]: normaliz
+eCodexReasoningEffort(effort) }));
+src\renderer\pages\WorkspacePage.tsx:426:            : { codexReasoningEffort: composerCodexReasoning.requirement }),
+src\renderer\pages\WorkspacePage.tsx:451:            : { codexReasoningEffort: composerCodexReasoning.feedback }),
+src\renderer\pages\WorkspacePage.tsx:1023:  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+src\renderer\pages\WorkspacePage.tsx:1112:  return `${providerLabel} · 思考${codexReasoningEffortLabel(readCodexReasoning
+Effort(state))}`;
+src\renderer\pages\WorkspacePage.tsx:1183:              value={loopForm.codexReasoningEffort}
+src\renderer\pages\WorkspacePage.tsx:1187:                  codexReasoningEffort: normalizeCodexReasoningEffort(event.t
+arget.value),
+src\renderer\pages\WorkspacePage.tsx:1278:        codexReasoningEffort: operation.codexReasoningEffort || state?.codex_
+reasoning_effort,
+src\renderer\pages\WorkspacePage.tsx:1284:    ? `思考${codexReasoningEffortLabel(readCodexReasoningEffort(operationCliSou
+rce))}`
+src\renderer\pages\WorkspacePage.tsx:1300:  const stateReasoningLabel = codexReasoningEffortLabel(readCodexReasoningEff
+ort(state));
+src\database.js:49:        codex_reasoning_effort TEXT,
+src\database.js:63:        codex_reasoning_effort TEXT,
+src\database.js:79:        codex_reasoning_effort TEXT,
+src\database.js:124:        codex_reasoning_effort TEXT,
+src\database.js:179:    this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
+src\database.js:184:    this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+src\database.js:190:    this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+src\database.js:203:    this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
+
+
+
+codex
+定位显示数据库字段是文本列；我会查看写入/读取路径是否需要补充默认兼容。
+exec
+powershell.exe -Command "Select-String -Path 'src\\database.js' -Pattern 'codex_reasoning_effort|codexReasoningEffort' -Context 3,4" in D:\project\GitHub\autoplan
+ succeeded in 444ms:
+
+  src\database.js:46:        validation_command TEXT NOT NULL DEFAULT '',
+  src\database.js:47:        agent_cli_provider TEXT NOT NULL DEFAULT 'codex',
+  src\database.js:48:        agent_cli_command TEXT NOT NULL DEFAULT '',
+> src\database.js:49:        codex_reasoning_effort TEXT,
+  src\database.js:50:        last_issue_hash TEXT,
+  src\database.js:51:        last_error TEXT,
+  src\database.js:52:        updated_at TEXT NOT NULL
+  src\database.js:53:      );
+  src\database.js:60:        status TEXT NOT NULL DEFAULT 'open',
+  src\database.js:61:        agent_cli_provider TEXT,
+  src\database.js:62:        agent_cli_command TEXT NOT NULL DEFAULT '',
+> src\database.js:63:        codex_reasoning_effort TEXT,
+  src\database.js:64:        source_path TEXT,
+  src\database.js:65:        source_hash TEXT,
+  src\database.js:66:        created_at TEXT NOT NULL,
+  src\database.js:67:        updated_at TEXT NOT NULL
+  src\database.js:76:        status TEXT NOT NULL DEFAULT 'open',
+  src\database.js:77:        agent_cli_provider TEXT,
+  src\database.js:78:        agent_cli_command TEXT NOT NULL DEFAULT '',
+> src\database.js:79:        codex_reasoning_effort TEXT,
+  src\database.js:80:        created_at TEXT NOT NULL,
+  src\database.js:81:        updated_at TEXT NOT NULL
+  src\database.js:82:      );
+  src\database.js:83:
+  src\database.js:121:        validation_passed INTEGER NOT NULL DEFAULT 0,
+  src\database.js:122:        agent_cli_provider TEXT,
+  src\database.js:123:        agent_cli_command TEXT NOT NULL DEFAULT '',
+> src\database.js:124:        codex_reasoning_effort TEXT,
+  src\database.js:125:        created_at TEXT NOT NULL,
+  src\database.js:126:        updated_at TEXT NOT NULL
+  src\database.js:127:      );
+  src\database.js:128:
+  src\database.js:176:    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+  src\database.js:177:    this.ensureColumn('requirements', 'agent_cli_provider', 'TEXT');
+  src\database.js:178:    this.ensureColumn('requirements', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+> src\database.js:179:    this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
+  src\database.js:180:    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+  src\database.js:181:    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+  src\database.js:182:    this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
+  src\database.js:183:    this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+> src\database.js:184:    this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+  src\database.js:185:    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+  src\database.js:186:    this.ensureColumn('plans', 'project_id', 'INTEGER');
+  src\database.js:187:    this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+  src\database.js:188:    this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
+  src\database.js:189:    this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+> src\database.js:190:    this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+  src\database.js:191:    this.db.run(`
+  src\database.js:192:      CREATE INDEX IF NOT EXISTS idx_plans_project_sort
+  src\database.js:193:      ON plans (project_id, sort_order, created_at, id)
+  src\database.js:194:    `);
+  src\database.js:200:    this.ensureColumn('events', 'project_id', 'INTEGER');
+  src\database.js:201:    this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
+  src\database.js:202:    this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+> src\database.js:203:    this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
+  src\database.js:204:
+  src\database.js:205:    const defaultProjectId = this.ensureDefaultProject();
+  src\database.js:206:    this.migrateScanFilesTable(defaultProjectId);
+  src\database.js:207:    this.assignLegacyRows(defaultProjectId);
+
+
+
+codex
+数据库里暂未看到归一化函数命中，我会继续只读搜索写入 SQL 的字段映射。
+exec
+powershell.exe -Command "Select-String -Path 'src\\database.js' -Pattern 'agent_cli_provider|agent_cli_command|INSERT INTO requirements|INSERT INTO feedback|INSERT INTO plans|UPDATE project_states|project_states|requirements SET|feedback SET|plans SET' -Context 2,5" in D:\project\GitHub\autoplan
+ succeeded in 471ms:
+
+  src\database.js:39:      ON projects (updated_at DESC);
+  src\database.js:40:
+> src\database.js:41:      CREATE TABLE IF NOT EXISTS project_states (
+  src\database.js:42:        project_id INTEGER PRIMARY KEY,
+  src\database.js:43:        running INTEGER NOT NULL DEFAULT 0,
+  src\database.js:44:        phase TEXT NOT NULL DEFAULT 'idle',
+  src\database.js:45:        interval_seconds INTEGER NOT NULL DEFAULT 5,
+  src\database.js:46:        validation_command TEXT NOT NULL DEFAULT '',
+> src\database.js:47:        agent_cli_provider TEXT NOT NULL DEFAULT 'codex',
+> src\database.js:48:        agent_cli_command TEXT NOT NULL DEFAULT '',
+  src\database.js:49:        codex_reasoning_effort TEXT,
+  src\database.js:50:        last_issue_hash TEXT,
+  src\database.js:51:        last_error TEXT,
+  src\database.js:52:        updated_at TEXT NOT NULL
+  src\database.js:53:      );
+  src\database.js:59:        body TEXT NOT NULL DEFAULT '',
+  src\database.js:60:        status TEXT NOT NULL DEFAULT 'open',
+> src\database.js:61:        agent_cli_provider TEXT,
+> src\database.js:62:        agent_cli_command TEXT NOT NULL DEFAULT '',
+  src\database.js:63:        codex_reasoning_effort TEXT,
+  src\database.js:64:        source_path TEXT,
+  src\database.js:65:        source_hash TEXT,
+  src\database.js:66:        created_at TEXT NOT NULL,
+  src\database.js:67:        updated_at TEXT NOT NULL
+  src\database.js:75:        body TEXT NOT NULL DEFAULT '',
+  src\database.js:76:        status TEXT NOT NULL DEFAULT 'open',
+> src\database.js:77:        agent_cli_provider TEXT,
+> src\database.js:78:        agent_cli_command TEXT NOT NULL DEFAULT '',
+  src\database.js:79:        codex_reasoning_effort TEXT,
+  src\database.js:80:        created_at TEXT NOT NULL,
+  src\database.js:81:        updated_at TEXT NOT NULL
+  src\database.js:82:      );
+  src\database.js:83:
+  src\database.js:120:        completed_tasks INTEGER NOT NULL DEFAULT 0,
+  src\database.js:121:        validation_passed INTEGER NOT NULL DEFAULT 0,
+> src\database.js:122:        agent_cli_provider TEXT,
+> src\database.js:123:        agent_cli_command TEXT NOT NULL DEFAULT '',
+  src\database.js:124:        codex_reasoning_effort TEXT,
+  src\database.js:125:        created_at TEXT NOT NULL,
+  src\database.js:126:        updated_at TEXT NOT NULL
+  src\database.js:127:      );
+  src\database.js:128:
+  src\database.js:175:    this.ensureColumn('requirements', 'project_id', 'INTEGER');
+  src\database.js:176:    this.ensureColumn('requirements', 'linked_plan_id', 'INTEGER');
+> src\database.js:177:    this.ensureColumn('requirements', 'agent_cli_provider', 'TEXT');
+> src\database.js:178:    this.ensureColumn('requirements', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+  src\database.js:179:    this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
+  src\database.js:180:    this.ensureColumn('feedback', 'project_id', 'INTEGER');
+  src\database.js:181:    this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
+> src\database.js:182:    this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
+> src\database.js:183:    this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+  src\database.js:184:    this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+  src\database.js:185:    this.ensureColumn('attachments', 'project_id', 'INTEGER');
+  src\database.js:186:    this.ensureColumn('plans', 'project_id', 'INTEGER');
+  src\database.js:187:    this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+> src\database.js:188:    this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
+> src\database.js:189:    this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+  src\database.js:190:    this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+  src\database.js:191:    this.db.run(`
+  src\database.js:192:      CREATE INDEX IF NOT EXISTS idx_plans_project_sort
+  src\database.js:193:      ON plans (project_id, sort_order, created_at, id)
+  src\database.js:194:    `);
+  src\database.js:199:    this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+  src\database.js:200:    this.ensureColumn('events', 'project_id', 'INTEGER');
+> src\database.js:201:    this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
+> src\database.js:202:    this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+> src\database.js:203:    this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
+  src\database.js:204:
+  src\database.js:205:    const defaultProjectId = this.ensureDefaultProject();
+  src\database.js:206:    this.migrateScanFilesTable(defaultProjectId);
+  src\database.js:207:    this.assignLegacyRows(defaultProjectId);
+  src\database.js:208:    this.backfillPlanSortOrders();
+  src\database.js:227:    const legacyState = this.get('SELECT * FROM loop_state WHERE id = 1') || {};
+  src\database.js:228:    this.db.run(
+> src\database.js:229:      `INSERT OR IGNORE INTO project_states
+  src\database.js:230:       (project_id, running, phase, interval_seconds, validation_command, last_issue_hash, last_e
+rror, updated_at)
+  src\database.js:231:       VALUES (?, 0, ?, ?, ?, ?, ?, ?)`,
+  src\database.js:232:      [
+  src\database.js:233:        projectId,
+  src\database.js:234:        legacyState.phase || 'idle',
+  src\database.js:278:        if (Number.isFinite(order) && order > 0) continue;
+  src\database.js:279:        nextOrder += 1;
+> src\database.js:280:        this.db.run('UPDATE plans SET sort_order = ? WHERE id = ?', [nextOrder, plan.id]);
+  src\database.js:281:      }
+  src\database.js:282:    }
+  src\database.js:283:  }
+  src\database.js:284:
+  src\database.js:285:  migrateScanFilesTable(defaultProjectId) {
+
+
+
+**Exploring database queries**
+
+I’m thinking about whether I need the entire database since I’m only seeing snippets. Should I use a select query for camel? It didn't seem to show everything, maybe because the database is dynamic. I wonder if I need to inspect the functions list. Perhaps I could use Get-Content to grab lines from 300 onward to get more information. There’s a lot to consider!
+codex
+继续查看数据库类后半部分，确认是否存在保存时的字段白名单。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'src\\database.js' -Encoding UTF8 | Select-Object -Skip 300 -First 520" in D:\project\GitHub\autoplan
+ succeeded in 450ms:
+        PRIMARY KEY (project_id, scan_type, file_path)
+      );
+    `);
+
+    if (hasProjectId) {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT COALESCE(project_id, ${fallbackProjectId}), scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    } else {
+      this.db.run(`
+        INSERT OR REPLACE INTO scan_files
+        (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+        SELECT ${fallbackProjectId}, scan_type, file_path, hash, size, modified_at, scanned_at
+        FROM scan_files_legacy;
+      `);
+    }
+
+    this.db.run('DROP TABLE scan_files_legacy');
+  }
+
+  persist() {
+    const data = Buffer.from(this.db.export());
+    const tmp = `${this.dbPath}.tmp`;
+    const mirror = `${this.dbPath}.mirror`;
+    fs.writeFileSync(tmp, data);
+    fs.writeFileSync(mirror, data);
+    if (fs.existsSync(this.dbPath)) {
+      fs.copyFileSync(this.dbPath, `${this.dbPath}.bak`);
+      fs.unlinkSync(this.dbPath);
+    }
+    fs.renameSync(tmp, this.dbPath);
+  }
+
+  run(sql, params = []) {
+    this.db.run(sql, params);
+    this.persist();
+  }
+
+  get(sql, params = []) {
+    const rows = this.all(sql, params);
+    return rows[0] || null;
+  }
+
+  all(sql, params = []) {
+    const stmt = this.db.prepare(sql);
+    try {
+      stmt.bind(params);
+      const rows = [];
+      while (stmt.step()) rows.push(stmt.getAsObject());
+      return rows;
+    } finally {
+      stmt.free();
+    }
+  }
+
+  insert(sql, params = []) {
+    this.db.run(sql, params);
+    const id = this.get('SELECT last_insert_rowid() AS id').id;
+    this.persist();
+    return id;
+  }
+}
+
+function nowIso() {
+  return new Date().toISOString();
+}
+
+module.exports = { AppDatabase, nowIso };
+
+codex
+数据库列已是 TEXT，`xhigh` 可无结构变更承载；现在补齐共享展示标签即可覆盖各处调用。
+  ✓ 定位 P003 数据流位置
+  → 补齐 xhigh 展示标签
+  • 补齐数据库兼容归一化
+  • 检查范围内变更
+exec
+powershell.exe -Command "Select-String -Path 'src\\renderer\\**\\*.tsx','src\\renderer\\**\\*.ts' -Pattern 'codexReasoningEffortLabel|readCodexReasoningEffort|planCliSummaryLabel'" in D:\project\GitHub\autoplan
+ succeeded in 452ms:
+
+src\renderer\components\PlanLists.tsx:11:import { planCliSummaryLabel } from './shared';
+src\renderer\components\PlanLists.tsx:347:  const cliSummary = agentCliProvider ? planCliSummaryLabel(meta) : '';
+src\renderer\components\PlanLists.tsx:494:  const readerCliSummary = readerPlanForSummary ? planCliSummaryLabel(readerP
+lanForSummary) : '';
+src\renderer\components\PlanLists.tsx:576:            const cliSummary = planCliSummaryLabel(plan);
+src\renderer\components\shared.tsx:45:export function codexReasoningEffortLabel(effort?: string | null): string {
+src\renderer\components\shared.tsx:52:export function planCliSummaryLabel(source?: object | null): string {
+src\renderer\components\shared.tsx:56:  const effort = readCodexReasoningEffort(source) || 'medium';
+src\renderer\components\shared.tsx:57:  return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
+src\renderer\components\shared.tsx:72:export function readCodexReasoningEffort(source?: object | null): string | null {
+src\renderer\pages\WorkspacePage.tsx:41:  codexReasoningEffortLabel,
+src\renderer\pages\WorkspacePage.tsx:43:  readCodexReasoningEffort,
+src\renderer\pages\WorkspacePage.tsx:1112:  return `${providerLabel} · 思考${codexReasoningEffortLabel(readCodexReasoning
+Effort(state))}`;
+src\renderer\pages\WorkspacePage.tsx:1284:    ? `思考${codexReasoningEffortLabel(readCodexReasoningEffort(operationCliSou
+rce))}`
+src\renderer\pages\WorkspacePage.tsx:1300:  const stateReasoningLabel = codexReasoningEffortLabel(readCodexReasoningEff
+ort(state));
+
+
+
+**Planning database updates**
+
+I'm thinking about how the planning lists are out of scope, but the shared covers are good. I might need to implement some operations in Workspace and work on a patch for the shared label. It could be useful to add a particular label before returning a value. If the value is medium, I should just return 'medium' for unknown values too. I also need to inspect the data flow in the database to ensure everything's normalized properly.
+codex
+共享标签会影响计划摘要、任务卡片和工作区状态；我会只加 `xhigh` 标签。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+**Evaluating data flow compatibility**
+
+I need to consider the phrase "补齐数据流兼容" and think if it's necessary to update the database comments. I notice there aren’t any comments currently. The P003 scope does include the database, but maybe there isn’t a normalizer? I’m pondering whether the rows are generated elsewhere in the app and if they only normalize low, medium, and high values. I think I should search the entire source code for "normalizeCodexReasoning" and check for any possible database writes, but I’ll read without modifying anything.
+codex
+展示标签已补齐；我会再核对数据写入链路是否仍会保留 `xhigh`。
+  ✓ 定位 P003 数据流位置
+  ✓ 补齐 xhigh 展示标签
+  → 补齐数据库兼容归一化
+  • 检查范围内变更
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+exec
+powershell.exe -Command "Select-String -Path 'src\\*.js','src\\renderer\\**\\*.tsx','src\\renderer\\**\\*.ts' -Pattern 'normalizeCodexReasoningEffort|codexReasoningEffort|codex_reasoning_effort' | Select-Object Path,LineNumber,Line" in D:\project\GitHub\autoplan
+ succeeded in 492ms:
+
+Path                                                            LineNumber Line                                        
+----                                                            ---------- ----                                        
+D:\project\GitHub\autoplan\src\agentCli.js                               7 const DEFAULT_CODEX_REASONING_EFFORT = 'm...
+D:\project\GitHub\autoplan\src\agentCli.js                               8 const CODEX_REASONING_EFFORTS = new Set([...
+D:\project\GitHub\autoplan\src\agentCli.js                              27 function normalizeCodexReasoningEffort(va...
+D:\project\GitHub\autoplan\src\agentCli.js                              29   return CODEX_REASONING_EFFORTS.has(effo...
+D:\project\GitHub\autoplan\src\agentCli.js                              33   return ['-c', `model_reasoning_effort="...
+D:\project\GitHub\autoplan\src\agentCli.js                             358   normalizeCodexReasoningEffort,            
+D:\project\GitHub\autoplan\src\database.js                              49         codex_reasoning_effort TEXT,        
+D:\project\GitHub\autoplan\src\database.js                              63         codex_reasoning_effort TEXT,        
+D:\project\GitHub\autoplan\src\database.js                              79         codex_reasoning_effort TEXT,        
+D:\project\GitHub\autoplan\src\database.js                             124         codex_reasoning_effort TEXT,        
+D:\project\GitHub\autoplan\src\database.js                             179     this.ensureColumn('requirements', 'co...
+D:\project\GitHub\autoplan\src\database.js                             184     this.ensureColumn('feedback', 'codex_...
+D:\project\GitHub\autoplan\src\database.js                             190     this.ensureColumn('plans', 'codex_rea...
+D:\project\GitHub\autoplan\src\database.js                             203     this.ensureColumn('project_states', '...
+D:\project\GitHub\autoplan\src\intakeService.js                         36          project_id, title, body, status,...
+D:\project\GitHub\autoplan\src\intakeService.js                         45         agentCliConfig.codexReasoningEffort,
+D:\project\GitHub\autoplan\src\intakeService.js                         64          project_id, requirement_id, titl...
+D:\project\GitHub\autoplan\src\intakeService.js                         74         agentCliConfig.codexReasoningEffort,
+D:\project\GitHub\autoplan\src\loopService.js                         1496     const codexReasoningEffort = agentCli...
+D:\project\GitHub\autoplan\src\loopService.js                         1512       ...(isCodexProvider ? { codexReason...
+D:\project\GitHub\autoplan\src\loopService.js                         1560         ...(isCodexProvider ? { codexReas...
+D:\project\GitHub\autoplan\src\loopService.js                         1633         const resume = await runAttempt(c...
+D:\project\GitHub\autoplan\src\loopService.js                         1668       const fresh = await runAttempt(code...
+D:\project\GitHub\autoplan\src\loopService.js                         1949     codex_reasoning_effort: planAgentCliC...
+D:\project\GitHub\autoplan\src\main.js                                 170      SET title = ?, body = ?, status = ?,...
+D:\project\GitHub\autoplan\src\main.js                                 178       agentCliConfig.codexReasoningEffort,  
+D:\project\GitHub\autoplan\src\main.js                                 210      SET requirement_id = ?, title = ?, b...
+D:\project\GitHub\autoplan\src\main.js                                 219       agentCliConfig.codexReasoningEffort,  
+D:\project\GitHub\autoplan\src\renderer\components\Composer.tsx         14 import type { AgentCliOption, AgentCliPro...
+D:\project\GitHub\autoplan\src\renderer\components\Composer.tsx         22   reasoningByType: Record<IntakeType, Cod...
+D:\project\GitHub\autoplan\src\renderer\components\Composer.tsx         24   onReasoningChange: (type: IntakeType, e...
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx           45 export function codexReasoningEffortLabel...
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx           57   const effort = readCodexReasoningEffort...
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx           58   return `${providerLabel} · 思考深度 ${codex...
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx           73 export function readCodexReasoningEffort(...
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx           76   return normalizeCodexReasoningEffort(re...
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx           77     'codex_reasoning_effort',               
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx           78     'codexReasoningEffort',                 
+D:\project\GitHub\autoplan\src\renderer\components\shared.tsx          104 function normalizeCodexReasoningEffort(ef...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx         15   CodexReasoningEffort,                     
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx         41   codexReasoningEffortLabel,                
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx         43   readCodexReasoningEffort,                 
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx         65 const defaultCodexReasoningEffort: CodexR...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx         72 const defaultComposerCodexReasoning: Reco...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx         73   requirement: defaultCodexReasoningEffort, 
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx         74   feedback: defaultCodexReasoningEffort,    
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx         94   codexReasoningEffort: CodexReasoningEff...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        205 function normalizeCodexReasoningEffort(va...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        208   return defaultCodexReasoningEffort;       
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        218     codexReasoningEffort: normalizeCodexR...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        232     payload.codexReasoningEffort = form.c...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        243     && left.codexReasoningEffort === righ...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        259     useState<Record<IntakeType, CodexReas...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        266     codexReasoningEffort: defaultCodexRea...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        324   }, [projectId, loopFormDirty, state?.pr...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        332     const defaultReasoning = normalizeCod...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        341   }, [projectId, state?.agent_cli_provide...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        352       onReasoningChange: (type: IntakeTyp...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        353         setComposerCodexReasoning((curren...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        426             : { codexReasoningEffort: com...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx        451             : { codexReasoningEffort: com...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx       1112   return `${providerLabel} · 思考${codexRea...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx       1183               value={loopForm.codexReason...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx       1187                   codexReasoningEffort: n...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx       1278         codexReasoningEffort: operation.c...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx       1284     ? `思考${codexReasoningEffortLabel(read...
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx       1300   const stateReasoningLabel = codexReason...
+
+
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+codex
+搜索还显示服务层会透传该字段；我只读确认没有额外降级点。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'src\\intakeService.js' -Encoding UTF8 | Select-Object -First 95; ''; Get-Content -LiteralPath 'src\\main.js' -Encoding UTF8 | Select-Object -Skip 145 -First 90; ''; Get-Content -LiteralPath 'src\\loopService.js' -Encoding UTF8 | Select-Object -Skip 1480 -First 90; ''; Get-Content -LiteralPath 'src\\loopService.js' -Encoding UTF8 | Select-Object -Skip 1935 -First 30" in D:\project\GitHub\autoplan
+ succeeded in 472ms:
+const { saveAttachments } = require('./attachments');
+const { nowIso } = require('./database');
+const { nextIntakeAgentCliConfig } = require('./loopService');
+
+class IntakeService {
+  constructor(options = {}) {
+    this.db = options.db;
+    this.loop = options.loop;
+    this.attachmentsRoot = options.attachmentsRoot;
+  }
+
+  createProject(input = {}) {
+    this.ensureReady();
+    const now = nowIso();
+    const name = String(input.name || '').trim() || titleFromBody(input.workspacePath, '未命名项目');
+    const id = this.db.insert(
+      `INSERT INTO projects (name, workspace_path, description, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+      [name, input.workspacePath || '', input.description || '', now, now],
+    );
+    this.loop.ensureProjectState(id);
+    if (this.loop.hasRuntimeConfigInput(input)) {
+      this.loop.configure(id, input);
+    }
+    this.startIfRequested(id, input);
+    return this.loop.snapshot(id);
+  }
+
+  createRequirement(input = {}) {
+    this.ensureReady();
+    const projectId = this.requiredProjectId(input);
+    const now = nowIso();
+    const agentCliConfig = nextIntakeAgentCliConfig({}, input);
+    const id = this.db.insert(
+      `INSERT INTO requirements (
+         project_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId,
+        titleFromInput(input.title, input.body, '未命名需求'),
+        input.body || '',
+        input.status || 'open',
+        agentCliConfig.provider,
+        agentCliConfig.command,
+        agentCliConfig.codexReasoningEffort,
+        now,
+        now,
+      ],
+    );
+    saveAttachments(this.db, this.resolveAttachmentsRoot(), 'requirement', id, input.attachments, projectId);
+    this.loop.addEvent(projectId, 'requirement.created', `需求 #${id} 已创建，等待循环扫描生成计划`);
+    this.startIfRequested(projectId, input);
+    return this.loop.snapshot(projectId);
+  }
+
+  createFeedback(input = {}) {
+    this.ensureReady();
+    const projectId = this.requiredProjectId(input);
+    const requirementId = this.validRequirementId(projectId, input.requirementId);
+    const now = nowIso();
+    const agentCliConfig = nextIntakeAgentCliConfig({}, input);
+    const id = this.db.insert(
+      `INSERT INTO feedback (
+         project_id, requirement_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        projectId,
+        requirementId,
+        titleFromInput(input.title, input.body, '未命名反馈'),
+        input.body || '',
+        input.status || 'open',
+        agentCliConfig.provider,
+        agentCliConfig.command,
+        agentCliConfig.codexReasoningEffort,
+        now,
+        now,
+      ],
+    );
+    saveAttachments(this.db, this.resolveAttachmentsRoot(), 'feedback', id, input.attachments, projectId);
+    this.loop.addEvent(projectId, 'feedback.created', `反馈 #${id} 已创建，等待循环扫描生成计划`);
+    this.startIfRequested(projectId, input);
+    return this.loop.snapshot(projectId);
+  }
+
+  ensureReady() {
+    if (!this.db || !this.loop) throw new Error('写入服务尚未初始化');
+  }
+
+  requiredProjectId(input = {}) {
+    const projectId = Number(input.projectId || input.id || 0);
+    if (!projectId || !this.loop.project(projectId)) throw new Error('项目不存在');
+    return projectId;
+  }
+
+  validRequirementId(projectId, value) {
+
+  const projectId = requiredProjectId(input);
+  await loop.runTaskBatches(projectId, requiredRecordId(input, 'planId'), input.batches || []);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('tasks:stop', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.stopTask(projectId, requiredRecordId(input, 'taskId'));
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('requirements:create', (_event, input = {}) => {
+  return intakeService().createRequirement(input);
+});
+
+ipcMain.handle('requirements:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const current = db.get('SELECT * FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (!current) throw new Error('需求不存在');
+  const body = input.body ?? current.body ?? '';
+  const agentCliConfig = nextIntakeAgentCliConfig(current, input);
+  db.run(
+    `UPDATE requirements
+     SET title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+     WHERE id = ? AND project_id = ?`,
+    [
+      input.title ?? titleFromBody(body, '未命名需求'),
+      body,
+      input.status ?? current.status ?? 'open',
+      agentCliConfig.provider,
+      agentCliConfig.command,
+      agentCliConfig.codexReasoningEffort,
+      nowIso(),
+      id,
+      projectId,
+    ],
+  );
+  saveAttachments(db, attachmentsRoot(), 'requirement', id, input.attachments, projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('requirements:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const rec = db.get('SELECT linked_plan_id FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+  deleteIntakeRecord('requirements', 'requirement', projectId, id);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('feedback:create', (_event, input = {}) => {
+  return intakeService().createFeedback(input);
+});
+
+ipcMain.handle('feedback:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const current = db.get('SELECT * FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (!current) throw new Error('反馈不存在');
+  const body = input.body ?? current.body ?? '';
+  const agentCliConfig = nextIntakeAgentCliConfig(current, input);
+  db.run(
+    `UPDATE feedback
+     SET requirement_id = ?, title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+     WHERE id = ? AND project_id = ?`,
+    [
+      input.requirementId === undefined ? current.requirement_id || null : input.requirementId || null,
+      input.title ?? titleFromBody(body, '未命名反馈'),
+      body,
+      input.status ?? current.status ?? 'open',
+      agentCliConfig.provider,
+      agentCliConfig.command,
+      agentCliConfig.codexReasoningEffort,
+      nowIso(),
+      id,
+      projectId,
+    ],
+  );
+  saveAttachments(db, attachmentsRoot(), 'feedback', id, input.attachments, projectId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('feedback:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const id = requiredRecordId(input);
+  const rec = db.get('SELECT linked_plan_id FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
+  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+  deleteIntakeRecord('feedback', 'feedback', projectId, id);
+  return loop.snapshot(projectId);
+
+          taskId: operation.taskId || null,
+        });
+      }
+    }
+    return result;
+  }
+
+  async runCodex(workspace, prompt, label, operation = {}) {
+    const projectIdForEmit = operation.projectId;
+    const runtime = this.runtime(projectIdForEmit);
+    if (!runtime) throw new Error('projectId is required for codex operations');
+    const projectStatus = projectIdForEmit ? this.status(projectIdForEmit) : null;
+    const agentCliConfig = effectiveAgentCliConfig(projectStatus, operation);
+    const agentCliProvider = agentCliConfig.provider;
+    const agentCliCommand = agentCliConfig.command;
+    const codexReasoningEffort = agentCliConfig.codexReasoningEffort;
+    const isCodexProvider = agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
+    const logDir = path.join(workspace, 'docs', 'progress', 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const prefix = `${timestampForPath()}_${safePart(label)}`;
+    const logFile = path.join(logDir, `${prefix}.log`);
+    const lastFile = path.join(logDir, `${prefix}.last.txt`);
+    const hasSessionOption = isCodexProvider && hasCodexSessionOption(operation);
+    const requestedSessionId = isCodexProvider ? operationCodexSessionId(operation) : '';
+    const activeOperation = {
+      ...operation,
+      label,
+      logFile,
+      lastFile,
+      agentCliProvider,
+      agentCliCommand,
+      ...(isCodexProvider ? { codexReasoningEffort } : {}),
+      ...(isCodexProvider
+        ? {
+            codexSessionId: requestedSessionId || null,
+            codexSessionRequestedId: requestedSessionId || null,
+            codexSessionMode: requestedSessionId ? 'resume' : 'new',
+            codexSessionState: requestedSessionId ? 'resume' : 'new',
+          }
+        : {}),
+      logBuffer: '',
+      activity: isCodexProvider ? new CodexActivityPrinter(200) : null,
+      startedAt: nowIso(),
+    };
+    if (!isCodexProvider) clearCodexSessionFields(activeOperation);
+    let operationKey = null;
+    let capturedSessionId = '';
+    let sessionScanBuffer = '';
+    const stream = fs.createWriteStream(logFile, { encoding: 'utf8' });
+    const appendInternalLog = (message) => {
+      const text = `\n[AutoPlan] ${message}\n`;
+      stream.write(text);
+      activeOperation.logBuffer = `${activeOperation.logBuffer || ''}${text}`;
+      if (activeOperation.logBuffer.length > 24000) {
+        activeOperation.logBuffer = activeOperation.logBuffer.slice(-16000);
+      }
+    };
+    const resultFor = (attempt, mode) => {
+      if (activeOperation.activity && typeof activeOperation.activity.flush === 'function') {
+        activeOperation.activity.flush();
+      }
+      const exitCode = typeof attempt?.exitCode === 'number' ? attempt.exitCode : -1;
+      const sessionId = capturedSessionId || (mode === 'resume' ? requestedSessionId : '');
+      const codexSessionFields = isCodexProvider
+        ? codexSessionContextFields({
+            codexSessionId: sessionId,
+            codexSessionRequestedId: requestedSessionId,
+            codexSessionMode: mode,
+            codexSessionFallback: mode === 'new' && Boolean(requestedSessionId),
+          })
+        : {};
+      return {
+        exitCode,
+        logFile,
+        lastFile,
+        provider: activeOperation.agentCliProvider,
+        agentCliProvider: activeOperation.agentCliProvider,
+        command: activeOperation.agentCliCommand,
+        agentCliCommand: activeOperation.agentCliCommand,
+        ...(isCodexProvider ? { codexReasoningEffort: activeOperation.codexReasoningEffort } : {}),
+        activity: activeOperation.activity ? activeOperation.activity.getLines() : [],
+        output: attempt?.output || '',
+        errorMessage: attempt?.errorMessage || '',
+        timedOut: Boolean(attempt?.timedOut),
+        timeoutMs: attempt?.timeoutMs,
+        ...(isCodexProvider
+          ? {
+              sessionId: sessionId || null,
+              codexSessionId: sessionId || null,
+              codexSessionMode: mode,
+
+}
+
+function planSnapshotRow(workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
+  if (!plan) return plan;
+  const planAgentCliConfig = agentCliConfig || effectiveAgentCliConfig({}, plan);
+  const status = String(plan.status || 'pending');
+  return {
+    ...plan,
+    status,
+    sort_order: normalizePlanSortOrder(plan.sort_order),
+    is_draft: status === 'draft',
+    agent_cli_provider: planAgentCliConfig.provider,
+    agent_cli_command: planAgentCliConfig.command,
+    codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
+    title: readPlanMarkdownTitle(workspace, plan.file_path),
+    concurrency_suggestion: concurrencySuggestion || emptyConcurrencySuggestion(),
+  };
+}
+
+function normalizePlanSortOrder(value) {
+  const order = Number(value);
+  return Number.isFinite(order) ? order : 0;
+}
+
+function groupPlanTasksByPlanId(tasks) {
+  const grouped = new Map();
+  for (const task of tasks) {
+    const planId = Number(task?.plan_id);
+    if (!Number.isFinite(planId)) continue;
+    const planTasks = grouped.get(planId) || [];
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+exec
+powershell.exe -Command "Select-String -Path 'src\\loopService.js' -Pattern 'function effectiveAgentCliConfig|function normalize.*Agent|function nextIntakeAgentCliConfig|DEFAULT_CODEX_REASONING|CODEX_REASONING' -Context 3,8" in D:\project\GitHub\autoplan
+ succeeded in 470ms:
+
+  src\loopService.js:1946:    is_draft: status === 'draft',
+  src\loopService.js:1947:    agent_cli_provider: planAgentCliConfig.provider,
+  src\loopService.js:1948:    agent_cli_command: planAgentCliConfig.command,
+> src\loopService.js:1949:    codex_reasoning_effort: planAgentCliConfig.codexReasoningEffort,
+  src\loopService.js:1950:    title: readPlanMarkdownTitle(workspace, plan.file_path),
+  src\loopService.js:1951:    concurrency_suggestion: concurrencySuggestion || emptyConcurrencySuggestion(),
+  src\loopService.js:1952:  };
+  src\loopService.js:1953:}
+  src\loopService.js:1954:
+  src\loopService.js:1955:function normalizePlanSortOrder(value) {
+  src\loopService.js:1956:  const order = Number(value);
+  src\loopService.js:1957:  return Number.isFinite(order) ? order : 0;
+
+
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+codex
+服务层只是透传字段；我会找归一化定义位置确认 P003 scope 内无需再改数据库。
+exec
+powershell.exe -Command "Select-String -Path 'src\\*.js' -Pattern 'nextIntakeAgentCliConfig|effectiveAgentCliConfig|agentCliConfig|codexReasoningEffort' | Select-Object Path,LineNumber,Line" in D:\project\GitHub\autoplan
+ succeeded in 489ms:
+
+Path                                            LineNumber Line                                                        
+----                                            ---------- ----                                                        
+D:\project\GitHub\autoplan\src\agentCli.js              27 function normalizeCodexReasoningEffort(value) {             
+D:\project\GitHub\autoplan\src\agentCli.js              33   return ['-c', `model_reasoning_effort="${normalizeCodex...
+D:\project\GitHub\autoplan\src\agentCli.js             358   normalizeCodexReasoningEffort,                            
+D:\project\GitHub\autoplan\src\intakeService.js          3 const { nextIntakeAgentCliConfig } = require('./loopServi...
+D:\project\GitHub\autoplan\src\intakeService.js         33     const agentCliConfig = nextIntakeAgentCliConfig({}, i...
+D:\project\GitHub\autoplan\src\intakeService.js         43         agentCliConfig.provider,                            
+D:\project\GitHub\autoplan\src\intakeService.js         44         agentCliConfig.command,                             
+D:\project\GitHub\autoplan\src\intakeService.js         45         agentCliConfig.codexReasoningEffort,                
+D:\project\GitHub\autoplan\src\intakeService.js         61     const agentCliConfig = nextIntakeAgentCliConfig({}, i...
+D:\project\GitHub\autoplan\src\intakeService.js         72         agentCliConfig.provider,                            
+D:\project\GitHub\autoplan\src\intakeService.js         73         agentCliConfig.command,                             
+D:\project\GitHub\autoplan\src\intakeService.js         74         agentCliConfig.codexReasoningEffort,                
+D:\project\GitHub\autoplan\src\loopService.js           23   effectiveAgentCliConfig,                                  
+D:\project\GitHub\autoplan\src\loopService.js           30   nextAgentCliConfig,                                       
+D:\project\GitHub\autoplan\src\loopService.js           31   nextIntakeAgentCliConfig,                                 
+D:\project\GitHub\autoplan\src\loopService.js           32   normalizeAgentCliConfig,                                  
+D:\project\GitHub\autoplan\src\loopService.js           34   normalizeIntakeAgentCliConfig,                            
+D:\project\GitHub\autoplan\src\loopService.js           41 } = require('./loop/agentCliConfig');                       
+D:\project\GitHub\autoplan\src\loopService.js          120     const agentCliConfig = normalizeAgentCliConfig(state);  
+D:\project\GitHub\autoplan\src\loopService.js          121     return runtimeProjectSummary(project, state, runtime,...
+D:\project\GitHub\autoplan\src\loopService.js          159     const agentCliConfig = normalizeAgentCliConfig(state);  
+D:\project\GitHub\autoplan\src\loopService.js          160     return normalizeRuntimeStatus(state, this.existingRun...
+D:\project\GitHub\autoplan\src\loopService.js          182     const agentCliConfig = nextAgentCliConfig(current, co...
+D:\project\GitHub\autoplan\src\loopService.js          189       ...agentCliStateUpdates(this.projectStateColumns(),...
+D:\project\GitHub\autoplan\src\loopService.js          466       planAgentCliConfig: (plan) => this.planAgentCliConf...
+D:\project\GitHub\autoplan\src\loopService.js          739   insertPlan({ projectId, issueHash, filePath, hash, stat...
+D:\project\GitHub\autoplan\src\loopService.js          758     for (const [column, value] of planAgentCliColumnValue...
+D:\project\GitHub\autoplan\src\loopService.js          768   planAgentCliConfig(plan) {                                
+D:\project\GitHub\autoplan\src\loopService.js          773     if (hasAgentCliOverride(plan)) return effectiveAgentC...
+D:\project\GitHub\autoplan\src\loopService.js          774     if (eventSnapshot) return effectiveAgentCliConfig(pro...
+D:\project\GitHub\autoplan\src\loopService.js          775     if (sourceSnapshot) return effectiveAgentCliConfig(pr...
+D:\project\GitHub\autoplan\src\loopService.js          776     return effectiveAgentCliConfig(projectDefaults);        
+D:\project\GitHub\autoplan\src\loopService.js          779   planSnapshotAgentCliConfig(plan) {                        
+D:\project\GitHub\autoplan\src\loopService.js          780     return this.planAgentCliConfig(plan);                   
+D:\project\GitHub\autoplan\src\loopService.js          812     const planAgentCliConfig = effectiveAgentCliConfig(th...
+D:\project\GitHub\autoplan\src\loopService.js          848       ...agentCliOperationFields(planAgentCliConfig),       
+D:\project\GitHub\autoplan\src\loopService.js          851     const planAgentCliSnapshot = effectiveAgentCliConfig(...
+D:\project\GitHub\autoplan\src\loopService.js          864       agentCliConfig: planAgentCliSnapshot,                 
+D:\project\GitHub\autoplan\src\loopService.js          883     const planAgentCliConfig = effectiveAgentCliConfig(th...
+D:\project\GitHub\autoplan\src\loopService.js          918       ...agentCliOperationFields(planAgentCliConfig),       
+D:\project\GitHub\autoplan\src\loopService.js          921     const planAgentCliSnapshot = effectiveAgentCliConfig(...
+D:\project\GitHub\autoplan\src\loopService.js          935       agentCliConfig: planAgentCliSnapshot,                 
+D:\project\GitHub\autoplan\src\loopService.js         1068     const agentContext = agentCliContextFields(this.planA...
+D:\project\GitHub\autoplan\src\loopService.js         1108     const taskAgentCliContext = agentCliContextFields(thi...
+D:\project\GitHub\autoplan\src\loopService.js         1237       ...agentCliContextFields(this.planAgentCliConfig(pl...
+D:\project\GitHub\autoplan\src\loopService.js         1291     const planAgentCliContext = agentCliContextFields(thi...
+D:\project\GitHub\autoplan\src\loopService.js         1493     const agentCliConfig = effectiveAgentCliConfig(projec...
+D:\project\GitHub\autoplan\src\loopService.js         1494     const agentCliProvider = agentCliConfig.provider;       
+D:\project\GitHub\autoplan\src\loopService.js         1495     const agentCliCommand = agentCliConfig.command;         
+D:\project\GitHub\autoplan\src\loopService.js         1496     const codexReasoningEffort = agentCliConfig.codexReas...
+D:\project\GitHub\autoplan\src\loopService.js         1512       ...(isCodexProvider ? { codexReasoningEffort } : {}), 
+D:\project\GitHub\autoplan\src\loopService.js         1560         ...(isCodexProvider ? { codexReasoningEffort: act...
+D:\project\GitHub\autoplan\src\loopService.js         1633         const resume = await runAttempt(codexResumeSessio...
+D:\project\GitHub\autoplan\src\loopService.js         1668       const fresh = await runAttempt(codexNewSessionArgs(...
+D:\project\GitHub\autoplan\src\loopService.js         1804       this.planSnapshotAgentCliConfig(plan),                
+D:\project\GitHub\autoplan\src\loopService.js         1938 function planSnapshotRow(workspace, plan, concurrencySugg...
+D:\project\GitHub\autoplan\src\loopService.js         1940   const planAgentCliConfig = agentCliConfig || effectiveA...
+D:\project\GitHub\autoplan\src\loopService.js         1947     agent_cli_provider: planAgentCliConfig.provider,        
+D:\project\GitHub\autoplan\src\loopService.js         1948     agent_cli_command: planAgentCliConfig.command,          
+D:\project\GitHub\autoplan\src\loopService.js         1949     codex_reasoning_effort: planAgentCliConfig.codexReaso...
+D:\project\GitHub\autoplan\src\loopService.js         2496   normalizeIntakeAgentCliConfig,                            
+D:\project\GitHub\autoplan\src\loopService.js         2497   nextIntakeAgentCliConfig,                                 
+D:\project\GitHub\autoplan\src\main.js                   9 const { LoopService, nextIntakeAgentCliConfig } = require...
+D:\project\GitHub\autoplan\src\main.js                 167   const agentCliConfig = nextIntakeAgentCliConfig(current...
+D:\project\GitHub\autoplan\src\main.js                 176       agentCliConfig.provider,                              
+D:\project\GitHub\autoplan\src\main.js                 177       agentCliConfig.command,                               
+D:\project\GitHub\autoplan\src\main.js                 178       agentCliConfig.codexReasoningEffort,                  
+D:\project\GitHub\autoplan\src\main.js                 207   const agentCliConfig = nextIntakeAgentCliConfig(current...
+D:\project\GitHub\autoplan\src\main.js                 217       agentCliConfig.provider,                              
+D:\project\GitHub\autoplan\src\main.js                 218       agentCliConfig.command,                               
+D:\project\GitHub\autoplan\src\main.js                 219       agentCliConfig.codexReasoningEffort,                  
+
+
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+**Evaluating configuration needs**
+
+I’m considering whether I need to inspect the `agentCliConfig.js` file in the source. It seems P003’s scope doesn’t allow for that, but maybe P001 should. I’m thinking we shouldn’t make modifications if it’s unnecessary. However, if the normalizer is excluding xhigh, then the data flow in P003 might not complete, and since P001’s scope didn’t include this, it raises some questions. I’ll have to read through more details to clarify.
+codex
+归一化实现实际在 loop 配置模块；我会只读确认它是否已由前序任务覆盖。
+exec
+powershell.exe -Command "Get-Content -LiteralPath 'src\\loop\\agentCliConfig.js' -Encoding UTF8 | Select-Object -First 220" in D:\project\GitHub\autoplan
+ succeeded in 454ms:
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  normalizeAgentCliCommand,
+  normalizeAgentCliProvider,
+} = require('../agentCli');
+
+const AGENT_CLI_PROVIDER_COLUMNS = Object.freeze(['agent_cli_provider', 'cli_provider', 'cli_backend']);
+const AGENT_CLI_COMMAND_COLUMNS = Object.freeze(['agent_cli_command', 'cli_command', 'cli_path']);
+const CODEX_REASONING_EFFORT_COLUMNS = Object.freeze([
+  'codex_reasoning_effort',
+  'codexReasoningEffort',
+  'codex_thinking_depth',
+  'codexThinkingDepth',
+  'reasoning_effort',
+  'reasoningEffort',
+  'thinking_depth',
+  'thinkingDepth',
+]);
+const CODEX_REASONING_EFFORTS = new Set(['low', 'medium', 'high']);
+const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
+const AGENT_CLI_PROVIDER_INPUT_KEYS = Object.freeze([
+  'agentCliProvider',
+  'agent_cli_provider',
+  'cliProvider',
+  'cli_provider',
+  'cliBackend',
+  'cli_backend',
+]);
+const AGENT_CLI_COMMAND_INPUT_KEYS = Object.freeze([
+  'agentCliCommand',
+  'agent_cli_command',
+  'cliCommand',
+  'cli_command',
+  'cliPath',
+  'cli_path',
+]);
+const AGENT_CLI_PROVIDER_CONTEXT_KEYS = Object.freeze([...AGENT_CLI_PROVIDER_INPUT_KEYS, 'provider']);
+const AGENT_CLI_COMMAND_CONTEXT_KEYS = Object.freeze([...AGENT_CLI_COMMAND_INPUT_KEYS, 'command']);
+const LOOP_CONFIG_INPUT_KEYS = Object.freeze([
+  'workspacePath',
+  'intervalSeconds',
+  'validationCommand',
+  'validation_command',
+  ...AGENT_CLI_PROVIDER_INPUT_KEYS,
+  ...AGENT_CLI_COMMAND_INPUT_KEYS,
+  ...CODEX_REASONING_EFFORT_COLUMNS,
+]);
+const VALIDATION_COMMAND_INPUT_KEYS = Object.freeze(['validationCommand', 'validation_command']);
+const CODEX_SESSION_UUID_RE_SOURCE = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
+const CODEX_SESSION_ID_RES = Object.freeze([
+  new RegExp(`\\bsession\\s+id:\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\b`, 'i'),
+  new RegExp(`"(?:session_id|sessionId)"\\s*:\\s*"(${CODEX_SESSION_UUID_RE_SOURCE})"`, 'i'),
+  new RegExp(`\\b(?:session_id|sessionId)\\s*[:=]\\s*(${CODEX_SESSION_UUID_RE_SOURCE})\\b`, 'i'),
+]);
+const CODEX_RESUME_FAILURE_RE = /(?:thread\/resume|resume failed|no rollout found|session\s+(?:not\s+found|missing)|conversation\s+not\s+found|unknown\s+session|invalid\s+session)/i;
+
+function compactDefinedFields(fields) {
+  const result = {};
+  for (const [key, value] of Object.entries(fields || {})) {
+    if (value !== undefined && value !== null && value !== '') result[key] = value;
+  }
+  return result;
+}
+
+function hasAnyOwnProperty(source, keys) {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(source || {}, key));
+}
+
+function readFirstOwnValue(source, keys) {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source || {}, key)) return source[key];
+  }
+  return undefined;
+}
+
+function normalizeAgentCliConfig(source = {}) {
+  const provider = normalizeAgentCliProvider(readFirstOwnValue(source, AGENT_CLI_PROVIDER_COLUMNS));
+  return {
+    provider,
+    command: normalizeAgentCliCommand(readFirstOwnValue(source, AGENT_CLI_COMMAND_COLUMNS)),
+    codexReasoningEffort: provider === DEFAULT_AGENT_CLI_PROVIDER
+      ? normalizeCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS))
+      : null,
+  };
+}
+
+function normalizeCodexReasoningEffort(value) {
+  const effort = String(value || '').trim().toLowerCase();
+  return CODEX_REASONING_EFFORTS.has(effort) ? effort : DEFAULT_CODEX_REASONING_EFFORT;
+}
+
+function normalizeOptionalCodexReasoningEffort(value) {
+  if (value === undefined || value === null || value === '') return null;
+  return normalizeCodexReasoningEffort(value);
+}
+
+function normalizeOptionalAgentCliProvider(value) {
+  const provider = String(value ?? '').trim();
+  return provider ? normalizeAgentCliProvider(provider) : null;
+}
+
+function normalizeIntakeAgentCliConfig(source = {}) {
+  const provider = normalizeOptionalAgentCliProvider(
+    readFirstOwnValue(source, [...AGENT_CLI_PROVIDER_INPUT_KEYS, ...AGENT_CLI_PROVIDER_COLUMNS]),
+  );
+  const codexReasoningEffort = provider === 'claude'
+    ? null
+    : normalizeOptionalCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS));
+  return {
+    provider,
+    command: normalizeAgentCliCommand(readFirstOwnValue(source, [...AGENT_CLI_COMMAND_INPUT_KEYS, ...AGENT_CLI_COMMAND_COLUMNS])),
+    codexReasoningEffort,
+  };
+}
+
+function effectiveAgentCliConfig(defaults = {}, override = {}) {
+  const defaultConfig = normalizeAgentCliConfig(defaults || {});
+  const overrideConfig = normalizeIntakeAgentCliConfig(override || {});
+  const provider = overrideConfig.provider || defaultConfig.provider;
+  const command = overrideConfig.command || defaultConfig.command;
+  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+    ? overrideConfig.codexReasoningEffort || defaultConfig.codexReasoningEffort || DEFAULT_CODEX_REASONING_EFFORT
+    : null;
+  return { provider, command, codexReasoningEffort };
+}
+
+function hasExplicitAgentCliProvider(source = {}) {
+  return Boolean(normalizeOptionalAgentCliProvider(readFirstOwnValue(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS)));
+}
+
+function hasAgentCliOverride(source = {}) {
+  return Boolean(
+    hasExplicitAgentCliProvider(source) ||
+      normalizeAgentCliCommand(readFirstOwnValue(source, AGENT_CLI_COMMAND_CONTEXT_KEYS)) ||
+      normalizeOptionalCodexReasoningEffort(readFirstOwnValue(source, CODEX_REASONING_EFFORT_COLUMNS)),
+  );
+}
+
+function agentCliOperationFields(config = {}) {
+  return compactDefinedFields({
+    agentCliProvider: config.provider,
+    agentCliCommand: config.command,
+    codexReasoningEffort: config.provider === DEFAULT_AGENT_CLI_PROVIDER ? config.codexReasoningEffort : undefined,
+  });
+}
+
+function nextIntakeAgentCliConfig(current = {}, input = {}) {
+  const inputHasProvider = hasAnyOwnProperty(input, AGENT_CLI_PROVIDER_INPUT_KEYS);
+  const provider = inputHasProvider
+    ? normalizeAgentCliProvider(readFirstOwnValue(input, AGENT_CLI_PROVIDER_INPUT_KEYS))
+    : normalizeOptionalAgentCliProvider(readFirstOwnValue(current, AGENT_CLI_PROVIDER_COLUMNS));
+  const command = hasAnyOwnProperty(input, AGENT_CLI_COMMAND_INPUT_KEYS)
+    ? normalizeAgentCliCommand(readFirstOwnValue(input, AGENT_CLI_COMMAND_INPUT_KEYS))
+    : normalizeAgentCliCommand(readFirstOwnValue(current, AGENT_CLI_COMMAND_COLUMNS));
+  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER || (!provider && hasAnyOwnProperty(input, CODEX_REASONING_EFFORT_COLUMNS))
+    ? normalizeCodexReasoningEffort(
+        hasAnyOwnProperty(input, CODEX_REASONING_EFFORT_COLUMNS)
+          ? readFirstOwnValue(input, CODEX_REASONING_EFFORT_COLUMNS)
+          : readFirstOwnValue(current, CODEX_REASONING_EFFORT_COLUMNS),
+      )
+    : null;
+  return { provider, command, codexReasoningEffort };
+}
+
+function intakeSnapshotRow(row = {}) {
+  const config = normalizeIntakeAgentCliConfig(row);
+  return {
+    ...row,
+    agent_cli_provider: config.provider,
+    agent_cli_command: config.command,
+    codex_reasoning_effort: config.codexReasoningEffort,
+  };
+}
+
+function nextAgentCliConfig(current = {}, input = {}) {
+  const currentConfig = normalizeAgentCliConfig(current);
+  const provider = hasAnyOwnProperty(input, AGENT_CLI_PROVIDER_INPUT_KEYS)
+    ? normalizeAgentCliProvider(readFirstOwnValue(input, AGENT_CLI_PROVIDER_INPUT_KEYS))
+    : currentConfig.provider;
+  const command = hasAnyOwnProperty(input, AGENT_CLI_COMMAND_INPUT_KEYS)
+    ? normalizeAgentCliCommand(readFirstOwnValue(input, AGENT_CLI_COMMAND_INPUT_KEYS))
+    : currentConfig.command;
+  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+    ? normalizeCodexReasoningEffort(
+        hasAnyOwnProperty(input, CODEX_REASONING_EFFORT_COLUMNS)
+          ? readFirstOwnValue(input, CODEX_REASONING_EFFORT_COLUMNS)
+          : currentConfig.codexReasoningEffort,
+      )
+    : null;
+  return { provider, command, codexReasoningEffort };
+}
+
+function agentCliStateUpdates(columns, config) {
+  const updates = [];
+  for (const column of AGENT_CLI_PROVIDER_COLUMNS) {
+    if (columns.has(column)) updates.push([column, config.provider]);
+  }
+  for (const column of AGENT_CLI_COMMAND_COLUMNS) {
+    if (columns.has(column)) updates.push([column, config.command]);
+  }
+  for (const column of CODEX_REASONING_EFFORT_COLUMNS) {
+    if (columns.has(column)) updates.push([column, config.codexReasoningEffort]);
+  }
+  return updates;
+}
+
+function planAgentCliColumnValues(columns, config) {
+  const values = [];
+  const fields = agentCliOperationFields(config);
+  for (const column of AGENT_CLI_PROVIDER_COLUMNS) {
+    if (columns.has(column)) values.push([column, fields.agentCliProvider]);
+  }
+  for (const column of AGENT_CLI_COMMAND_COLUMNS) {
+    if (columns.has(column)) values.push([column, fields.agentCliCommand || '']);
+  }
+  for (const column of CODEX_REASONING_EFFORT_COLUMNS) {
+    if (columns.has(column)) values.push([column, fields.codexReasoningEffort || null]);
+  }
+  return values;
+}
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+**Evaluating configuration scope**
+
+I’m thinking I shouldn’t modify the loop or agentCliConfig due to scope issues. I discovered something off-scope with the normalizer, but should that be mentioned in the final? If it’s critical, it might warrant mentioning the environment or implementation block. The task requires completion, but if xhigh continues to degrade the data flow, it seems like P003 won’t be fully complete. I need to clarify the implications of any modifications here.
+**Reviewing task completion**
+
+I'm noticing that the task was only partially completed. I can update the plan's statuses to reflect pending, in-progress, or completed. I think I could set the final step as “检查范围内变更,” indicating that it's in progress before I mark it as complete. This seems like a good strategy to manage the overall workflow effectively!
+codex
+我发现额外降级点在 P003 scope 外；先完成范围内检查并如实说明。
+数据库字段本身为 TEXT，无需结构变更；实际额外白名单位于 scope 外的 loop 配置模块，按任务限制不修改。
+  ✓ 定位 P003 数据流位置
+  ✓ 补齐 xhigh 展示标签
+  ✓ 补齐数据库兼容归一化
+  → 检查范围内变更
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+exec
+powershell.exe -Command "git diff -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/shared.tsx src/database.js; ''; git status --short -- src/renderer/pages/WorkspacePage.tsx src/renderer/components/shared.tsx src/database.js src/loop/agentCliConfig.js" in D:\project\GitHub\autoplan
+ succeeded in 318ms:
+diff --git a/src/database.js b/src/database.js
+index 2f809c2..eae4b67 100644
+--- a/src/database.js
++++ b/src/database.js
+@@ -115,6 +115,7 @@ class AppDatabase {
+         file_path TEXT NOT NULL,
+         hash TEXT NOT NULL,
+         status TEXT NOT NULL DEFAULT 'pending',
++        sort_order INTEGER NOT NULL DEFAULT 0,
+         total_tasks INTEGER NOT NULL DEFAULT 0,
+         completed_tasks INTEGER NOT NULL DEFAULT 0,
+         validation_passed INTEGER NOT NULL DEFAULT 0,
+@@ -183,9 +184,14 @@ class AppDatabase {
+     this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+     this.ensureColumn('attachments', 'project_id', 'INTEGER');
+     this.ensureColumn('plans', 'project_id', 'INTEGER');
++    this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+     this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
+     this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
+     this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
++    this.db.run(`
++      CREATE INDEX IF NOT EXISTS idx_plans_project_sort
++      ON plans (project_id, sort_order, created_at, id)
++    `);
+     this.ensureColumn('plan_tasks', 'scope', "TEXT NOT NULL DEFAULT ''");
+     this.ensureColumn('plan_tasks', 'started_at', 'TEXT');
+     this.ensureColumn('plan_tasks', 'finished_at', 'TEXT');
+@@ -199,6 +205,7 @@ class AppDatabase {
+     const defaultProjectId = this.ensureDefaultProject();
+     this.migrateScanFilesTable(defaultProjectId);
+     this.assignLegacyRows(defaultProjectId);
++    this.backfillPlanSortOrders();
+     this.ensureProjectState(defaultProjectId);
+   }
+ 
+@@ -247,6 +254,34 @@ class AppDatabase {
+     }
+   }
+ 
++  backfillPlanSortOrders() {
++    const rows = this.all(
++      `SELECT id, project_id, sort_order
++       FROM plans
++       ORDER BY COALESCE(project_id, 0) ASC, created_at ASC, id ASC`,
++    );
++    const byProject = new Map();
++    for (const row of rows) {
++      const key = String(row.project_id ?? 0);
++      const plans = byProject.get(key) || [];
++      plans.push(row);
++      byProject.set(key, plans);
++    }
++
++    for (const plans of byProject.values()) {
++      let nextOrder = plans.reduce((max, plan) => {
++        const order = Number(plan.sort_order);
++        return Number.isFinite(order) && order > max ? order : max;
++      }, 0);
++      for (const plan of plans) {
++        const order = Number(plan.sort_order);
++        if (Number.isFinite(order) && order > 0) continue;
++        nextOrder += 1;
++        this.db.run('UPDATE plans SET sort_order = ? WHERE id = ?', [nextOrder, plan.id]);
++      }
++    }
++  }
++
+   migrateScanFilesTable(defaultProjectId) {
+     const table = this.get("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'scan_files'");
+     if (String(table?.sql || '').includes('PRIMARY KEY (project_id, scan_type, file_path)')) return;
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index fb3f0f2..a466281 100644
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@ export function codexReasoningEffortLabel(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+@@ -102,7 +103,7 @@ function normalizeAgentCliProvider(provider?: string | null): string {
+ 
+ function normalizeCodexReasoningEffort(effort?: string | null): string {
+   const value = String(effort || '').trim().toLowerCase();
+-  if (value === 'low' || value === 'high') return value;
++  if (value === 'low' || value === 'high' || value === 'xhigh') return value;
+   return 'medium';
+ }
+ 
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 49e01bf..6206510 100644
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -1,6 +1,13 @@
+ import { Dispatch, FormEvent, SetStateAction, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+-import { PENDING_ATTACHMENT_SOURCES, WORKSPACE_SEARCH_SOURCE_TYPES } from '../types';
++import {
++  DEFAULT_WORKSPACE_TAB,
++  PENDING_ATTACHMENT_SOURCES,
++  WORKSPACE_SEARCH_SOURCE_TYPES,
++  getPlanTaskAssociationSource,
++  readPlanTaskAssociationFilePath,
++  readPlanTaskAssociationPlanId,
++} from '../types';
+ import type {
+   AgentCliOption,
+   AgentCliProvider,
+@@ -15,6 +22,7 @@ import type {
+   ProjectState,
+   WorkspacePlanReadState,
+   WorkspaceSearchGroup,
++  WorkspaceSearchResult,
+   WorkspaceSearchSourceType,
+   WorkspaceSearchState,
+   WorkspaceTab,
+@@ -51,6 +59,7 @@ const codexReasoningOptions: AgentCliOption[] = [
+   { value: 'low', label: '低 · 快速' },
+   { value: 'medium', label: '中 · 默认' },
+   { value: 'high', label: '高 · 深入' },
++  { value: 'xhigh', label: '超高 · 最深入' },
+ ];
+ 
+ const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
+@@ -190,12 +199,12 @@ function isSamePendingAttachment(current: PendingAttachment, next: PendingAttach
+ }
+ 
+ function resolveWorkspaceTab(tab: string | null): WorkspaceTab {
+-  return tabs.some((item) => item.id === tab) ? (tab as WorkspaceTab) : 'overview';
++  return tabs.some((item) => item.id === tab) ? (tab as WorkspaceTab) : DEFAULT_WORKSPACE_TAB;
+ }
+ 
+ function normalizeCodexReasoningEffort(value?: string | null): CodexReasoningEffort {
+   const effort = String(value || '').trim().toLowerCase();
+-  if (effort === 'low' || effort === 'high') return effort;
++  if (effort === 'low' || effort === 'high' || effort === 'xhigh') return effort;
+   return defaultCodexReasoningEffort;
+ }
+ 
+@@ -637,26 +646,33 @@ export function WorkspacePage() {
+ 
+   const openTaskPlanReader = useCallback(
+     (task: PlanTask) => {
+-      const plan = snapshot?.plans.find(
+-        (item) => item.id === task.plan_id || (!!task.file_path && item.file_path === task.file_path),
+-      );
++      const plan = snapshot?.plans.find((item) => getPlanTaskAssociationSource(task, item) !== null);
+       if (plan) openPlanReader(plan);
+     },
+     [openPlanReader, snapshot?.plans],
+   );
+ 
+   const switchProject = (nextId: number) => {
+-    if (nextId && nextId !== projectId) navigate(`/projects/${nextId}${activeTab === 'overview' ? '' : `?tab=${activeTab}`}`);
++    if (nextId && nextId !== projectId) {
++      navigate(`/projects/${nextId}${activeTab === DEFAULT_WORKSPACE_TAB ? '' : `?tab=${activeTab}`}`);
++    }
+   };
+ 
+   const selectTab = useCallback(
+     (tab: WorkspaceTab) => {
+       setActiveTab(tab);
+-      setSearchParams(tab === 'overview' ? {} : { tab }, { replace: true });
++      setSearchParams(tab === DEFAULT_WORKSPACE_TAB ? {} : { tab }, { replace: true });
+     },
+     [setSearchParams],
+   );
+ 
++  const selectSearchResult = useCallback(
++    (result: WorkspaceSearchResult) => {
++      selectTab(result.location.targetTab);
++    },
++    [selectTab],
++  );
++
+   if (!snapshot) {
+     return (
+       <div className="workspace-shell">
+@@ -726,7 +742,7 @@ export function WorkspacePage() {
+         <SearchResults
+           onClear={() => setSearchQuery('')}
+           onSelectGroup={selectTab}
+-          onSelectResult={(result) => selectTab(result.targetTab)}
++          onSelectResult={selectSearchResult}
+           searchState={workspaceSearch}
+         />
+ 
+@@ -1072,10 +1088,13 @@ function filterTasksBySearchGroups(
+ 
+   const taskIds = new Set(directTasks.map((task) => task.id));
+   const planIds = new Set(plans.map((plan) => plan.id));
+-  const planFilePaths = new Set(plans.map((plan) => plan.file_path).filter(Boolean));
+-  const planTasks = tasks.filter(
+-    (task) => planIds.has(task.plan_id) || (!!task.file_path && planFilePaths.has(task.file_path)),
+-  );
++  const planFilePaths = new Set(plans.map((plan) => readPlanTaskAssociationFilePath(plan)).filter(Boolean));
++  const planTasks = tasks.filter((task) => {
++    const planId = readPlanTaskAssociationPlanId(task);
++    if (planId !== null) return planIds.has(planId);
++    const filePath = readPlanTaskAssociationFilePath(task);
++    return Boolean(filePath && planFilePaths.has(filePath));
++  });
+ 
+   return [...directTasks, ...planTasks.filter((task) => !taskIds.has(task.id))];
+ }
+
+ M src/database.js
+ M src/renderer/components/shared.tsx
+ M src/renderer/pages/WorkspacePage.tsx
+?? src/loop/agentCliConfig.js
+warning: in the working copy of 'src/database.js', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/components/shared.tsx', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+**Considering build dependencies**
+
+I’m noticing that `loopService.js` requires `./loop/agentCliConfig`, which is a bit weird. If it’s untracked, the build might depend on it, but it exists outside of Git. There might be prior untracked modifications from AutoPlan that we shouldn't touch. I could mention blockers in the final plan but modifying `src/loop/agentCliConfig.js` could be out of scope since it’s untracked. I might not need to run a full diff in the final update.
+codex
+范围内自查完成；我不会改动发现的 scope 外配置模块。
+  ✓ 定位 P003 数据流位置
+  ✓ 补齐 xhigh 展示标签
+  ✓ 补齐数据库兼容归一化
+  ✓ 检查范围内变更
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+codex
+已按 P003 scope 完成范围内修改，未修改 plan 文件，未运行测试/构建/lint。
+
+**变更**
+- `src/renderer/components/shared.tsx:45`：`xhigh` 展示为中文标签 `超高`，避免显示为原始值或降级成 `medium`。
+- `src/renderer/components/shared.tsx:103`：沿用 P001，读取归一化已接受 `xhigh`。
+- `src/database.js:49`：已确认相关字段均为 `TEXT`，无需数据库结构变更即可承载 `xhigh`。
+
+**注意**
+- 我发现实际服务层还有一个 scope 外白名单：`src/loop/agentCliConfig.js:17` 目前仍只有 `low/medium/high`，会把部分保存/快照链路里的 `xhigh` 归一化回 `medium`。
+- 按本任务“只修改 scope 文件”的要求，我没有改这个 scope 外文件；若要完全满足数据流验收，需要后续授权或单独任务覆盖该文件。
+diff --git a/src/renderer/components/shared.tsx b/src/renderer/components/shared.tsx
+index 16ce3dc3d358bf3411986c3ffcc4cb17f82ae493..a4662813e15616bcbd898ca9b730ab08f7f0f1b1
+--- a/src/renderer/components/shared.tsx
++++ b/src/renderer/components/shared.tsx
+@@ -46,6 +46,7 @@
+   const value = String(effort || '').trim().toLowerCase();
+   if (value === 'low') return 'low';
+   if (value === 'high') return 'high';
++  if (value === 'xhigh') return '超高';
+   return 'medium';
+ }
+ 
+
+tokens used
+215,177
+已按 P003 scope 完成范围内修改，未修改 plan 文件，未运行测试/构建/lint。
+
+**变更**
+- `src/renderer/components/shared.tsx:45`：`xhigh` 展示为中文标签 `超高`，避免显示为原始值或降级成 `medium`。
+- `src/renderer/components/shared.tsx:103`：沿用 P001，读取归一化已接受 `xhigh`。
+- `src/database.js:49`：已确认相关字段均为 `TEXT`，无需数据库结构变更即可承载 `xhigh`。
+
+**注意**
+- 我发现实际服务层还有一个 scope 外白名单：`src/loop/agentCliConfig.js:17` 目前仍只有 `low/medium/high`，会把部分保存/快照链路里的 `xhigh` 归一化回 `medium`。
+- 按本任务“只修改 scope 文件”的要求，我没有改这个 scope 外文件；若要完全满足数据流验收，需要后续授权或单独任务覆盖该文件。

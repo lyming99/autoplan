@@ -1,0 +1,514 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: danger-full-access
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0781-78f8-7a82-a5fb-d7cc9690cfc2
+--------
+user
+你是需求整理与开发计划生成者。
+请根据以下反馈，生成一个开发计划和验收标准。
+
+输出文件：D:\project\GitHub\autoplan\docs\plan\plan_feedback_14_20260627-131553.md
+
+格式要求：
+- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->
+- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行
+- 每个任务要有验收要点
+- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收
+- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准
+- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试
+- 必须包含总体验收标准和进度区
+- 只写 plan 文件，不要改业务代码
+
+反馈 #14 内容：
+macos的包提示损坏，github action编译包是否有问题？例如路径问题？格式问题？
+**Planning file creation**
+
+I need to respond in Chinese, so I'll create a file specifically for that. I might need to inspect the repository and gather feedback for the plan generation. I'll write it in Markdown, but I don't have to elaborate too much. It seems that using PowerShell is required, and I should check the existing documentation or planned formats. This task seems straightforward, but I have to ensure I don't modify any business code. I can use the shell to list and read existing files as needed.
+codex
+我会先看一下现有计划文档格式，再只写入指定 plan 文件。
+exec
+powershell.exe -Command "Get-ChildItem -Path docs\\plan -Filter *.md | Select-Object -First 5 -ExpandProperty FullName" in D:\project\GitHub\autoplan
+ succeeded in 182ms:
+D:\project\GitHub\autoplan\docs\plan\plan_feedback_10_20260626-034659.md
+D:\project\GitHub\autoplan\docs\plan\plan_feedback_13_20260627-033001.md
+D:\project\GitHub\autoplan\docs\plan\plan_feedback_5_20260625-040346.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_11_20260625-035545.md
+D:\project\GitHub\autoplan\docs\plan\plan_requirement_12_20260625-202919.md
+
+codex
+找到了同类计划文件；现在参考结构生成新的反馈计划。
+exec
+powershell.exe -Command "Get-Content -Path docs\\plan\\plan_feedback_13_20260627-033001.md -TotalCount 220" in D:\project\GitHub\autoplan
+ succeeded in 150ms:
+# 反馈 #13 开发计划：修复思考深度与验收命令修改后被刷新回退
+
+## 背景
+
+反馈 #13 指出：项目配置中的 Codex 思考深度修改无效，验收命令修改无效，修改后会被自动刷新回原值。该问题说明 UI 表单输入、保存 IPC、主进程持久化、状态快照刷新之间存在不同步或覆盖关系。目标是让用户在循环控制/项目配置中修改思考深度和验收命令后，保存结果立即进入持久化状态，并在后续自动刷新、快照轮询、页面切换和计划执行链路中保持一致。
+
+## 设计约束
+
+- 本计划只修复“项目级配置保存后被刷新回退”的根因，不扩展新的 CLI 后端或新的思考深度枚举。
+- 验收命令允许为空字符串；空字符串是有效保存值，不能被 `undefined`、旧值、默认值或快照归一化覆盖。
+- Codex 思考深度仅在 Codex provider 下生效；选择 Claude 时不能把旧 Codex 深度错误写回或展示为已生效。
+- 自动刷新、轮询快照、保存后 reload、跨组件 state 同步都必须以数据库/主进程持久化结果为准，不能用旧闭包状态覆盖用户刚保存的表单值。
+- 保存失败必须有明确错误提示或日志，不允许 UI 先显示成功再被刷新回退且无原因。
+- 不要把运行测试、构建、回归验证拆成普通开发任务；最终验证统一放到最后“完整验收”节点。
+
+## 任务拆解
+
+- [x] P001: 梳理配置保存与刷新链路 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/main.js,src/preload.js,src/loopService.js,src/database.js -->
+  - 验收要点：明确验收命令和 Codex 思考深度从 UI 表单、IPC 入参、`loop.configure`、数据库更新到状态快照返回的完整字段映射。
+  - 验收要点：定位导致保存后自动刷新回旧值的覆盖点，例如 effect 依赖、快照轮询、空字符串合并、字段命名不一致或主进程未返回新值。
+  - 验收要点：形成修复边界，只覆盖项目级 `validation_command`、`agent_cli_provider`、`agent_cli_command`、`codex_reasoning_effort` 的保存同步问题。
+
+- [x] P002: 修复主进程配置持久化 <!-- scope: src/loopService.js,src/database.js,src/main.js -->
+  - 验收要点：`validationCommand: ''` 被视为显式保存空值，写入 `validation_command` 后不会被当前值、默认值或空值归一化逻辑替换。
+  - 验收要点：Codex provider 下保存 `codexReasoningEffort` 时，会规范化为合法枚举并写入 `codex_reasoning_effort`；非法值使用明确默认值而不是旧值。
+  - 验收要点：Claude provider 下保存配置时，对 `codex_reasoning_effort` 的处理与现有设计一致，不产生脏数据，也不影响切回 Codex 后的默认行为。
+  - 验收要点：`configure` IPC 调用完成后，后续项目状态查询和快照返回的配置字段与数据库最新值一致。
+
+- [x] P003: 修复前端表单同步回退 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/types.ts -->
+  - 验收要点：用户编辑验收命令或思考深度期间，自动刷新不会用旧 `state` 覆盖尚未保存的表单输入。
+  - 验收要点：点击保存成功后，表单以主进程返回或刷新后的最新持久化值为准，不再短暂生效后回退。
+  - 验收要点：切换项目、重新进入页面、自动轮询更新时，表单初始化和已保存配置展示一致，避免 `undefined`、`null`、空字符串互相抖动。
+  - 验收要点：保存失败时保留用户当前输入，并展示或记录可定位失败原因的错误信息。
+
+- [x] P004: 统一配置字段与展示来源 <!-- scope: src/renderer/pages/WorkspacePage.tsx,src/renderer/components/shared.tsx,src/renderer/components/PlanLists.tsx,src/loopService.js -->
+  - 验收要点：顶部状态卡片、循环控制表单、运行中操作摘要和计划元数据中展示的 CLI provider、思考深度、验收命令来源一致。
+  - 验收要点：保存思考深度后，新生成计划和后续任务执行读取同一个持久化字段，不再使用刷新前的旧配置。
+  - 验收要点：验收命令展示为“无验收命令”时仅代表持久化值为空字符串，不代表保存失败或被默认值覆盖。
+  - 验收要点：相关 TypeScript 类型覆盖前后端实际字段，避免驼峰/下划线字段遗漏导致 UI 读不到新值。
+
+- [x] P005: 补充配置保存回归覆盖 <!-- scope: scripts/smoke-test.js,package.json -->
+  - 验收要点：新增或更新 smoke 覆盖“验收命令从非空改为空、从空改为非空、再次刷新后仍保持”的场景。
+  - 验收要点：新增或更新 smoke 覆盖“Codex 思考深度从默认改为 high/low，刷新快照后仍保持，并进入执行参数”的场景。
+  - 验收要点：新增或更新 smoke 覆盖“保存失败不吞错、不会把旧值误展示为成功保存”的关键路径。
+  - 验收要点：测试代码只描述和覆盖配置保存/刷新问题，不要求在本任务内执行完整验收命令。
+
+- [x] P006: 完整验收 <!-- scope: validation -->
+  - 验收要点：执行最终验收命令 `npm run check`，范围覆盖 TypeScript/静态检查、主进程配置保存链路和 smoke 回归脚本中与配置刷新相关的场景。
+  - 验收要点：通过标准为命令退出码为 0，且日志中没有验收命令、Codex 思考深度保存后被旧值覆盖或自动刷新回退的失败断言。
+  - 验收要点：手动验收至少覆盖：修改验收命令后等待自动刷新仍保持新值；修改 Codex 思考深度后等待自动刷新仍保持新值；重新进入同一项目后展示仍与保存值一致。
+  - 验收要点：若本机环境缺少真实 Codex/Claude CLI，最终验收需使用现有 stub/smoke 能力验证参数传递，并在进度区记录真实 CLI 跳过原因。
+
+## 总体验收标准
+
+- 配置保存生效：项目级验收命令和 Codex 思考深度修改后能够持久化到主进程/数据库，并被快照读取到最新值。
+- 自动刷新不回退：保存后等待自动刷新、页面重新渲染、切换后返回项目，UI 不会恢复为修改前旧值。
+- 空命令语义正确：验收命令保存为空字符串时保持为空，并继续表示“不执行外部验收命令”，不会被默认命令或旧命令覆盖。
+- 思考深度执行一致：Codex 思考深度保存后，展示、计划生成元数据、任务执行参数中的值一致。
+- 错误可见：保存失败时有可见错误或日志，用户输入不被静默回滚。
+- 最终验收命令：执行 `npm run check`；验收范围为配置持久化、前端刷新同步、计划/任务读取配置和相关 smoke 覆盖；通过标准为命令退出码 0 且无配置回退相关断言失败。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：反馈 #13 开发计划已创建，待执行。
+- P001 AutoPlan 完成：2026-06-26T19:34:53.824Z；日志：docs/progress/logs/20260627-033141_execute-P001.log
+- P002 AutoPlan 完成：2026-06-26T19:36:44.121Z；日志：docs/progress/logs/20260627-033457_execute-P002.log
+- P003 AutoPlan 完成：2026-06-26T19:39:32.648Z；日志：docs/progress/logs/20260627-033648_execute-P003.log
+- P004 AutoPlan 完成：2026-06-26T19:43:12.206Z；日志：docs/progress/logs/20260627-033936_execute-P004.log
+- P005 AutoPlan 完成：2026-06-26T19:48:00.326Z；日志：docs/progress/logs/20260627-034316_execute-P005.log
+- P006 AutoPlan 完成：2026-06-26T19:48:06.088Z；日志：docs/progress/logs/20260627-034802_validate-38.log
+
+**Planning development tasks**
+
+I need to generate a development plan since the user wants to check on existing tasks that are marked as completed. It seems likely that there are new tasks that are unchecked. I'll need to understand the relevant code structure and inspect the files, possibly the package actions. It’s crucial for the tasks to have scope accuracy. Since there's feedback about a damaged macOS app and a GitHub action issue, I may want to look through the project tree for .github workflows and package configurations.
+codex
+我会快速确认打包配置文件位置，确保任务 scope 写得准确。
+exec
+powershell.exe -Command '$files = @('"'.github\\workflows','package.json','electron-builder.yml','electron-builder.yaml','forge.config.js','src'); foreach ("'$f in $files) { if (Test-Path $f) { Get-Item $f | Select-Object FullName,PSIsContainer } }; rg --files | rg "(electron-builder|forge|workflow|'"\\.github|entitlements|notar|dmg|mac|package\\.json|builder)\"" in D:\project\GitHub\autoplan
+ succeeded in 207ms:
+
+package.json
+FullName                                     PSIsContainer
+--------                                     -------------
+D:\project\GitHub\autoplan\.github\workflows          True
+D:\project\GitHub\autoplan\package.json              False
+D:\project\GitHub\autoplan\src                        True
+
+
+
+codex
+scope 还需要更具体；继续查看工作流和打包脚本名称。
+exec
+powershell.exe -Command "Get-ChildItem -Path .github\\workflows -File | Select-Object -ExpandProperty FullName; Get-Content -Path package.json -TotalCount 240" in D:\project\GitHub\autoplan
+ succeeded in 182ms:
+D:\project\GitHub\autoplan\.github\workflows\release.yml
+{
+  "name": "autoplan",
+  "version": "0.2.0",
+  "description": "Electron app for issue-driven autonomous planning and development loops.",
+  "author": "lyming99 <lyming99@users.noreply.github.com>",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "npm run dev",
+    "dev": "node scripts/dev.js",
+    "build": "tsc --noEmit && vite build",
+    "package:win": "npm run build && electron-builder --win nsis --x64",
+    "package:mac": "npm run build && electron-builder --mac dmg zip --x64 --arm64",
+    "package:linux": "npm run build && electron-builder --linux AppImage deb --x64",
+    "package:all": "npm run build && electron-builder --win nsis --mac dmg zip --linux AppImage deb --x64",
+    "check": "tsc --noEmit && node --check src/main.js && node --check src/agentCli.js && node --check src/attachments.js && node --check src/database.js && node --check src/loopService.js && node --check src/preload.js && node --check scripts/dev.js && node --check scripts/smoke-test.js",
+    "smoke": "node scripts/smoke-test.js"
+  },
+  "build": {
+    "appId": "com.autoplan.desktop",
+    "productName": "AutoPlan",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "assets/**/*",
+      "dist/**/*",
+      "src/**/*",
+      "package.json"
+    ],
+    "asarUnpack": [
+      "node_modules/sql.js/dist/*.wasm"
+    ],
+    "toolsets": {
+      "appimage": "1.0.3"
+    },
+    "win": {
+      "icon": "assets/icon.ico",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-win-${arch}-Setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "linux": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "category": "Utility",
+      "artifactName": "${productName}-${version}-linux-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  },
+  "dependencies": {
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.18.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.13.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.3",
+    "electron": "^33.3.2",
+    "electron-builder": "^26.15.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.1.0"
+  }
+}
+
+codex
+已经确认配置在 `release.yml` 和 `package.json`；现在写入计划文件。
+exec
+powershell.exe -Command "Get-Content -Path .github\\workflows\\release.yml -TotalCount 260" in D:\project\GitHub\autoplan
+ succeeded in 163ms:
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish, for example v0.2.0'
+        required: true
+        type: string
+      release_notes:
+        description: 'Release notes body. Leave empty to use a default message.'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows
+            runner: windows-latest
+            package_script: package:win
+          - platform: macos
+            runner: macos-latest
+            package_script: package:mac
+          - platform: linux
+            runner: ubuntu-24.04
+            package_script: package:linux
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Linux packaging dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y build-essential libfuse2 ruby ruby-dev
+          sudo gem install --no-document fpm
+
+      - name: Package ${{ matrix.platform }}
+        run: npm run ${{ matrix.package_script }} -- --publish never
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Upload ${{ matrix.platform }} artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: autoplan-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}-${{ matrix.platform }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+            release/*.dmg
+            release/*.zip
+            release/*.AppImage
+            release/*.deb
+            release/latest*.yml
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+    steps:
+      - name: Checkout tag metadata
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Download packaged artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist-artifacts
+
+      - name: Resolve release notes
+        shell: bash
+        env:
+          DISPATCH_NOTES: ${{ github.event_name == 'workflow_dispatch' && inputs.release_notes || '' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${DISPATCH_NOTES}" ]]; then
+            printf '%s\n' "${DISPATCH_NOTES}" > release-notes.md
+          elif git cat-file -e "refs/tags/${RELEASE_TAG}^{tag}" 2>/dev/null; then
+            git tag -l "${RELEASE_TAG}" --format='%(contents)' > release-notes.md
+          else
+            git log -1 --pretty='format:- %s (%h)%n' > release-notes.md
+          fi
+
+          if [[ ! -s release-notes.md ]]; then
+            printf 'Automated release for %s.\n' "${RELEASE_TAG}" > release-notes.md
+          fi
+
+      - name: Create or update release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mapfile -d '' files < <(
+            find dist-artifacts -type f \( \
+              -name '*.exe' -o \
+              -name '*.blockmap' -o \
+              -name '*.dmg' -o \
+              -name '*.zip' -o \
+              -name '*.AppImage' -o \
+              -name '*.deb' -o \
+              -name 'latest*.yml' \
+            \) -print0
+          )
+          if [[ ${#files[@]} -eq 0 ]]; then
+            echo "No release artifacts found." >&2
+            exit 1
+          fi
+
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+            gh release upload "${RELEASE_TAG}" "${files[@]}" --clobber
+          else
+            gh release create "${RELEASE_TAG}" "${files[@]}" --title "${RELEASE_TAG}" --notes-file release-notes.md
+          fi
+
+**Planning file creation and tasks**
+
+I need to create a file and consider using Set-Content with here-string to include tasks in an exact unchecked format. Completing the last task is essential to validate the scope, including acceptance and progress. I should address potential root causes for macOS errors related to Gatekeeper and unsigned apps. Additional tasks include gathering evidence, configuring signing for mac packages, and ensuring proper naming and paths for artifacts. I need to plan tasks carefully to avoid any discrepancies.
+**Considering test creation and tasks**
+
+I need to decide whether to create a test, but it’s unlikely if it's not explicitly needed. I wonder if including a smoke test could help? Perhaps I should add a task for verifying release artifacts, like using scripts/verify-release-artifacts.js in package.json, but I don’t want to overdo it. I need to ensure I write in markdown with the correct task format, including acceptance criteria. Final validation commands will include npm commands related to mac packaging running in a GitHub Action, since local Windows can't package for mac.
+exec
+powershell.exe -Command "@'
+# 反馈 #14 开发计划：修复 macOS 发布包提示损坏
+
+## 背景
+
+反馈 #14 指出：macOS 下载 GitHub Action 编译出的安装包后提示“已损坏/无法打开”，怀疑发布流水线存在路径、格式或打包问题。结合当前发布配置，macOS 包由 GitHub Actions 的 "'`macos-latest` 执行 `npm run package:mac` 生成 `dmg` 和 `zip`，且流水线设置了 `CSC_IDENTITY_AUTO_DISCOVERY=false`，这会显式禁用自动签名发现。该问题高概率与 macOS Gatekeeper 对未签名、未公证、签名不完整或下载产物损坏的拦截有关，也需要排查产物上传/下载路径、架构产物命名和 release 附件格式是否导致用户拿到错误文件。
+
+## 设计约束
+
+- 本计划只处理 macOS 发布包“提示损坏/无法打开”的构建、签名、公证、产物校验和发布说明问题，不改动业务功能逻辑。
+- 优先修复根因：签名、公证、entitlements、artifact 上传路径和 release 产物完整性；不要仅依赖用户执行 `xattr -dr com.apple.quarantine` 作为正式解决方案。
+- 若项目暂时无法配置 Apple Developer 证书和公证密钥，必须让 CI 明确区分“未签名测试包”和“正式签名公证包”，避免用户误以为未签名包可直接安装。
+- macOS x64 与 arm64 产物必须能清晰区分，避免 GitHub Release 中同名覆盖、下载错架构或 zip/dmg 混用导致误判为损坏。
+- 不要把运行测试、构建、回归验证拆成普通开发任务；最终验证统一放到最后“完整验收”节点。
+
+## 任务拆解
+
+- [ ] P001: 定位 macOS 损坏提示根因 <!-- scope: .github/workflows/release.yml,package.json,docs/release/macos.md -->
+  - 验收要点：梳理 macOS 包从 `npm run package:mac`、`electron-builder` 输出、artifact 上传、release 上传到用户下载的完整链路。
+  - 验收要点：确认当前 `CSC_IDENTITY_AUTO_DISCOVERY=false` 对 macOS 签名的影响，并判断“提示损坏”是否由未签名/未公证、签名破坏、下载产物不完整或架构不匹配触发。
+  - 验收要点：记录需要保留的发布产物类型和命名规则，包括 `dmg`、`zip`、x64、arm64 以及 `latest-mac.yml` 的关系。
+  - 验收要点：形成排查结论文档，明确后续任务应修复的配置点，不修改业务代码。
+
+- [ ] P002: 完善 macOS 签名与公证配置 <!-- scope: package.json,build/entitlements.mac.plist,build/entitlements.mac.inherit.plist,scripts/notarize-mac.js -->
+  - 验收要点：`electron-builder` 的 macOS 配置包含明确的 hardened runtime、entitlements、gatekeeper assess 以及签名/公证所需字段。
+  - 验收要点：新增或更新 entitlements 文件时，仅开放 Electron 应用实际需要的权限，不引入过宽授权。
+  - 验收要点：公证脚本支持从 CI 环境变量读取 Apple ID、Team ID、app-specific password 或 App Store Connect API key，缺失时给出明确错误或跳过原因。
+  - 验收要点：正式发布包完成签名与公证后，Gatekeeper 不应再把包识别为损坏；未配置证书时不得伪装成正式可安装包。
+
+- [ ] P003: 修正 GitHub Actions macOS 发布流程 <!-- scope: .github/workflows/release.yml -->
+  - 验收要点：macOS job 明确注入签名和公证所需 secret，并只在 secret 完整时执行正式签名公证发布路径。
+  - 验收要点：移除或条件化会阻断 macOS 正式签名的 `CSC_IDENTITY_AUTO_DISCOVERY=false`，避免 CI 永久生成未签名包。
+  - 验收要点：CI 日志能区分签名、公证、staple、artifact 上传阶段，失败时可定位到具体阶段。
+  - 验收要点：Windows/Linux 的打包行为不因 macOS 签名改动而发生非预期变化。
+
+- [ ] P004: 规范 macOS 产物命名与上传范围 <!-- scope: package.json,.github/workflows/release.yml -->
+  - 验收要点：x64 与 arm64 的 `dmg`、`zip` 产物命名唯一且可读，不会在 `release/` 或 GitHub Release 中互相覆盖。
+  - 验收要点：artifact 上传路径只包含预期发布产物、blockmap 和更新元数据，不上传临时目录、未完成文件或错误架构文件。
+  - 验收要点：release 上传脚本能保留 macOS 产物目录结构或通过文件名准确表达平台与架构，用户可明确选择正确下载项。
+  - 验收要点：`latest-mac.yml` 与实际发布产物名称保持一致，避免自动更新或下载链接指向不存在/错误文件。
+
+- [ ] P005: 增加发布产物完整性校验 <!-- scope: scripts/verify-release-artifacts.js,package.json,.github/workflows/release.yml -->
+  - 验收要点：新增校验脚本能检查 macOS 产物是否存在、文件大小非零、命名包含平台和架构、数量符合预期。
+  - 验收要点：在 macOS runner 上校验 `.app`、`.dmg` 或 `.zip` 的签名状态、公证票据/staple 状态和基本可挂载/可解压能力。
+  - 验收要点：校验失败会让 GitHub Action 失败，避免损坏或未完成的 macOS 包进入 Release。
+  - 验收要点：校验脚本只负责产物结构、签名和完整性检查，不承担最终完整验收命令的职责。
+
+- [ ] P006: 更新 macOS 发布与安装说明 <!-- scope: docs/release/macos.md,README.md -->
+  - 验收要点：文档说明正式 macOS 包需要签名和公证，以及 CI 所需 GitHub Secrets 名称、用途和配置入口。
+  - 验收要点：文档说明用户应根据芯片选择 arm64 或 x64 产物，并解释 `dmg` 与 `zip` 的推荐使用方式。
+  - 验收要点：若提供未签名开发包，文档必须明确标记为开发/测试用途，并说明它可能触发 Gatekeeper 提示。
+  - 验收要点：安装故障排查包含“损坏提示”的判断路径，但不把绕过 Gatekeeper 作为正式发布包的主要安装方式。
+
+- [ ] P007: 完整验收 <!-- scope: validation -->
+  - 验收要点：执行最终验收命令 `npm run check`，并在 GitHub Actions 中通过 `workflow_dispatch` 触发一次 macOS 发布验证；范围覆盖静态检查、macOS 打包、签名、公证、产物上传和 release 附件生成。
+  - 验收要点：在 macOS runner 上对生成产物执行 `codesign --verify --deep --strict --verbose=2`、`spctl --assess --type execute --verbose`、DMG 挂载检查和 zip 解压检查。
+  - 验收要点：通过标准为本地 `npm run check` 退出码为 0，macOS GitHub Action job 退出码为 0，release 中 x64/arm64 的 dmg/zip 文件名唯一且大小非零。
+  - 验收要点：最终手动验收需在一台未设置开发者绕过策略的 macOS 设备上下载正式 dmg，打开、拖拽安装并首次启动 AutoPlan，不再出现“已损坏/无法打开”提示。
+
+## 总体验收标准
+
+- 根因明确：能够说明 macOS 损坏提示来自签名/公证、产物完整性、路径上传或架构命名中的哪一类问题，并在文档中留存结论。
+- 正式包可信：配置 Apple Developer 凭据后，GitHub Actions 生成的 macOS 正式包完成签名、公证和 staple，Gatekeeper 可正常放行。
+- 产物不混淆：GitHub Release 中 macOS x64 与 arm64、dmg 与 zip 文件名唯一、格式正确、大小非零，用户不会因命名或路径问题下载错包。
+- CI 可阻断坏包：macOS 产物缺失、未签名、公证失败、DMG 不可挂载或 ZIP 不可解压时，发布流程失败并阻止上传正式 Release。
+- 文档可操作：维护者能按文档配置发布 secrets，用户能按文档选择正确架构并安装正式包。
+- 最终验收命令：执行 `npm run check`，并通过 GitHub Actions `workflow_dispatch` 运行 Release workflow 的 macOS job；验收范围为 macOS 打包配置、签名公证、产物完整性、上传路径和安装启动；通过标准为命令/job 退出码均为 0，且 macOS 正式 dmg 首次打开不再提示“已损坏/无法打开”。
+
+## 进度区
+
+- 2026-06-27 AutoPlan 生成：反馈 #14 开发计划已创建，待执行。
+'"'@ | Set-Content -Path docs\\plan\\plan_feedback_14_20260627-131553.md -Encoding UTF8" in D:\project\GitHub\autoplan
+ succeeded in 155ms:
+codex
+计划文件已写入；我再快速校验任务格式和最后验收节点。
+exec
+powershell.exe -Command '$path='"'docs\\plan\\plan_feedback_14_20260627-131553.md'; "'$lines=Get-Content $path; $tasks=$lines | Where-Object { $_ -match '"'"'^- '"\\[ \\] P\\d{3}: .+ <"'!-- scope: .+ -->$'"' }; Write-Output \"tasks="'$($tasks.Count)"; Write-Output "last_task=$($tasks[-1])"; if ($tasks[-1] -notmatch '"'P\\d{3}: 完整验收 <"'!-- scope: validation -->'"') { exit 1 }; if (("'$lines | Select-String '"'## 总体验收标准').Count -ne 1) { exit 1 }; if (("'$lines | Select-String '"'## 进度区').Count -ne 1) { exit 1 };" in D:\project\GitHub\autoplan
+ succeeded in 202ms:
+tasks=7
+last_task=- [ ] P007: 完整验收 <!-- scope: validation -->
+
+codex
+已生成计划文件：`docs/plan/plan_feedback_14_20260627-131553.md:1`
+
+- 包含 7 个任务，均使用固定任务格式和必填 `scope`
+- 最后任务为 `P007: 完整验收 <!-- scope: validation -->`
+- 已包含每个任务的验收要点、总体验收标准和进度区
+- 未修改业务代码，仅写入指定 plan 文件
+已生成计划文件：`docs/plan/plan_feedback_14_20260627-131553.md:1`
+
+- 包含 7 个任务，均使用固定任务格式和必填 `scope`
+- 最后任务为 `P007: 完整验收 <!-- scope: validation -->`
+- 已包含每个任务的验收要点、总体验收标准和进度区
+- 未修改业务代码，仅写入指定 plan 文件
+tokens used
+30,727

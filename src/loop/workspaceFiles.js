@@ -1,7 +1,9 @@
 const crypto = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
-const { nowIso } = require('../database');
+const { Worker } = require('node:worker_threads');
+
+const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
 
 function ensureWorkspaceDirs(service, helpers, workspace) {
     for (const dir of ['docs/issues', 'docs/plan', 'docs/progress', 'docs/progress/logs']) {
@@ -10,6 +12,10 @@ function ensureWorkspaceDirs(service, helpers, workspace) {
   }
 
 function scanDirectory(service, helpers, root, workspace, extensions) {
+    return scanDirectorySync(root, workspace, extensions);
+  }
+
+function scanDirectorySync(root, workspace, extensions) {
     if (!fs.existsSync(root)) return { root, aggregateHash: hashText(''), files: [] };
     const files = [];
     const visit = (dir) => {
@@ -37,16 +43,61 @@ function scanDirectory(service, helpers, root, workspace, extensions) {
     };
   }
 
+function scanDirectoryInWorker(root, workspace, extensions) {
+    return new Promise((resolve, reject) => {
+      const worker = new Worker(resolveScanWorkerPath(), {
+        workerData: {
+          root,
+          workspace,
+          extensions,
+        },
+      });
+      worker.once('message', (message) => {
+        if (message?.ok) {
+          resolve(message.scan);
+          return;
+        }
+        const error = new Error(message?.error?.message || 'Scan worker failed');
+        error.stack = message?.error?.stack || error.stack;
+        error.code = message?.error?.code;
+        reject(error);
+      });
+      worker.once('error', reject);
+      worker.once('exit', (code) => {
+        if (code !== 0) reject(new Error(`Scan worker exited with code ${code}`));
+      });
+    });
+  }
+
+function resolveScanWorkerPath() {
+    const workerPath = path.join(__dirname, 'scanWorker.js');
+    const asarSegment = `${path.sep}app.asar${path.sep}`;
+    if (!workerPath.includes(asarSegment)) return workerPath;
+    const unpackedPath = workerPath.replace(asarSegment, `${path.sep}app.asar.unpacked${path.sep}`);
+    return fs.existsSync(unpackedPath) ? unpackedPath : workerPath;
+  }
+
 function saveScan(service, helpers, projectId, type, scan) {
+    const { nowIso } = require('../database');
     const scannedAt = nowIso();
-    service.db.run('DELETE FROM scan_files WHERE project_id = ? AND scan_type = ?', [projectId, type]);
-    for (const file of scan.files) {
-      service.db.run(
-        `INSERT OR REPLACE INTO scan_files
-         (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
-        [projectId, type, file.path, file.hash, file.size, file.modifiedAt, scannedAt],
-      );
+    const statements = [
+      {
+        sql: 'DELETE FROM scan_files WHERE project_id = ? AND scan_type = ?',
+        params: [projectId, type],
+      },
+      ...scan.files.map((file) => ({
+        sql: `INSERT OR REPLACE INTO scan_files
+              (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+              VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        params: [projectId, type, file.path, file.hash, file.size, file.modifiedAt, scannedAt],
+      })),
+    ];
+    if (typeof service.db.runBatch === 'function') {
+      service.db.runBatch(statements);
+      return;
+    }
+    for (const statement of statements) {
+      service.db.run(statement.sql, statement.params);
     }
   }
 
@@ -133,7 +184,10 @@ module.exports = {
   safePart,
   saveScan,
   scanDirectory,
+  scanDirectoryInWorker,
+  scanDirectorySync,
   tailText,
+  WORKSPACE_RUNTIME_DIR,
   workspaceKey,
   workspaceToolEnv,
 };

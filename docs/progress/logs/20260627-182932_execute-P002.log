@@ -1,0 +1,802 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0798-a7d6-7812-b542-39b81fbfd5f9
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_feedback_17_20260627-133901.md
+指定任务：
+- [ ] P002: 增加系统事件中文映射 <!-- scope: src/renderer/components/PlanLists.tsx -->
+任务 scope：src/renderer/components/planlists.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+codex
+我会沿用 P001 的入口结论，只查看并修改 `PlanLists.tsx` 的格式化层。
+  → 定位格式化入口
+  • 添加系统事件映射
+  • 静态自查范围
+exec
+powershell.exe -Command "(Get-Content -Encoding UTF8 src\\renderer\\components\\PlanLists.tsx | Select-Object -First 90) -join \""'`n"; "`n--- format event ---"; (Get-Content -Encoding UTF8 src'"\\renderer\\components\\PlanLists.tsx | Select-Object -Skip 340 -First 45) -join \""'`n"' in D:\project\GitHub\autoplan
+ succeeded in 1136ms:
+import { useEffect, useMemo, useState, type ComponentProps } from 'react';
+import type { AppEvent, Plan, PlanTask, WorkspaceSearchResult } from '../types';
+import { RecordCard } from './IntakePanel';
+import { PlanList as BasePlanList } from './plans/PlanList';
+import { formatChinaDateTime } from '../utils/time';
+import {
+  TASK_STATUS_FILTERS,
+  formatTaskDuration,
+  formatTaskPlanGroupSummary,
+  groupTasksByPlan,
+  matchesTaskStatusFilter,
+  scopeFileLabel,
+  scopeFileStatus,
+  type TaskStatusFilter,
+  type TimedPlanTask,
+} from '../utils/planTasks';
+import { formatEvent, getEventSearchText } from '../utils/planEvents';
+
+export { formatEvent, getEventSearchText };
+export type { EventDisplay } from '../utils/planEvents';
+
+type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+type PlanListProps = ComponentProps<typeof BasePlanList> & {
+  onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+};
+
+const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [
+  { key: 'all', label: '全部' },
+  { key: 'running', label: '执行中' },
+  { key: 'completed', label: '已完成' },
+  { key: 'draft', label: '草稿' },
+];
+
+export function TaskList({
+  emptyText = '暂无任务。',
+  tasks,
+  onOpenPlan,
+  onRun,
+  onStop,
+  locateTarget,
+}: {
+  emptyText?: string;
+  tasks: PlanTask[];
+  onOpenPlan?: (task: PlanTask) => void;
+  onRun?: (task: PlanTask) => void;
+  onStop?: (task: PlanTask) => void;
+  locateTarget?: WorkspaceSearchResult | null;
+}) {
+  const [activeFilter, setActiveFilter] = useState<TaskStatusFilter>('all');
+  const [expandedOverrides, setExpandedOverrides] = useState<Record<string, boolean>>({});
+  const visibleTasks = useMemo(
+    () => tasks.filter((task) => matchesTaskStatusFilter(task, activeFilter)),
+    [activeFilter, tasks],
+  );
+  const taskGroups = useMemo(() => groupTasksByPlan(visibleTasks), [visibleTasks]);
+  const defaultExpandedKeys = useMemo(() => getDefaultExpandedTaskGroupKeys(taskGroups), [taskGroups]);
+  const filterCounts = useMemo(
+    () =>
+      TASK_STATUS_FILTERS.reduce<Record<TaskStatusFilter, number>>(
+        (counts, filter) => ({
+          ...counts,
+          [filter.id]: tasks.filter((task) => matchesTaskStatusFilter(task, filter.id)).length,
+        }),
+        { all: 0, running: 0, queued: 0, completed: 0 },
+      ),
+    [tasks],
+  );
+  const activeFilterConfig =
+    TASK_STATUS_FILTERS.find((filter) => filter.id === activeFilter) || TASK_STATUS_FILTERS[0];
+  const currentEmptyText = tasks.length ? activeFilterConfig.emptyText : emptyText;
+
+  useEffect(() => {
+    if (locateTarget?.targetTab === 'tasks') {
+      setActiveFilter('all');
+    }
+  }, [locateTarget]);
+
+  useEffect(() => {
+    if (!locateTarget) return;
+    const locatedGroup = findTaskGroupForSearchTarget(taskGroups, locateTarget);
+    if (!locatedGroup) return;
+    setExpandedOverrides((current) => (current[locatedGroup.key] ? current : { ...current, [locatedGroup.key]: true }));
+  }, [locateTarget, taskGroups]);
+
+  function toggleTaskGroup(groupKey: string) {
+    const currentlyExpanded = expandedOverrides[groupKey] ?? defaultExpandedKeys.has(groupKey);
+    setExpandedOverrides((current) => ({ ...current, [groupKey]: !currentlyExpanded }));
+  }
+
+
+--- format event ---
+            type="button"
+            className={`task-filter-tab${activeStatus === tab.key ? ' active' : ''}`}
+            onClick={() => setActiveStatus(tab.key)}
+            role="tab"
+            aria-selected={activeStatus === tab.key}
+          >
+            <span>{tab.label}</span>
+            <span className="task-filter-count">{counts[tab.key]}</span>
+          </button>
+        ))}
+      </div>
+
+      {visiblePlans.length ? (
+        <div className="list compact" aria-label="计划执行顺序调整">
+          {draftRunError ? <div className="error-banner">{draftRunError}</div> : null}
+          {visiblePlans.map((plan) => {
+            const currentIndex = orderedPlans.findIndex((item) => item.id === plan.id);
+            const previousPlan = orderedPlans[currentIndex - 1];
+            const nextPlan = orderedPlans[currentIndex + 1];
+            const disabledReason = reorderDisabledReason(plan);
+            const draftRunDisabledReason = isDraftPlan(plan) ? draftPlanRunDisabledReason(plan, props.tasks || []) : '';
+            return (
+              <div key={`order-${plan.id}`} className="task-scope-chip">
+                <span className="mono">#{plan.sort_order || currentIndex + 1}</span>
+                <span>{plan.title || plan.file_path || `Plan #${plan.id}`}</span>
+                <small>{disabledReason || '可调整'}</small>
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={reordering || Boolean(disabledReason) || !previousPlan || !canReorderPlan(previousPlan)}
+                  onClick={() => movePlan(plan, -1)}
+                >
+                  上移
+                </button>
+                <button
+                  type="button"
+                  className="btn-link"
+                  disabled={reordering || Boolean(disabledReason) || !nextPlan || !canReorderPlan(nextPlan)}
+                  onClick={() => movePlan(plan, 1)}
+                >
+                  下移
+                </button>
+                {isDraftPlan(plan) ? (
+                  <button
+                    type="button"
+
+codex
+当前代码把 P001 入口已抽到 `utils/planEvents`，但 P002 scope 只允许改 `PlanLists.tsx`；我会在该文件内包一层映射，不越界改工具文件。
+  ✓ 定位格式化入口
+  → 添加系统事件映射
+  • 静态自查范围
+codex
+我会查看 `EventList` 的实际调用点，确保包装层只影响事件展示。
+exec
+powershell.exe -Command "rg -n \"formatEvent|getEventSearchText|EventList|events\\.map|display\\.title\" src\\renderer\\components\\PlanLists.tsx" in D:\project\GitHub\autoplan
+2026-06-27T10:30:02.952129Z ERROR codex_core::tools::router: error={"output":"rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 1\r\n+ rg -n \"formatEvent|getEventSearchText|EventList|events\\.map|display\\. ...\r\n+ ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.5}}
+ exited 1 in 1480ms:
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 1
++ rg -n "formatEvent|getEventSearchText|EventList|events\.map|display\. ...
++ ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+**Evaluating command issues**
+
+I'm noticing there's an interesting problem with the command missing right now. I think I might need to use Select-String for that, but it failed due to a "command not found" error. It seems this isn't related to the toolchain but rather an issue with the search command not performing the validation I expected. Alright, I’ll go ahead and try using Select-String again to see if that resolves the issue.
+codex
+`rg` 当前不可用，我改用 PowerShell 内置搜索继续只读检查。
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\components\\PlanLists.tsx -Pattern 'formatEvent|getEventSearchText|EventList|events\\.map|display\\.title' | ForEach-Object { \""'$($_.LineNumber):$($_.Line)" }' in D:\project\GitHub\autoplan
+ succeeded in 457ms:
+17:import { formatEvent, getEventSearchText } from '../utils/planEvents';
+19:export { formatEvent, getEventSearchText };
+219:export function EventList({ emptyText = '暂无事件。', events }: { emptyText?: string; events: AppEvent[] }) {
+224:      {events.map((event) => {
+225:        const display = formatEvent(event);
+234:              <span>{display.title}</span>
+
+**Evaluating scope and utilities**
+
+I’m considering whether the local wrapper is the best choice. It seems okay under the current scope, but there’s a possibility that later tasks, like P003 or P002, will need utilities. The planEvents utility seems left from previous work, even though the user mentioned restoring the same plan. I’m unsure if modifying the utils is necessary for the current file since it only mentions PlanLists. Perhaps I could define `const SYSTEM_EVENT_TITLES` and pass it directly after formatting the event? I'll need to check the utils/planEvents to ensure types are correct, but I can't edit that, just read it.
+codex
+我会快速确认 `EventDisplay` 的导出形态，然后只 patch `PlanLists.tsx`。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src\\renderer\\utils\\planEvents.ts | Select-Object -First 130 | ForEach-Object { "'$_ }' in D:\project\GitHub\autoplan
+ succeeded in 487ms:
+import type { AppEvent } from '../types';
+import { planCliSummaryLabel } from '../components/shared';
+import { formatChinaDateTime, formatDuration } from './time';
+
+
+type EventMetaRecord = Record<string, unknown>;
+
+export type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+
+export type EventDisplay = {
+  title: string;
+  body: string;
+  meta: string;
+  badge?: string;
+  tone?: TaskEventTone;
+};
+
+const TASK_EVENT_PRESENTATION: Record<TaskEventTone, { action: string; badge: string }> = {
+  start: { action: '开始了', badge: '开始' },
+  success: { action: '结束了', badge: '成功' },
+  failed: { action: '执行失败', badge: '失败' },
+  stopped: { action: '停止了', badge: '停止' },
+  stopping: { action: '请求停止', badge: '停止中' },
+  updated: { action: '更新了', badge: '任务' },
+};
+
+function toEventMetaRecord(value: unknown): EventMetaRecord | null {
+  if (!value) return null;
+  if (typeof value === 'string') {
+    try {
+      return toEventMetaRecord(JSON.parse(value));
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'object' && !Array.isArray(value)) return value as EventMetaRecord;
+  return null;
+}
+
+function readEventMeta(event: AppEvent) {
+  return toEventMetaRecord((event as AppEvent & { meta?: unknown }).meta);
+}
+
+function readMetaText(meta: EventMetaRecord | null, keys: string[]) {
+  if (!meta) return '';
+  for (const key of keys) {
+    const value = meta[key];
+    if (typeof value === 'string') {
+      const text = value.trim();
+      if (text) return text;
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  }
+  return '';
+}
+
+function readMetaNumber(meta: EventMetaRecord | null, keys: string[]) {
+  const text = readMetaText(meta, keys);
+  if (!text) return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+function includesAny(text: string, keywords: string[]) {
+  return keywords.some((keyword) => text.includes(keyword));
+}
+
+function classifyTaskEvent(event: AppEvent, meta: EventMetaRecord | null): TaskEventTone {
+  const eventText = `${event.type || ''} ${readMetaText(meta, ['status', 'taskStatus', 'task_status'])}`.toLowerCase();
+  if (includesAny(eventText, ['stop_requested', 'stop-requested', 'stop.requested', 'request_stop', 'stopping'])) {
+    return 'stopping';
+  }
+  if (includesAny(eventText, ['fail', 'error', 'errored'])) return 'failed';
+  if (includesAny(eventText, ['stop', 'interrupt', 'cancel'])) return 'stopped';
+  if (includesAny(eventText, ['start', 'begin', 'running'])) return 'start';
+  if (includesAny(eventText, ['complete', 'finish', 'success', 'succeed', 'executed', 'done'])) return 'success';
+  return 'updated';
+}
+
+function isTaskEventType(type: string) {
+  return /^task[.:_-]/i.test(type);
+}
+
+function sameEventText(left: string, right: string) {
+  return left.replace(/\s+/g, ' ').trim() === right.replace(/\s+/g, ' ').trim();
+}
+
+function formatTaskEvent(event: AppEvent, meta: EventMetaRecord): EventDisplay | null {
+  const taskKey = readMetaText(meta, ['taskKey', 'task_key']);
+  const taskId = readMetaText(meta, ['taskId', 'task_id']);
+  const taskTitle = readMetaText(meta, ['taskTitle', 'task_title', 'title']) || '未命名任务';
+  const hasTaskIdentity = Boolean(taskKey || taskId || readMetaText(meta, ['taskTitle', 'task_title', 'title']));
+  if (!hasTaskIdentity) return null;
+
+  const tone = classifyTaskEvent(event, meta);
+  const presentation = TASK_EVENT_PRESENTATION[tone];
+  const taskLabel = taskKey ? `${taskKey} 任务` : taskId ? `任务 #${taskId}` : '任务';
+  const separator = taskLabel === '任务' ? '' : ' ';
+  const title = `${presentation.action}${separator}${taskLabel}：${taskTitle}`;
+  const originalMessage = event.message?.trim() || '';
+  const planId = readMetaText(meta, ['planId', 'plan_id']);
+  const status = readMetaText(meta, ['status', 'taskStatus', 'task_status']);
+  const agentCliProvider = readMetaText(meta, ['agentCliProvider', 'agent_cli_provider']);
+  const cliSummary = agentCliProvider ? planCliSummaryLabel(meta) : '';
+  const durationMs = readMetaNumber(meta, ['durationMs', 'duration_ms']);
+  const metaParts = [
+    formatChinaDateTime(event.created_at),
+    planId ? `Plan #${planId}` : '',
+    cliSummary,
+    status ? `状态 ${status}` : '',
+    durationMs !== null ? `耗时 ${formatDuration(durationMs, '0秒')}` : '',
+  ].filter(Boolean);
+
+  return {
+    title,
+    body: originalMessage && !sameEventText(originalMessage, title) ? originalMessage : '',
+    meta: metaParts.join(' · '),
+    badge: presentation.badge,
+    tone,
+  };
+}
+
+export function formatEvent(event: AppEvent): EventDisplay {
+  const meta = readEventMeta(event);
+  const taskDisplay = meta && (isTaskEventType(event.type) || readMetaText(meta, ['taskKey', 'task_key', 'taskId', 'task_id']))
+    ? formatTaskEvent(event, meta)
+    : null;
+  if (taskDisplay) return taskDisplay;
+
+  return {
+
+codex
+类型已确认。现在只在组件文件加入系统事件标题映射包装。
+exec
+powershell.exe -Command "Get-Content -Encoding UTF8 src\\renderer\\utils\\planEvents.ts | Select-Object -Skip 130 -First 45 | ForEach-Object { "'$_ }' in D:\project\GitHub\autoplan
+ succeeded in 469ms:
+    title: event.type || '事件',
+    body: event.message || '',
+    meta: formatChinaDateTime(event.created_at),
+  };
+}
+
+function toSearchText(value: unknown, depth = 0): string {
+  if (value === null || value === undefined || depth > 6) return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map((item) => toSearchText(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => toSearchText(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+export function getEventSearchText(event: AppEvent) {
+  const display = formatEvent(event);
+  const meta = readEventMeta(event);
+  return [
+    event.type,
+    event.message,
+    display.title,
+    display.body,
+    display.badge,
+    display.meta,
+    toSearchText(meta),
+    toSearchText(event),
+  ]
+    .filter(Boolean)
+    .join(' ');
+}
+
+codex
+我会 patch `PlanLists.tsx`，不改 `planEvents.ts` 以遵守 P002 scope。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2991db22bb04e4477095467113b918368f6c0a13..538e7adc024bfe7985bab82fe255b03feee8d269
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,11 +14,24 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { formatEvent, getEventSearchText };
++export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
++};
++
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2991db22bb04e4477095467113b918368f6c0a13..538e7adc024bfe7985bab82fe255b03feee8d269
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,11 +14,24 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { formatEvent, getEventSearchText };
++export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
++};
++
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+**Clarifying type exports and imports**
+
+I need to check my approach to static self-checks without tests. Using Select-String and `git diff -- file` might work. I’m thinking about potential conflicts in TypeScript with importing and exporting the same type, like `EventDisplay`. The syntax seems correct, but I have to ensure that the "SYSTEM_EVENT_TITLES" is applied appropriately based on the event type. If the type equals `scan.done` and the meta is related to task events, it could potentially override the display title. I need to be careful with that.
+**Differentiating event types**
+
+I need to clarify the boundary between plain system events and task events to keep them unaffected. It seems unlikely that specific types would have task metadata, but I should avoid applying mapping when `display.tone` or `display.badge` is present. The task display may have tone or badge, so I’ll implement a check that returns the display if either is present. Since system events don't have these, I want to ensure my solution accommodates that properly and prevents mapping task events that might have unusual types. I’ll also consider the `isTaskEvent` function and its exports.
+codex
+为确保任务事件不被系统映射覆盖，我会加一道展示结果边界保护。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\components\PlanLists.tsx
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2991db22bb04e4477095467113b918368f6c0a13..085d570a496abfd21ff36d60590960e22c8fbdd1
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,11 +14,25 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { formatEvent, getEventSearchText };
++export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
++};
++
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  if (display.tone || display.badge) return display;
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2991db22bb04e4477095467113b918368f6c0a13..085d570a496abfd21ff36d60590960e22c8fbdd1
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,11 +14,25 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { formatEvent, getEventSearchText };
++export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
++};
++
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  if (display.tone || display.badge) return display;
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+codex
+映射和任务事件边界已加好。现在做只读静态检查和范围确认。
+  ✓ 定位格式化入口
+  ✓ 添加系统事件映射
+  → 静态自查范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2991db22bb04e4477095467113b918368f6c0a13..085d570a496abfd21ff36d60590960e22c8fbdd1
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,11 +14,25 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { formatEvent, getEventSearchText };
++export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
++};
++
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  if (display.tone || display.badge) return display;
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+exec
+powershell.exe -Command "Select-String -Path src\\renderer\\components\\PlanLists.tsx -Pattern 'SYSTEM_EVENT_TITLES|扫描完成|反馈已创建|计划已生成|formatBaseEvent|export function formatEvent|display\\.tone|events\\.map|display\\.title' | ForEach-Object { \""'$($_.LineNumber):$($_.Line)" }; "--- diff scope ---"; git diff -- src'"\\renderer\\components\\PlanLists.tsx | Select-String -Pattern '"'^diff --git|''^'"\\+|"'^-'"' | Select-Object -First 80 | ForEach-Object { "'$_.Line }' in D:\project\GitHub\autoplan
+2026-06-27T10:31:06.017075Z ERROR codex_core::tools::router: error={"output":"17:import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';\r\n23:const SYSTEM_EVENT_TITLES: Record<string, string> = {\r\n24:  'scan.done': '扫描完成',\r\n25:  'feedback.created': '反馈已创建',\r\n26:  'plan.generated': '计划已生成',\r\n29:export function formatEvent(event: AppEvent): EventDisplay {\r\n30:  const display = formatBaseEvent(event);\r\n31:  if (display.tone || display.badge) return display;\r\n32:  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;\r\n33:  return title === display.title ? display : { ...display, title };\r\n238:      {events.map((event) => {\r\n242:            className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`}\r\n248:              <span>{display.title}</span>\r\n249:              {display.badge ? <span className={`event-badge event-badge-${display.tone}`}>{display.badge}</span> : null}\r\n--- diff scope ---\r\ndiff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx\r\n--- a/src/renderer/components/PlanLists.tsx\r\n+++ b/src/renderer/components/PlanLists.tsx\r\n-import type { KeyboardEvent } from 'react';\r\n-import { useEffect, useId, useMemo, useRef, useState } from 'react';\r\n-import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';\r\n+import { useEffect, useMemo, useState, type ComponentProps } from 'react';\r\n+import type { AppEvent, Plan, PlanTask, WorkspaceSearchResult } from '../types';\r\n-import { MarkdownReader } from './MarkdownReader';\r\n-import { planCliSummaryLabel } from './shared';\r\n-import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';\r\n-\r\n-type TimedPlanTask = PlanTask & {\r\n-  plan_id?: number | null;\r\n-  started_at?: string | null;\r\n-  finished_at?: string | null;\r\n-  duration_ms?: number | null;\r\n+import { PlanList as BasePlanList } from './plans/PlanList';\r\n+import { formatChinaDateTime } from '../utils/time';\r\n+import {\r\n+  TASK_STATUS_FILTERS,\r\n+  formatTaskDuration,\r\n+  formatTaskPlanGroupSummary,\r\n+  groupTasksByPlan,\r\n+  matchesTaskStatusFilter,\r\n+  scopeFileLabel,\r\n+  scopeFileStatus,\r\n+  type TaskStatusFilter,\r\n+  type TimedPlanTask,\r\n+} from '../utils/planTasks';\r\n+import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';\r\n+import type { EventDisplay } from '../utils/planEvents';\r\n+\r\n+export { getEventSearchText };\r\n+export type { EventDisplay } from '../utils/planEvents';\r\n+\r\n+const SYSTEM_EVENT_TITLES: Record<string, string> = {\r\n+  'scan.done': '扫描完成',\r\n+  'feedback.created': '反馈已创建',\r\n+  'plan.generated': '计划已生成',\r\n-type EventMetaRecord = Record<string, unknown>;\r\n-\r\n-type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';\r\n-\r\n-type TaskEventDisplay = {\r\n-  title: string;\r\n-  body: string;\r\n-  meta: string;\r\n-  badge?: string;\r\n-  tone?: TaskEventTone;\r\n-};\r\n-\r\n-type TaskPlanGroup = {\r\n-  key: string;\r\n-  title: string;\r\n-  tasks: PlanTask[];\r\n-  firstIndex: number;\r\n-  sortTime: number | null;\r\n-};\r\n-\r\n-type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';\r\n+export function formatEvent(event: AppEvent): EventDisplay {\r\n+  const display = formatBaseEvent(event);\r\n+  if (display.tone || display.badge) return display;\r\n+  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;\r\n+  return title === display.title ? display : { ...display, title };\r\n+}\r\n-type ParallelRunRequest = {\r\n-  plan: Plan;\r\n-  batches: Array<{ taskIds: number[] }>;\r\n+type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';\r\n+type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];\r\n+type PlanListProps = ComponentProps<typeof BasePlanList> & {\r\n+  onReorderPlans?: (plans: Plan[]) => Promise<void> | void;\r\n-const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [\r\n-  { id: 'all', label: '全部', emptyText: '暂无任务。' },\r\n-  { id: 'running', label: '进行中', emptyText: '暂无进行中任务。' },\r\n-  { id: 'queued', label: '队列中', emptyText: '暂无队列中任务。' },\r\n-  { id: 'completed', label: '已完成', emptyText: '暂无已完成任务。' },\r\n+const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [\r\nwarning: in the working copy of 'src/renderer/components/PlanLists.tsx', LF will be replaced by CRLF the next time Git touches it\n","metadata":{"exit_code":1,"duration_seconds":0.5}}
+ exited 1 in 497ms:
+17:import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
+23:const SYSTEM_EVENT_TITLES: Record<string, string> = {
+24:  'scan.done': '扫描完成',
+25:  'feedback.created': '反馈已创建',
+26:  'plan.generated': '计划已生成',
+29:export function formatEvent(event: AppEvent): EventDisplay {
+30:  const display = formatBaseEvent(event);
+31:  if (display.tone || display.badge) return display;
+32:  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
+33:  return title === display.title ? display : { ...display, title };
+238:      {events.map((event) => {
+242:            className={`item event-item ${display.tone ? `event-item-${display.tone}` : ''}`}
+248:              <span>{display.title}</span>
+249:              {display.badge ? <span className={`event-badge event-badge-${display.tone}`}>{display.badge}</span> : null}
+--- diff scope ---
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+-import type { KeyboardEvent } from 'react';
+-import { useEffect, useId, useMemo, useRef, useState } from 'react';
+-import type { AppEvent, Plan, PlanTask, WorkspacePlanReadState } from '../types';
++import { useEffect, useMemo, useState, type ComponentProps } from 'react';
++import type { AppEvent, Plan, PlanTask, WorkspaceSearchResult } from '../types';
+-import { MarkdownReader } from './MarkdownReader';
+-import { planCliSummaryLabel } from './shared';
+-import { formatChinaDateTime, formatDuration, getRunningDurationMs } from '../utils/time';
+-
+-type TimedPlanTask = PlanTask & {
+-  plan_id?: number | null;
+-  started_at?: string | null;
+-  finished_at?: string | null;
+-  duration_ms?: number | null;
++import { PlanList as BasePlanList } from './plans/PlanList';
++import { formatChinaDateTime } from '../utils/time';
++import {
++  TASK_STATUS_FILTERS,
++  formatTaskDuration,
++  formatTaskPlanGroupSummary,
++  groupTasksByPlan,
++  matchesTaskStatusFilter,
++  scopeFileLabel,
++  scopeFileStatus,
++  type TaskStatusFilter,
++  type TimedPlanTask,
++} from '../utils/planTasks';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
++
++export { getEventSearchText };
++export type { EventDisplay } from '../utils/planEvents';
++
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
+-type EventMetaRecord = Record<string, unknown>;
+-
+-type TaskEventTone = 'start' | 'success' | 'failed' | 'stopped' | 'stopping' | 'updated';
+-
+-type TaskEventDisplay = {
+-  title: string;
+-  body: string;
+-  meta: string;
+-  badge?: string;
+-  tone?: TaskEventTone;
+-};
+-
+-type TaskPlanGroup = {
+-  key: string;
+-  title: string;
+-  tasks: PlanTask[];
+-  firstIndex: number;
+-  sortTime: number | null;
+-};
+-
+-type TaskStatusFilter = 'all' | 'running' | 'queued' | 'completed';
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  if (display.tone || display.badge) return display;
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
+-type ParallelRunRequest = {
+-  plan: Plan;
+-  batches: Array<{ taskIds: number[] }>;
++type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
++type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
++type PlanListProps = ComponentProps<typeof BasePlanList> & {
++  onReorderPlans?: (plans: Plan[]) => Promise<void> | void;
+-const TASK_STATUS_FILTERS: Array<{ id: TaskStatusFilter; label: string; emptyText: string }> = [
+-  { id: 'all', label: '全部', emptyText: '暂无任务。' },
+-  { id: 'running', label: '进行中', emptyText: '暂无进行中任务。' },
+-  { id: 'queued', label: '队列中', emptyText: '暂无队列中任务。' },
+-  { id: 'completed', label: '已完成', emptyText: '暂无已完成任务。' },
++const PLAN_STATUS_TABS: Array<{ key: PlanStatusTab; label: string }> = [
+warning: in the working copy of 'src/renderer/components/PlanLists.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2991db22bb04e4477095467113b918368f6c0a13..085d570a496abfd21ff36d60590960e22c8fbdd1
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,11 +14,25 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { formatEvent, getEventSearchText };
++export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
++};
++
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  if (display.tone || display.badge) return display;
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+codex
+静态检查确认映射落在事件展示调用链内；不继续运行任何命令。
+  ✓ 定位格式化入口
+  ✓ 添加系统事件映射
+  ✓ 静态自查范围
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2991db22bb04e4477095467113b918368f6c0a13..085d570a496abfd21ff36d60590960e22c8fbdd1
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,11 +14,25 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { formatEvent, getEventSearchText };
++export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
++};
++
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  if (display.tone || display.badge) return display;
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+codex
+已完成 P002，仅修改 `src/renderer/components/PlanLists.tsx`，未修改 plan 文件，未运行测试/构建/lint。
+
+**变更内容**
+- 在 `src/renderer/components/PlanLists.tsx:23` 增加系统事件标题映射：
+  - `scan.done` → `扫描完成`
+  - `feedback.created` → `反馈已创建`
+  - `plan.generated` → `计划已生成`
+- 在 `src/renderer/components/PlanLists.tsx:29` 用本地 `formatEvent` 包装基础格式化结果，只替换标题，正文、时间、meta 保持不变。
+- 在 `src/renderer/components/PlanLists.tsx:31` 保留任务事件边界：带 `tone` 或 `badge` 的任务事件直接返回，不受系统事件映射影响。
+- 未知事件类型继续使用原始 `display.title` 兜底，不会空标题。
+diff --git a/src/renderer/components/PlanLists.tsx b/src/renderer/components/PlanLists.tsx
+index 2991db22bb04e4477095467113b918368f6c0a13..085d570a496abfd21ff36d60590960e22c8fbdd1
+--- a/src/renderer/components/PlanLists.tsx
++++ b/src/renderer/components/PlanLists.tsx
+@@ -14,11 +14,25 @@
+   type TaskStatusFilter,
+   type TimedPlanTask,
+ } from '../utils/planTasks';
+-import { formatEvent, getEventSearchText } from '../utils/planEvents';
++import { formatEvent as formatBaseEvent, getEventSearchText } from '../utils/planEvents';
++import type { EventDisplay } from '../utils/planEvents';
+ 
+-export { formatEvent, getEventSearchText };
++export { getEventSearchText };
+ export type { EventDisplay } from '../utils/planEvents';
+ 
++const SYSTEM_EVENT_TITLES: Record<string, string> = {
++  'scan.done': '扫描完成',
++  'feedback.created': '反馈已创建',
++  'plan.generated': '计划已生成',
++};
++
++export function formatEvent(event: AppEvent): EventDisplay {
++  const display = formatBaseEvent(event);
++  if (display.tone || display.badge) return display;
++  const title = SYSTEM_EVENT_TITLES[event.type] || display.title;
++  return title === display.title ? display : { ...display, title };
++}
++
+ type PlanStatusTab = 'all' | 'running' | 'completed' | 'draft';
+ type TaskPlanGroup = ReturnType<typeof groupTasksByPlan>[number];
+ type PlanListProps = ComponentProps<typeof BasePlanList> & {
+
+tokens used
+130,633
+已完成 P002，仅修改 `src/renderer/components/PlanLists.tsx`，未修改 plan 文件，未运行测试/构建/lint。
+
+**变更内容**
+- 在 `src/renderer/components/PlanLists.tsx:23` 增加系统事件标题映射：
+  - `scan.done` → `扫描完成`
+  - `feedback.created` → `反馈已创建`
+  - `plan.generated` → `计划已生成`
+- 在 `src/renderer/components/PlanLists.tsx:29` 用本地 `formatEvent` 包装基础格式化结果，只替换标题，正文、时间、meta 保持不变。
+- 在 `src/renderer/components/PlanLists.tsx:31` 保留任务事件边界：带 `tone` 或 `badge` 的任务事件直接返回，不受系统事件映射影响。
+- 未知事件类型继续使用原始 `display.title` 兜底，不会空标题。

@@ -12,6 +12,7 @@ const {
 
 const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);
 const ACTIVE_RUNTIME_PHASE_SQL = "('running','scan','generate-plan','execute-task','validate')";
+const DEFAULT_UPDATE_THROTTLE_MS = 1200;
 
 function createProjectRuntime() {
   return {
@@ -23,6 +24,49 @@ function createProjectRuntime() {
     activeChildren: new Map(),
     activeOperations: new Map(),
     lastOperation: null,
+  };
+}
+
+function createThrottledUpdateEmitter(options = {}) {
+  const throttleMs = Number(options.throttleMs || DEFAULT_UPDATE_THROTTLE_MS);
+  const pendingTimers = new Map();
+  const lastEmittedAt = new Map();
+  const snapshot = options.snapshot;
+  const emit = options.emit;
+
+  const flushKey = (key, projectId) => {
+    const timer = pendingTimers.get(key);
+    if (timer) clearTimeout(timer);
+    pendingTimers.delete(key);
+    lastEmittedAt.set(key, Date.now());
+    emit(snapshot(projectId));
+  };
+
+  const schedule = (projectId, scheduleOptions = {}) => {
+    const key = String(projectId || 'all');
+    if (scheduleOptions.immediate) {
+      flushKey(key, projectId);
+      return;
+    }
+
+    const elapsed = Date.now() - (lastEmittedAt.get(key) || 0);
+    if (elapsed >= throttleMs) {
+      flushKey(key, projectId);
+      return;
+    }
+    if (pendingTimers.has(key)) return;
+    const timer = setTimeout(() => flushKey(key, projectId), throttleMs - elapsed);
+    if (typeof timer.unref === 'function') timer.unref();
+    pendingTimers.set(key, timer);
+  };
+
+  return {
+    emit: schedule,
+    flush() {
+      for (const key of Array.from(pendingTimers.keys())) {
+        schedule(key === 'all' ? null : Number(key), { immediate: true });
+      }
+    },
   };
 }
 
@@ -359,6 +403,7 @@ module.exports = {
   ACTIVE_RUNTIME_PHASE_SQL,
   archiveRuntimeOperation,
   createProjectRuntime,
+  createThrottledUpdateEmitter,
   ensureProjectRuntime,
   existingProjectRuntime,
   findActiveRuntimeProject,

@@ -114,6 +114,10 @@ export function Composer({
 
   const selectedProvider = cliSelection?.selectedByType[type] || cliSelection?.options[0]?.value || '';
   const isCodexProvider = selectedProvider !== 'claude';
+  const selectedProviderOption = cliSelection?.options.find((option) => option.value === selectedProvider);
+  const selectedReasoning = cliSelection?.reasoningByType[type] || cliSelection?.reasoningOptions[1]?.value || 'medium';
+  const selectedReasoningOption = cliSelection?.reasoningOptions.find((option) => option.value === selectedReasoning);
+  const draftHelp = '创建为草稿后只生成计划，不会立即进入执行队列；确认后可在任务与计划中手动执行。';
 
   return (
     <form
@@ -169,12 +173,16 @@ export function Composer({
           </div>
           {cliSelection ? (
             <div className="composer-cli-row">
-              <label className="composer-cli-field">
-                <span>CLI 后端</span>
+              <label
+                className="composer-icon-select"
+                title={`CLI 后端：${selectedProviderOption?.label || selectedProvider}`}
+              >
+                <Icon name="cli" size={18} aria-hidden="true" />
+                <span className="composer-select-label">{selectedProviderOption?.label || selectedProvider}</span>
                 <select
                   aria-label="选择 CLI 后端"
                   value={selectedProvider}
-                  onChange={(event) => cliSelection.onProviderChange(type, event.target.value)}
+                  onChange={(event) => cliSelection.onProviderChange(type, event.target.value as AgentCliProvider)}
                 >
                   {cliSelection.options.map((option) => (
                     <option key={option.value} value={option.value}>
@@ -184,12 +192,16 @@ export function Composer({
                 </select>
               </label>
               {isCodexProvider ? (
-                <label className="composer-cli-field">
-                  <span>思考深度</span>
-                  <select
-                    aria-label="选择 Codex 思考深度"
-                    value={cliSelection.reasoningByType[type] || cliSelection.reasoningOptions[1]?.value || 'medium'}
-                    onChange={(event) => cliSelection.onReasoningChange(type, event.target.value)}
+                <label
+                className="composer-icon-select"
+                title={`Codex 思考深度：${selectedReasoningOption?.label || selectedReasoning}`}
+              >
+                <Icon name="thinking" size={18} aria-hidden="true" />
+                <span className="composer-select-label">{selectedReasoningOption?.label || selectedReasoning}</span>
+                <select
+                  aria-label="选择 Codex 思考深度"
+                    value={selectedReasoning}
+                    onChange={(event) => cliSelection.onReasoningChange(type, event.target.value as CodexReasoningEffort)}
                   >
                     {cliSelection.reasoningOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -198,9 +210,7 @@ export function Composer({
                     ))}
                   </select>
                 </label>
-              ) : (
-                <span className="composer-cli-note">Claude 不使用 Codex 思考深度</span>
-              )}
+              ) : null}
             </div>
           ) : null}
           <PendingAttachmentList
@@ -209,14 +219,19 @@ export function Composer({
           />
         </div>
         <div className="composer-actions">
-          <label className="composer-draft-toggle">
-            <input
-              checked={createAsDraft}
-              onChange={(event) => setCreateAsDraft(event.target.checked)}
-              type="checkbox"
-            />
-            <span>创建为草稿</span>
-          </label>
+          <div className="composer-draft-option">
+            <label className="composer-draft-toggle" title={draftHelp}>
+              <input
+                checked={createAsDraft}
+                onChange={(event) => setCreateAsDraft(event.target.checked)}
+                type="checkbox"
+              />
+              <span>创建为草稿</span>
+            </label>
+            <span className="composer-help-trigger" title={draftHelp} aria-label={draftHelp}>
+              <Icon name="help" size={14} className="composer-help-icon" aria-hidden="true" />
+            </span>
+          </div>
           <span>Enter 发送</span>
           <button className="send-button" type="submit" aria-label={submitLabel}>
             <Icon name="send" size={20} aria-hidden="true" />

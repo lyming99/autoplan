@@ -1,0 +1,741 @@
+OpenAI Codex v0.121.0 (research preview)
+--------
+workdir: D:\project\GitHub\autoplan
+model: gpt-5.5
+provider: custom
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, C:\Users\98000\.codex\memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019f0780-0dee-7220-911d-fe9db60a1aeb
+--------
+user
+你是开发执行者。
+请只执行指定任务 P002，不要提前执行其它任务，也不要顺手处理其它 checkbox。
+
+plan 文件（只读）：D:\project\GitHub\autoplan\docs\plan\plan_requirement_32_20260627-131242.md
+指定任务：
+- [ ] P002: 调整工作区导航与内容默认态 <!-- scope: src/renderer/pages/WorkspacePage.tsx -->
+任务 scope：src/renderer/pages/workspacepage.tsx
+
+完成后必须：
+- 当前任务已恢复同一 plan 前序任务的 Codex 会话，请沿用已有分析结论和修改背景，避免重新从零梳理
+- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区
+- AutoPlan 会在任务成功后统一写回数据库、checkbox 和进度区
+- 只修改当前任务 scope 直接相关的业务文件
+- 当前阶段只做开发修改，不运行测试、回归、验收、构建、lint/analyze、coverage、e2e 或 benchmark 命令；AutoPlan 会在所有任务完成后统一执行最终验收命令
+- 即使任务验收要点提到测试，也只补充或调整必要代码/测试文件，不在当前任务内启动测试进程；除非当前任务或 plan 总体说明明确写着“本任务必须执行某命令”
+- 若识别到 Flutter/Dart 项目，可遵循其代码组织、格式和测试文件约定，但当前任务内不要运行 flutter test、dart test、flutter analyze 或 dart analyze
+- 如果工具链命令因 PathAccessException、Permission denied、拒绝访问或超时失败，停止重试并说明环境阻塞，把验证留给最终验收阶段
+- 不输出完整 diff、源码全文或长文件列表
+- 中文文件读写使用 UTF-8
+**Executing workspace adjustments**
+
+I need to execute only P002, focusing solely on the WorkspacePage without modifying types since P001 has already been updated. I need to inspect the current state of the WorkspacePage, particularly the top default tab order. P002 has specific requirements for what should be highlighted and displayed, potentially needing no new code because of P001's changes. I'm also considering if the tabs’ order needs adjustment and if remaining steps can be skipped or simplified.
+**Considering code analysis steps**
+
+I’m thinking maybe I should start with codegraph, even if it fails since the developer suggests using it first for most questions. However, we know there’s no project loaded, so using the shell is an option. I need a preamble but might not need a complicated plan. I can loop around the active tab and focus on the task at hand without re-reading the plan since it's already included in the prompt. I’ll inspect relevant snippets from the WorkspacePage specifically.
+codex
+我会沿用 P001 的默认常量改动，只检查 `WorkspacePage` 默认态是否还需补齐。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); rg -n "DEFAULT_WORKSPACE_TAB|tabs:|const tabs|activeTab|tabTitle|tabSubtitle|view-overview|view-requirement|WorkspaceSidebar|resolveWorkspaceTab" src'"\\renderer\\pages\\WorkspacePage.tsx" in D:\project\GitHub\autoplan
+2026-06-27T09:17:59.032633Z ERROR codex_core::tools::router: error={"output":"rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。\r\n所在位置 行:2 字符: 78\r\n+ ... onsole]::OutputEncoding=[System.Text.UTF8Encoding]::new(); rg -n \"DEF ...\r\n+                                                                ~~\r\n    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException\r\n    + FullyQualifiedErrorId : CommandNotFoundException\r\n \r\n","metadata":{"exit_code":1,"duration_seconds":1.5}}
+ exited 1 in 1451ms:
+rg : 无法将“rg”项识别为 cmdlet、函数、脚本文件或可运行程序的名称。请检查名称的拼写，如果包括路径，请确保路径正确，然后再试一次。
+所在位置 行:2 字符: 78
++ ... onsole]::OutputEncoding=[System.Text.UTF8Encoding]::new(); rg -n "DEF ...
++                                                                ~~
+    + CategoryInfo          : ObjectNotFound: (rg:String) [], CommandNotFoundException
+    + FullyQualifiedErrorId : CommandNotFoundException
+ 
+
+codex
+`rg` 不在当前 PATH，我改用 PowerShell 内置搜索继续定位。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Select-String -Path '"'src\\renderer\\pages\\WorkspacePage.tsx' -Pattern 'DEFAULT_WORKSPACE_TAB|const tabs|activeTab|tabTitle|tabSubtitle|view-overview|view-requirement|WorkspaceSidebar|resolveWorkspaceTab'" in D:\project\GitHub\autoplan
+ succeeded in 486ms:
+
+src\renderer\pages\WorkspacePage.tsx:16:import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspac
+e/WorkspaceSidebar';
+src\renderer\pages\WorkspacePage.tsx:20:    activeTab,
+src\renderer\pages\WorkspacePage.tsx:84:        <WorkspaceSidebar
+src\renderer\pages\WorkspacePage.tsx:85:          activeTab={activeTab}
+src\renderer\pages\WorkspacePage.tsx:103:      <WorkspaceSidebar
+src\renderer\pages\WorkspacePage.tsx:104:        activeTab={activeTab}
+src\renderer\pages\WorkspacePage.tsx:116:            <h1>{tabTitle(activeTab)}</h1>
+src\renderer\pages\WorkspacePage.tsx:117:            <p>{tabSubtitle(activeTab, project)}</p>
+src\renderer\pages\WorkspacePage.tsx:154:        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`
+}>
+src\renderer\pages\WorkspacePage.tsx:159:        <section className={`view ${activeTab === 'requirement' ? 'active' : '
+'}`}>
+src\renderer\pages\WorkspacePage.tsx:160:          {activeTab === 'requirement' ? (
+src\renderer\pages\WorkspacePage.tsx:185:        <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`
+}>
+src\renderer\pages\WorkspacePage.tsx:186:          {activeTab === 'feedback' ? (
+src\renderer\pages\WorkspacePage.tsx:211:        <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+src\renderer\pages\WorkspacePage.tsx:212:          {activeTab === 'tasks' ? (
+src\renderer\pages\WorkspacePage.tsx:261:        <section className={`view ${activeTab === 'settings' ? 'active' : ''}`
+}>
+src\renderer\pages\WorkspacePage.tsx:262:          {activeTab === 'settings' ? (
+src\renderer\pages\WorkspacePage.tsx:282:        <section className={`view ${activeTab === 'events' ? 'active' : ''}`}>
+src\renderer\pages\WorkspacePage.tsx:283:          {activeTab === 'events' ? (
+src\renderer\pages\WorkspacePage.tsx:299:function tabTitle(tab: WorkspaceTab) {
+src\renderer\pages\WorkspacePage.tsx:303:function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
+
+
+
+**Inspecting file changes**
+
+I'm noticing there are only 300 lines in the file, which seems drastically changed. I should inspect the file closely. Could it be that the previous version was truncated? It looks like it now imports the WorkspaceSidebar component and there’s no default export anymore. I think it makes sense to check the first 340 lines to see what's going on. Let’s figure this out!
+codex
+当前文件结构较之前已演进，我会只读关键区域确认默认渲染链路。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Get-Content -Encoding UTF8 '"'src\\renderer\\pages\\WorkspacePage.tsx' -TotalCount 360" in D:\project\GitHub\autoplan
+ succeeded in 461ms:
+import type {
+  AppSnapshot,
+  Plan,
+  Project,
+  WorkspaceTab,
+} from '../types';
+import { useWorkspaceController } from '../hooks/useWorkspaceController';
+import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
+import { IntakePanel } from '../components/IntakePanel';
+import { EventList, PlanList, TaskList } from '../components/PlanLists';
+import { SearchResults } from '../components/SearchResults';
+import { Icon } from '../components/icons';
+import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
+import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
+import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+
+export function WorkspacePage() {
+  const {
+    activeTab,
+    addPendingFiles,
+    appendIntakeTask,
+    closePlanReader,
+    composerCliSelection,
+    createFeedback,
+    createRequirement,
+    deleteFeedback,
+    deleteRequirement,
+    displayTasks,
+    error,
+    filteredEmptyText,
+    filteredItems,
+    interruptIntake,
+    latestReadingPlan,
+    loopForm,
+    navigate,
+    openPlanReader,
+    openTaskPlanReader,
+    pendingAttachments,
+    planReadState,
+    project,
+    projectId,
+    projects,
+    refreshPlanReader,
+    removePendingAttachment,
+    resumeIntake,
+    runLoopAction,
+    scopeFileOpenSettings,
+    searchableItemCount,
+    searchHitCount,
+    searchQuery,
+    selectSearchResult,
+    selectTab,
+    setScopeFileOpenSettings,
+    setSearchQuery,
+    snapshot,
+    state,
+    submitLoopConfig,
+    switchProject,
+    updateFeedback,
+    updateLoopForm,
+    updateRequirement,
+    workspaceSearch,
+  } = useWorkspaceController();
+
+  const createRequirementFromComposer = (payload: string | ComposerSubmitPayload) =>
+    createRequirement(payload as unknown as string);
+  const createFeedbackFromComposer = (payload: string | ComposerSubmitPayload) =>
+    createFeedback(payload as unknown as string);
+  const reorderPlansFromList = (orderedPlans: Plan[]) =>
+    runLoopAction(() => {
+      if (!snapshot) throw new Error('工作区快照尚未加载');
+      const orderedPlanIds = new Set(orderedPlans.map((plan) => plan.id));
+      const orderedQueue = [...orderedPlans];
+      const mergedPlans = snapshot.plans.map((plan) => (orderedPlanIds.has(plan.id) ? orderedQueue.shift() || plan : plan));
+      return (window.autoplan as typeof window.autoplan & {
+        reorderPlans: (input: { projectId: number; planIds: number[] }) => Promise<AppSnapshot>;
+      }).reorderPlans({ projectId, planIds: mergedPlans.map((plan) => plan.id) });
+    });
+
+  if (!snapshot) {
+    return (
+      <div className="workspace-shell">
+        <WorkspaceSidebar
+          activeTab={activeTab}
+          onTab={selectTab}
+          onBack={() => navigate('/projects')}
+          projectId={projectId}
+          projects={projects}
+          currentProject={project}
+          state={null}
+          onSwitchProject={switchProject}
+        />
+        <div className="workspace-main">
+          <div className="empty">加载中...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="workspace-shell">
+      <WorkspaceSidebar
+        activeTab={activeTab}
+        onTab={selectTab}
+        onBack={() => navigate('/projects')}
+        projectId={projectId}
+        projects={projects}
+        currentProject={project}
+        state={state}
+        onSwitchProject={switchProject}
+      />
+      <div className="workspace-main">
+        <header className="topbar">
+          <div className="topbar-title">
+            <h1>{tabTitle(activeTab)}</h1>
+            <p>{tabSubtitle(activeTab, project)}</p>
+          </div>
+          <WorkspaceSearchBox
+            hitCount={searchHitCount}
+            onQueryChange={setSearchQuery}
+            query={searchQuery}
+            totalCount={searchableItemCount}
+          />
+          <div className="topbar-actions">
+            <span className="pill">
+              <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
+              {state ? `${state.running ? 'running' : 'stopped'} · ${state.phase || 'idle'}` : 'idle'}
+            </span>
+            <button
+              type="button"
+              className={`btn btn-sm ${state?.running ? 'btn-danger' : 'btn-primary'}`}
+              onClick={() =>
+                runLoopAction(() =>
+                  state?.running
+                    ? window.autoplan.stopLoop({ projectId, manual: true })
+                    : window.autoplan.startLoop({ projectId, manual: true }),
+                )
+              }
+            >
+              <Icon name={state?.running ? 'stop' : 'run'} size={14} aria-hidden />
+              {state?.running ? '停止' : '启动'}
+            </button>
+          </div>
+        </header>
+
+        <SearchResults
+          onClear={() => setSearchQuery('')}
+          onSelectGroup={selectTab}
+          onSelectResult={selectSearchResult}
+          searchState={workspaceSearch}
+        />
+
+        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+          {error ? <div className="error-banner">{error}</div> : null}
+          <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+        </section>
+
+        <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+          {activeTab === 'requirement' ? (
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
+                heading="需求记录"
+                items={filteredItems.requirements}
+                pendingAttachments={pendingAttachments.requirement}
+                placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+                submitLabel="发送需求"
+                subtitle="循环开启后自动扫描并生成计划"
+                type="requirement"
+                attachments={snapshot.attachments}
+                onAddFiles={addPendingFiles}
+                onDelete={deleteRequirement}
+                onRemoveAttachment={removePendingAttachment}
+                onSubmit={createRequirementFromComposer}
+                onUpdate={updateRequirement}
+                onInterrupt={interruptIntake}
+                onResume={resumeIntake}
+                onAppendTask={appendIntakeTask}
+              />
+            </ComposerCliSelectionProvider>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
+          {activeTab === 'feedback' ? (
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无反馈。'}
+                heading="反馈记录"
+                items={filteredItems.feedback}
+                pendingAttachments={pendingAttachments.feedback}
+                placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
+                submitLabel="发送反馈"
+                subtitle="循环开启后自动扫描并生成计划"
+                type="feedback"
+                attachments={snapshot.attachments}
+                onAddFiles={addPendingFiles}
+                onDelete={deleteFeedback}
+                onRemoveAttachment={removePendingAttachment}
+                onSubmit={createFeedbackFromComposer}
+                onUpdate={updateFeedback}
+                onInterrupt={interruptIntake}
+                onResume={resumeIntake}
+                onAppendTask={appendIntakeTask}
+              />
+            </ComposerCliSelectionProvider>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'tasks' ? 'active' : ''}`}>
+          {activeTab === 'tasks' ? (
+            <div className="task-main">
+              <div className="task-status-grid">
+                <section className="card">
+                  <div className="card-head">
+                    <h2>Plan</h2>
+                  </div>
+                  <PlanList
+                    emptyText={filteredEmptyText}
+                    latestReadingPlan={latestReadingPlan}
+                    onCloseReader={closePlanReader}
+                    onOpenReader={openPlanReader}
+                    onRunParallel={({ plan, batches }) =>
+                      runLoopAction(() =>
+                        (window.autoplan as typeof window.autoplan & {
+                          runTaskBatches: (input: {
+                            projectId: number;
+                            planId: number;
+                            batches: Array<{ taskIds: number[] }>;
+                            manual: true;
+                          }) => Promise<AppSnapshot>;
+                        }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
+                      )
+                    }
+                    onRefreshReader={refreshPlanReader}
+                    onReorderPlans={reorderPlansFromList}
+                    plans={filteredItems.plans}
+                    readerState={planReadState}
+                    tasks={snapshot.tasks}
+                    totalPlanCount={snapshot.plans.length}
+                  />
+                </section>
+                <section className="card">
+                  <div className="card-head">
+                    <h2>任务</h2>
+                  </div>
+                  <TaskList
+                    emptyText={filteredEmptyText}
+                    tasks={displayTasks}
+                    onOpenPlan={openTaskPlanReader}
+                    onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
+                    onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}
+                  />
+                </section>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>
+          {activeTab === 'settings' ? (
+            <WorkspaceSettingsView
+              loopForm={loopForm}
+              scopeFileOpenSettings={scopeFileOpenSettings}
+              setLoopForm={updateLoopForm}
+              setScopeFileOpenSettings={setScopeFileOpenSettings}
+              mcp={snapshot.mcp}
+              onSubmit={submitLoopConfig}
+              onToggleRun={() =>
+                runLoopAction(() =>
+                  state?.running
+                    ? window.autoplan.stopLoop({ projectId, manual: true })
+                    : window.autoplan.startLoop({ projectId, manual: true }),
+                )
+              }
+              running={Boolean(state?.running)}
+            />
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'events' ? 'active' : ''}`}>
+          {activeTab === 'events' ? (
+            <section className="card">
+              <div className="card-head">
+                <h2>事件流</h2>
+                <span className="hint">最近 80 条 · 实时更新 · 当前 {agentCliConfigSummary(state)}</span>
+              </div>
+              <EventList emptyText={filteredEmptyText} events={filteredItems.events} />
+            </section>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+
+function tabTitle(tab: WorkspaceTab) {
+  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', tasks: '任务与计划', events: '事件流', settings: '设置' }[tab];
+}
+
+function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
+  const base = {
+    overview: '循环状态、阶段流水线与各模块一览',
+    requirement: '收集需求，发送后由循环自动生成开发计划',
+    feedback: '收集反馈，关联需求并由循环生成开发计划',
+    tasks: 'Plan 与任务进度',
+    events: '循环运行日志与任务执行记录',
+    settings: '工作区路径、循环间隔、验收命令、CLI 后端与 MCP 接入',
+  }[tab];
+  return project ? `${base} · ${project.name}` : base;
+}
+
+codex
+默认 Tab 状态现在来自 controller，我只读它来确认页面是否需要兜底。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Select-String -Path '"'src\\renderer\\hooks\\useWorkspaceController.ts' -Pattern 'DEFAULT_WORKSPACE_TAB|resolveWorkspaceTab|activeTab|setActiveTab|setSearchParams|tabParam' -Context 2,3" in D:\project\GitHub\autoplan
+ succeeded in 502ms:
+
+  src\renderer\hooks\useWorkspaceController.ts:1:import { FormEvent, useCallback, useEffect, useMemo, useRef, useState,
+ type Dispatch, type SetStateAction } from 'react';
+  src\renderer\hooks\useWorkspaceController.ts:2:import { useNavigate, useParams, useSearchParams } from 'react-router-
+dom';
+> src\renderer\hooks\useWorkspaceController.ts:3:import { DEFAULT_WORKSPACE_TAB, getPlanTaskAssociationSource } from '.
+./types';
+  src\renderer\hooks\useWorkspaceController.ts:4:import type {
+  src\renderer\hooks\useWorkspaceController.ts:5:  AgentCliProvider,
+  src\renderer\hooks\useWorkspaceController.ts:6:  AppSnapshot,
+  src\renderer\hooks\useWorkspaceController.ts:33:  loopFormsEqual,
+  src\renderer\hooks\useWorkspaceController.ts:34:  normalizeCodexReasoningEffort,
+> src\renderer\hooks\useWorkspaceController.ts:35:  resolveWorkspaceTab,
+  src\renderer\hooks\useWorkspaceController.ts:36:  type LoopFormState,
+  src\renderer\hooks\useWorkspaceController.ts:37:  type ScopeFileOpenSettings,
+  src\renderer\hooks\useWorkspaceController.ts:38:} from '../utils/workspaceForms';
+  src\renderer\hooks\useWorkspaceController.ts:47:  const params = useParams<{ projectId: string }>();
+  src\renderer\hooks\useWorkspaceController.ts:48:  const navigate = useNavigate();
+> src\renderer\hooks\useWorkspaceController.ts:49:  const [searchParams, setSearchParams] = useSearchParams();
+  src\renderer\hooks\useWorkspaceController.ts:50:  const projectId = Number(params.projectId);
+  src\renderer\hooks\useWorkspaceController.ts:51:  const { snapshot, setSnapshot, error, setError } = useSnapshot(Numb
+er.isFinite(projectId) ? projectId : null);
+> src\renderer\hooks\useWorkspaceController.ts:52:  const tabParam = searchParams.get('tab');
+> src\renderer\hooks\useWorkspaceController.ts:53:  const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => reso
+lveWorkspaceTab(tabParam));
+  src\renderer\hooks\useWorkspaceController.ts:54:  const [pendingAttachments, setPendingAttachments] =
+  src\renderer\hooks\useWorkspaceController.ts:55:    useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAtt
+achments);
+  src\renderer\hooks\useWorkspaceController.ts:56:  const [composerCliProviders, setComposerCliProviders] =
+  src\renderer\hooks\useWorkspaceController.ts:166:
+  src\renderer\hooks\useWorkspaceController.ts:167:  useEffect(() => {
+> src\renderer\hooks\useWorkspaceController.ts:168:    const nextTab = resolveWorkspaceTab(tabParam);
+> src\renderer\hooks\useWorkspaceController.ts:169:    setActiveTab((current) => (current === nextTab ? current : nextT
+ab));
+> src\renderer\hooks\useWorkspaceController.ts:170:  }, [tabParam]);
+  src\renderer\hooks\useWorkspaceController.ts:171:
+  src\renderer\hooks\useWorkspaceController.ts:172:  useEffect(() => {
+  src\renderer\hooks\useWorkspaceController.ts:173:    planReadRequestRef.current += 1;
+  src\renderer\hooks\useWorkspaceController.ts:455:  const switchProject = (nextId: number) => {
+  src\renderer\hooks\useWorkspaceController.ts:456:    if (nextId && nextId !== projectId) {
+> src\renderer\hooks\useWorkspaceController.ts:457:      navigate(`/projects/${nextId}${activeTab === DEFAULT_WORKSPACE
+_TAB ? '' : `?tab=${activeTab}`}`);
+  src\renderer\hooks\useWorkspaceController.ts:458:    }
+  src\renderer\hooks\useWorkspaceController.ts:459:  };
+  src\renderer\hooks\useWorkspaceController.ts:460:
+  src\renderer\hooks\useWorkspaceController.ts:461:  const selectTab = useCallback(
+  src\renderer\hooks\useWorkspaceController.ts:462:    (tab: WorkspaceTab) => {
+> src\renderer\hooks\useWorkspaceController.ts:463:      setActiveTab(tab);
+> src\renderer\hooks\useWorkspaceController.ts:464:      setSearchParams(tab === DEFAULT_WORKSPACE_TAB ? {} : { tab }, 
+{ replace: true });
+  src\renderer\hooks\useWorkspaceController.ts:465:    },
+> src\renderer\hooks\useWorkspaceController.ts:466:    [setSearchParams],
+  src\renderer\hooks\useWorkspaceController.ts:467:  );
+  src\renderer\hooks\useWorkspaceController.ts:468:
+  src\renderer\hooks\useWorkspaceController.ts:469:  const selectSearchResult = useCallback(
+  src\renderer\hooks\useWorkspaceController.ts:475:
+  src\renderer\hooks\useWorkspaceController.ts:476:  return {
+> src\renderer\hooks\useWorkspaceController.ts:477:    activeTab,
+  src\renderer\hooks\useWorkspaceController.ts:478:    addPendingFiles,
+  src\renderer\hooks\useWorkspaceController.ts:479:    appendIntakeTask,
+  src\renderer\hooks\useWorkspaceController.ts:480:    closePlanReader,
+
+
+
+codex
+页面已默认拿到 `requirement`，但概览组件仍无条件挂载；我会让它只在概览 Tab 激活时渲染。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); (Get-Content -Encoding UTF8 '"'src\\renderer\\pages\\WorkspacePage.tsx') | Select-Object -Skip 145 -First 45" in D:\project\GitHub\autoplan
+ succeeded in 485ms:
+
+        <SearchResults
+          onClear={() => setSearchQuery('')}
+          onSelectGroup={selectTab}
+          onSelectResult={selectSearchResult}
+          searchState={workspaceSearch}
+        />
+
+        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+          {error ? <div className="error-banner">{error}</div> : null}
+          <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+        </section>
+
+        <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+          {activeTab === 'requirement' ? (
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
+                heading="需求记录"
+                items={filteredItems.requirements}
+                pendingAttachments={pendingAttachments.requirement}
+                placeholder="输入需求，Enter 发送，Shift+Enter 换行"
+                submitLabel="发送需求"
+                subtitle="循环开启后自动扫描并生成计划"
+                type="requirement"
+                attachments={snapshot.attachments}
+                onAddFiles={addPendingFiles}
+                onDelete={deleteRequirement}
+                onRemoveAttachment={removePendingAttachment}
+                onSubmit={createRequirementFromComposer}
+                onUpdate={updateRequirement}
+                onInterrupt={interruptIntake}
+                onResume={resumeIntake}
+                onAppendTask={appendIntakeTask}
+              />
+            </ComposerCliSelectionProvider>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
+          {activeTab === 'feedback' ? (
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无反馈。'}
+                heading="反馈记录"
+
+codex
+我会做一个局部 JSX 调整，确保默认需求页不挂载概览内容。
+apply patch
+patch: completed
+D:\project\GitHub\autoplan\src\renderer\pages\WorkspacePage.tsx
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2d47f5887c470cbdbea79403cddae4ee63c719bb..c17733938f2c39ab0f5e4999349b76ae5502c547
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -151,10 +151,14 @@
+           searchState={workspaceSearch}
+         />
+ 
+-        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+-          {error ? <div className="error-banner">{error}</div> : null}
+-          <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+-        </section>
++        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
++          {activeTab === 'overview' ? (
++            <>
++              {error ? <div className="error-banner">{error}</div> : null}
++              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
++            </>
++          ) : null}
++        </section>
+ 
+         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+           {activeTab === 'requirement' ? (
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2d47f5887c470cbdbea79403cddae4ee63c719bb..c17733938f2c39ab0f5e4999349b76ae5502c547
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -151,10 +151,14 @@
+           searchState={workspaceSearch}
+         />
+ 
+-        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+-          {error ? <div className="error-banner">{error}</div> : null}
+-          <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+-        </section>
++        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
++          {activeTab === 'overview' ? (
++            <>
++              {error ? <div className="error-banner">{error}</div> : null}
++              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
++            </>
++          ) : null}
++        </section>
+ 
+         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+           {activeTab === 'requirement' ? (
+
+codex
+改动完成；我会仅检查当前文件 diff 概况和 JSX 片段，不跑任何验证命令。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); git diff --stat -- src/renderer/pages/WorkspacePage.tsx; Write-Output '"'---SNIPPET---'; (Get-Content -Encoding UTF8 'src\\renderer\\pages\\WorkspacePage.tsx') | Select-Object -Skip 150 -First 18" in D:\project\GitHub\autoplan
+ succeeded in 497ms:
+ src/renderer/pages/WorkspacePage.tsx | 1284 +++-------------------------------
+ 1 file changed, 80 insertions(+), 1204 deletions(-)
+---SNIPPET---
+          searchState={workspaceSearch}
+        />
+
+        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+          {activeTab === 'overview' ? (
+            <>
+              {error ? <div className="error-banner">{error}</div> : null}
+              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+            </>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+          {activeTab === 'requirement' ? (
+            <ComposerCliSelectionProvider value={composerCliSelection}>
+              <IntakePanel
+                emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
+                heading="需求记录"
+warning: in the working copy of 'src/renderer/pages/WorkspacePage.tsx', LF will be replaced by CRLF the next time Git touches it
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2d47f5887c470cbdbea79403cddae4ee63c719bb..c17733938f2c39ab0f5e4999349b76ae5502c547
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -151,10 +151,14 @@
+           searchState={workspaceSearch}
+         />
+ 
+-        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+-          {error ? <div className="error-banner">{error}</div> : null}
+-          <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+-        </section>
++        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
++          {activeTab === 'overview' ? (
++            <>
++              {error ? <div className="error-banner">{error}</div> : null}
++              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
++            </>
++          ) : null}
++        </section>
+ 
+         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+           {activeTab === 'requirement' ? (
+
+codex
+当前工作树里该文件已有大量既有差异；我只确认本次片段改动和未触碰 plan。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); git status --short -- src/renderer/pages/WorkspacePage.tsx docs/plan/plan_requirement_32_20260627-131242.md' in D:\project\GitHub\autoplan
+ succeeded in 319ms:
+ M src/renderer/pages/WorkspacePage.tsx
+?? docs/plan/plan_requirement_32_20260627-131242.md
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2d47f5887c470cbdbea79403cddae4ee63c719bb..c17733938f2c39ab0f5e4999349b76ae5502c547
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -151,10 +151,14 @@
+           searchState={workspaceSearch}
+         />
+ 
+-        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+-          {error ? <div className="error-banner">{error}</div> : null}
+-          <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+-        </section>
++        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
++          {activeTab === 'overview' ? (
++            <>
++              {error ? <div className="error-banner">{error}</div> : null}
++              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
++            </>
++          ) : null}
++        </section>
+ 
+         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+           {activeTab === 'requirement' ? (
+
+**Assessing tracking status**
+
+I’m thinking about the plan file being untracked. It shows read-only, but my git status indicates it’s untracked, possibly from before. The user mentioned not wanting a long list, but it might be worth mentioning that the plan remains untouched and was untracked previously. I also realize I might need to provide the line number of any changed snippets since we didn’t modify it. Maybe I should use Select-String for an exact match.
+codex
+最后我取一下行号，方便交付说明。
+exec
+powershell.exe -Command '$OutputEncoding=[Console]::OutputEncoding=[System.Text.UTF8Encoding]::new(); Select-String -Path '"'src\\renderer\\pages\\WorkspacePage.tsx' -Pattern \"activeTab === 'overview' \\? \\(\"" in D:\project\GitHub\autoplan
+ succeeded in 474ms:
+
+src\renderer\pages\WorkspacePage.tsx:155:          {activeTab === 'overview' ? (
+
+
+
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2d47f5887c470cbdbea79403cddae4ee63c719bb..c17733938f2c39ab0f5e4999349b76ae5502c547
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -151,10 +151,14 @@
+           searchState={workspaceSearch}
+         />
+ 
+-        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+-          {error ? <div className="error-banner">{error}</div> : null}
+-          <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+-        </section>
++        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
++          {activeTab === 'overview' ? (
++            <>
++              {error ? <div className="error-banner">{error}</div> : null}
++              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
++            </>
++          ) : null}
++        </section>
+ 
+         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+           {activeTab === 'requirement' ? (
+
+codex
+已完成 P002，仅修改 `src/renderer/pages/WorkspacePage.tsx`。
+
+- 在 `src/renderer/pages/WorkspacePage.tsx:155` 将概览内容改为仅在 `activeTab === 'overview'` 时挂载。
+- 默认进入 `requirement` 时，页面会直接渲染需求 `IntakePanel`，概览组件不再默认渲染。
+- 标题、副标题、侧边栏高亮仍由同一个 `activeTab` 驱动，切换其它 Tab 时继续同步更新。
+- 未修改 plan 文件，未勾选 checkbox，未运行测试/构建/lint。
+diff --git a/src/renderer/pages/WorkspacePage.tsx b/src/renderer/pages/WorkspacePage.tsx
+index 2d47f5887c470cbdbea79403cddae4ee63c719bb..c17733938f2c39ab0f5e4999349b76ae5502c547
+--- a/src/renderer/pages/WorkspacePage.tsx
++++ b/src/renderer/pages/WorkspacePage.tsx
+@@ -151,10 +151,14 @@
+           searchState={workspaceSearch}
+         />
+ 
+-        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
+-          {error ? <div className="error-banner">{error}</div> : null}
+-          <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+-        </section>
++        <section className={`view ${activeTab === 'overview' ? 'active' : ''}`}>
++          {activeTab === 'overview' ? (
++            <>
++              {error ? <div className="error-banner">{error}</div> : null}
++              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
++            </>
++          ) : null}
++        </section>
+ 
+         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
+           {activeTab === 'requirement' ? (
+
+tokens used
+103,184
+已完成 P002，仅修改 `src/renderer/pages/WorkspacePage.tsx`。
+
+- 在 `src/renderer/pages/WorkspacePage.tsx:155` 将概览内容改为仅在 `activeTab === 'overview'` 时挂载。
+- 默认进入 `requirement` 时，页面会直接渲染需求 `IntakePanel`，概览组件不再默认渲染。
+- 标题、副标题、侧边栏高亮仍由同一个 `activeTab` 驱动，切换其它 Tab 时继续同步更新。
+- 未修改 plan 文件，未勾选 checkbox，未运行测试/构建/lint。

@@ -1,0 +1,837 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoPlan · 设置</title>
+    <style>
+      /* ============================================================
+         设计系统 · Design Tokens（与 workspace.html 完全一致）
+         ============================================================ */
+      :root {
+        color-scheme: light;
+        --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+        --brand-50: #eef4ff;
+        --brand-100: #dbe7ff;
+        --brand-500: #3b6ef5;
+        --brand-600: #255fbd;
+        --brand-700: #1d4a94;
+        --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+
+        --bg-app: #f4f6fb;
+        --bg-elevated: #ffffff;
+        --bg-soft: #f8fafd;
+        --bg-hover: #eef2f9;
+        --line: #e2e8f1;
+        --line-soft: #eef2f8;
+
+        --text-1: #172033;
+        --text-2: #475067;
+        --text-3: #7c879b;
+        --text-4: #a4adc0;
+
+        --success: #18a957;
+        --success-bg: #e7f7ee;
+        --warning: #e08600;
+        --warning-bg: #fdf3e3;
+        --danger: #e5484d;
+        --danger-bg: #fdecec;
+        --info: #2563eb;
+        --info-bg: #e8f0ff;
+
+        --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+        --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+        --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+        --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+
+        font-family: var(--font-sans);
+        background: var(--bg-app);
+        color: var(--text-1);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { overflow: hidden; font-size: 14px; -webkit-font-smoothing: antialiased; }
+      h1, h2, h3, h4, p { margin: 0; }
+      button { font: inherit; cursor: pointer; }
+      a { color: var(--brand-600); text-decoration: none; }
+      code { font-family: var(--font-mono); }
+      .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+      .icon {
+        width: 1em; height: 1em; flex: 0 0 auto;
+        display: inline-block; vertical-align: -0.15em;
+        fill: none; stroke: currentColor; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round;
+      }
+
+      /* 应用骨架 */
+      .app { display: grid; grid-template-columns: 248px 1fr; height: 100vh; }
+
+      /* 侧边栏 */
+      .sidebar {
+        display: flex; flex-direction: column; gap: 6px;
+        padding: 22px 14px 18px;
+        background: var(--bg-elevated); border-right: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: 12px; padding: 4px 10px 22px; }
+      .brand-mark {
+        display: grid; place-items: center; width: 40px; height: 40px;
+        border-radius: 12px; background: var(--brand-grad); color: #fff;
+        font-weight: 800; font-size: 18px; box-shadow: 0 8px 18px rgba(77, 110, 255, 0.35);
+      }
+      .brand-name { font-size: 17px; font-weight: 700; }
+      .brand-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+      .project-switcher {
+        margin: 0 4px 10px; padding: 10px;
+        border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft);
+      }
+      .project-label {
+        display: flex; align-items: center; justify-content: space-between;
+        font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+        font-weight: 700; color: var(--text-4); margin-bottom: 8px;
+      }
+      .project-select-trigger {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-elevated); text-align: left;
+      }
+      .project-avatar {
+        width: 26px; height: 26px; flex: 0 0 auto; border-radius: 7px;
+        background: var(--brand-grad); color: #fff; font-weight: 700; font-size: 12px;
+        display: grid; place-items: center;
+      }
+      .project-main { min-width: 0; flex: 1 1 auto; }
+      .project-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .project-path { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+
+      .nav-group-label {
+        padding: 16px 12px 6px; font-size: 10.5px; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--text-4); font-weight: 700;
+      }
+      .nav-item {
+        display: flex; align-items: center; gap: 12px; width: 100%;
+        padding: 10px 12px; border: 0; border-radius: var(--r-md);
+        background: transparent; color: var(--text-2); text-align: left;
+        font-size: 13.5px; font-weight: 500; transition: background .14s, color .14s;
+      }
+      .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+      .nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+      .nav-item.active .nav-ico { color: var(--brand-600); }
+      .nav-ico { width: 20px; height: 20px; flex: 0 0 auto; color: var(--text-3); display: grid; place-items: center; }
+      .nav-ico .icon { width: 18px; height: 18px; }
+      .nav-badge {
+        margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px;
+        border-radius: 999px; background: var(--line); color: var(--text-2);
+        font-size: 11px; font-weight: 700; display: grid; place-items: center;
+      }
+
+      .sidebar-footer {
+        margin-top: auto; padding: 12px; border-radius: var(--r-md);
+        background: var(--bg-soft); border: 1px solid var(--line-soft);
+      }
+      .loop-mini { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2); }
+      .loop-mini b { color: var(--text-1); }
+      .led { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-bg); }
+      .led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+      @keyframes led-pulse { 0%,100% { box-shadow: 0 0 0 4px var(--success-bg); } 50% { box-shadow: 0 0 0 7px rgba(24,169,87,.15); } }
+
+      /* 主区 */
+      .main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
+      .topbar {
+        display: flex; align-items: center; gap: 16px; padding: 16px 28px;
+        background: var(--bg-elevated); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+      }
+      .topbar-title h1 { font-size: 18px; font-weight: 700; }
+      .topbar-title p { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+      .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px;
+        border-radius: 999px; font-size: 12px; font-weight: 600;
+        background: var(--bg-soft); border: 1px solid var(--line); color: var(--text-2);
+      }
+      .pill .led { width: 7px; height: 7px; box-shadow: 0 0 0 3px var(--success-bg); }
+
+      .view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+
+      /* 通用组件 */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 9px 16px; border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--bg-elevated); color: var(--text-1); font-size: 13px; font-weight: 600;
+        transition: background .14s, border-color .14s, transform .06s;
+      }
+      .btn:hover { background: var(--bg-hover); }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+      .btn-primary:hover { background: var(--brand-700); }
+      .btn-sm { padding: 6px 12px; font-size: 12px; }
+      .btn .icon { width: 14px; height: 14px; }
+
+      .card { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); }
+      .chip {
+        display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+        border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+      }
+
+      ::-webkit-scrollbar { width:9px; height:9px; }
+      ::-webkit-scrollbar-thumb { background:#d4dce8; border-radius:999px; border:2px solid transparent; background-clip:content-box; }
+      ::-webkit-scrollbar-track { background:transparent; }
+
+      .watermark { position:fixed; right:18px; bottom:14px; z-index:50; font-size:10.5px; color:var(--text-4); background:var(--bg-elevated); border:1px solid var(--line); padding:4px 10px; border-radius:999px; box-shadow:var(--shadow-sm); }
+
+      /* ============================================================
+         设置页专属 · 左侧分组导航 + 右侧配置内容
+         ============================================================ */
+      .settings-view {
+        display: grid; grid-template-columns: 232px 1fr;
+        height: 100%; min-height: 0;
+      }
+
+      /* —— 左侧：分组导航 —— */
+      .settings-nav {
+        border-right: 1px solid var(--line);
+        background: var(--bg-elevated);
+        padding: 18px 12px 24px;
+        overflow: auto;
+      }
+      .settings-nav-label {
+        padding: 4px 10px 10px; font-size: 10.5px; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--text-4); font-weight: 700;
+      }
+      .settings-nav-item {
+        display: flex; align-items: center; gap: 11px; width: 100%;
+        padding: 9px 10px; margin-bottom: 2px; border: 0; border-radius: var(--r-md);
+        background: transparent; color: var(--text-2); text-align: left;
+        font-size: 13px; font-weight: 500; transition: background .14s, color .14s;
+      }
+      .settings-nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+      .settings-nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+      .settings-nav-item.active .snav-ico { color: var(--brand-600); }
+      .snav-ico { width: 18px; height: 18px; flex: 0 0 auto; color: var(--text-3); display: grid; place-items: center; }
+      .snav-ico .icon { width: 16px; height: 16px; }
+      .snav-meta {
+        margin-left: auto; font-size: 10.5px; font-weight: 600;
+        color: var(--text-4); background: var(--bg-soft); border: 1px solid var(--line);
+        padding: 1px 7px; border-radius: 999px;
+      }
+      .snav-meta.ok { color: var(--success); background: var(--success-bg); border-color: #bce8cd; }
+      .snav-meta.warn { color: var(--warning); background: var(--warning-bg); border-color: #f4ddae; }
+
+      /* —— 右侧：配置内容 —— */
+      .settings-content { overflow: auto; }
+      .settings-pane { display: none; padding: 26px 32px 24px; max-width: 720px; }
+      .settings-pane.active { display: block; }
+
+      .pane-head { margin-bottom: 20px; }
+      .pane-head h2 { font-size: 18px; font-weight: 700; display: flex; align-items: center; gap: 10px; }
+      .pane-head h2 .pane-ico {
+        width: 30px; height: 30px; border-radius: 9px; display: grid; place-items: center;
+        background: var(--brand-50); color: var(--brand-600);
+      }
+      .pane-head h2 .pane-ico .icon { width: 17px; height: 17px; }
+      .pane-head p { font-size: 12.5px; color: var(--text-3); margin-top: 6px; line-height: 1.55; }
+
+      /* 分区卡片 */
+      .set-card {
+        border: 1px solid var(--line); border-radius: var(--r-lg);
+        background: var(--bg-elevated); box-shadow: var(--shadow-sm);
+        margin-bottom: 16px; overflow: hidden;
+      }
+      .set-card-head {
+        padding: 14px 18px; border-bottom: 1px solid var(--line-soft);
+        background: var(--bg-soft);
+      }
+      .set-card-head h3 { font-size: 13px; font-weight: 700; color: var(--text-1); }
+      .set-card-head .set-card-hint { font-size: 11.5px; color: var(--text-3); margin-top: 3px; }
+      .set-card-body { padding: 6px 18px 8px; }
+
+      /* 字段 */
+      .field { display: flex; flex-direction: column; gap: 6px; padding: 12px 0; border-bottom: 1px solid var(--line-soft); }
+      .field:last-child { border-bottom: 0; }
+      .field-label { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; color: var(--text-2); }
+      .field-label .req { color: var(--danger); font-size: 12px; }
+      .field-label .tag {
+        margin-left: 4px; font-size: 10px; font-weight: 700;
+        color: var(--text-4); background: var(--bg-soft); border: 1px solid var(--line);
+        padding: 1px 6px; border-radius: 4px; text-transform: none;
+      }
+      .field-input, .field-select {
+        width: 100%; padding: 9px 11px; border: 1px solid var(--line);
+        border-radius: var(--r-sm); background: var(--bg-elevated);
+        font: inherit; font-size: 13px; color: var(--text-1);
+        transition: border-color .14s, box-shadow .14s;
+      }
+      .field-input:focus, .field-select:focus {
+        outline: none; border-color: var(--brand-500); box-shadow: 0 0 0 3px var(--brand-50);
+      }
+      .field-input.mono, .field-select.mono { font-family: var(--font-mono); font-size: 12px; }
+      .field-input::placeholder { color: var(--text-4); }
+      .field-hint { font-size: 11.5px; color: var(--text-3); line-height: 1.5; }
+      .field-hint code { font-size: 11px; background: var(--bg-soft); border: 1px solid var(--line); padding: 0 5px; border-radius: 4px; }
+
+      /* 带后缀输入框 */
+      .input-affix { display: flex; align-items: stretch; }
+      .input-affix .field-input { border-radius: var(--r-sm) 0 0 var(--r-sm); }
+      .input-affix .affix {
+        display: grid; place-items: center; padding: 0 12px;
+        border: 1px solid var(--line); border-left: 0; border-radius: 0 var(--r-sm) var(--r-sm) 0;
+        background: var(--bg-soft); color: var(--text-3); font-size: 12px; font-weight: 600;
+      }
+
+      /* 分段控件 */
+      .segmented {
+        display: inline-flex; padding: 3px; gap: 2px; flex-wrap: wrap;
+        background: var(--bg-soft); border: 1px solid var(--line); border-radius: var(--r-md);
+      }
+      .seg-opt {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 7px 14px; border: 0; border-radius: 7px;
+        background: transparent; color: var(--text-2);
+        font-size: 12.5px; font-weight: 600; white-space: nowrap;
+        transition: background .14s, color .14s, box-shadow .14s;
+      }
+      .seg-opt:hover { color: var(--text-1); }
+      .seg-opt.active { background: var(--bg-elevated); color: var(--brand-700); box-shadow: var(--shadow-sm); }
+      .seg-opt .icon { width: 15px; height: 15px; }
+      .seg-opt .seg-note { font-size: 11px; font-weight: 500; color: var(--text-3); }
+
+      /* 思考深度选项卡 */
+      .effort-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+      .effort-opt {
+        position: relative; padding: 12px 14px; text-align: left;
+        border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--bg-elevated); cursor: pointer;
+        transition: border-color .14s, box-shadow .14s, background .14s;
+      }
+      .effort-opt:hover { border-color: #c6d1e3; background: var(--bg-soft); }
+      .effort-opt.active { border-color: var(--brand-500); background: var(--brand-50); box-shadow: 0 0 0 3px var(--brand-50); }
+      .effort-opt .eff-name { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 700; color: var(--text-1); }
+      .effort-opt .eff-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-4); }
+      .effort-opt.active .eff-dot { background: var(--brand-600); }
+      .effort-opt .eff-desc { font-size: 11.5px; color: var(--text-3); margin-top: 5px; line-height: 1.5; }
+      .effort-opt .eff-check { position: absolute; top: 10px; right: 10px; color: var(--brand-600); opacity: 0; }
+      .effort-opt.active .eff-check { opacity: 1; }
+      .effort-opt .eff-check .icon { width: 15px; height: 15px; }
+
+      /* 信息行（只读） */
+      .info-row {
+        display: grid; grid-template-columns: 130px 1fr; gap: 16px;
+        align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--line-soft);
+      }
+      .info-row:last-child { border-bottom: 0; }
+      .info-row .info-key { font-size: 12px; font-weight: 600; color: var(--text-3); }
+      .info-row .info-val { font-size: 13px; color: var(--text-1); word-break: break-all; }
+      .info-row .info-val.mono { font-family: var(--font-mono); font-size: 12.5px; }
+      .info-row .info-val.dim { color: var(--text-3); }
+
+      /* MCP 状态徽标 */
+      .mcp-status {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 700;
+        background: var(--success-bg); color: var(--success); border: 1px solid #bce8cd;
+      }
+      .mcp-status.error { background: var(--danger-bg); color: var(--danger); border-color: #f4c9cb; }
+      .mcp-status.disabled { background: var(--bg-soft); color: var(--text-3); border-color: var(--line); }
+
+      /* 工具标签 */
+      .tool-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+      .tool-tag {
+        display: inline-flex; align-items: center; gap: 5px; padding: 4px 9px;
+        border-radius: var(--r-sm); background: var(--bg-soft); border: 1px solid var(--line);
+        font-family: var(--font-mono); font-size: 11.5px; color: var(--text-2);
+      }
+      .tool-tag .icon { width: 13px; height: 13px; color: var(--brand-600); }
+
+      /* 可复制地址条 */
+      .copy-bar {
+        display: flex; align-items: center; gap: 8px; margin-top: 10px;
+        padding: 9px 9px 9px 13px; border: 1px dashed var(--line);
+        border-radius: var(--r-sm); background: var(--bg-soft);
+      }
+      .copy-bar .copy-url { flex: 1 1 auto; font-family: var(--font-mono); font-size: 12.5px; color: var(--text-1); word-break: break-all; }
+      .copy-btn {
+        display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+        padding: 5px 10px; border-radius: var(--r-sm); border: 1px solid var(--line);
+        background: var(--bg-elevated); color: var(--text-2); font-size: 11.5px; font-weight: 600;
+      }
+      .copy-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+      .copy-btn .icon { width: 13px; height: 13px; }
+
+      /* 提示横幅 */
+      .inline-banner {
+        display: flex; align-items: flex-start; gap: 10px;
+        margin: 12px 0 4px; padding: 10px 12px;
+        border-radius: var(--r-sm); font-size: 12px; line-height: 1.55;
+        background: var(--warning-bg); color: #8a5400; border: 1px solid #f4ddae;
+      }
+      .inline-banner .icon { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 1px; }
+      .inline-banner.info { background: var(--info-bg); color: #1f4ea8; border-color: #c8d9f7; }
+      .inline-banner code { background: rgba(255,255,255,.6); border: 1px solid currentColor; opacity: .4; padding: 0 5px; border-radius: 4px; }
+
+      .provider-note {
+        display: flex; align-items: flex-start; gap: 10px; margin: 4px 0 12px;
+        padding: 11px 13px; border-radius: var(--r-sm);
+        background: var(--bg-soft); border: 1px solid var(--line);
+        font-size: 12px; color: var(--text-2); line-height: 1.55;
+      }
+      .provider-note .icon { width: 16px; height: 16px; flex: 0 0 auto; margin-top: 1px; color: var(--brand-600); }
+      .provider-note code { font-size: 11.5px; background: var(--bg-elevated); border: 1px solid var(--line); padding: 0 5px; border-radius: 4px; color: var(--text-1); }
+
+      /* 底部操作条 */
+      .settings-footer {
+        position: sticky; bottom: 0; display: flex; align-items: center; gap: 14px;
+        padding: 14px 0; margin-top: 6px;
+      }
+      .dirty-note { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--warning); font-weight: 600; }
+      .dirty-note .icon { width: 14px; height: 14px; }
+      .settings-footer .spacer { margin-left: auto; display: flex; gap: 8px; }
+    </style>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+      <symbol id="icon-overview" viewBox="0 0 24 24"><path d="M4 13a8 8 0 1 1 16 0"></path><path d="m12 13 4-4"></path><path d="M6 19h12"></path></symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></symbol>
+      <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m15.5 5.5 3 3"></path><path d="M4 20l4.5-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20Z"></path></symbol>
+      <symbol id="icon-check-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="m8 12 3 3 5-6"></path></symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 7h11"></path><path d="M9 12h11"></path><path d="M9 17h11"></path><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"></circle></symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V20a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H10a1.6 1.6 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V10a1.6 1.6 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"></path></symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7-11-7Z"></path></symbol>
+      <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-13.7 5.6"></path><path d="M4 12A8 8 0 0 1 17.7 6.4"></path><path d="M17.7 3.8v2.6h-2.6"></path><path d="M6.3 20.2v-2.6h2.6"></path></symbol>
+      <symbol id="icon-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"></path><path d="M17 21v-8H7v8"></path><path d="M7 3v5h8"></path></symbol>
+      <symbol id="icon-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></symbol>
+      <symbol id="icon-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path><path d="M12 9v4"></path><path d="M12 17h.01"></path></symbol>
+      <symbol id="icon-link" viewBox="0 0 24 24"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"></path><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"></path></symbol>
+      <symbol id="icon-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"></rect><path d="m7 9 3 3-3 3"></path><path d="M13 15h4"></path></symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M4 20a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2Z"></path></symbol>
+      <symbol id="icon-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"></path><path d="m8 6-6 6 6 6"></path></symbol>
+      <symbol id="icon-brain" viewBox="0 0 24 24"><path d="M9.5 2A2.5 2.5 0 0 0 7 4.5v.5a2.5 2.5 0 0 0-2 4 2.5 2.5 0 0 0 .5 4 2.5 2.5 0 0 0 4 3 2.5 2.5 0 0 0 5 0 2.5 2.5 0 0 0 4-3 2.5 2.5 0 0 0 .5-4 2.5 2.5 0 0 0-2-4v-.5A2.5 2.5 0 0 0 14.5 2 2.5 2.5 0 0 0 12 3.5 2.5 2.5 0 0 0 9.5 2Z"></path><path d="M12 3.5v17"></path></symbol>
+      <symbol id="icon-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"></path></symbol>
+      <symbol id="icon-plug" viewBox="0 0 24 24"><path d="M12 22v-5"></path><path d="M9 8V2"></path><path d="M15 8V2"></path><path d="M18 8v3a4 4 0 0 1-4 4h-4a4 4 0 0 1-4-4V8Z"></path></symbol>
+      <symbol id="icon-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.7 2.7-2.3-.4-.4-2.3Z"></path></symbol>
+      <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></symbol>
+      <symbol id="icon-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="7" rx="2"></rect><rect x="3" y="13" width="18" height="7" rx="2"></rect><path d="M7 7.5h.01"></path><path d="M7 16.5h.01"></path></symbol>
+    </svg>
+    <div class="app">
+      <!-- ===================== 应用侧边栏 ===================== -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <div class="brand-name">AutoPlan</div>
+            <div class="brand-sub">需求 · 计划 · 执行 · 验收</div>
+          </div>
+        </div>
+
+        <div class="project-switcher">
+          <div class="project-label">当前项目</div>
+          <div class="project-select-trigger">
+            <span class="project-avatar" style="background:linear-gradient(135deg,#4f7bff,#6d5dfc)">W</span>
+            <span class="project-main">
+              <span class="project-name">wenz_richtext</span>
+              <span class="project-path">wenz_flutter/wenz_richtext</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="nav-group-label">工作区</div>
+        <button class="nav-item" data-view="overview">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-overview"></use></svg></span> 概览
+        </button>
+        <button class="nav-item" data-view="requirement">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-target"></use></svg></span> 需求
+          <span class="nav-badge">4</span>
+        </button>
+        <button class="nav-item" data-view="feedback">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-pencil"></use></svg></span> 反馈
+          <span class="nav-badge">2</span>
+        </button>
+
+        <div class="nav-group-label">执行</div>
+        <button class="nav-item" data-view="tasks">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check-square"></use></svg></span> 任务与计划
+          <span class="nav-badge">1</span>
+        </button>
+        <button class="nav-item" data-view="events">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-list"></use></svg></span> 事件流
+        </button>
+        <button class="nav-item active" data-view="settings">
+          <span class="nav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-settings"></use></svg></span> 设置
+        </button>
+
+        <div class="sidebar-footer">
+          <div class="loop-mini">
+            <span class="led running"></span>
+            <span>循环 <b>运行中</b></span>
+          </div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:6px;font-family:var(--font-mono);">
+            Codex · 思考 medium · 5s
+          </div>
+        </div>
+      </aside>
+
+      <!-- ===================== 主区 ===================== -->
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-title">
+            <h1>设置</h1>
+            <p>循环控制、CLI 后端、scope 文件打开方式与 MCP 外部接入</p>
+          </div>
+          <div class="topbar-actions">
+            <span class="pill"><span class="led running"></span> running · execute-task</span>
+            <button class="btn btn-sm">单轮执行</button>
+            <button class="btn btn-sm btn-primary"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-play"></use></svg>启动</button>
+          </div>
+        </header>
+
+        <section class="view">
+          <div class="settings-view">
+
+            <!-- ============ 左侧：分组导航 ============ -->
+            <nav class="settings-nav">
+              <button class="settings-nav-item active" data-pane="loop">
+                <span class="snav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-refresh"></use></svg></span>
+                循环控制
+                <span class="snav-meta warn">未保存</span>
+              </button>
+              <button class="settings-nav-item" data-pane="cli">
+                <span class="snav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-terminal"></use></svg></span>
+                CLI 后端
+                <span class="snav-meta">Codex</span>
+              </button>
+              <button class="settings-nav-item" data-pane="scope">
+                <span class="snav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-folder"></use></svg></span>
+                scope 文件
+                <span class="snav-meta">VSCode</span>
+              </button>
+              <button class="settings-nav-item" data-pane="mcp">
+                <span class="snav-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plug"></use></svg></span>
+                MCP 接入
+                <span class="snav-meta ok">运行中</span>
+              </button>
+            </nav>
+
+            <!-- ============ 右侧：配置内容 ============ -->
+            <div class="settings-content">
+
+              <!-- ====== 循环控制 ====== -->
+              <div class="settings-pane active" id="pane-loop">
+                <div class="pane-head">
+                  <h2><span class="pane-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-refresh"></use></svg></span> 循环控制</h2>
+                  <p>定义 AutoPlan 自动循环的工作区、节奏与验收方式。改动后点击底部「保存配置」生效。</p>
+                </div>
+
+                <div class="set-card">
+                  <div class="set-card-head">
+                    <h3>工作区与节奏</h3>
+                    <div class="set-card-hint">循环在此目录下扫描 issues / plans，并执行任务与验收命令</div>
+                  </div>
+                  <div class="set-card-body">
+                    <div class="field">
+                      <span class="field-label">工作区路径 <span class="req">*</span></span>
+                      <input class="field-input mono" value="D:\project\GitHub\wenz_flutter\wenz_richtext" placeholder="D:\project\GitHub\my-app" />
+                      <span class="field-hint">循环在此目录下扫描 issues / plans，并执行任务与验收命令</span>
+                    </div>
+                    <div class="field">
+                      <span class="field-label">间隔秒数</span>
+                      <div class="input-affix">
+                        <input class="field-input" type="number" min="1" value="5" style="max-width:160px" />
+                        <span class="affix">秒</span>
+                      </div>
+                      <span class="field-hint">每轮之间的等待时间，最小 1 秒</span>
+                    </div>
+                    <div class="field">
+                      <span class="field-label">验收命令 <span class="tag">可选</span></span>
+                      <input class="field-input mono" value="flutter analyze" placeholder="留空则跳过外部验收命令" />
+                      <span class="field-hint">任务执行后运行；失败会触发重试，留空则不校验</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-footer">
+                  <span class="dirty-note"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-alert"></use></svg>有未保存的更改</span>
+                  <div class="spacer">
+                    <button class="btn btn-sm" type="button">放弃更改</button>
+                    <button class="btn btn-sm btn-primary" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-save"></use></svg>保存配置</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ====== CLI 后端 ====== -->
+              <div class="settings-pane" id="pane-cli">
+                <div class="pane-head">
+                  <h2><span class="pane-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-terminal"></use></svg></span> CLI 后端</h2>
+                  <p>选择执行任务的命令行后端。默认 Codex；历史项目未配置时按 Codex 兼容处理。</p>
+                </div>
+
+                <div class="set-card">
+                  <div class="set-card-head">
+                    <h3>后端选择</h3>
+                    <div class="set-card-hint">切换后端会改变任务执行的命令行链路与可用能力</div>
+                  </div>
+                  <div class="set-card-body">
+                    <div class="field">
+                      <span class="field-label">后端</span>
+                      <div class="segmented" id="cliSegmented">
+                        <button class="seg-opt active" type="button" data-cli="codex">
+                          <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-code"></use></svg>
+                          Codex CLI <span class="seg-note">交互式</span>
+                        </button>
+                        <button class="seg-opt" type="button" data-cli="claude">
+                          <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-terminal"></use></svg>
+                          Claude CLI <span class="seg-note">-p 非交互</span>
+                        </button>
+                      </div>
+                      <span class="field-hint">Codex 支持会话复用与思考深度；Claude 仅覆盖非交互 <code>claude -p</code> 调用</span>
+                    </div>
+
+                    <div class="field" id="effortField">
+                      <span class="field-label">
+                        <svg class="icon" aria-hidden="true" focusable="false" style="width:14px;height:14px;color:var(--text-3)"><use href="#icon-brain"></use></svg>
+                        Codex 思考深度
+                      </span>
+                      <div class="effort-grid">
+                        <button class="effort-opt" type="button" data-effort="low">
+                          <span class="eff-check"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></span>
+                          <span class="eff-name"><span class="eff-dot"></span>Low</span>
+                          <span class="eff-desc">速度优先，适合简单任务与高频循环</span>
+                        </button>
+                        <button class="effort-opt" type="button" data-effort="medium">
+                          <span class="eff-check"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></span>
+                          <span class="eff-name"><span class="eff-dot"></span>Medium</span>
+                          <span class="eff-desc">均衡选择，适合多数常规任务</span>
+                        </button>
+                        <button class="effort-opt" type="button" data-effort="high">
+                          <span class="eff-check"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></span>
+                          <span class="eff-name"><span class="eff-dot"></span>High</span>
+                          <span class="eff-desc">深度推理，适合复杂或跨文件任务</span>
+                        </button>
+                        <button class="effort-opt active" type="button" data-effort="xhigh">
+                          <span class="eff-check"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg></span>
+                          <span class="eff-name"><span class="eff-dot"></span>XHigh</span>
+                          <span class="eff-desc">最高深度，适合架构级重构与难题攻坚</span>
+                        </button>
+                      </div>
+                      <span class="field-hint">仅 Codex CLI 生效，保存后下一轮执行参数使用该深度</span>
+                    </div>
+
+                    <div class="provider-note" id="providerNote" style="display:none;">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-info"></use></svg>
+                      <span>需本机已安装 <code>claude</code> CLI 并完成认证。Claude 不使用 Codex 会话复用与思考深度。</span>
+                    </div>
+
+                    <div class="field">
+                      <span class="field-label">CLI 命令路径 <span class="tag">可选</span></span>
+                      <input class="field-input mono" value="" placeholder="留空用默认 codex" id="cliCmdInput" />
+                      <span class="field-hint">后端在 PATH 中时留空即可；否则填写可执行文件的完整路径</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-footer">
+                  <span class="dirty-note"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-alert"></use></svg>有未保存的更改</span>
+                  <div class="spacer">
+                    <button class="btn btn-sm" type="button">放弃更改</button>
+                    <button class="btn btn-sm btn-primary" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-save"></use></svg>保存配置</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ====== scope 文件打开方式 ====== -->
+              <div class="settings-pane" id="pane-scope">
+                <div class="pane-head">
+                  <h2><span class="pane-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-folder"></use></svg></span> scope 文件打开方式</h2>
+                  <p>Plan 全文中 scope 文件链接以该方式打开，路径限制在当前工作区内。</p>
+                </div>
+
+                <div class="set-card">
+                  <div class="set-card-head">
+                    <h3>打开方式</h3>
+                    <div class="set-card-hint">系统默认 / 文件夹定位 / VSCode / 第三方编辑器命令</div>
+                  </div>
+                  <div class="set-card-body">
+                    <div class="field">
+                      <span class="field-label">打开方式</span>
+                      <div class="segmented" id="scopeSegmented">
+                        <button class="seg-opt" type="button" data-scope="system">
+                          <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-folder"></use></svg>系统默认
+                        </button>
+                        <button class="seg-opt" type="button" data-scope="folder">
+                          <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-folder"></use></svg>文件夹定位
+                        </button>
+                        <button class="seg-opt active" type="button" data-scope="vscode">
+                          <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-code"></use></svg>VSCode
+                        </button>
+                        <button class="seg-opt" type="button" data-scope="command">
+                          <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-terminal"></use></svg>第三方命令
+                        </button>
+                      </div>
+                      <span class="field-hint">第三方命令支持 <code>{file}</code> 占位</span>
+                    </div>
+
+                    <div class="field" id="editorCmdField">
+                      <span class="field-label">编辑器命令 <span class="tag">可选</span></span>
+                      <input class="field-input mono" value="code" placeholder="code" id="editorCmdInput" />
+                      <span class="field-hint">选择 VSCode 时留空等价于 <code>code</code>；第三方命令例如 <code>cursor {file}</code></span>
+                    </div>
+
+                    <div class="inline-banner info">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-info"></use></svg>
+                      <span>打开前会校验目标路径位于当前工作区内；不存在、目录、越界路径或命令失败都会给出可读提示，不会静默失败。建议准确填写相对工作区的 scope，无法判断写 <b>unknown</b>、完整验收写 <b>validation</b>，避免错误并发。</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-footer">
+                  <div class="spacer">
+                    <button class="btn btn-sm" type="button">放弃更改</button>
+                    <button class="btn btn-sm btn-primary" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-save"></use></svg>保存配置</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- ====== MCP 外部接入 ====== -->
+              <div class="settings-pane" id="pane-mcp">
+                <div class="pane-head">
+                  <h2>
+                    <span class="pane-ico"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-plug"></use></svg></span> MCP 外部接入
+                    <span class="mcp-status" style="margin-left:6px"><span class="led running" style="width:7px;height:7px;box-shadow:0 0 0 3px var(--success-bg)"></span>运行中</span>
+                  </h2>
+                  <p>本机客户端可通过 MCP 工具创建项目、提交需求和反馈。以下为只读信息，不覆盖项目级 loop 配置。</p>
+                </div>
+
+                <div class="set-card">
+                  <div class="set-card-head">
+                    <h3>服务信息</h3>
+                    <div class="set-card-hint">传输、访问范围、连接地址与最近错误</div>
+                  </div>
+                  <div class="set-card-body">
+                    <div class="info-row">
+                      <span class="info-key">服务状态</span>
+                      <span class="info-val"><span class="mcp-status"><span class="led running" style="width:7px;height:7px;box-shadow:0 0 0 3px var(--success-bg)"></span>运行中</span></span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-key">传输方式</span>
+                      <span class="info-val">HTTP Streamable <span style="color:var(--text-4);font-size:11.5px">（也支持 stdio 模式）</span></span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-key">访问范围</span>
+                      <span class="info-val">默认仅本机访问 <span style="color:var(--text-4);font-size:11.5px">（127.0.0.1，未显式允许非本机绑定）</span></span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-key">连接地址</span>
+                      <span class="info-val">
+                        <span class="mono" style="font-family:var(--font-mono);font-size:12.5px">http://127.0.0.1:43847/mcp</span>
+                        <div class="copy-bar">
+                          <span class="copy-url">http://127.0.0.1:43847/mcp</span>
+                          <button class="copy-btn" type="button"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-copy"></use></svg>复制</button>
+                        </div>
+                      </span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-key">工具清单</span>
+                      <span class="info-val">
+                        <div class="tool-tags">
+                          <span class="tool-tag"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-link"></use></svg>create_project</span>
+                          <span class="tool-tag"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-link"></use></svg>create_requirement</span>
+                          <span class="tool-tag"><svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-link"></use></svg>create_feedback</span>
+                        </div>
+                      </span>
+                    </div>
+                    <div class="info-row">
+                      <span class="info-key">最近错误</span>
+                      <span class="info-val dim">无</span>
+                    </div>
+
+                    <div class="inline-banner" style="margin-bottom:8px;">
+                      <svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-shield"></use></svg>
+                      <span>默认仅监听本机地址，供本机 MCP 客户端连接。可用环境变量 <code>AUTOPLAN_MCP_ENABLED=0</code> 禁用服务；即使禁用或失败，GUI 创建项目、提需求和提反馈入口仍可用。</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="watermark">AutoPlan · 设置设计稿</div>
+
+    <script>
+      /* ---------- 左侧分组导航切换 ---------- */
+      const navItems = document.querySelectorAll('.settings-nav-item');
+      const panes = document.querySelectorAll('.settings-pane');
+      navItems.forEach((item) => {
+        item.addEventListener('click', () => {
+          navItems.forEach((o) => o.classList.remove('active'));
+          item.classList.add('active');
+          const target = item.dataset.pane;
+          panes.forEach((p) => p.classList.toggle('active', p.id === 'pane-' + target));
+          // 滚动右侧内容回顶
+          document.querySelector('.settings-content').scrollTop = 0;
+        });
+      });
+
+      /* ---------- CLI 后端分段切换 ---------- */
+      const cliSeg = document.getElementById('cliSegmented');
+      const effortField = document.getElementById('effortField');
+      const providerNote = document.getElementById('providerNote');
+      const cliCmdInput = document.getElementById('cliCmdInput');
+      cliSeg.querySelectorAll('.seg-opt').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          cliSeg.querySelectorAll('.seg-opt').forEach((o) => o.classList.remove('active'));
+          opt.classList.add('active');
+          const isClaude = opt.dataset.cli === 'claude';
+          effortField.style.display = isClaude ? 'none' : '';
+          providerNote.style.display = isClaude ? 'flex' : 'none';
+          cliCmdInput.placeholder = isClaude ? '留空用默认 claude' : '留空用默认 codex';
+        });
+      });
+
+      /* ---------- Codex 思考深度 ---------- */
+      const effortGrid = document.querySelector('#effortField .effort-grid');
+      if (effortGrid) {
+        effortGrid.querySelectorAll('.effort-opt').forEach((opt) => {
+          opt.addEventListener('click', () => {
+            effortGrid.querySelectorAll('.effort-opt').forEach((o) => o.classList.remove('active'));
+            opt.classList.add('active');
+          });
+        });
+      }
+
+      /* ---------- scope 打开方式切换 ---------- */
+      const scopeSeg = document.getElementById('scopeSegmented');
+      const editorCmdField = document.getElementById('editorCmdField');
+      const editorCmdInput = document.getElementById('editorCmdInput');
+      scopeSeg.querySelectorAll('.seg-opt').forEach((opt) => {
+        opt.addEventListener('click', () => {
+          scopeSeg.querySelectorAll('.seg-opt').forEach((o) => o.classList.remove('active'));
+          opt.classList.add('active');
+          const mode = opt.dataset.scope;
+          const showCmd = mode === 'vscode' || mode === 'command';
+          editorCmdField.style.display = showCmd ? '' : 'none';
+          if (mode === 'vscode') editorCmdInput.placeholder = 'code';
+          else if (mode === 'command') editorCmdInput.placeholder = '编辑器命令，例如 cursor {file}';
+        });
+      });
+
+      /* ---------- 复制按钮 ---------- */
+      document.querySelector('#pane-mcp .copy-btn')?.addEventListener('click', (e) => {
+        const btn = e.currentTarget;
+        const text = btn.parentElement.querySelector('.copy-url').textContent;
+        navigator.clipboard?.writeText(text).then(() => {
+          const orig = btn.innerHTML;
+          btn.innerHTML = '<svg class="icon" aria-hidden="true" focusable="false"><use href="#icon-check"></use></svg>已复制';
+          setTimeout(() => { btn.innerHTML = orig; }, 1400);
+        });
+      });
+    </script>
+  </body>
+</html>
