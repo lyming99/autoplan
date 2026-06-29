@@ -3,13 +3,14 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 
 const DEFAULT_AGENT_CLI_PROVIDER = 'codex';
-const AGENT_CLI_PROVIDERS = new Set([DEFAULT_AGENT_CLI_PROVIDER, 'claude', 'opencode']);
+const AGENT_CLI_PROVIDERS = new Set([DEFAULT_AGENT_CLI_PROVIDER, 'claude', 'opencode', 'oh-my-pi']);
 const DEFAULT_CODEX_REASONING_EFFORT = 'medium';
 const CODEX_REASONING_EFFORTS = new Set(['low', DEFAULT_CODEX_REASONING_EFFORT, 'high', 'xhigh']);
 const AGENT_CLI_DISPLAY_NAMES = Object.freeze({
   codex: 'Codex',
   claude: 'Claude',
   opencode: 'OpenCode',
+  'oh-my-pi': 'Oh My Pi',
 });
 const OPENCODE_SESSION_LOOKUP_MAX_COUNT = 50;
 
@@ -23,7 +24,9 @@ function normalizeAgentCliCommand(value) {
 }
 
 function defaultAgentCliCommand(provider) {
-  return normalizeAgentCliProvider(provider);
+  const normalized = normalizeAgentCliProvider(provider);
+  // oh-my-pi 是首个 provider 名与命令名不一致的后端：默认命令为 omp（可被自定义命令路径覆盖）。
+  return normalized === 'oh-my-pi' ? 'omp' : normalized;
 }
 
 function normalizeCodexReasoningEffort(value) {
@@ -67,7 +70,8 @@ function claudeCliArgs(options = {}) {
   return [
     '--print',
     '--output-format',
-    'text',
+    'stream-json',
+    '--verbose',
     '--dangerously-skip-permissions',
     ...claudeSessionArgs(options),
   ];
@@ -183,6 +187,14 @@ function opencodeCliArgs(options = {}) {
   return args;
 }
 
+// oh-my-pi 的非交互模式为 `--print`（pi.dev/docs/latest/usage）：
+// 读取 stdin prompt、把最终回复写入 stdout 后退出，无 TUI、无权限确认挂起。
+// print 模式为 CI/脚本设计，omp 本身不做沙箱（无需也不存在 --dangerously-skip-permissions 类标志）；
+// prompt 经 stdin 投递以规避命令行长度/转义问题，不走 stdin→位置参数回退。
+function ompCliArgs() {
+  return ['--print'];
+}
+
 function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptions = {}) {
   const normalizedProvider = normalizeAgentCliProvider(provider);
   const resolvedCommand = normalizeAgentCliCommand(command) || defaultAgentCliCommand(normalizedProvider);
@@ -193,7 +205,7 @@ function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptio
       agentCliProvider: normalizedProvider,
       command: resolvedCommand,
       args: claudeCliArgs(agentCliOptions),
-      lastFileSource: 'stdout',
+      lastFileSource: 'claude-stream-json',
       useShell: false,
       promptSource: 'stdin',
       agentCliSessionId: sessionSpec.sessionId,
@@ -215,6 +227,19 @@ function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptio
       promptSource: 'argument',
       agentCliSessionId: sessionId,
       agentCliSessionTitle: title,
+    };
+  }
+  if (normalizedProvider === 'oh-my-pi') {
+    // 无状态单次后端：不含任何会话字段（agentCliSessionId/Title 等），
+    // 每次生成计划/执行任务都是一次全新的 `omp --print` 调用。
+    return {
+      provider: normalizedProvider,
+      agentCliProvider: normalizedProvider,
+      command: resolvedCommand,
+      args: ompCliArgs(),
+      lastFileSource: 'stdout',
+      useShell: false,
+      promptSource: 'stdin',
     };
   }
   return {
@@ -343,8 +368,15 @@ async function runAgentCliAttempt(options) {
       activeOperation.errorMessage = timeoutMessage;
     }
   }
+  const printer = activeOperation.activity;
+  const isClaudeStream = spawnSpec.lastFileSource === 'claude-stream-json';
   let lastFileError = null;
-  if (spawnSpec.lastFileSource === 'stdout') {
+  if (isClaudeStream && printer && typeof printer.flush === 'function') {
+    printer.flush();
+    const resultText = typeof printer.getResultText === 'function' ? printer.getResultText() : '';
+    if (resultText) stdoutOutput = resultText;
+  }
+  if (spawnSpec.lastFileSource === 'stdout' || isClaudeStream) {
     try {
       fs.writeFileSync(lastFile, stdoutOutput, 'utf8');
     } catch (error) {
@@ -365,6 +397,10 @@ async function runAgentCliAttempt(options) {
   }
   if (runtime.activeOperations.has(nextOperationKey)) activeOperation.exitCode = exitCode;
   let agentCliSessionId = normalizeAgentCliSessionId(spawnSpec.agentCliSessionId);
+  if (isClaudeStream && printer && typeof printer.getSessionId === 'function') {
+    const parsedSessionId = normalizeAgentCliSessionId(printer.getSessionId());
+    if (parsedSessionId) agentCliSessionId = parsedSessionId;
+  }
   let sessionLookupError = '';
   if (
     spawnSpec.agentCliProvider === 'opencode' &&
@@ -590,6 +626,7 @@ module.exports = {
   claudeSessionArgs,
   codexNewSessionArgs,
   codexResumeSessionArgs,
+  ompCliArgs,
   normalizeCodexReasoningEffort,
   normalizeAgentCliCommand,
   normalizeAgentCliProvider,

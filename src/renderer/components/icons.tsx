@@ -229,6 +229,122 @@ const saveIcon = (
   </>
 );
 
+// 脚本模块图标（沿用既有 24×24 stroke 风格，不引入 SVG sprite）
+const scriptIcon = (
+  <>
+    <path d="M7 3h8l4 4v11a3 3 0 0 1-3 3H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
+    <path d="M14.5 3.6V8H19" />
+    <path d="m10 13 2 2 3-4" />
+  </>
+);
+
+const boltIcon = <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />;
+
+const powerIcon = (
+  <>
+    <path d="M12 4v8" />
+    <path d="M7.5 6.5a8 8 0 1 0 9 0" />
+  </>
+);
+
+const historyIcon = (
+  <>
+    <path d="M3 12a9 9 0 1 0 3-6.7" />
+    <path d="M3 4v4h4" />
+    <path d="M12 8v4l3 2" />
+  </>
+);
+
+const playIcon = <path d="M8 5v14l11-7-11-7Z" />;
+
+const slidersIcon = (
+  <>
+    <path d="M4 7h10" />
+    <path d="M18 7h2" />
+    <path d="M4 17h4" />
+    <path d="M12 17h8" />
+    <circle cx="16" cy="7" r="2" />
+    <circle cx="10" cy="17" r="2" />
+  </>
+);
+
+const injectIcon = (
+  <>
+    <path d="M3 8h14" />
+    <path d="m13 4 4 4-4 4" />
+    <path d="M21 16H7" />
+    <path d="m11 12-4 4 4 4" />
+  </>
+);
+
+const clockIcon = (
+  <>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 7v5l3 2" />
+  </>
+);
+
+const copyIcon = (
+  <>
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </>
+);
+
+const eyeIcon = (
+  <>
+    <path d="M2.5 12S6 6.5 12 6.5s9.5 5.5 9.5 5.5-3.5 5.5-9.5 5.5S2.5 12 2.5 12Z" />
+    <circle cx="12" cy="12" r="2.6" />
+  </>
+);
+
+const eyeOffIcon = (
+  <>
+    <path d="M4 4l16 16" />
+    <path d="M9.5 6.3A9.4 9.4 0 0 1 12 6c6 0 9.5 6 9.5 6a16 16 0 0 1-3 3.7" />
+    <path d="M6.4 8.5A16 16 0 0 0 2.5 12S6 18 12 18a9 9 0 0 0 2.4-.3" />
+    <path d="M9.8 9.9a3 3 0 0 0 4.2 4.2" />
+  </>
+);
+
+const keyIcon = (
+  <>
+    <circle cx="7.5" cy="7.5" r="3.5" />
+    <path d="M10 10l9.5 9.5" />
+    <path d="M15.2 15.2l1.8-1.8" />
+    <path d="M17.8 17.8l1.7-1.7" />
+  </>
+);
+
+// 验收模块图标（沿用既有 24×24 stroke 风格，不引入 SVG sprite）
+// acceptance：剪贴板 + 勾号，作为「验收」导航/主视图图标（与 complete 区分）。
+const acceptanceIcon = (
+  <>
+    <rect x="5.5" y="5" width="13" height="15.5" rx="2.5" />
+    <rect x="9.2" y="3.2" width="5.6" height="3.4" rx="1.2" />
+    <path d="m8.8 12.8 2.2 2.2 4.4-5" />
+  </>
+);
+
+// 双勾：用于「全部验收 / 全部验收本计划」主操作。
+const checkDoubleIcon = (
+  <>
+    <path d="M3 12.4 6.4 15.8 13 7.4" />
+    <path d="m11.4 15.8 1.6 1.6L21 9" />
+  </>
+);
+
+// 折叠箭头：已验收区折叠/展开（折叠态由 CSS 旋转 -90°）。
+const chevronDownIcon = <path d="m6 9.5 6 6 6-6" />;
+
+// 回退箭头：用于「取消验收」次操作。
+const undoIcon = (
+  <>
+    <path d="M9 14.5 4 9.5l5-5" />
+    <path d="M4 9.5h11a5 5 0 0 1 0 10h-3" />
+  </>
+);
+
 const ICONS = {
   overview: overviewIcon,
   requirement: requirementIcon,
@@ -273,6 +389,22 @@ const ICONS = {
   mcp: plugIcon,
   save: saveIcon,
   check: completeIcon,
+  script: scriptIcon,
+  bolt: boltIcon,
+  power: powerIcon,
+  history: historyIcon,
+  play: playIcon,
+  sliders: slidersIcon,
+  inject: injectIcon,
+  clock: clockIcon,
+  copy: copyIcon,
+  eye: eyeIcon,
+  'eye-off': eyeOffIcon,
+  key: keyIcon,
+  acceptance: acceptanceIcon,
+  'check-double': checkDoubleIcon,
+  'chevron-down': chevronDownIcon,
+  undo: undoIcon,
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -203,7 +203,7 @@ function maybePrefixProvider(text: string, providerLabel: string, includeProvide
 }
 
 function hasProviderLabel(text: string, providerLabel: string) {
-  return text.includes(providerLabel) || /\b(?:Agent|Codex|Claude|OpenCode)\b/i.test(text);
+  return text.includes(providerLabel) || /\b(?:Agent|Codex|Claude|OpenCode|Oh My Pi|omp)\b/i.test(text);
 }
 
 function firstText(...values: Array<string | null | undefined>) {

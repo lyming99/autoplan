@@ -13,7 +13,7 @@ const MCP_TOOL_NAMES = Object.freeze({
   STOP_LOOP: 'stop_loop',
 });
 
-const AGENT_CLI_PROVIDERS = Object.freeze(['codex', 'claude', 'opencode']);
+const AGENT_CLI_PROVIDERS = Object.freeze(['codex', 'claude', 'opencode', 'oh-my-pi']);
 const CODEX_REASONING_EFFORTS = Object.freeze(['low', 'medium', 'high', 'xhigh']);
 const INTAKE_STATUSES = Object.freeze(['open', 'completed', 'closed']);
 const PLAN_STATUSES = Object.freeze(['pending', 'running', 'ready_for_validation', 'completed', 'interrupted', 'draft']);

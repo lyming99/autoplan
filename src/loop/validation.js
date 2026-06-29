@@ -113,6 +113,35 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
       if (startedAcceptanceTask) service.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
       return validation;
     }
+    // validation:before 前置钩子：fail_aborts=1 且退出码非零时中断验收
+    const beforeHook = await service.runHookScripts(plan.project_id, 'validation:before', {
+      planId: plan.id,
+      planFilePath: plan.file_path,
+      validationCommand: command,
+    });
+    if (beforeHook.aborted) {
+      const aborted = { exitCode: 1, output: '', logFile: null, errorMessage: '前置钩子中断了验收', finishedAt: nowIso() };
+      attachValidationSessionContext(aborted, planAgentCliContext.agentCliProvider, validationSessionId, validationSessionState);
+      service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['validation_failed', aborted.finishedAt, plan.id]);
+      service.addEvent(plan.project_id, 'validation.aborted', `前置钩子中断了验收：${command}`, {
+        ...planAgentCliContext,
+        ...validationResultSessionContextFields(aborted, planAgentCliContext.agentCliProvider),
+        planId: plan.id,
+        stage: 'validation:before',
+        exitCode: 1,
+        acceptanceTask: Boolean(startedAcceptanceTask),
+      });
+      if (startedAcceptanceTask) {
+        service.recordTaskFailure(plan.project_id, plan, startedAcceptanceTask, aborted.finishedAt, {
+          ...planAgentCliContext,
+          ...validationResultSessionContextFields(aborted, planAgentCliContext.agentCliProvider),
+          exitCode: 1,
+          log: null,
+          acceptanceTask: true,
+        });
+      }
+      return aborted;
+    }
     let validation = await service.runShell(workspace, command, `validate-${plan.id}`, { projectId: plan.project_id });
     let validationFailure = classifyExecutionFailure(validation);
     for (
@@ -196,6 +225,15 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
           ...validationFailure,
         });
       }
+      // on:fail 钩子：验收失败时触发，携带错误信息与所处阶段上下文
+      await service.runHookScripts(plan.project_id, 'on:fail', {
+        failedStage: 'validation',
+        planId: plan.id,
+        validationCommand: command,
+        exitCode: validation.exitCode,
+        log: validation.logFile || null,
+        ...validationFailure,
+      });
     }
     return validation;
   }
@@ -231,7 +269,7 @@ function classifyExecutionFailure(result = {}) {
   } else if (/(?:Compilation failed|Dart compiler exited|Error: The Dart compiler|Failed to compile|Target kernel_snapshot failed|SyntaxError)/i.test(text)) {
     failureKind = 'compile_failure';
     failureCategory = 'compile';
-  } else if (/(?:Agent CLI|Codex CLI|Claude CLI|OpenCode CLI)/i.test(text)) {
+  } else if (/(?:Agent CLI|Codex CLI|Claude CLI|OpenCode CLI|Oh My Pi CLI)/i.test(text)) {
     failureKind = 'agent_failure';
     failureCategory = 'agent';
   }

@@ -449,6 +449,7 @@ function agentCliProviderDisplayName(provider) {
   const normalized = rawProvider ? rawProvider.toLowerCase() : normalizeAgentCliProvider(provider);
   if (normalized === 'claude') return 'Claude';
   if (normalized === 'opencode') return 'OpenCode';
+  if (normalized === 'oh-my-pi') return 'Oh My Pi';
   if (normalized === DEFAULT_AGENT_CLI_PROVIDER) return 'Codex';
   return rawProvider || 'Agent';
 }

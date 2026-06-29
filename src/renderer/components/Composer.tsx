@@ -41,6 +41,8 @@ interface ComposerProps {
   placeholder: string;
   submitLabel: string;
   type: IntakeType;
+  value: string;
+  onValueChange: (next: string) => void;
   onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
   onRemoveAttachment: (type: IntakeType, index: number) => void;
   onSubmit: (body: string | ComposerSubmitPayload) => Promise<boolean>;
@@ -68,11 +70,12 @@ export function Composer({
   placeholder,
   submitLabel,
   type,
+  value,
+  onValueChange,
   onAddFiles,
   onRemoveAttachment,
   onSubmit,
 }: ComposerProps) {
-  const [body, setBody] = useState('');
   const [createAsDraft, setCreateAsDraft] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const cliSelection = useContext(ComposerCliSelectionContext);
@@ -81,7 +84,7 @@ export function Composer({
 
   useEffect(() => {
     if (textareaRef.current) autoGrowTextarea(textareaRef.current);
-  }, [body]);
+  }, [value]);
 
   const selectedProvider = cliSelection?.selectedByType[type] || cliSelection?.options[0]?.value || '';
   const isCodexProvider = selectedProvider === 'codex';
@@ -92,18 +95,18 @@ export function Composer({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!body.trim() && !pendingAttachments.length) return;
+    if (!value.trim() && !pendingAttachments.length) return;
     const payload = cliSelection
       ? {
-          body,
+          body: value,
           createAsDraft,
           agentCliProvider: selectedProvider as AgentCliProvider,
           ...(isCodexProvider ? { codexReasoningEffort: selectedReasoning as CodexReasoningEffort } : {}),
         }
-      : createAsDraft ? { body, createAsDraft } : body;
+      : createAsDraft ? { body: value, createAsDraft } : value;
     const succeeded = await onSubmit(payload);
     if (succeeded) {
-      setBody('');
+      onValueChange('');
       setCreateAsDraft(false);
     }
   };
@@ -145,13 +148,13 @@ export function Composer({
     >
       <textarea
         name="body"
-        onChange={(event) => setBody(event.target.value)}
+        onChange={(event) => onValueChange(event.target.value)}
         onInput={(event) => autoGrowTextarea(event.currentTarget)}
         onKeyDown={handleTextareaKeyDown}
         onPaste={handleTextareaPaste}
         placeholder={placeholder}
         ref={textareaRef}
-        value={body}
+        value={value}
       />
       <div className="composer-bottom">
         <div className="composer-tools">

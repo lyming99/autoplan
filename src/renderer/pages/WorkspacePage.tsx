@@ -4,6 +4,7 @@ import type {
   AppSnapshot,
   Plan,
   Project,
+  Script,
   WorkspacePlanSelectionState,
   WorkspaceSearchResult,
   WorkspaceTab,
@@ -15,18 +16,23 @@ import { EventList, PlanList, TaskList } from '../components/PlanLists';
 import { SearchResults } from '../components/SearchResults';
 import { Icon } from '../components/icons';
 import { PlanReaderModal } from '../components/plans/PlanReaderModal';
+import { AcceptanceView } from '../components/workspace/AcceptanceView';
 import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+import { WorkspaceScriptsView } from '../components/workspace/WorkspaceScriptsView';
 import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
 import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
 import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
 
 export function WorkspacePage() {
   const {
+    acceptItem,
+    acceptanceGroups,
     activeTab,
     addPendingFiles,
     appendIntakeTask,
     closePlanReader,
     composerCliSelection,
+    composerDrafts,
     createFeedback,
     createRequirement,
     deleteFeedback,
@@ -38,7 +44,7 @@ export function WorkspacePage() {
     interruptIntake,
     latestReadingPlan,
     loopForm,
-    mcpAuthToken,
+    mcpForm,
     navigate,
     openIntakePlanReader,
     openPlanReader,
@@ -48,22 +54,28 @@ export function WorkspacePage() {
     project,
     projectId,
     projects,
+    recentAccepted,
     refreshPlanReader,
     removePendingAttachment,
     resumeIntake,
     runLoopAction,
+    saveMcpConfig,
     scopeFileOpenSettings,
     searchHitCount,
     searchQuery,
     selectSearchResult,
     selectTab,
-    setMcpAuthToken,
+    setMcpForm,
     setScopeFileOpenSettings,
     setSearchQuery,
     snapshot,
+    startMcp,
     state,
+    stopMcp,
     submitLoopConfig,
     switchProject,
+    unacceptItem,
+    updateComposerDraft,
     updateFeedback,
     updateLoopForm,
     updateRequirement,
@@ -177,6 +189,7 @@ export function WorkspacePage() {
           projects={projects}
           currentProject={project}
           state={null}
+          scriptCount={0}
           onSwitchProject={switchProject}
         />
         <div className="workspace-main">
@@ -188,9 +201,18 @@ export function WorkspacePage() {
 
   const intakePlanPreviewProps = {
     plans: snapshot.plans,
-    onOpenPlan: openIntakePlanReader,
+    onPreviewPlan: openIntakePlanReader,
   };
   const planListReaderState = planReadState.plan ? { ...planReadState, plan: null } : planReadState;
+
+  // 脚本模块：列表启用开关即时落库；详情弹窗（P005）由视图自管打开/新建态。
+  // 运行/保存/删除后经 onSync 回灌最新 snapshot，使列表卡片状态与导航徽标数量同步刷新。
+  const toggleScript = (script: Script) => {
+    runLoopAction(() => window.autoplan.toggleScript({ projectId, scriptId: script.id }));
+  };
+  const syncScripts = (next: AppSnapshot) => {
+    runLoopAction(async () => next);
+  };
 
   return (
     <div className="workspace-shell">
@@ -202,6 +224,7 @@ export function WorkspacePage() {
         projects={projects}
         currentProject={project}
         state={state}
+        scriptCount={snapshot.scripts.length}
         onSwitchProject={switchProject}
       />
       <div className="workspace-main">
@@ -285,6 +308,8 @@ export function WorkspacePage() {
                 onInterrupt={interruptIntake}
                 onResume={resumeIntake}
                 onAppendTask={appendIntakeTask}
+                draftValue={composerDrafts.requirement}
+                onDraftChange={(next) => updateComposerDraft('requirement', next)}
               />
             </ComposerCliSelectionProvider>
           ) : null}
@@ -312,8 +337,22 @@ export function WorkspacePage() {
                 onInterrupt={interruptIntake}
                 onResume={resumeIntake}
                 onAppendTask={appendIntakeTask}
+                draftValue={composerDrafts.feedback}
+                onDraftChange={(next) => updateComposerDraft('feedback', next)}
               />
             </ComposerCliSelectionProvider>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'acceptance' ? 'active' : ''}`}>
+          {activeTab === 'acceptance' ? (
+            <AcceptanceView
+              projectId={projectId}
+              groups={acceptanceGroups}
+              recentAccepted={recentAccepted}
+              onAccept={acceptItem}
+              onUnaccept={unacceptItem}
+            />
           ) : null}
         </section>
 
@@ -379,12 +418,15 @@ export function WorkspacePage() {
           {activeTab === 'settings' ? (
             <WorkspaceSettingsView
               loopForm={loopForm}
-              mcpAuthToken={mcpAuthToken}
+              mcpForm={mcpForm}
               scopeFileOpenSettings={scopeFileOpenSettings}
               setLoopForm={updateLoopForm}
-              setMcpAuthToken={setMcpAuthToken}
+              setMcpForm={setMcpForm}
               setScopeFileOpenSettings={setScopeFileOpenSettings}
               mcp={snapshot.mcp}
+              startMcp={startMcp}
+              stopMcp={stopMcp}
+              saveMcpConfig={saveMcpConfig}
               onSubmit={submitLoopConfig}
               onToggleRun={() =>
                 runLoopAction(() =>
@@ -407,6 +449,17 @@ export function WorkspacePage() {
               </div>
               <EventList emptyText={filteredEmptyText} events={filteredItems.events} />
             </section>
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'scripts' ? 'active' : ''}`}>
+          {activeTab === 'scripts' ? (
+            <WorkspaceScriptsView
+              scripts={snapshot.scripts}
+              projectId={projectId}
+              onToggle={toggleScript}
+              onSync={syncScripts}
+            />
           ) : null}
         </section>
 
@@ -486,7 +539,7 @@ function formatSearchLocateFallback(result: WorkspaceSearchResult) {
 
 
 function tabTitle(tab: WorkspaceTab) {
-  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', tasks: '任务与计划', events: '事件流', settings: '设置' }[tab];
+  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', acceptance: '验收模块', tasks: '任务与计划', scripts: '脚本模块', events: '事件流', settings: '设置' }[tab];
 }
 
 function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
@@ -494,7 +547,9 @@ function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
     overview: '循环状态、阶段流水线与各模块一览',
     requirement: '收集需求，发送后由循环自动生成开发计划',
     feedback: '收集反馈，关联需求并由循环生成开发计划',
+    acceptance: '对已完成的计划与任务逐项验收',
     tasks: 'Plan 与任务进度',
+    scripts: '自定义脚本，手动运行或挂到循环各阶段自动触发',
     events: '循环运行日志与任务执行记录',
     settings: '工作区路径、循环间隔、验收命令、CLI 后端与 MCP 接入',
   }[tab];

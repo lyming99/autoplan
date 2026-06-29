@@ -4,6 +4,7 @@ const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { nowIso } = require('./database');
 const { CodexActivityPrinter } = require('./codexActivity');
+const { ClaudeStreamJsonPrinter } = require('./claudeActivity');
 const {
   codexNewSessionArgs,
   codexResumeSessionArgs,
@@ -78,6 +79,7 @@ const {
 } = workspaceFiles;
 const taskExecution = require('./loop/taskExecution');
 const validationFlow = require('./loop/validation');
+const scriptHooks = require('./loop/scriptHooks');
 const {
   LEGACY_TASK_EVENT_TYPES,
   TASK_EVENT_COMPATIBILITY,
@@ -102,11 +104,18 @@ const CLAUDE_SESSION_INPUT_KEYS = [
   'sessionId',
 ];
 
+// 人工验收态与执行态正交：只允许对「已完成」项验收（计划 status='completed'、任务 status ∈ 已完成集合），
+// 与渲染层 matchesTaskStatusFilter 的「已完成」语义一致，不新增 status 取值。
+const ACCEPTABLE_PLAN_STATUS = 'completed';
+const ACCEPTABLE_TASK_STATUSES = Object.freeze(['completed', 'done', 'passed']);
+
 class LoopService extends EventEmitter {
   constructor(db) {
     super();
     this.db = db;
     this.runtimes = new Map();
+    // 由 main.js 在持有 mcpServer 句柄后注入：返回 mcpServer?.status?.()，供快照叠加实时运行态。
+    this.mcpStatusProvider = null;
     this.updateEmitter = createThrottledUpdateEmitter({
       snapshot: (projectId) => this.snapshot(projectId),
       emit: (snapshot) => this.emit('update', snapshot),
@@ -293,6 +302,7 @@ class LoopService extends EventEmitter {
     if (!runtime || runtime.busy) return;
     const startedFromRunningLoop = runtime.running;
     runtime.busy = true;
+    const cycleSummary = { stage: 'loop:end', pendingIntakes: 0, generatedPlanId: null };
     try {
       const project = this.project(projectId);
       const workspace = project?.workspace_path;
@@ -320,6 +330,7 @@ class LoopService extends EventEmitter {
         )
         .map((row) => ({ ...row, __type: 'feedback' }));
       const pendingIntakes = [...pendingRequirements, ...pendingFeedback];
+      cycleSummary.pendingIntakes = pendingIntakes.length;
       this.addEvent(projectId, 'scan.done', `待处理需求/反馈=${pendingIntakes.length}`);
 
       // 一次只生成一个计划（保持串行，避免 codex 并发），剩余等下一轮 timer
@@ -327,6 +338,7 @@ class LoopService extends EventEmitter {
       if (pendingIntakes.length > 0) {
         generatedPlanId = await this.generatePlanForIntake(projectId, workspace, pendingIntakes[0]);
       }
+      cycleSummary.generatedPlanId = generatedPlanId;
 
       // 同步 docs/plan 目录下的 plan 文件（兼容文件式需求）
       const planScan = await this.scanDirectoryInWorker(path.join(workspace, 'docs', 'plan'), workspace, ['.md']);
@@ -354,6 +366,13 @@ class LoopService extends EventEmitter {
         this.setPhase(projectId, 'idle');
       }
     } finally {
+      // loop:end 钩子：本周期结束触发，携带本周期汇总；失败仅记事件，绝不中断后续循环
+      cycleSummary.phase = this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase || null;
+      try {
+        await this.runHookScripts(projectId, 'loop:end', { summary: cycleSummary, workspace: this.project(projectId)?.workspace_path || '' });
+      } catch (error) {
+        this.addEvent(projectId, 'script.hook.error', `loop:end 钩子执行异常：${error?.message || error}`);
+      }
       runtime.busy = false;
       this.emitUpdate(projectId);
     }
@@ -382,7 +401,7 @@ class LoopService extends EventEmitter {
       } else {
         const result = await this.executeTask(workspace, executablePlan, task);
         if (result.exitCode === 0) {
-          this.completeTask(workspace, executablePlan, task, result);
+          await this.completeTask(workspace, executablePlan, task, result);
         }
       }
       if (runtime.running) {
@@ -625,6 +644,101 @@ class LoopService extends EventEmitter {
     this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
     this.addEvent(projectId, 'plan.resumed', `plan #${planId} 已恢复`);
     this.emitUpdate(projectId);
+  }
+
+  /** 人工验收：对已完成的计划/任务置 accepted_at（不改变执行态 status），并记事件；重复验收刷新时间不报错。 */
+  acceptItem(projectId, { targetType, id } = {}) {
+    const target = this.acceptanceTargetRow(projectId, targetType, id);
+    const acceptedAt = nowIso();
+    if (targetType === 'plan') {
+      this.db.run(
+        'UPDATE plans SET accepted_at = ?, updated_at = ? WHERE id = ? AND project_id = ?',
+        [acceptedAt, acceptedAt, target.id, projectId],
+      );
+      this.addEvent(projectId, 'plan.accepted', `plan #${target.id} 已验收`, {
+        targetType: 'plan',
+        id: target.id,
+        planId: target.id,
+        accepted_at: acceptedAt,
+      });
+    } else {
+      this.db.run(
+        'UPDATE plan_tasks SET accepted_at = ?, updated_at = ? WHERE id = ?',
+        [acceptedAt, acceptedAt, target.id],
+      );
+      this.addEvent(projectId, 'task.accepted', `${target.task_key} 已验收`, {
+        targetType: 'task',
+        id: target.id,
+        taskId: target.id,
+        planId: target.plan_id,
+        taskKey: target.task_key,
+        accepted_at: acceptedAt,
+      });
+    }
+    this.emitUpdate(projectId);
+    return { targetType, id: target.id, accepted_at: acceptedAt };
+  }
+
+  /** 取消人工验收：清空 accepted_at（NULL），不改变执行态 status，并记事件；重复取消保持 NULL 不报错。 */
+  unacceptItem(projectId, { targetType, id } = {}) {
+    const target = this.acceptanceTargetRow(projectId, targetType, id, { requireCompleted: false });
+    const updatedAt = nowIso();
+    if (targetType === 'plan') {
+      this.db.run(
+        'UPDATE plans SET accepted_at = NULL, updated_at = ? WHERE id = ? AND project_id = ?',
+        [updatedAt, target.id, projectId],
+      );
+      this.addEvent(projectId, 'plan.unaccepted', `plan #${target.id} 已取消验收`, {
+        targetType: 'plan',
+        id: target.id,
+        planId: target.id,
+        accepted_at: null,
+      });
+    } else {
+      this.db.run(
+        'UPDATE plan_tasks SET accepted_at = NULL, updated_at = ? WHERE id = ?',
+        [updatedAt, target.id],
+      );
+      this.addEvent(projectId, 'task.unaccepted', `${target.task_key} 已取消验收`, {
+        targetType: 'task',
+        id: target.id,
+        taskId: target.id,
+        planId: target.plan_id,
+        taskKey: target.task_key,
+        accepted_at: null,
+      });
+    }
+    this.emitUpdate(projectId);
+    return { targetType, id: target.id, accepted_at: null };
+  }
+
+  /** 校验收目标：按 targetType 路由 plan/task、校验归属当前项目与「已完成」态；不存在或不可验收时抛中文错误。 */
+  acceptanceTargetRow(projectId, targetType, id, options = {}) {
+    const normalizedId = Number(id);
+    if (!Number.isFinite(normalizedId) || normalizedId <= 0) throw new Error('验收目标 ID 无效');
+    const requireCompleted = options.requireCompleted !== false;
+    if (targetType === 'plan') {
+      const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [normalizedId, projectId]);
+      if (!plan) throw new Error('计划不存在');
+      if (requireCompleted && plan.status !== ACCEPTABLE_PLAN_STATUS) {
+        throw new Error('仅可验收已完成的计划/任务');
+      }
+      return plan;
+    }
+    if (targetType === 'task') {
+      const task = this.db.get(
+        `SELECT plan_tasks.*
+         FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+         WHERE plan_tasks.id = ? AND plans.project_id = ?`,
+        [normalizedId, projectId],
+      );
+      if (!task) throw new Error('任务不存在');
+      if (requireCompleted && !ACCEPTABLE_TASK_STATUSES.includes(task.status)) {
+        throw new Error('仅可验收已完成的计划/任务');
+      }
+      return task;
+    }
+    throw new Error('验收目标类型无效');
   }
 
   /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
@@ -942,7 +1056,7 @@ class LoopService extends EventEmitter {
           }
         : {}),
       logBuffer: '',
-      activity: isCodexProvider ? new CodexActivityPrinter(200) : null,
+      activity: isCodexProvider ? new CodexActivityPrinter(200) : (isClaudeProvider ? new ClaudeStreamJsonPrinter(200) : null),
       startedAt: nowIso(),
     };
     if (!isCodexProvider) clearCodexSessionFields(activeOperation);
@@ -1315,10 +1429,12 @@ class LoopService extends EventEmitter {
     fs.mkdirSync(logDir, { recursive: true });
     const logFile = path.join(logDir, `${timestampForPath()}_${safePart(label)}.log`);
     const shellCommand = process.platform === 'win32' ? `chcp 65001>nul && ${command}` : command;
+    const overrideCwd = String(operation.cwd || '').trim();
+    const baseEnv = workspaceToolEnv(workspace);
     const child = spawn(shellCommand, {
       shell: true,
-      cwd: workspace,
-      env: workspaceToolEnv(workspace),
+      cwd: overrideCwd || workspace,
+      env: operation.extraEnv ? { ...baseEnv, ...operation.extraEnv } : baseEnv,
     });
     const activeOperation = {
       ...operation,
@@ -1328,6 +1444,16 @@ class LoopService extends EventEmitter {
       startedAt: nowIso(),
     };
     const operationKey = registerRuntimeOperation(runtime, child, activeOperation);
+    if (operation.stdin != null && operation.stdin !== '') {
+      try {
+        child.stdin.end(String(operation.stdin));
+      } catch (error) {
+        activeOperation.errorMessage = error?.message || String(error);
+      }
+    }
+    const timeoutMs = Number.isFinite(operation.timeoutMs) && operation.timeoutMs > 0
+      ? operation.timeoutMs
+      : SHELL_COMMAND_TIMEOUT_MS;
     let output = '';
     const onChunk = (chunk) => {
       const text = chunk.toString('utf8');
@@ -1345,9 +1471,9 @@ class LoopService extends EventEmitter {
       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
     }, 1500);
     try {
-      const exitCode = await waitForChild(child, SHELL_COMMAND_TIMEOUT_MS);
+      const exitCode = await waitForChild(child, timeoutMs);
       const timedOut = Boolean(child.__autoplanTimedOut);
-      const errorMessage = timedOut ? `Shell command timed out after ${validationFlow.formatDurationMs(SHELL_COMMAND_TIMEOUT_MS)}` : '';
+      const errorMessage = timedOut ? `Shell command timed out after ${validationFlow.formatDurationMs(timeoutMs)}` : '';
       if (errorMessage) {
         const text = `\n[AutoPlan] ${errorMessage}\n`;
         output += text;
@@ -1358,7 +1484,7 @@ class LoopService extends EventEmitter {
       }
       fs.writeFileSync(logFile, output, 'utf8');
       if (runtime.activeOperations.has(operationKey)) activeOperation.exitCode = exitCode;
-      return { exitCode, output, logFile, errorMessage, timedOut, timeoutMs: SHELL_COMMAND_TIMEOUT_MS };
+      return { exitCode, output, logFile, errorMessage, timedOut, timeoutMs };
     } finally {
       clearInterval(tailTimer);
       if (runtime.activeOperations.has(operationKey)) {
@@ -1370,6 +1496,21 @@ class LoopService extends EventEmitter {
   setPhase(projectId, phase) {
     setProjectPhase(this.db, projectId, phase);
     this.emitUpdate(projectId);
+  }
+
+  /** 循环钩子：执行某阶段下所有已启用脚本，单脚本异常不冒泡；仅 validation:before 可中断 */
+  async runHookScripts(projectId, stage, context = {}) {
+    return scriptHooks.runHookScripts(this, projectId, stage, context);
+  }
+
+  /** 手动运行单个脚本（scripts:run），返回 ScriptRunResult */
+  async runScriptManually(projectId, scriptId) {
+    return scriptHooks.runScriptManually(this, projectId, scriptId);
+  }
+
+  /** 停止运行中的脚本（scripts:stop），复用 runShell 的 operation 取消能力 */
+  stopScript(projectId, scriptId) {
+    return scriptHooks.stopScript(this, projectId, scriptId);
   }
 
   recordError(projectId, error) {
@@ -1399,6 +1540,11 @@ class LoopService extends EventEmitter {
 
   flushPendingUpdates() {
     this.updateEmitter.flush();
+  }
+
+  /** 注入实时 MCP 状态提供者（main.js 持有 mcpServer 句柄后调用），使快照反映进程真实运行态而非仅靠事件推导。 */
+  setMcpStatusProvider(provider) {
+    this.mcpStatusProvider = typeof provider === 'function' ? provider : null;
   }
 
   snapshot(projectId = null) {

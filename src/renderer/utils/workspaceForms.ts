@@ -1,3 +1,4 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, SetStateAction } from 'react';
 import {
   DEFAULT_WORKSPACE_TAB,
@@ -7,10 +8,21 @@ import type {
   AgentCliOption,
   AgentCliProvider,
   CodexReasoningEffort,
+  CreateScriptInput,
   IntakeType,
   LoopConfigInput,
+  McpConfigInput,
+  McpStatus,
+  McpTransport,
   PendingAttachment,
   ProjectState,
+  Script,
+  ScriptContextInject,
+  ScriptHookStage,
+  ScriptRuntime,
+  ScriptSourceType,
+  ScriptTriggerMode,
+  UpdateScriptInput,
   WorkspacePlanReadState,
   WorkspaceTab,
 } from '../types';
@@ -27,6 +39,7 @@ export const agentCliOptions: AgentCliOption[] = [
   { value: 'codex', label: 'Codex CLI' },
   { value: 'claude', label: 'Claude CLI' },
   { value: 'opencode', label: 'OpenCode CLI' },
+  { value: 'oh-my-pi', label: 'Oh My Pi CLI' },
 ];
 
 export const codexReasoningOptions: AgentCliOption[] = [
@@ -46,6 +59,7 @@ export const agentCliOptionDetails: Array<SettingsChoiceOption<AgentCliProvider>
   { value: 'codex', label: 'Codex CLI', description: '默认后端，支持思考深度参数。' },
   { value: 'claude', label: 'Claude CLI', description: '使用本机 claude 命令，需提前认证。' },
   { value: 'opencode', label: 'OpenCode CLI', description: '使用本机 opencode 命令，需提前安装并认证。' },
+  { value: 'oh-my-pi', label: 'Oh My Pi CLI', description: '使用本机 omp 命令，需提前安装并认证。' },
 ];
 
 export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReasoningEffort>> = [
@@ -204,6 +218,7 @@ export function agentCliDefaultCommand(provider?: string | null) {
   const normalized = String(provider || '').trim().toLowerCase();
   if (normalized === 'claude') return 'claude';
   if (normalized === 'opencode') return 'opencode';
+  if (normalized === 'oh-my-pi') return 'omp';
   return 'codex';
 }
 
@@ -240,4 +255,303 @@ export function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
     && left.agentCliProvider === right.agentCliProvider
     && left.agentCliCommand === right.agentCliCommand
     && left.codexReasoningEffort === right.codexReasoningEffort;
+}
+
+/* ===================== MCP 配置 draft 表单（设置面板） ===================== */
+
+export type McpConfigFormState = {
+  enabled: boolean;
+  transport: McpTransport;
+  host: string;
+  /** 文本输入值，提交时再解析为 1–65535 整数 */
+  port: number | string;
+  path: string;
+  /** 始终留空，不从快照明文回填；承载用户输入/生成/清空 */
+  authToken: string;
+};
+
+/** 从快照构造表单：transport/host/port/path 取自快照，authToken 永不回填明文 */
+export function mcpConfigFormFromSnapshot(mcp: McpStatus | null | undefined): McpConfigFormState {
+  if (!mcp) return { enabled: true, transport: 'http', host: '', port: '', path: '', authToken: '' };
+  return {
+    enabled: Boolean(mcp.enabled),
+    transport: mcp.transport === 'stdio' ? 'stdio' : 'http',
+    host: mcp.host ?? '',
+    port: mcp.port ?? '',
+    path: mcp.path ?? '',
+    authToken: '',
+  };
+}
+
+export function mcpConfigFormsEqual(left: McpConfigFormState, right: McpConfigFormState) {
+  return left.enabled === right.enabled
+    && left.transport === right.transport
+    && left.host === right.host
+    && String(left.port) === String(right.port)
+    && left.path === right.path
+    && left.authToken === right.authToken;
+}
+
+/** 将端口解析为 1–65535 整数；非法返回 null */
+export function parseMcpPort(value: number | string): number | null {
+  const parsed = typeof value === 'number' ? value : Number(String(value).trim());
+  if (!Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed < 1 || parsed > 65535) return null;
+  return parsed;
+}
+
+/** 返回校验错误文案；通过校验返回 null（仅 http 传输校验地址/端口/路径） */
+export function validateMcpConfigForm(form: McpConfigFormState): string | null {
+  if (form.transport !== 'http') return null;
+  if (!form.host.trim()) return 'MCP 监听地址不能为空';
+  if (parseMcpPort(form.port) === null) return 'MCP 端口需为 1–65535 的整数';
+  if (!form.path.trim().startsWith('/')) return 'MCP 路径需以 / 开头';
+  return null;
+}
+
+/**
+ * 序列化为 saveMcpConfig 载荷。authToken 仅在显式改动（authTokenTouched）时下发：
+ * 未改动 → 不下发（保留既有密钥）；显式清空 → 下发空串（关闭鉴权）；填新值 → 下发新值。
+ */
+export function mcpConfigFormToPayload(
+  projectId: number,
+  form: McpConfigFormState,
+  authTokenTouched: boolean,
+): McpConfigInput {
+  const payload: McpConfigInput = {
+    projectId,
+    enabled: form.enabled,
+    transport: form.transport,
+    host: form.host.trim(),
+    port: form.port,
+    path: form.path.trim(),
+  };
+  if (authTokenTouched) {
+    payload.authToken = form.authToken.trim();
+  }
+  return payload;
+}
+
+/** 用 Web Crypto 生成 32 字节高熵随机密钥（base64url，无填充） */
+export function generateMcpAuthToken(): string {
+  const bytes = new Uint8Array(32);
+  window.crypto.getRandomValues(bytes);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i += 1) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * MCP 配置表单状态钩子：管理 transport/host/port/path/enabled/authToken 的 draft。
+ * authToken 默认留空且不从快照回填；setMcpForm 的 patch 中一旦包含 authToken
+ * （含清空）即标记 touched，供 saveMcpConfig 区分「未改动 / 清空 / 设置」。
+ */
+export function useMcpConfigForm(mcp: McpStatus | null | undefined, projectId: number) {
+  const [mcpForm, setMcpFormState] = useState<McpConfigFormState>(() => mcpConfigFormFromSnapshot(mcp));
+  const formRef = useRef(mcpForm);
+  const [mcpFormDirty, setMcpFormDirty] = useState(false);
+  const [mcpAuthTokenTouched, setMcpAuthTokenTouched] = useState(false);
+
+  const applyForm = useCallback((next: McpConfigFormState) => {
+    formRef.current = next;
+    setMcpFormState(next);
+  }, []);
+
+  const setMcpForm = useCallback((patch: Partial<McpConfigFormState>) => {
+    if ('authToken' in patch) setMcpAuthTokenTouched(true);
+    setMcpFormDirty(true);
+    applyForm({ ...formRef.current, ...patch });
+  }, [applyForm]);
+
+  // 从快照同步配置（authToken 不回填），dirty 时不覆盖；projectId 变化触发重新计算。
+  useEffect(() => {
+    if (mcpFormDirty) return;
+    const nextForm = mcpConfigFormFromSnapshot(mcp);
+    if (mcpConfigFormsEqual(formRef.current, nextForm)) return;
+    applyForm(nextForm);
+  }, [applyForm, mcp, mcpFormDirty, projectId]);
+
+  useEffect(() => {
+    setMcpFormDirty(false);
+    setMcpAuthTokenTouched(false);
+  }, [projectId]);
+
+  // 保存成功后用最新快照重置表单（authToken 回到空、dirty/touched 清零）。
+  const resetMcpForm = useCallback((nextMcp: McpStatus | null | undefined) => {
+    setMcpFormDirty(false);
+    setMcpAuthTokenTouched(false);
+    applyForm(mcpConfigFormFromSnapshot(nextMcp));
+  }, [applyForm]);
+
+  return { mcpForm, mcpAuthTokenTouched, setMcpForm, resetMcpForm };
+}
+
+/* ===================== 脚本 draft 表单（新建/编辑共用弹窗） ===================== */
+
+export const SCRIPT_RUNTIMES: ScriptRuntime[] = ['node', 'bash', 'ps', 'cmd'];
+export const SCRIPT_HOOK_STAGES: ScriptHookStage[] = [
+  'plan:after',
+  'task:after',
+  'validation:before',
+  'loop:end',
+  'on:fail',
+];
+export const SCRIPT_DEFAULT_TIMEOUT_SECONDS = 120;
+
+export type ScriptDraftState = {
+  /** null 表示新建；存在 id 表示编辑既有脚本 */
+  id: number | null;
+  name: string;
+  description: string;
+  runtime: ScriptRuntime;
+  /** 脚本来源：'inline' 执行 body（写临时文件），'file' 直接运行 path 指向的原文件 */
+  sourceType: ScriptSourceType;
+  /** 文件来源时的文件路径（内联来源时为空，但切换来源不丢失已填内容） */
+  path: string;
+  body: string;
+  triggerMode: ScriptTriggerMode;
+  /** 仅手动模式下序列化为 null；保留值以便切回自动钩子时恢复 */
+  hookStage: ScriptHookStage;
+  workDir: string;
+  /** 文本输入框值，序列化时再解析为正整数 */
+  timeoutSeconds: string;
+  failAborts: boolean;
+  contextInject: ScriptContextInject;
+  enabled: boolean;
+};
+
+function readScriptRuntime(value: unknown): ScriptRuntime {
+  return value === 'bash' || value === 'ps' || value === 'cmd' ? value : 'node';
+}
+
+function readScriptSourceType(value: unknown): ScriptSourceType {
+  return value === 'file' ? 'file' : 'inline';
+}
+
+function readScriptTriggerMode(value: unknown): ScriptTriggerMode {
+  return value === 'hook' ? 'hook' : 'manual';
+}
+
+function readScriptContextInject(value: unknown): ScriptContextInject {
+  return value === 'stdin' || value === 'none' ? value : 'env';
+}
+
+function readScriptHookStage(value: unknown): ScriptHookStage {
+  return SCRIPT_HOOK_STAGES.includes(value as ScriptHookStage) ? (value as ScriptHookStage) : 'plan:after';
+}
+
+export function createScriptDraft(script: Script | null): ScriptDraftState {
+  if (!script) {
+    return {
+      id: null,
+      name: '',
+      description: '',
+      runtime: 'node',
+      sourceType: 'inline',
+      path: '',
+      body: '',
+      triggerMode: 'hook',
+      hookStage: 'validation:before',
+      workDir: '${workspace}',
+      timeoutSeconds: String(SCRIPT_DEFAULT_TIMEOUT_SECONDS),
+      failAborts: false,
+      contextInject: 'env',
+      enabled: true,
+    };
+  }
+  const timeoutSeconds = Number(script.timeout_seconds ?? script.timeoutSeconds);
+  return {
+    id: script.id,
+    name: script.name || '',
+    description: script.description || '',
+    runtime: readScriptRuntime(script.runtime),
+    sourceType: readScriptSourceType(script.source_type ?? script.sourceType),
+    path: script.path || '',
+    body: script.body || '',
+    triggerMode: readScriptTriggerMode(script.trigger_mode ?? script.triggerMode),
+    hookStage: readScriptHookStage(script.hook_stage ?? script.hookStage),
+    workDir: script.work_dir ?? script.workDir ?? '',
+    timeoutSeconds: Number.isFinite(timeoutSeconds) && timeoutSeconds > 0 ? String(timeoutSeconds) : String(SCRIPT_DEFAULT_TIMEOUT_SECONDS),
+    failAborts: Boolean(script.fail_aborts ?? script.failAborts),
+    contextInject: readScriptContextInject(script.context_inject ?? script.contextInject),
+    enabled: Boolean(script.enabled),
+  };
+}
+
+/** 解析超时秒数，非法时回退到默认值；供校验与序列化共用 */
+export function parseScriptTimeoutSeconds(value: string) {
+  const trimmed = String(value || '').trim();
+  const parsed = Number(trimmed);
+  if (!trimmed || !Number.isFinite(parsed) || !Number.isInteger(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+/** 返回校验错误文案；通过校验返回 null */
+export function validateScriptDraft(draft: ScriptDraftState): string | null {
+  const name = draft.name.trim();
+  if (!name) return '请填写脚本名称';
+  if (name.length > 120) return '脚本名称过长（最多 120 字符）';
+  if (draft.triggerMode === 'hook' && !draft.hookStage) return '自动钩子需选择挂载阶段';
+  if (draft.sourceType === 'file' && !draft.path.trim()) return '选择文件来源时需指定脚本文件';
+  const timeout = parseScriptTimeoutSeconds(draft.timeoutSeconds);
+  if (timeout === null) return '超时秒数需为正整数';
+  return null;
+}
+
+export function scriptCreateInputFromDraft(projectId: number, draft: ScriptDraftState): CreateScriptInput {
+  return {
+    projectId,
+    name: draft.name.trim(),
+    description: draft.description.trim(),
+    runtime: draft.runtime,
+    sourceType: draft.sourceType,
+    path: draft.path.trim(),
+    body: draft.body,
+    triggerMode: draft.triggerMode,
+    hookStage: draft.triggerMode === 'hook' ? draft.hookStage : null,
+    workDir: draft.workDir.trim(),
+    timeoutSeconds: parseScriptTimeoutSeconds(draft.timeoutSeconds) ?? SCRIPT_DEFAULT_TIMEOUT_SECONDS,
+    failAborts: draft.failAborts ? 1 : 0,
+    contextInject: draft.contextInject,
+    enabled: draft.enabled ? 1 : 0,
+  };
+}
+
+export function scriptUpdateInputFromDraft(projectId: number, draft: ScriptDraftState): UpdateScriptInput {
+  return { ...scriptCreateInputFromDraft(projectId, draft), scriptId: draft.id as number };
+}
+
+export type ComposerDrafts = Record<IntakeType, string>;
+
+export const COMPOSER_DRAFT_STORAGE_PREFIX = 'autoplan.composerDrafts.';
+
+export function emptyComposerDrafts(): ComposerDrafts {
+  return { requirement: '', feedback: '' };
+}
+
+export function normalizeComposerDrafts(raw: unknown): ComposerDrafts {
+  if (!raw || typeof raw !== 'object') return emptyComposerDrafts();
+  const record = raw as Record<string, unknown>;
+  return {
+    requirement: typeof record.requirement === 'string' ? record.requirement : '',
+    feedback: typeof record.feedback === 'string' ? record.feedback : '',
+  };
+}
+
+export function composerDraftStorageKey(projectId: number): string | null {
+  if (!Number.isInteger(projectId) || projectId <= 0) return null;
+  return `${COMPOSER_DRAFT_STORAGE_PREFIX}${projectId}`;
+}
+
+export function loadComposerDrafts(projectId: number): ComposerDrafts {
+  const storageKey = composerDraftStorageKey(projectId);
+  if (!storageKey) return emptyComposerDrafts();
+  try {
+    const stored = window.localStorage.getItem(storageKey);
+    if (!stored) return emptyComposerDrafts();
+    return normalizeComposerDrafts(JSON.parse(stored));
+  } catch {
+    return emptyComposerDrafts();
+  }
 }

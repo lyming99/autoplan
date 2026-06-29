@@ -146,7 +146,8 @@ class AppDatabase {
         codex_reasoning_effort TEXT,
         agent_cli_session_id TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        accepted_at TEXT
       );
 
       CREATE TABLE IF NOT EXISTS plan_tasks (
@@ -164,6 +165,7 @@ class AppDatabase {
         agent_cli_session_id TEXT,
         codex_session_id TEXT,
         updated_at TEXT NOT NULL,
+        accepted_at TEXT,
         UNIQUE(plan_id, task_key)
       );
 
@@ -178,6 +180,37 @@ class AppDatabase {
         meta TEXT,
         created_at TEXT NOT NULL
       );
+
+      CREATE TABLE IF NOT EXISTS scripts (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        name TEXT NOT NULL,
+        path TEXT NOT NULL DEFAULT '',
+        runtime TEXT NOT NULL DEFAULT 'node',
+        body TEXT NOT NULL DEFAULT '',
+        description TEXT NOT NULL DEFAULT '',
+        trigger_mode TEXT NOT NULL DEFAULT 'manual',
+        hook_stage TEXT,
+        enabled INTEGER NOT NULL DEFAULT 1,
+        work_dir TEXT NOT NULL DEFAULT '',
+        timeout_seconds INTEGER NOT NULL DEFAULT 60,
+        fail_aborts INTEGER NOT NULL DEFAULT 0,
+        context_inject TEXT NOT NULL DEFAULT 'none',
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        last_status TEXT,
+        last_exit_code INTEGER,
+        last_duration_ms INTEGER,
+        last_log TEXT,
+        last_run_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_scripts_project
+      ON scripts (project_id);
+
+      CREATE INDEX IF NOT EXISTS idx_scripts_project_hook_stage
+      ON scripts (project_id, hook_stage);
 
       CREATE TABLE IF NOT EXISTS loop_state (
         id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -214,6 +247,7 @@ class AppDatabase {
     this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('plans', 'agent_cli_session_id', 'TEXT');
+    this.ensureColumn('plans', 'accepted_at', 'TEXT');
     this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_plans_project_sort
       ON plans (project_id, sort_order, created_at, id)
@@ -224,7 +258,9 @@ class AppDatabase {
     this.ensureColumn('plan_tasks', 'duration_ms', 'INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('plan_tasks', 'agent_cli_session_id', 'TEXT');
     this.ensureColumn('plan_tasks', 'codex_session_id', 'TEXT');
+    this.ensureColumn('plan_tasks', 'accepted_at', 'TEXT');
     this.ensureColumn('events', 'project_id', 'INTEGER');
+    this.ensureColumn('scripts', 'source_type', "TEXT NOT NULL DEFAULT 'inline'");
     this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
     this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');

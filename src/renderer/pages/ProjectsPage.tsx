@@ -10,6 +10,17 @@ type Draft = CreateProjectInput & { id?: number };
 
 const emptyDraft: Draft = { name: '', workspacePath: '', description: '', agentCliProvider: 'codex' };
 
+// 工作区路径渲染为按钮（可聚焦、回车触发、原生 disabled）。
+// 复用 .project-path 的字体与省略号样式，内联重置按钮默认外观，避免改动 CSS。
+const pathLinkStyle = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  textAlign: 'left',
+  display: 'block',
+  maxWidth: '100%',
+} as const;
+
 export function ProjectsPage() {
   const navigate = useNavigate();
   const { snapshot, setSnapshot, error, setError } = useSnapshot(null);
@@ -50,6 +61,29 @@ export function ProjectsPage() {
       agentCliCommand: project.agent_cli_command || '',
     });
     setModalOpen(true);
+  };
+
+  const pickFolder = async () => {
+    try {
+      const directory = await window.autoplan.pickDirectory();
+      // 用户取消或无可用窗口时返回 null，保持当前值不变
+      if (directory) {
+        setDraft((current) => ({ ...current, workspacePath: directory }));
+      }
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const openFolder = async (project: Project) => {
+    try {
+      const result = await window.autoplan.openProjectFolder({ projectId: project.id });
+      if (!result.ok) {
+        window.alert(result.error || '无法打开工作区文件夹');
+      }
+    } catch (e) {
+      showError(e);
+    }
   };
 
   const submitProject = async (event: FormEvent<HTMLFormElement>) => {
@@ -155,7 +189,20 @@ export function ProjectsPage() {
                   <span className="project-avatar">{project.name.slice(0, 1).toUpperCase()}</span>
                   <div className="project-info">
                     <div className="project-name">{project.name}</div>
-                    <div className="project-path">{project.workspace_path || '未设置工作区'}</div>
+                    <button
+                      type="button"
+                      className="project-path"
+                      style={pathLinkStyle}
+                      disabled={!project.workspace_path}
+                      onClick={(event) => {
+                        // 阻止冒泡到卡片，避免触发“进入工作区”导航
+                        event.stopPropagation();
+                        if (project.workspace_path) void openFolder(project);
+                      }}
+                      title={project.workspace_path ? '在系统文件夹中打开' : undefined}
+                    >
+                      {project.workspace_path || '未设置工作区'}
+                    </button>
                   </div>
                   <div className="project-card-menu" onClick={(e) => e.stopPropagation()}>
                     <details className="ctx-details">
@@ -234,12 +281,18 @@ export function ProjectsPage() {
               </label>
               <label className="field">
                 工作区路径 <span className="req">*</span>
-                <input
-                  className="mono"
-                  value={draft.workspacePath}
-                  onChange={(event) => setDraft((current) => ({ ...current, workspacePath: event.target.value }))}
-                  placeholder="D:\project\GitHub\my-app"
-                />
+                <div className="input-affix">
+                  <input
+                    className="field-input mono"
+                    value={draft.workspacePath}
+                    onChange={(event) => setDraft((current) => ({ ...current, workspacePath: event.target.value }))}
+                    placeholder="D:\project\GitHub\my-app"
+                  />
+                  <button type="button" className="affix" onClick={pickFolder}>
+                    选择文件夹
+                  </button>
+                </div>
+                <span className="field-hint">可直接输入路径，或点击“选择文件夹”定位目录。</span>
               </label>
               <label className="field">
                 备注

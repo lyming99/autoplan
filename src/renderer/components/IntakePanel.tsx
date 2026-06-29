@@ -6,10 +6,11 @@ import { formatChinaDateTime } from '../utils/time';
 
 type IntakeItem = Requirement | Feedback;
 type IntakeUpdate = { title?: string; body?: string; status?: string };
-type PlanPreviewHandler = (type: IntakeType, linkedPlanId: number) => void;
+type PlanPreviewHandler = (item: IntakeItem) => void;
 
 interface IntakePanelProps {
   attachments: Attachment[];
+  draftValue: string;
   emptyText: string;
   heading: string;
   items: IntakeItem[];
@@ -19,6 +20,7 @@ interface IntakePanelProps {
   subtitle: string;
   type: IntakeType;
   onAddFiles: (type: IntakeType, files: FileList | File[] | null) => void;
+  onDraftChange: (next: string) => void;
   onDelete: (id: number) => Promise<boolean>;
   onRemoveAttachment: (type: IntakeType, index: number) => void;
   onSubmit: (body: string | ComposerSubmitPayload) => Promise<boolean>;
@@ -31,6 +33,7 @@ interface IntakePanelProps {
 
 export function IntakePanel({
   attachments,
+  draftValue,
   emptyText,
   heading,
   items,
@@ -40,6 +43,7 @@ export function IntakePanel({
   subtitle,
   type,
   onAddFiles,
+  onDraftChange,
   onDelete,
   onRemoveAttachment,
   onSubmit,
@@ -174,7 +178,7 @@ export function IntakePanel({
                   {item.body ? <div className="item-body plain-text">{item.body}</div> : null}
                   <AttachmentGrid attachments={itemAttachments} />
 
-                  <PlanBindingCard item={item} type={type} progressPct={planPct(item)} onPreviewPlan={onPreviewPlan} />
+                  <PlanBindingCard item={item} progressPct={planPct(item)} onPreviewPlan={onPreviewPlan} />
 
                   <div className="item-foot">
                     <div className="item-actions">
@@ -255,6 +259,8 @@ export function IntakePanel({
         placeholder={placeholder}
         submitLabel={submitLabel}
         type={type}
+        value={draftValue}
+        onValueChange={onDraftChange}
         onAddFiles={onAddFiles}
         onRemoveAttachment={onRemoveAttachment}
         onSubmit={onSubmit}
@@ -265,12 +271,10 @@ export function IntakePanel({
 
 function PlanBindingCard({
   item,
-  type,
   progressPct,
   onPreviewPlan,
 }: {
   item: IntakeItem;
-  type: IntakeType;
   progressPct: number;
   onPreviewPlan?: PlanPreviewHandler;
 }) {
@@ -321,7 +325,7 @@ function PlanBindingCard({
             disabled={!canPreview}
             title={previewTitle}
             onClick={() => {
-              if (canPreview) onPreviewPlan?.(type, linkedPlanId);
+              if (canPreview) onPreviewPlan?.(item);
             }}
           >
             预览 Plan

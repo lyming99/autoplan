@@ -2,7 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, ipcMain, Menu, net, protocol, shell } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } = require('electron');
 const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
 const { createIntakeService, titleFromBody } = require('./intakeService');
@@ -33,6 +33,8 @@ async function createApp() {
       mainWindow.webContents.send('loop:update', snapshot);
     }
   });
+  // 模块级 mcpServer 在启停过程中被重新赋值，故以闭包懒读取其最新状态注入快照。
+  loop.setMcpStatusProvider(() => mcpServer?.status?.());
 
   mainWindow = new BrowserWindow({
     width: 1220,
@@ -119,6 +121,8 @@ ipcMain.handle('projects:delete', (_event, input = {}) => {
   db.run('DELETE FROM projects WHERE id = ?', [projectId]);
   return loop.snapshot(null);
 });
+ipcMain.handle('projects:pickDirectory', async () => (await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] }))?.filePaths?.[0] || null);
+ipcMain.handle('projects:openFolder', (_event, input = {}) => openProjectFolder(input));
 
 ipcMain.handle('loop:configure', (_event, config = {}) => {
   const projectId = requiredProjectId(config);
@@ -148,6 +152,29 @@ ipcMain.handle('loop:runOnce', async (_event, input = {}) => {
   return loop.snapshot(projectId);
 });
 
+ipcMain.handle('mcp:start', async (_event, input = {}) => {
+  try {
+    await startMcpServer();
+  } catch (error) {
+    recordMcpStartupError(error);
+  }
+  return loop.snapshot(input.projectId || null);
+});
+
+ipcMain.handle('mcp:stop', async (_event, input = {}) => {
+  await stopMcpServer();
+  return loop.snapshot(input.projectId || null);
+});
+
+ipcMain.handle('mcp:status', (_event, input = {}) => loop.snapshot(input.projectId || null));
+
+ipcMain.handle('mcp:saveConfig', (_event, config = {}) => {
+  const projectId = config.projectId || null;
+  const mcpConfigChanged = saveMcpSettings(db, config);
+  if (mcpConfigChanged) scheduleMcpServerRestart();
+  return loop.snapshot(projectId);
+});
+
 ipcMain.handle('tasks:run', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   await loop.runTask(projectId, requiredRecordId(input, 'taskId'));
@@ -164,6 +191,18 @@ ipcMain.handle('tasks:runParallel', async (_event, input = {}) => {
 ipcMain.handle('tasks:stop', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   loop.stopTask(projectId, requiredRecordId(input, 'taskId'));
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('acceptance:accept', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.acceptItem(projectId, { targetType: input.targetType, id: requiredRecordId(input) });
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('acceptance:unaccept', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  loop.unacceptItem(projectId, { targetType: input.targetType, id: requiredRecordId(input) });
   return loop.snapshot(projectId);
 });
 
@@ -285,6 +324,114 @@ ipcMain.handle('intake:appendTask', (_event, input = {}) => {
   return loop.snapshot(projectId);
 });
 
+const SCRIPT_RUNTIMES = new Set(['node', 'bash', 'ps', 'cmd']);
+const SCRIPT_TRIGGER_MODES = new Set(['hook', 'manual']);
+const SCRIPT_HOOK_STAGES = new Set(['plan:after', 'task:after', 'validation:before', 'loop:end', 'on:fail']);
+const SCRIPT_CONTEXT_INJECTS = new Set(['env', 'stdin', 'none']);
+const SCRIPT_SOURCE_TYPES = new Set(['inline', 'file']);
+
+function trimScriptText(value) {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function pickScriptEnum(value, allowed, fallback) {
+  const normalized = trimScriptText(value);
+  return allowed.has(normalized) ? normalized : fallback;
+}
+
+function scriptFlagNumber(value, fallback) {
+  if (value === undefined || value === null || value === '') return fallback ? 1 : 0;
+  return value === false || value === 0 || value === '0' || value === 'false' ? 0 : 1;
+}
+
+function scriptTimeoutSeconds(value, fallback = 60) {
+  const num = Number(value);
+  if (Number.isFinite(num) && num > 0) return Math.floor(num);
+  const fallbackNum = Number(fallback);
+  return Number.isFinite(fallbackNum) && fallbackNum > 0 ? Math.floor(fallbackNum) : 60;
+}
+
+function normalizeScriptFields(input = {}, current = {}) {
+  const name = trimScriptText(input.name ?? current.name);
+  if (!name) throw new Error('脚本名称不能为空');
+  return {
+    name,
+    path: trimScriptText(input.path ?? current.path),
+    runtime: pickScriptEnum(input.runtime ?? current.runtime, SCRIPT_RUNTIMES, 'node'),
+    source_type: pickScriptEnum(input.sourceType ?? input.source_type ?? current.source_type, SCRIPT_SOURCE_TYPES, 'inline'),
+    body: trimScriptText(input.body ?? current.body),
+    description: trimScriptText(input.description ?? current.description),
+    trigger_mode: pickScriptEnum(input.triggerMode ?? input.trigger_mode ?? current.trigger_mode, SCRIPT_TRIGGER_MODES, 'manual'),
+    hook_stage: pickScriptEnum(input.hookStage ?? input.hook_stage ?? current.hook_stage, SCRIPT_HOOK_STAGES, null),
+    enabled: scriptFlagNumber(input.enabled ?? current.enabled, current.enabled ?? 1),
+    work_dir: trimScriptText(input.workDir ?? input.work_dir ?? current.work_dir),
+    timeout_seconds: scriptTimeoutSeconds(input.timeoutSeconds ?? input.timeout_seconds, current.timeout_seconds),
+    fail_aborts: scriptFlagNumber(input.failAborts ?? input.fail_aborts ?? current.fail_aborts, current.fail_aborts ?? 0),
+    context_inject: pickScriptEnum(input.contextInject ?? input.context_inject ?? current.context_inject, SCRIPT_CONTEXT_INJECTS, 'none'),
+    sort_order: Math.floor(Number(input.sortOrder ?? input.sort_order ?? current.sort_order)) || 0,
+  };
+}
+
+const SCRIPT_COLUMN_LIST = 'name, path, runtime, body, description, trigger_mode, hook_stage, enabled, work_dir, timeout_seconds, fail_aborts, context_inject, sort_order, source_type';
+const SCRIPT_SET_ASSIGNMENTS = 'name = ?, path = ?, runtime = ?, body = ?, description = ?, trigger_mode = ?, hook_stage = ?, enabled = ?, work_dir = ?, timeout_seconds = ?, fail_aborts = ?, context_inject = ?, sort_order = ?, source_type = ?';
+
+ipcMain.handle('scripts:pickFile', async (_event, input = {}) => (await dialog.showOpenDialog(mainWindow, { properties: ['openFile'], filters: [{ name: '脚本文件', extensions: ['js', 'cjs', 'mjs', 'sh', 'ps1', 'bat', 'cmd'] }, { name: '所有文件', extensions: ['*'] }] }))?.filePaths?.[0] || null);
+
+ipcMain.handle('scripts:create', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const fields = normalizeScriptFields(input);
+  const ts = nowIso();
+  db.run(
+    `INSERT INTO scripts (project_id, ${SCRIPT_COLUMN_LIST}, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [projectId, fields.name, fields.path, fields.runtime, fields.body, fields.description, fields.trigger_mode, fields.hook_stage, fields.enabled, fields.work_dir, fields.timeout_seconds, fields.fail_aborts, fields.context_inject, fields.sort_order, fields.source_type, ts, ts],
+  );
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('scripts:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const scriptId = requiredRecordId(input, 'scriptId');
+  const current = db.get('SELECT * FROM scripts WHERE id = ? AND project_id = ?', [scriptId, projectId]);
+  if (!current) throw new Error('脚本不存在');
+  const fields = normalizeScriptFields(input, current);
+  db.run(
+    `UPDATE scripts SET ${SCRIPT_SET_ASSIGNMENTS}, updated_at = ? WHERE id = ? AND project_id = ?`,
+    [fields.name, fields.path, fields.runtime, fields.body, fields.description, fields.trigger_mode, fields.hook_stage, fields.enabled, fields.work_dir, fields.timeout_seconds, fields.fail_aborts, fields.context_inject, fields.sort_order, fields.source_type, nowIso(), scriptId, projectId],
+  );
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('scripts:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const scriptId = requiredRecordId(input, 'scriptId');
+  const rec = db.get('SELECT id FROM scripts WHERE id = ? AND project_id = ?', [scriptId, projectId]);
+  if (!rec) throw new Error('脚本不存在');
+  db.run('DELETE FROM scripts WHERE id = ? AND project_id = ?', [scriptId, projectId]);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('scripts:toggle', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const scriptId = requiredRecordId(input, 'scriptId');
+  const rec = db.get('SELECT enabled FROM scripts WHERE id = ? AND project_id = ?', [scriptId, projectId]);
+  if (!rec) throw new Error('脚本不存在');
+  db.run('UPDATE scripts SET enabled = ?, updated_at = ? WHERE id = ? AND project_id = ?', [rec.enabled ? 0 : 1, nowIso(), scriptId, projectId]);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('scripts:run', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const scriptId = requiredRecordId(input, 'scriptId');
+  return loop.runScriptManually(projectId, scriptId);
+});
+
+ipcMain.handle('scripts:stop', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const scriptId = requiredRecordId(input, 'scriptId');
+  loop.stopScript(projectId, scriptId);
+  return loop.snapshot(projectId);
+});
+
 function attachmentsRoot() {
   return path.join(app.getPath('userData'), 'data', 'attachments');
 }
@@ -300,10 +447,20 @@ function scheduleMcpServerRestart() { setTimeout(() => restartMcpServer().catch(
 async function restartMcpServer() { if (mcpServer) await mcpServer.stop().catch((error) => console.error('[mcp] stop before restart failed', error)); return startMcpServer(); }
 
 async function startMcpServer() {
+  // 幂等守卫：已运行则直接返回当前状态，避免重建第二个实例导致 EADDRINUSE。
+  if (mcpServer?.status?.()?.running) return mcpServer.status();
   mcpServer = createMcpServer({ db, loop, intakeService: intakeService(), config: mcpServerConfig(db), logger: console });
   const state = await mcpServer.start();
   const projectId = loop?.defaultProjectId?.();
   if (projectId && state.enabled && state.running) loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
+  return state;
+}
+
+async function stopMcpServer() {
+  if (!mcpServer) return null;
+  const state = await mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+  const projectId = loop?.defaultProjectId?.();
+  if (projectId) loop.addEvent(projectId, 'mcp.stopped', 'MCP 服务已停止', { mcp: state || mcpServer?.status?.() || null });
   return state;
 }
 
@@ -401,6 +558,12 @@ async function openWorkspaceFile(input = {}) {
   } catch (error) {
     return openFileResult(false, openFileErrorMessage(error));
   }
+}
+
+async function openProjectFolder(input = {}) {
+  const folder = String(db.get('SELECT workspace_path FROM projects WHERE id = ?', [Number(input.projectId || input.id || 0)])?.workspace_path || '').trim();
+  const openError = folder ? await shell.openPath(folder) : '项目工作区路径为空';
+  return { ok: !openError, error: openError || null };
 }
 
 async function resolveWorkspaceFilePath(workspacePath, filePath) {

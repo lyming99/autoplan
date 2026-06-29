@@ -13,6 +13,7 @@ import type {
   WorkspaceSearchResult,
   WorkspaceTab,
 } from '../types';
+import { useComposerDrafts } from './useComposerDrafts';
 import { useSnapshot } from './useSnapshot';
 import { searchWorkspaceSnapshot } from '../utils/search';
 import {
@@ -38,8 +39,10 @@ import {
   loopConfigurePayloadFromForm,
   loopFormFromProjectState,
   loopFormsEqual,
+  mcpConfigFormToPayload,
   normalizeCodexReasoningEffort,
   resolveWorkspaceTab,
+  useMcpConfigForm,
   type LoopFormState,
   type ScopeFileOpenSettings,
 } from '../utils/workspaceForms';
@@ -48,6 +51,10 @@ import {
   searchNoMatchText,
   withTaskCliProviderTitle,
 } from '../utils/workspaceSearch';
+import {
+  buildAcceptanceGroups,
+  buildRecentAccepted,
+} from '../utils/planTasks';
 
 export function useWorkspaceController() {
   const params = useParams<{ projectId: string }>();
@@ -55,6 +62,7 @@ export function useWorkspaceController() {
   const [searchParams, setSearchParams] = useSearchParams();
   const projectId = Number(params.projectId);
   const { snapshot, setSnapshot, error, setError } = useSnapshot(Number.isFinite(projectId) ? projectId : null);
+  const { drafts: composerDrafts, updateDraft: updateComposerDraft } = useComposerDrafts(projectId);
   const tabParam = searchParams.get('tab');
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => resolveWorkspaceTab(tabParam));
   const [pendingAttachments, setPendingAttachments] =
@@ -72,8 +80,7 @@ export function useWorkspaceController() {
     codexReasoningEffort: defaultCodexReasoningEffort,
   });
   const [loopFormDirty, setLoopFormDirty] = useState(false);
-  const [mcpAuthToken, setMcpAuthToken] = useState('');
-  const [mcpAuthTokenDirty, setMcpAuthTokenDirty] = useState(false);
+  const { mcpForm, mcpAuthTokenTouched, setMcpForm, resetMcpForm } = useMcpConfigForm(snapshot?.mcp, projectId);
   const [scopeFileOpenSettings, setScopeFileOpenSettings] = useState<ScopeFileOpenSettings>(() => {
     try {
       const parsed = JSON.parse(window.localStorage.getItem('autoplan.scopeFileOpenSettings') || 'null');
@@ -104,6 +111,20 @@ export function useWorkspaceController() {
     [filteredItems.tasks, state?.agent_cli_provider],
   );
   const filteredEmptyText = isSearching ? searchNoMatchText : undefined;
+  const acceptanceGroups = useMemo(
+    () => buildAcceptanceGroups(
+      (snapshot?.plans || []).filter((plan) => Number(plan.project_id) === projectId),
+      snapshot?.tasks || [],
+    ),
+    [snapshot?.plans, snapshot?.tasks, projectId],
+  );
+  const recentAccepted = useMemo(
+    () => buildRecentAccepted(
+      (snapshot?.plans || []).filter((plan) => Number(plan.project_id) === projectId),
+      snapshot?.tasks || [],
+    ),
+    [snapshot?.plans, snapshot?.tasks, projectId],
+  );
   const latestReadingPlan = useMemo(() => {
     if (!planReadState.plan) return null;
     return (
@@ -124,11 +145,6 @@ export function useWorkspaceController() {
     setLoopForm(action);
   }, []);
 
-  const updateMcpAuthToken: Dispatch<SetStateAction<string>> = useCallback((action) => {
-    setMcpAuthTokenDirty(true);
-    setMcpAuthToken(action);
-  }, []);
-
   useEffect(() => {
     if (!state || Number(state.project_id) !== Number(projectId)) return;
     const nextForm = loopFormFromProjectState(state);
@@ -137,13 +153,7 @@ export function useWorkspaceController() {
 
   useEffect(() => {
     setLoopFormDirty(false);
-    setMcpAuthTokenDirty(false);
   }, [projectId]);
-
-  useEffect(() => {
-    if (mcpAuthTokenDirty) return;
-    setMcpAuthToken(snapshot?.mcp?.authToken || '');
-  }, [mcpAuthTokenDirty, snapshot?.mcp?.authToken]);
 
   useEffect(() => {
     const defaultProvider = state?.agent_cli_provider || 'codex';
@@ -182,9 +192,10 @@ export function useWorkspaceController() {
     window.localStorage.setItem('autoplan.scopeFileOpenSettings', JSON.stringify(scopeFileOpenSettings));
   }, [scopeFileOpenSettings]);
 
+  // URL 的 tab 已等于当前激活标签时保持该选择（防止用户刚点击的 scripts 等被
+  // resolveWorkspaceTab 当作未知值坍缩回默认 requirement）；仅在两者不一致时按 URL 回填。
   useEffect(() => {
-    const nextTab = resolveWorkspaceTab(tabParam);
-    setActiveTab((current) => (current === nextTab ? current : nextTab));
+    setActiveTab((current) => (current === tabParam ? current : resolveWorkspaceTab(tabParam)));
   }, [tabParam]);
 
   useEffect(() => {
@@ -347,16 +358,11 @@ export function useWorkspaceController() {
   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     try {
-      const next = await window.autoplan.configureLoop({
-        ...loopConfigurePayloadFromForm(projectId, loopForm),
-        mcpAuthToken,
-      });
+      const next = await window.autoplan.configureLoop(loopConfigurePayloadFromForm(projectId, loopForm));
       if (next.state && Number(next.state.project_id) === Number(projectId)) {
         setLoopForm(loopFormFromProjectState(next.state));
       }
-      setMcpAuthToken(next.mcp?.authToken || mcpAuthToken);
       setLoopFormDirty(false);
-      setMcpAuthTokenDirty(false);
       setSnapshot(next);
       setError(null);
     } catch (e) {
@@ -373,6 +379,23 @@ export function useWorkspaceController() {
       showError(e);
     }
   };
+
+  const startMcp = () => runLoopAction(() => window.autoplan.startMcp({ projectId }));
+  const stopMcp = () => runLoopAction(() => window.autoplan.stopMcp({ projectId }));
+  const saveMcpConfig = async () => {
+    if (!projectId) return;
+    try {
+      const next = await window.autoplan.saveMcpConfig(mcpConfigFormToPayload(projectId, mcpForm, mcpAuthTokenTouched));
+      resetMcpForm(next.mcp);
+      setSnapshot(next);
+      setError(null);
+    } catch (e) { showError(e); }
+  };
+
+  const acceptItem = (targetType: 'plan' | 'task', id: number) =>
+    runLoopAction(() => window.autoplan.acceptItem({ projectId, targetType, id }));
+  const unacceptItem = (targetType: 'plan' | 'task', id: number) =>
+    runLoopAction(() => window.autoplan.unacceptItem({ projectId, targetType, id }));
 
   const interruptIntake = useCallback(
     async (type: IntakeType, id: number) => {
@@ -545,10 +568,13 @@ export function useWorkspaceController() {
 
   return {
     activeTab,
+    acceptanceGroups,
+    acceptItem,
     addPendingFiles,
     appendIntakeTask,
     closePlanReader,
     composerCliSelection,
+    composerDrafts,
     createFeedback,
     createRequirement,
     deleteFeedback,
@@ -561,7 +587,7 @@ export function useWorkspaceController() {
     isSearching,
     latestReadingPlan,
     loopForm,
-    mcpAuthToken,
+    mcpForm,
     navigate,
     openIntakePlanReader,
     openPlanReader,
@@ -571,22 +597,28 @@ export function useWorkspaceController() {
     project,
     projectId,
     projects,
+    recentAccepted,
     refreshPlanReader,
     removePendingAttachment,
     resumeIntake,
     runLoopAction,
+    saveMcpConfig,
     scopeFileOpenSettings,
     searchHitCount,
     searchQuery,
     selectSearchResult,
     selectTab,
-    setMcpAuthToken: updateMcpAuthToken,
+    setMcpForm,
     setScopeFileOpenSettings,
     setSearchQuery,
     snapshot,
+    startMcp,
     state,
+    stopMcp,
     submitLoopConfig,
     switchProject,
+    unacceptItem,
+    updateComposerDraft,
     updateFeedback,
     updateLoopForm,
     updateRequirement,

@@ -309,11 +309,16 @@ async function main() {
     assertFrontendInteractionSourceSmoke();
     assertMarkdownPlanReaderSourceSmoke();
     assertEventPresentationCopyRegression();
+    assertScriptsModuleSourceSmoke();
+    assertMcpControlSourceSmoke();
+    assertAcceptanceModuleSourceSmoke();
     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
 
     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
 
     await assertWorkspaceOpenFileIpcSmoke(db, loop, workspace, projectId);
+
+    await assertProjectFolderIpcSmoke(db, loop, workspace, projectId);
 
     await assertCodexSessionReuseSmoke(db, loop, projectId, workspace);
 
@@ -322,6 +327,8 @@ async function main() {
     await assertAgentCliBackendSmoke(db, loop, projectId, workspace);
 
     await assertAgentCliOpenCodeSmoke(db, loop, tempRoot);
+
+    await assertAgentCliOhMyPiSmoke(db, loop, tempRoot);
 
     await assertFeedback10RegressionSmoke(db, loop, tempRoot);
 
@@ -353,7 +360,7 @@ async function main() {
     loop.stop(multiProjectB);
     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, multi-loop');
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, project folder pick/open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, oh-my-pi backend, multi-loop, scripts module, script file source, mcp control, acceptance module');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -560,6 +567,269 @@ function assertFrontendInteractionSourceSmoke() {
   assert.match(overviewSource, /startsWith\('scan\.'\)[\s\S]*<EventList events=\{recentEvents\}/, '概览近期事件应使用过滤后的事件列表');
   assert.match(mainSource, /await loadRenderer\(mainWindow\);\s+scheduleMcpServerStart\(\);[\s\S]*function scheduleMcpServerStart\(\) \{ setTimeout\(\(\) => startMcpServer\(\)\.catch\(\(error\) => recordMcpStartupError\(error\)\), 0\); \}/, 'MCP 应在 renderer 加载后后台启动，失败只记录错误');
   assert.match(mcpAuthSource, /Authorization Bearer[\s\S]*WWW-Authenticate[\s\S]*Bearer realm="AutoPlan MCP"[\s\S]*'mcp\.authToken': generateSecretToken\(\)/, 'MCP HTTP 应使用标准 Bearer 校验并自动生成默认密钥');
+}
+
+function assertScriptsModuleSourceSmoke() {
+  const databaseSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'database.js'), 'utf8');
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload.js'), 'utf8');
+  const snapshotsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loop', 'snapshots.js'), 'utf8');
+  const typeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'types.ts'), 'utf8');
+  const sidebarSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx'),
+    'utf8',
+  );
+  const workspacePageSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'pages', 'WorkspacePage.tsx'),
+    'utf8',
+  );
+  const scriptsViewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceScriptsView.tsx'),
+    'utf8',
+  );
+  const editorModalSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'ScriptEditorModal.tsx'),
+    'utf8',
+  );
+  const scriptHooksSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loop', 'scriptHooks.js'), 'utf8');
+
+  // 后端：scripts 数据表与索引
+  assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS scripts \(/, 'database 应建 scripts 表');
+  assert.match(databaseSource, /CREATE INDEX IF NOT EXISTS idx_scripts_project[\s\S]*ON scripts \(project_id\)/, '应为 scripts 建 project_id 索引');
+  assert.match(databaseSource, /CREATE INDEX IF NOT EXISTS idx_scripts_project_hook_stage[\s\S]*ON scripts \(project_id, hook_stage\)/, '应为 scripts 建 (project_id, hook_stage) 索引');
+
+  // 后端：脚本 IPC 通道
+  for (const channel of ['scripts:create', 'scripts:update', 'scripts:delete', 'scripts:toggle', 'scripts:run', 'scripts:stop']) {
+    assert.match(mainSource, new RegExp(`ipcMain\\.handle\\('${channel.replace(/:/g, '\\:')}'`), `main 应注册 ${channel} 通道`);
+  }
+  assert.match(mainSource, /scripts:run[\s\S]*loop\.runScriptManually\(/, 'scripts:run 应复用手动运行入口');
+  assert.match(mainSource, /scripts:stop[\s\S]*loop\.stopScript\(/, 'scripts:stop 应复用停止入口');
+
+  // 后端：preload 暴露脚本方法
+  const preloadScriptMethods = [
+    ['createScript', 'scripts:create'],
+    ['updateScript', 'scripts:update'],
+    ['deleteScript', 'scripts:delete'],
+    ['toggleScript', 'scripts:toggle'],
+    ['runScript', 'scripts:run'],
+    ['stopScript', 'scripts:stop'],
+  ];
+  for (const [method, channel] of preloadScriptMethods) {
+    assert.match(preloadSource, new RegExp(`${method}: \\([^)]*\\) => ipcRenderer\\.invoke\\('${channel.replace(/:/g, '\\:')}'`), `preload 应暴露 ${method} 转发到 ${channel}`);
+  }
+
+  // 后端：快照 scripts 字段
+  assert.match(snapshotsSource, /scripts: service\.db\.all\(/, 'snapshot 应包含 scripts 字段');
+  assert.match(snapshotsSource, /scripts: \[\]/, '空快照应包含 scripts 空数组');
+
+  // 渲染层：类型定义
+  assert.match(typeSource, /export type WorkspaceTab =[^;]*'scripts'/, 'WorkspaceTab 应包含 scripts Tab');
+  assert.match(typeSource, /export type ScriptRuntime =[^;]*'node'[^;]*'cmd'/, '应定义 ScriptRuntime 类型');
+  assert.match(typeSource, /export type ScriptHookStage =[^;]*'validation:before'[^;]*'on:fail'/, '应定义 ScriptHookStage 五个阶段');
+  assert.match(typeSource, /export interface Script \{/, '应定义 Script 接口');
+  assert.match(typeSource, /export interface CreateScriptInput \{/, '应定义 CreateScriptInput 输入类型');
+  assert.match(typeSource, /export interface UpdateScriptInput extends CreateScriptInput/, '应定义 UpdateScriptInput 输入类型');
+  assert.match(typeSource, /export interface ScriptIdInput \{/, '应定义 ScriptIdInput 输入类型');
+  assert.match(typeSource, /export interface ScriptRunResult \{/, '应定义 ScriptRunResult 结果类型');
+  assert.match(typeSource, /interface AppSnapshot[\s\S]*scripts: Script\[\]/, 'AppSnapshot 应包含 scripts 字段');
+  assert.match(typeSource, /interface AutoplanApi[\s\S]*createScript: \(input: CreateScriptInput\) => Promise<AppSnapshot>[\s\S]*runScript: \(input: ScriptIdInput\) => Promise<ScriptRunResult>[\s\S]*stopScript:/, 'AutoplanApi 应声明脚本方法签名');
+
+  // 渲染层：导航项与徽标
+  assert.match(sidebarSource, /id: 'scripts', label: '脚本', icon: 'script'/, '侧边栏应新增脚本导航项');
+  assert.match(sidebarSource, /scriptCount/, '侧边栏应接收脚本数量');
+  assert.match(sidebarSource, /nav-badge/, '侧边栏应支持导航徽标渲染');
+
+  // 渲染层：WorkspacePage 视图与标题
+  assert.match(workspacePageSource, /activeTab === 'scripts' \? 'active' : ''/, 'WorkspacePage 应新增 scripts 视图 section');
+  assert.match(workspacePageSource, /scripts: '脚本模块'/, 'WorkspacePage 应提供脚本模块标题');
+  assert.match(workspacePageSource, /<WorkspaceScriptsView/, 'WorkspacePage 应接入脚本列表视图');
+
+  // 渲染层：列表视图接入
+  assert.match(scriptsViewSource, /script-grid/, '脚本列表应为卡片宫格');
+  assert.match(scriptsViewSource, /new-card/, '脚本列表应含新建脚本入口');
+  assert.match(scriptsViewSource, /onToggle/, '脚本卡片应接入启用开关回调');
+  assert.match(scriptsViewSource, /RUNTIME_META/, '脚本列表应按 runtime 派生语言标签');
+  assert.match(scriptsViewSource, /hook_stage/, '脚本列表应读取挂载阶段');
+
+  // 渲染层：详情弹窗接入运行时切换/挂载阶段/运行停止删除
+  assert.match(editorModalSource, /draft\.runtime/, '详情弹窗应接入运行时切换');
+  assert.match(editorModalSource, /hook-grid/, '详情弹窗应提供挂载阶段选择');
+  assert.match(editorModalSource, /lang-dot/, '详情弹窗应展示运行时语言圆点');
+  assert.match(editorModalSource, /runScript\(/, '详情弹窗应调用手动运行');
+  assert.match(editorModalSource, /stopScript\(/, '详情弹窗应调用停止');
+  assert.match(editorModalSource, /deleteScript\(/, '详情弹窗应调用删除');
+  // 脚本文件来源（source_type）：端到端源码断言——迁移/IPC/类型/执行分流/弹窗/列表
+  assert.match(databaseSource, /ensureColumn\('scripts', 'source_type'/, 'database 应新增 scripts.source_type 列迁移');
+  assert.match(mainSource, /SCRIPT_SOURCE_TYPES[\s\S]*source_type = \?[\s\S]*ipcMain\.handle\('scripts:pickFile'/, 'main 应定义 SCRIPT_SOURCE_TYPES、列清单透传 source_type 并注册 scripts:pickFile 通道');
+  assert.match(preloadSource, /pickScriptFile: \([^)]*\) => ipcRenderer\.invoke\('scripts:pickFile'/, 'preload 应暴露 pickScriptFile 转发到 scripts:pickFile');
+  assert.match(typeSource, /export type ScriptSourceType = 'inline' \| 'file';[\s\S]*source_type: ScriptSourceType;[\s\S]*pickScriptFile: \(input\?: \{ runtime\?: ScriptRuntime \}\) => Promise<string \| null>;/, 'types 应定义 ScriptSourceType、Script.source_type 与 AutoplanApi.pickScriptFile');
+  assert.match(scriptHooksSource, /source_type[\s\S]*resolveScriptFile[\s\S]*module\.exports[\s\S]*resolveScriptFile/, 'scriptHooks 应按 source_type 分流解析文件来源并导出 resolveScriptFile');
+  assert.match(editorModalSource, /window\.autoplan\.pickScriptFile\([\s\S]*draft\.sourceType/, 'ScriptEditorModal 应调用文件选择 IPC 并接入来源切换');
+  assert.match(scriptsViewSource, /function readSourceType[\s\S]*source_type/, 'WorkspaceScriptsView 应读取来源类型并兼容 source_type 蛇形字段');
+}
+
+function assertMcpControlSourceSmoke() {
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  for (const channel of ['mcp:start', 'mcp:stop', 'mcp:status', 'mcp:saveConfig']) {
+    assert.match(mainSource, new RegExp(`ipcMain\\.handle\\('${channel.replace(/:/g, '\\:')}'`), `main 应注册 ${channel} 通道`);
+  }
+  assert.match(mainSource, /mcp:saveConfig[\s\S]*saveMcpSettings\(db, config\)[\s\S]*scheduleMcpServerRestart/, 'mcp:saveConfig 应复用 saveMcpSettings 并在配置变化时重启服务');
+
+  const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload.js'), 'utf8');
+  const preloadMcpMethods = [
+    ['startMcp', 'mcp:start'],
+    ['stopMcp', 'mcp:stop'],
+    ['mcpStatus', 'mcp:status'],
+    ['saveMcpConfig', 'mcp:saveConfig'],
+  ];
+  for (const [method, channel] of preloadMcpMethods) {
+    assert.match(preloadSource, new RegExp(`${method}: \\([^)]*\\) => ipcRenderer\\.invoke\\('${channel.replace(/:/g, '\\:')}'`), `preload 应暴露 ${method} 转发到 ${channel}`);
+  }
+
+  const snapshotsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loop', 'snapshots.js'), 'utf8');
+  assert.match(snapshotsSource, /function mcpStatusSnapshot/, '应定义 mcpStatusSnapshot');
+  assert.match(snapshotsSource, /hasAuthToken = Boolean\(authToken\)/, 'mcpStatusSnapshot 应推导 hasAuthToken 标志而非下发明文密钥');
+  assert.match(snapshotsSource, /authTokenMasked = maskAuthToken\(authToken\)/, 'mcpStatusSnapshot 应下发脱敏 authTokenMasked');
+  assert.match(snapshotsSource, /authHeader: 'Authorization: Bearer <token>'/, 'mcpStatusSnapshot 的 authHeader 应为不含密钥的模板提示');
+  assert.doesNotMatch(snapshotsSource, /Authorization: Bearer \$\{authToken\}/, 'mcpStatusSnapshot 不应在 authHeader 中拼接明文密钥');
+  assert.match(snapshotsSource, /type IN \('mcp\.started', 'mcp\.start\.failed', 'mcp\.stopped'\)/, 'mcpStatusSnapshot 最近事件查询应纳入 mcp.stopped');
+
+  const typeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'types.ts'), 'utf8');
+  const mcpStatusStart = typeSource.indexOf('export interface McpStatus');
+  const mcpConfigFormStart = typeSource.indexOf('export interface McpConfigForm');
+  assert.ok(mcpStatusStart !== -1, '应定义 McpStatus 接口');
+  assert.ok(mcpConfigFormStart > mcpStatusStart, '应在 McpStatus 之后定义 McpConfigForm 以界定断言范围');
+  const mcpStatusSection = typeSource.slice(mcpStatusStart, mcpConfigFormStart);
+  assert.match(mcpStatusSection, /hasAuthToken: boolean;/, 'McpStatus 应含 hasAuthToken 字段');
+  assert.match(mcpStatusSection, /authTokenMasked: string;/, 'McpStatus 应含脱敏 authTokenMasked 字段');
+  assert.doesNotMatch(mcpStatusSection, /^\s*authToken\b\s*:/m, 'McpStatus 不应保留明文 authToken 字段');
+  assert.match(typeSource, /export interface McpConfigForm \{[\s\S]*transport: McpTransport;/, '应定义 McpConfigForm 表单类型');
+  assert.match(typeSource, /export interface McpConfigInput \{[\s\S]*authToken\?: string;/, '应定义 McpConfigInput 输入类型');
+  assert.match(typeSource, /startMcp: \(input: ProjectIdInput\) => Promise<AppSnapshot>;/, 'AutoplanApi 应声明 startMcp 签名');
+
+  const controllerSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'hooks', 'useWorkspaceController.ts'), 'utf8');
+  assert.match(controllerSource, /const startMcp = [\s\S]*window\.autoplan\.startMcp/, '控制器应实现 startMcp 动作');
+  assert.match(controllerSource, /const stopMcp = [\s\S]*window\.autoplan\.stopMcp/, '控制器应实现 stopMcp 动作');
+  assert.match(controllerSource, /window\.autoplan\.saveMcpConfig\(mcpConfigFormToPayload/, '控制器应经 mcpConfigFormToPayload 序列化后保存配置');
+
+  const formsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'utils', 'workspaceForms.ts'), 'utf8');
+  assert.match(formsSource, /function mcpConfigFormFromSnapshot[\s\S]*authToken: '',/, '表单初始化 authToken 应留空、不从快照明文回填');
+  assert.match(formsSource, /if \(authTokenTouched\)[\s\S]*payload\.authToken = form\.authToken\.trim\(\)/, 'saveMcpConfig 载荷仅在显式改动 authToken 时下发');
+  assert.match(formsSource, /function generateMcpAuthToken[\s\S]*crypto\.getRandomValues/, '应提供 generateMcpAuthToken 用 Web Crypto 生成随机密钥');
+
+  const settingsViewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx'),
+    'utf8',
+  );
+  assert.match(settingsViewSource, /<McpControlPanel[\s\S]*startMcp=\{startMcp\}[\s\S]*stopMcp=\{stopMcp\}[\s\S]*saveMcpConfig=\{saveMcpConfig\}/, 'WorkspaceSettingsView 应将启停/保存动作透传给 McpControlPanel');
+
+  const controlPanelSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'McpControlPanel.tsx'),
+    'utf8',
+  );
+  assert.match(controlPanelSource, /runWithBusy\('start', startMcp\)/, 'MCP 面板应提供启动按钮');
+  assert.match(controlPanelSource, /runWithBusy\('stop', stopMcp\)/, 'MCP 面板应提供停止按钮');
+  assert.match(controlPanelSource, /busy === 'start' \? '启动中…' : '启动'/, '启动按钮应给 loading/禁用反馈');
+  assert.match(controlPanelSource, /mcpForm\.transport === option\.value/, '配置表单应提供传输方式选择');
+  assert.match(controlPanelSource, /value=\{mcpForm\.host\}/, '配置表单应提供监听地址输入');
+  assert.match(controlPanelSource, /value=\{mcpForm\.port\}/, '配置表单应提供端口输入');
+  assert.match(controlPanelSource, /value=\{mcpForm\.path\}/, '配置表单应提供路径输入');
+  assert.match(controlPanelSource, /type=\{showAuthToken \? 'text' : 'password'\}/, '访问密钥应支持显示/隐藏切换');
+  assert.match(controlPanelSource, /generateMcpAuthToken\(\)/, '访问密钥应提供生成随机密钥入口');
+  assert.match(controlPanelSource, /setMcpForm\(\{ authToken: '' \}\)/, '访问密钥应提供清空入口');
+  assert.match(controlPanelSource, /mcp\??\.hasAuthToken[\s\S]*mcp\.authTokenMasked/, '面板应基于脱敏字段展示密钥状态');
+}
+
+function assertAcceptanceModuleSourceSmoke() {
+  const databaseSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'database.js'), 'utf8');
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload.js'), 'utf8');
+  const typeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'types.ts'), 'utf8');
+  const sidebarSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx'),
+    'utf8',
+  );
+  const workspacePageSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'pages', 'WorkspacePage.tsx'),
+    'utf8',
+  );
+  const planTasksSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'utils', 'planTasks.ts'),
+    'utf8',
+  );
+  const controllerSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'hooks', 'useWorkspaceController.ts'),
+    'utf8',
+  );
+  const acceptanceViewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'AcceptanceView.tsx'),
+    'utf8',
+  );
+
+  // 数据层：plans/plan_tasks 增加可空 accepted_at 列（建表 + ensureColumn 增量迁移）
+  assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS plans \([\s\S]*accepted_at TEXT/, 'database plans 建表应含 accepted_at');
+  assert.match(databaseSource, /CREATE TABLE IF NOT EXISTS plan_tasks \([\s\S]*accepted_at TEXT/, 'database plan_tasks 建表应含 accepted_at');
+  assert.match(databaseSource, /ensureColumn\('plans', 'accepted_at', 'TEXT'\)/, 'database 应为 plans 增量迁移 accepted_at');
+  assert.match(databaseSource, /ensureColumn\('plan_tasks', 'accepted_at', 'TEXT'\)/, 'database 应为 plan_tasks 增量迁移 accepted_at');
+
+  // IPC：acceptance:accept / acceptance:unaccept 落到 loop.acceptItem / loop.unacceptItem
+  assert.match(mainSource, /ipcMain\.handle\('acceptance:accept'/, 'main 应注册 acceptance:accept 通道');
+  assert.match(mainSource, /ipcMain\.handle\('acceptance:unaccept'/, 'main 应注册 acceptance:unaccept 通道');
+  assert.match(mainSource, /'acceptance:accept'[\s\S]*loop\.acceptItem\(/, 'acceptance:accept 应调用 loop.acceptItem');
+  assert.match(mainSource, /'acceptance:unaccept'[\s\S]*loop\.unacceptItem\(/, 'acceptance:unaccept 应调用 loop.unacceptItem');
+
+  // preload：window.autoplan 暴露 acceptItem / unacceptItem
+  assert.match(preloadSource, /acceptItem: \(input\) => ipcRenderer\.invoke\('acceptance:accept', input\)/, 'preload 应暴露 acceptItem 转发到 acceptance:accept');
+  assert.match(preloadSource, /unacceptItem: \(input\) => ipcRenderer\.invoke\('acceptance:unaccept', input\)/, 'preload 应暴露 unacceptItem 转发到 acceptance:unaccept');
+
+  // 类型：WorkspaceTab 含 acceptance；Plan/PlanTask 含 accepted_at；AutoplanApi 含 acceptItem/unacceptItem
+  assert.match(typeSource, /export type WorkspaceTab =[^;]*'acceptance'/, 'WorkspaceTab 应包含 acceptance');
+  const planInterfaceStart = typeSource.indexOf('export interface Plan extends');
+  const planTaskInterfaceStart = typeSource.indexOf('export interface PlanTask extends');
+  const autoplanApiStart = typeSource.indexOf('export interface AutoplanApi');
+  assert.ok(planInterfaceStart !== -1 && planTaskInterfaceStart > planInterfaceStart, '应能定位 Plan 与 PlanTask 接口');
+  assert.ok(autoplanApiStart > planTaskInterfaceStart, '应能按顺序定位到 AutoplanApi 接口');
+  assert.match(
+    typeSource.slice(planInterfaceStart, planTaskInterfaceStart),
+    /accepted_at: string \| null;/,
+    'Plan 接口应含 accepted_at',
+  );
+  assert.match(
+    typeSource.slice(planTaskInterfaceStart, autoplanApiStart),
+    /accepted_at: string \| null;/,
+    'PlanTask 接口应含 accepted_at',
+  );
+  assert.match(typeSource, /acceptItem: \(input: AcceptanceItemInput\) => Promise<AppSnapshot>;/, 'AutoplanApi 应声明 acceptItem 签名');
+  assert.match(typeSource, /unacceptItem: \(input: AcceptanceItemInput\) => Promise<AppSnapshot>;/, 'AutoplanApi 应声明 unacceptItem 签名');
+
+  // 导航：WORKSPACE_NAV 在 feedback 之后含 acceptance（排在反馈模块下面）
+  assert.match(
+    sidebarSource,
+    /id: 'feedback'[\s\S]*id: 'acceptance', label: '验收', icon: 'acceptance'/,
+    '侧边栏验收项应排在反馈之后',
+  );
+
+  // WorkspacePage：acceptance 视图块与标题文案
+  assert.match(workspacePageSource, /activeTab === 'acceptance' \? 'active' : ''/, 'WorkspacePage 应新增 acceptance 视图 section');
+  assert.match(workspacePageSource, /acceptance: '验收模块'/, 'WorkspacePage 应提供验收模块标题');
+
+  // 渲染层工具：验收筛选/分组工具复用 matchesTaskStatusFilter 的「已完成」语义（不改其实现）
+  assert.match(planTasksSource, /export function isAcceptancePendingPlan\(/, 'planTasks 应提供 isAcceptancePendingPlan');
+  assert.match(planTasksSource, /export function isAcceptancePendingTask\(/, 'planTasks 应提供 isAcceptancePendingTask');
+  assert.match(planTasksSource, /export function buildAcceptanceGroups\(/, 'planTasks 应提供 buildAcceptanceGroups');
+  assert.match(planTasksSource, /matchesTaskStatusFilter\(task, 'completed'\)/, '验收工具应复用 matchesTaskStatusFilter 的已完成语义');
+
+  // 控制器：acceptItem / unacceptItem 动作经 runLoopAction 调 window.autoplan
+  assert.match(controllerSource, /const acceptItem = [\s\S]*window\.autoplan\.acceptItem/, '控制器应实现 acceptItem 动作');
+  assert.match(controllerSource, /const unacceptItem = [\s\S]*window\.autoplan\.unacceptItem/, '控制器应实现 unacceptItem 动作');
+  assert.match(controllerSource, /runLoopAction\(\(\) => window\.autoplan\.acceptItem\(/, 'acceptItem 应经 runLoopAction 调用');
+
+  // 验收视图：逐项复选框 + 全部验收 + 空态 + 已验收折叠区 + 取消验收
+  assert.match(acceptanceViewSource, /role="checkbox"/, '验收视图应提供逐项复选框');
+  assert.match(acceptanceViewSource, /全部验收/, '验收视图应提供全部验收操作');
+  assert.match(acceptanceViewSource, /暂无待验收项/, '验收视图应提供空态');
+  assert.match(acceptanceViewSource, /已验收（最近）/, '验收视图应提供已验收折叠区');
+  assert.match(acceptanceViewSource, /取消验收/, '已验收区应提供取消验收操作');
 }
 
 function assertMarkdownPlanReaderSourceSmoke() {
@@ -873,6 +1143,17 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
   const mcpOpenCodeState = loop.snapshot(mcpOpenCodeProjectResult.projectId).state;
   assert.equal(mcpOpenCodeState.agent_cli_provider, 'opencode', 'MCP create_project should accept opencode provider');
   assert.equal(mcpOpenCodeState.codex_reasoning_effort ?? null, null, 'MCP opencode project should ignore Codex reasoning effort');
+
+  const mcpOhMyPiProjectResult = assertMcpToolSuccess(await callMcpTool(MCP_TOOL_NAMES.CREATE_PROJECT, {
+    name: 'MCP Oh My Pi Smoke Project',
+    workspacePath: path.join(tempRoot, 'mcp-oh-my-pi-workspace'),
+    description: 'MCP oh-my-pi provider smoke',
+    agentCliProvider: 'oh-my-pi',
+    codexReasoningEffort: 'high',
+  }, context), 'MCP create_project oh-my-pi');
+  const mcpOhMyPiState = loop.snapshot(mcpOhMyPiProjectResult.projectId).state;
+  assert.equal(mcpOhMyPiState.agent_cli_provider, 'oh-my-pi', 'MCP create_project should accept oh-my-pi provider');
+  assert.equal(mcpOhMyPiState.codex_reasoning_effort ?? null, null, 'MCP oh-my-pi project should ignore Codex reasoning effort');
 
   const guiSnapshot = createProject(null, {
     name: 'GUI Smoke Project For MCP Compare',
@@ -1208,6 +1489,23 @@ function assertPlanTaskParsingRegression(db, loop, workspace, projectId) {
   assert.equal(tasks[3].status, 'completed', '已完成 checkbox 应同步 completed 状态');
   assert.equal(tasks[4].scope, 'validation', '完整验收任务应保留 validation scope');
   assert.equal(fs.readFileSync(planFile, 'utf8'), original, '解析回归不应改写原始 Plan Markdown');
+
+  const duplicateKeyPlan = [
+    '# Duplicate Key Regression',
+    '## Tasks',
+    '- [ ] P020: First duplicate task <!-- scope: src/first.js -->',
+    '- [x] P020: Second duplicate task <!-- scope: src/second.js -->',
+    '- [ ] P021: Unique follow-up task <!-- scope: src/unique.js -->',
+  ].join('\n');
+  fs.writeFileSync(planFile, duplicateKeyPlan, 'utf8');
+  loop.syncPlanTasks(planId, planFile);
+  const duplicateTasks = db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC', [planId]);
+  assert.deepEqual(duplicateTasks.map((task) => task.task_key), ['P020', 'P021'], 'duplicate task keys should not violate the unique index');
+  assert.equal(duplicateTasks[0].title, 'First duplicate task', 'the first duplicate task line should remain canonical');
+  assert.deepEqual(duplicateTasks.map((task) => task.sort_order), [1, 2], 'deduped task sort order should be dense');
+  assert.equal(db.get('SELECT total_tasks FROM plans WHERE id = ?', [planId]).total_tasks, 2, 'plan totals should count unique task keys');
+  const duplicateEventCount = db.get('SELECT COUNT(*) AS count FROM events WHERE project_id = ? AND type = ?', [projectId, 'plan.tasks.duplicate_keys']).count;
+  assert.equal(duplicateEventCount, 1, 'duplicate task keys should leave a visible diagnostic event');
   db.run('DELETE FROM plan_tasks WHERE plan_id = ?', [planId]);
   db.run('DELETE FROM plans WHERE id = ?', [planId]);
 }
@@ -1626,6 +1924,90 @@ async function assertWorkspaceOpenFileIpcSmoke(db, loop, workspace, projectId) {
   assert.match((await openFile(null, { projectId, filePath: 'src/missing-open.js' })).error, /不存在/, '缺失文件应给出提示');
   assert.match((await openFile(null, { projectId, filePath: 'src/open-dir' })).error, /目录/, '目录路径应给出提示');
   assert.match((await openFile(null, { projectId, filePath: 'src/open-smoke.js', mode: 'command' })).error, /命令未配置/, '第三方命令缺失应给出提示');
+}
+
+async function assertProjectFolderIpcSmoke(db, loop, workspace, projectId) {
+  const openedPaths = [];
+  const handlers = loadMainIpcHandlers(db, loop, {
+    shell: {
+      openPath: async (targetPath) => {
+        openedPaths.push(targetPath);
+        return '';
+      },
+      showItemInFolder: () => {},
+    },
+  });
+
+  const pickDirectory = handlers.get('projects:pickDirectory');
+  assert.equal(typeof pickDirectory, 'function', '主进程应注册 projects:pickDirectory IPC handler');
+  const openFolder = handlers.get('projects:openFolder');
+  assert.equal(typeof openFolder, 'function', '主进程应注册 projects:openFolder IPC handler');
+
+  const successResult = await openFolder(null, { projectId });
+  assert.equal(successResult.ok, true, '打开非空工作区应成功');
+  assert.equal(successResult.error, null, '打开成功不应携带错误');
+  assert.equal(openedPaths.at(-1), workspace, '打开文件夹应解析项目 workspace_path 并交给 shell.openPath');
+
+  const emptyProjectId = insertProject(db, loop, 'Empty Workspace Folder Project', '');
+  const emptyResult = await openFolder(null, { projectId: emptyProjectId });
+  assert.equal(emptyResult.ok, false, '路径为空时打开文件夹应返回失败而非抛错');
+  assert.match(emptyResult.error, /工作区路径为空/, '路径为空应给出明确提示');
+  assert.equal(openedPaths.at(-1), workspace, '空工作区路径不应调用 shell.openPath');
+
+  const missingResult = await openFolder(null, { projectId: projectId + 99999 });
+  assert.equal(missingResult.ok, false, '不存在项目打开文件夹应安全降级为失败');
+
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  assert.match(
+    mainSource,
+    /projects:pickDirectory[\s\S]*dialog\.showOpenDialog[\s\S]*openDirectory[\s\S]*filePaths\?\.\[0\] \|\| null/,
+    '选择文件夹 IPC 应通过 dialog.showOpenDialog 限定 openDirectory 且取消时返回 null',
+  );
+  assert.match(
+    mainSource,
+    /async function openProjectFolder[\s\S]*workspace_path FROM projects[\s\S]*shell\.openPath[\s\S]*项目工作区路径为空/,
+    '打开文件夹 IPC 应按 projectId 解析 workspace_path 后用 shell.openPath 打开，空路径降级为提示',
+  );
+
+  const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload.js'), 'utf8');
+  assert.match(preloadSource, /pickDirectory: \(\) => ipcRenderer\.invoke\('projects:pickDirectory'\)/, 'preload 应暴露 pickDirectory 转发到 projects:pickDirectory');
+  assert.match(preloadSource, /openProjectFolder: \(input\) => ipcRenderer\.invoke\('projects:openFolder'/, 'preload 应暴露 openProjectFolder 转发到 projects:openFolder');
+
+  const typeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'types.ts'), 'utf8');
+  assert.match(typeSource, /pickDirectory: \(\) => Promise<string \| null>;/, 'AutoplanApi 应声明 pickDirectory 返回可空路径');
+  assert.match(
+    typeSource,
+    /openProjectFolder: \(input: ProjectIdInput\) => Promise<\{ ok: boolean; error: string \| null \}>;/,
+    'AutoplanApi 应声明 openProjectFolder 返回结果对象',
+  );
+
+  const projectsPageSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'pages', 'ProjectsPage.tsx'),
+    'utf8',
+  );
+  assert.match(projectsPageSource, /pickDirectory\(\)/, '创建/编辑弹窗应调用 pickDirectory 选择文件夹');
+  assert.match(projectsPageSource, /onClick=\{pickFolder\}[\s\S]*选择文件夹/, '创建/编辑弹窗应保留绑定 pickFolder 的“选择文件夹”入口按钮');
+  assert.match(projectsPageSource, /value=\{draft\.workspacePath\}/, '工作区路径字段应保留手动输入文本框');
+  assert.match(
+    projectsPageSource,
+    /openProjectFolder\(\{ projectId: project\.id \}\)/,
+    '项目卡片路径链接应调用 openProjectFolder',
+  );
+  assert.match(
+    projectsPageSource,
+    /event\.stopPropagation\(\)[\s\S]*openFolder\(project\)/,
+    '点击路径链接应先 stopPropagation 再打开文件夹，避免触发卡片导航',
+  );
+  assert.match(projectsPageSource, /disabled=\{!project\.workspace_path\}/, '空工作区路径应禁用项目卡片路径链接');
+  assert.match(projectsPageSource, /未设置工作区/, '项目卡片空路径应降级展示“未设置工作区”');
+
+  const sidebarSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx'),
+    'utf8',
+  );
+  assert.match(sidebarSource, /openProjectFolder\(\{ projectId \}\)/, '工作区侧边栏路径链接应调用 openProjectFolder');
+  assert.match(sidebarSource, /disabled=\{!currentProject\.workspace_path\}/, '空工作区路径应禁用侧边栏路径链接');
+  assert.match(sidebarSource, /未设置工作区/, '侧边栏空路径应降级展示“未设置工作区”');
 }
 
 function extractPromptAttachmentPath(prompt) {
@@ -2350,6 +2732,104 @@ async function assertAgentCliOpenCodeSmoke(db, loop, tempRoot) {
   assert.ok(fs.readFileSync(opencodeResult.lastFile, 'utf8').includes('opencode smoke output'), 'opencode 应从 stdout 写入 last message');
 }
 
+async function assertAgentCliOhMyPiSmoke(db, loop, tempRoot) {
+  const workspace = path.join(tempRoot, 'oh-my-pi-backend-workspace');
+  const projectId = insertProject(db, loop, 'Oh My Pi Backend Smoke Project', workspace);
+  loop.configure(projectId, { workspacePath: workspace, intervalSeconds: 5, validationCommand: '' });
+
+  loop.configure(projectId, { agentCliProvider: 'oh-my-pi', agentCliCommand: '' });
+  const ohMyPiState = loop.snapshot(projectId).state;
+  assert.equal(ohMyPiState.agent_cli_provider, 'oh-my-pi', '应能切换到 oh-my-pi 后端');
+  assert.equal(ohMyPiState.codex_reasoning_effort ?? null, null, 'oh-my-pi 后端不应展示 Codex 思考深度');
+
+  const handlers = loadMainIpcHandlers(db, loop);
+  const createRequirement = handlers.get('requirements:create');
+  const createFeedback = handlers.get('feedback:create');
+  createRequirement(null, { projectId, body: 'Oh My Pi 单条需求覆盖后端', agentCliProvider: 'oh-my-pi' });
+  createFeedback(null, { projectId, body: 'Oh My Pi 单条反馈覆盖后端', agentCliProvider: 'oh-my-pi' });
+  const requirement = db.get('SELECT * FROM requirements WHERE project_id = ? AND body = ?', [projectId, 'Oh My Pi 单条需求覆盖后端']);
+  const feedback = db.get('SELECT * FROM feedback WHERE project_id = ? AND body = ?', [projectId, 'Oh My Pi 单条反馈覆盖后端']);
+  assert.equal(requirement.agent_cli_provider, 'oh-my-pi', '需求单条配置应保存 oh-my-pi 后端');
+  assert.equal(requirement.codex_reasoning_effort, null, '需求选择 oh-my-pi 时应忽略 Codex 思考深度');
+  assert.equal(feedback.agent_cli_provider, 'oh-my-pi', '反馈单条配置应保存 oh-my-pi 后端');
+  assert.equal(feedback.codex_reasoning_effort, null, '反馈选择 oh-my-pi 时应忽略 Codex 思考深度');
+
+  // oh-my-pi 经 stdin 投递 prompt（promptSource:'stdin'），最终回复经 stdout 写入 last 文件
+  // （lastFileSource:'stdout'，与 opencode 同构）；因此计划输出文件路径出现在 prompt 文本中（非位置参数）。
+  const spawned = [];
+  const { LoopService: PatchedLoopService } = loadPatchedLoopService({
+    spawnOverride: (command, args, options) => {
+      const entry = { command, args, options, prompt: '' };
+      spawned.push(entry);
+      return createFakeChild({
+        output: 'oh-my-pi smoke output\n',
+        onPrompt: (prompt) => {
+          entry.prompt = prompt;
+          const planMatch = String(prompt || '').match(/输出文件：(.+)/);
+          if (!planMatch) return;
+          const generatedPlanFile = planMatch[1].trim();
+          fs.mkdirSync(path.dirname(generatedPlanFile), { recursive: true });
+          fs.writeFileSync(
+            generatedPlanFile,
+            ['# Oh My Pi backend smoke', '', '- [ ] O001: oh-my-pi 生成后执行 <!-- scope: smoke/o001.js -->', ''].join('\n'),
+            'utf8',
+          );
+        },
+      });
+    },
+  });
+  const patchedLoop = new PatchedLoopService(db);
+
+  const ohMyPiIssueScan = {
+    aggregateHash: 'smoke-backend-oh-my-pi-hash',
+    files: [{ path: path.join('docs', 'issues', 'oh-my-pi-smoke.md'), hash: 'smoke-backend-oh-my-pi-file-hash' }],
+  };
+  fs.mkdirSync(path.join(workspace, 'docs', 'issues'), { recursive: true });
+  fs.writeFileSync(path.join(workspace, ohMyPiIssueScan.files[0].path), '# Oh My Pi smoke\n\n验证 oh-my-pi 后端可生成计划。\n', 'utf8');
+
+  spawned.length = 0;
+  await patchedLoop.generatePlan(projectId, workspace, ohMyPiIssueScan);
+  assert.ok(spawned.length >= 1, 'oh-my-pi 计划生成应至少 spawn 一次');
+  assert.ok(spawned.every((entry) => commandName(entry.command, entry.args) === 'omp'), 'oh-my-pi 计划生成应调用 omp 命令');
+  assert.ok(spawned.every((entry) => spawnedArgs(entry).includes('--print')), 'oh-my-pi 计划生成应使用 --print 非交互模式');
+  assert.ok(spawned.every((entry) => entry.prompt !== ''), 'oh-my-pi 应通过 stdin 投递 prompt（非位置参数）');
+  assertNoSpawnArg(spawned, 'model_reasoning_effort', 'oh-my-pi 计划生成不应携带 Codex 思考深度参数');
+  assertNoSpawnArg(spawned, 'resume', 'oh-my-pi 计划生成不应使用 Codex resume 参数');
+  assertNoSpawnArg(spawned, '--format', 'oh-my-pi 计划生成不应携带 OpenCode --format 标志');
+  assertNoSpawnArg(spawned, '--session', 'oh-my-pi 计划生成不应携带 OpenCode/Claude --session 标志');
+  assertNoSpawnArg(spawned, '--title', 'oh-my-pi 计划生成不应携带 OpenCode --title 标志');
+  assertNoSpawnArg(spawned, 'stream-json', 'oh-my-pi 计划生成不应携带 Claude stream-json 标志');
+  const ohMyPiPlan = db.get('SELECT * FROM plans WHERE issue_hash = ?', [ohMyPiIssueScan.aggregateHash]);
+  assert.ok(ohMyPiPlan, 'oh-my-pi 后端应能通过 stub 生成计划并入库');
+  assertPlanCliSnapshot(ohMyPiPlan, { provider: 'oh-my-pi', command: 'omp', effort: null }, 'oh-my-pi 生成计划数据库快照');
+  const ohMyPiPlanSnapshot = patchedLoop.snapshot(projectId).plans.find((plan) => plan.id === ohMyPiPlan.id);
+  assertPlanCliSnapshot(ohMyPiPlanSnapshot, { provider: 'oh-my-pi', command: 'omp', effort: null }, 'oh-my-pi 生成计划前端快照');
+  assert.equal(formatPlanCliSummary(ohMyPiPlanSnapshot), 'Oh My Pi CLI', 'oh-my-pi 计划展示不应包含 Codex 思考深度');
+  const ohMyPiEventMeta = latestPlanGeneratedMeta(db, projectId, ohMyPiPlan.id);
+  assert.equal(ohMyPiEventMeta.agentCliProvider, 'oh-my-pi', 'oh-my-pi 计划生成事件应记录 oh-my-pi 后端');
+  assert.equal(ohMyPiEventMeta.codexReasoningEffort, undefined, 'oh-my-pi 计划生成事件不应记录 Codex 思考深度');
+
+  const ohMyPiTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [ohMyPiPlan.id, 'O001']);
+  assert.ok(ohMyPiTask, 'oh-my-pi 生成计划后应同步任务列表');
+  spawned.length = 0;
+  const ohMyPiResult = await patchedLoop.runCodex(workspace, '执行 oh-my-pi 任务 O001', 'execute-O001', {
+    projectId,
+    planId: ohMyPiPlan.id,
+    taskId: ohMyPiTask.id,
+    codexSessionId: '00000000-0000-4000-8000-000000000000',
+  });
+  assert.equal(ohMyPiResult.exitCode, 0, 'oh-my-pi 后端执行应成功');
+  assert.ok(spawned.every((entry) => commandName(entry.command, entry.args) === 'omp'), 'oh-my-pi 执行应调用 omp 命令');
+  assertNoSpawnArg(spawned, 'resume', 'oh-my-pi 执行不应使用 Codex resume 参数');
+  assertNoSpawnArg(spawned, 'model_reasoning_effort', 'oh-my-pi 执行不应携带 Codex 思考深度参数');
+  assertNoSpawnArg(spawned, '00000000-0000-4000-8000-000000000000', 'oh-my-pi 执行不应传入 codexSessionId');
+  assert.equal(ohMyPiResult.agentCliProvider, 'oh-my-pi', 'oh-my-pi 执行结果应标记 oh-my-pi 后端');
+  assert.equal(ohMyPiResult.command, 'omp', 'oh-my-pi 执行结果应记录解析后的命令');
+  assert.equal(ohMyPiResult.codexSessionId, undefined, 'oh-my-pi 执行结果不应包含 Codex session');
+  assert.equal(ohMyPiResult.agentCliSessionId, undefined, 'oh-my-pi 执行结果不应包含 Claude/OpenCode session');
+  assert.ok(fs.readFileSync(ohMyPiResult.lastFile, 'utf8').includes('oh-my-pi smoke output'), 'oh-my-pi 应从 stdout 写入 last message');
+}
+
 async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
   const regressionWorkspace = path.join(tempRoot, 'feedback10-regression');
   const regressionProjectId = insertProject(db, loop, 'Feedback #10 Regression', regressionWorkspace);
@@ -2592,7 +3072,23 @@ function assertRendererAgentCliTypeSmoke() {
   assert.equal(formatPlanCliSummary({ agentCliProvider: 'codex', codexReasoningEffort: 'high' }), 'Codex CLI · 思考深度 high', '计划 CLI 文案应兼容驼峰字段');
   assert.equal(formatPlanCliSummary({ agent_cli_provider: 'claude', codex_reasoning_effort: 'high' }), 'Claude CLI', 'Claude 计划 CLI 文案不应展示 Codex 思考深度');
   assert.equal(formatPlanCliSummary({ agentCliProvider: 'opencode' }), 'OpenCode CLI', 'OpenCode 计划 CLI 文案不应展示 Codex 思考深度');
+  assert.match(typeSource, /export type AgentCliProvider = [^;]*'oh-my-pi'/, 'AgentCliProvider 类型应包含 oh-my-pi');
+  assert.equal(formatPlanCliSummary({ agentCliProvider: 'oh-my-pi' }), 'Oh My Pi CLI', 'Oh My Pi 计划 CLI 文案不应展示 Codex 思考深度');
   assert.equal(formatPlanCliSummary({}), 'Codex CLI · 思考深度 medium', '空计划 CLI 字段应按历史默认降级');
+
+  // 源码级断言：oh-my-pi provider 注册、默认命令 omp 映射、--print/stdout/stdin 无状态 spawn 分支。
+  const agentCliSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'agentCli.js'), 'utf8');
+  assert.match(agentCliSource, /normalizedProvider === 'oh-my-pi'/, 'agentCli 应注册 oh-my-pi provider spawn 分支');
+  assert.match(agentCliSource, /normalized === 'oh-my-pi' \? 'omp'/, 'agentCli 默认命令应把 oh-my-pi 映射为 omp');
+  assert.match(agentCliSource, /return \['--print'\]/, 'agentCli 应以 --print 非交互模式构造 oh-my-pi 参数');
+  assert.match(
+    agentCliSource,
+    /normalizedProvider === 'oh-my-pi'[\s\S]{0,400}?lastFileSource: 'stdout'[\s\S]{0,80}?promptSource: 'stdin'/,
+    'oh-my-pi spawn 分支应使用 stdout 捕获与 stdin 投递（无状态单次后端）',
+  );
+
+  const mcpToolsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'mcpTools.js'), 'utf8');
+  assert.match(mcpToolsSource, /'oh-my-pi'/, 'mcpTools provider 白名单应包含 oh-my-pi');
 }
 
 function assertPlanCliSnapshot(plan, expected, label) {

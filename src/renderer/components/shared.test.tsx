@@ -66,12 +66,29 @@ describe('shared OpenCode display helpers', () => {
   });
 });
 
+describe('shared Oh My Pi display helpers', () => {
+  it('labels the oh-my-pi provider and resolves the omp command', () => {
+    expectEqual(agentCliProviderLabel('oh-my-pi'), 'Oh My Pi');
+    expectEqual(agentCliProviderLabel('OH-MY-PI'), 'Oh My Pi');
+    expectEqual(agentCliDefaultCommand('oh-my-pi'), 'omp');
+  });
+
+  it('keeps Oh My Pi plan summaries free of Codex reasoning depth', () => {
+    expectEqual(planCliSummaryLabel({ agentCliProvider: 'oh-my-pi' }), 'Oh My Pi CLI');
+    expectEqual(
+      planCliSummaryLabel({ agent_cli_provider: 'oh-my-pi', codex_reasoning_effort: 'xhigh' }),
+      'Oh My Pi CLI',
+    );
+  });
+});
+
 describe('settings choice metadata', () => {
   it('keeps CLI provider choices ready for segmented controls', () => {
-    expectEqual(agentCliOptionDetails.length, 3);
+    expectEqual(agentCliOptionDetails.length, 4);
     expectEqual(agentCliOptionDetails[0].value, 'codex');
     expectEqual(agentCliOptionDetails[1].value, 'claude');
     expectEqual(agentCliOptionDetails[2].value, 'opencode');
+    expectEqual(agentCliOptionDetails[3].value, 'oh-my-pi');
     expect(agentCliOptionDetails.every((option) => option.description), 'CLI options should include descriptions');
   });
 

@@ -14,8 +14,10 @@ const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|js
 function syncPlanTasksFromMarkdown(service, planId, planFile) {
   if (!fs.existsSync(planFile)) return;
   const text = fs.readFileSync(planFile, 'utf8');
-  const tasks = parsePlanTasksFromMarkdown(text);
-  if (!tasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+  const parsedTasks = parsePlanTasksFromMarkdown(text);
+  if (!parsedTasks.length) recordEmptyPlanTaskParse(service, planId, planFile, text);
+  const { tasks, duplicateKeys } = uniquePlanTasksByKey(parsedTasks);
+  if (duplicateKeys.length) recordDuplicatePlanTaskKeys(service, planId, planFile, duplicateKeys);
   const existingTasks = service.db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC, id ASC', [planId]);
   const existingByKey = new Map();
   for (const existing of existingTasks) {
@@ -81,6 +83,40 @@ function recordEmptyPlanTaskParse(service, planId, planFile, markdown) {
     reason: 'no_parseable_task_lines',
     hint: '任务拆解必须位于 ## 任务拆解 章节，并使用 - [ ] P001: 任务标题 <!-- scope: ... --> 独占一行；不要写成段落、代码块、表格或嵌套 checkbox。',
   });
+}
+
+function recordDuplicatePlanTaskKeys(service, planId, planFile, duplicateKeys) {
+  const plan = service.db.get('SELECT id, project_id, file_path FROM plans WHERE id = ?', [planId]);
+  if (!plan?.project_id) return;
+  const filePath = plan.file_path || planFile;
+  const keys = duplicateKeys.join(', ');
+  const message = `Plan contains duplicate task keys; kept first occurrence: ${keys} (${filePath})`;
+  const existing = service.db.get('SELECT id FROM events WHERE project_id = ? AND type = ? AND message = ? LIMIT 1', [
+    plan.project_id,
+    'plan.tasks.duplicate_keys',
+    message,
+  ]);
+  if (existing) return;
+  service.addEvent(plan.project_id, 'plan.tasks.duplicate_keys', message, {
+    planId,
+    filePath,
+    duplicateKeys,
+  });
+}
+
+function uniquePlanTasksByKey(tasks) {
+  const uniqueTasks = [];
+  const seenKeys = new Set();
+  const duplicateKeys = new Set();
+  for (const task of tasks) {
+    if (seenKeys.has(task.key)) {
+      duplicateKeys.add(task.key);
+      continue;
+    }
+    seenKeys.add(task.key);
+    uniqueTasks.push({ ...task, sortOrder: uniqueTasks.length + 1 });
+  }
+  return { tasks: uniqueTasks, duplicateKeys: Array.from(duplicateKeys) };
 }
 
 function parsePlanTasksFromMarkdown(markdown) {

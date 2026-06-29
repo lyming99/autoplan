@@ -54,6 +54,11 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
       service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 计划生成失败：${result.logFile}`, agentContext);
+      await service.runHookScripts(projectId, 'on:fail', {
+        failedStage: 'plan',
+        error: result.errorMessage || '计划生成失败',
+        log: result.logFile || null,
+      });
       return;
     }
 
@@ -74,6 +79,10 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
     service.addEvent(projectId, 'plan.generated', `${agentLabel} 生成计划：${normalizeRelative(workspace, planFile)}`, {
       ...agentContext,
       planId: id,
+    });
+    await service.runHookScripts(projectId, 'plan:after', {
+      planId: id,
+      planFilePath: normalizeRelative(workspace, planFile),
     });
   }
 
@@ -124,6 +133,13 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
     const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
     if (result.exitCode !== 0 || !fs.existsSync(planFile)) {
       service.addEvent(projectId, 'plan.generate.failed', `${agentLabel} 生成${sourceName} #${intake.id} 计划失败：${result.logFile}`, agentContext);
+      await service.runHookScripts(projectId, 'on:fail', {
+        failedStage: 'plan',
+        intakeType: intake.__type,
+        intakeId: intake.id,
+        error: result.errorMessage || `生成${sourceName} #${intake.id} 计划失败`,
+        log: result.logFile || null,
+      });
       return null;
     }
 
@@ -146,6 +162,12 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
     service.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成计划：${normalizeRelative(workspace, planFile)}`, {
       ...agentContext,
       planId: id,
+      intakeType: intake.__type,
+      intakeId: intake.id,
+    });
+    await service.runHookScripts(projectId, 'plan:after', {
+      planId: id,
+      planFilePath: normalizeRelative(workspace, planFile),
       intakeType: intake.__type,
       intakeId: intake.id,
     });

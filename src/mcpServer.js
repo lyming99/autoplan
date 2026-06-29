@@ -83,7 +83,7 @@ class AutoPlanMcpServer {
     });
 
     await new Promise((resolve, reject) => {
-      const onError = (error) => reject(error);
+      const onError = (error) => reject(new Error(describeListenError(error, this.config.port)));
       this.httpServer.once('error', onError);
       this.httpServer.listen(this.config.port, this.config.host, () => {
         this.httpServer.off('error', onError);
@@ -283,6 +283,24 @@ function errorMessage(error) {
   return error?.message || String(error || '未知错误');
 }
 
+// 把 HTTP listen 失败按错误码分类为中文可处置文案，并在 macOS 下追加平台感知指引。
+// 复用既有 lastError → mcp.start.failed 事件 → IPC → McpControlPanel「最近错误」链路，不新增通道。
+function describeListenError(error, port) {
+  const code = error?.code;
+  let message;
+  if (code === 'EADDRINUSE') {
+    message = `端口 ${port} 已被占用（可换端口或关闭占用进程）`;
+  } else if (code === 'EACCES' || code === 'EPERM') {
+    message = '无网络监听权限或被防火墙拦截';
+  } else {
+    message = `MCP HTTP 启动失败：${errorMessage(error)}`;
+  }
+  if (process.platform === 'darwin') {
+    message += `\nmacOS 请在「系统设置→网络→防火墙」放行 AutoPlan、确认应用为非沙箱直接分发版本；若本机端口仍无法监听，可改用独立 stdio 进程（npm run mcp:stdio），由外部 MCP 客户端 spawn 该进程接入`;
+  }
+  return message;
+}
+
 async function startStandalone() {
   const args = new Set(process.argv.slice(2));
   const transport = args.has('--stdio') ? 'stdio' : 'http';
@@ -325,4 +343,5 @@ module.exports = {
   DEFAULT_MCP_CONFIG,
   createMcpServer,
   normalizeMcpConfig,
+  describeListenError,
 };

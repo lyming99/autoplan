@@ -1,7 +1,7 @@
 export type IntakeType = 'requirement' | 'feedback';
-export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'tasks' | 'events' | 'settings';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'acceptance' | 'tasks' | 'scripts' | 'events' | 'settings';
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
-export type AgentCliProvider = 'codex' | 'claude' | 'opencode' | string;
+export type AgentCliProvider = 'codex' | 'claude' | 'opencode' | 'oh-my-pi' | string;
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | string;
 
 export const PLAN_STATUS = {
@@ -269,6 +269,7 @@ export interface Plan extends AgentCliSessionInfo {
   concurrency_suggestion: PlanConcurrencySuggestion;
   created_at: string;
   updated_at: string;
+  accepted_at: string | null;
 }
 
 export interface PlanScopeFileInfo {
@@ -413,6 +414,7 @@ export interface PlanTask extends AgentCliSessionInfo, CodexSessionInfo {
   agentCliCommand?: string | null;
   codexReasoningEffort?: CodexReasoningEffort | null;
   updated_at: string;
+  accepted_at: string | null;
   /** JOIN plans 得到 */
   file_path: string;
   /** JOIN plans 并读取计划 Markdown 标题得到 */
@@ -552,6 +554,100 @@ export interface ScanFile {
   scanned_at: string;
 }
 
+export type ScriptRuntime = 'node' | 'bash' | 'ps' | 'cmd';
+export type ScriptSourceType = 'inline' | 'file';
+export type ScriptTriggerMode = 'hook' | 'manual';
+export type ScriptContextInject = 'env' | 'stdin' | 'none';
+export type ScriptHookStage = 'plan:after' | 'task:after' | 'validation:before' | 'loop:end' | 'on:fail';
+export type ScriptLastStatus = 'idle' | 'ok' | 'bad' | 'running';
+
+/** 脚本记录同时容忍蛇形（DB 原样）与驼峰字段，沿用本仓库既有双写惯例 */
+export interface Script {
+  id: number;
+  project_id: number;
+  projectId?: number;
+  name: string;
+  path: string;
+  runtime: ScriptRuntime;
+  body: string;
+  source_type: ScriptSourceType;
+  sourceType?: ScriptSourceType;
+  description: string;
+  trigger_mode: ScriptTriggerMode;
+  triggerMode?: ScriptTriggerMode;
+  hook_stage: ScriptHookStage | null;
+  hookStage?: ScriptHookStage | null;
+  enabled: number;
+  work_dir: string;
+  workDir?: string;
+  timeout_seconds: number;
+  timeoutSeconds?: number;
+  fail_aborts: number;
+  failAborts?: number;
+  context_inject: ScriptContextInject;
+  contextInject?: ScriptContextInject;
+  sort_order: number;
+  sortOrder?: number;
+  last_status: ScriptLastStatus | null;
+  lastStatus?: ScriptLastStatus | null;
+  last_exit_code: number | null;
+  lastExitCode?: number | null;
+  last_duration_ms: number | null;
+  lastDurationMs?: number | null;
+  last_log: string | null;
+  lastLog?: string | null;
+  last_run_at: string | null;
+  lastRunAt?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateScriptInput {
+  projectId: number;
+  name: string;
+  runtime?: ScriptRuntime;
+  body?: string;
+  path?: string;
+  sourceType?: ScriptSourceType;
+  source_type?: ScriptSourceType;
+  description?: string;
+  triggerMode?: ScriptTriggerMode;
+  trigger_mode?: ScriptTriggerMode;
+  hookStage?: ScriptHookStage | null;
+  hook_stage?: ScriptHookStage | null;
+  enabled?: number | boolean;
+  workDir?: string;
+  work_dir?: string;
+  timeoutSeconds?: number;
+  timeout_seconds?: number;
+  failAborts?: number | boolean;
+  fail_aborts?: number | boolean;
+  contextInject?: ScriptContextInject;
+  context_inject?: ScriptContextInject;
+  sortOrder?: number;
+  sort_order?: number;
+}
+
+export interface UpdateScriptInput extends CreateScriptInput {
+  scriptId: number;
+}
+
+export interface ScriptIdInput {
+  projectId: number;
+  scriptId: number;
+}
+
+/** 手动运行 scripts:run 的返回：更新后的快照 + 本次运行的退出码/耗时/日志 */
+export interface ScriptRunResult {
+  snapshot: AppSnapshot;
+  status: ScriptLastStatus | null;
+  exitCode: number | null;
+  durationMs: number | null;
+  log: string | null;
+  timedOut?: boolean;
+  error?: string | null;
+}
+
 export interface AppSnapshot {
   activeProjectId: number | null;
   activeProject: Project | null;
@@ -565,6 +661,7 @@ export interface AppSnapshot {
   tasks: PlanTask[];
   events: AppEvent<AppEventMeta | null>[];
   scans: ScanFile[];
+  scripts: Script[];
   activeOperation: ActiveOperation | null;
   activeOperations: ActiveOperation[];
   lastOperation: ActiveOperation | null;
@@ -678,7 +775,11 @@ export interface McpStatus {
   port: number | null;
   path: string | null;
   url: string | null;
-  authToken: string;
+  /** 是否已设置 Bearer 密钥（快照不下发明文密钥本身） */
+  hasAuthToken: boolean;
+  /** 脱敏密钥：仅显示末 4 位（如 `····1234`），无密钥时为空串 */
+  authTokenMasked: string;
+  /** 鉴权请求头模板提示（不含真实密钥，如 `Authorization: Bearer <token>`） */
   authHeader: string;
   localOnly: boolean;
   tools: McpToolName[];
@@ -691,6 +792,29 @@ export interface McpStatus {
     createdAt: string;
   } | null;
   lastError?: string | null;
+  /** 实时运行态：MCP 进程本次启动时间，未运行/未注入时为 null */
+  startedAt?: string | null;
+}
+
+/** MCP 配置表单：渲染层 draft 完整值（authToken 默认留空，不从快照明文回填） */
+export interface McpConfigForm {
+  enabled: boolean;
+  transport: McpTransport;
+  host: string;
+  port: number | string;
+  path: string;
+  authToken: string;
+}
+
+/** saveMcpConfig 载荷：仅下发显式改动的字段（authToken 传空串表示清除鉴权） */
+export interface McpConfigInput {
+  projectId?: number | null;
+  enabled?: boolean;
+  transport?: McpTransport;
+  host?: string;
+  port?: number | string;
+  path?: string;
+  authToken?: string;
 }
 
 export interface McpAgentCliInput {
@@ -788,6 +912,10 @@ export interface RecordIdInput extends ProjectIdInput {
   id: number;
 }
 
+export interface AcceptanceItemInput extends RecordIdInput {
+  targetType: 'plan' | 'task';
+}
+
 export interface TaskIdInput extends ProjectIdInput {
   taskId: number;
 }
@@ -815,7 +943,6 @@ export interface UpdateRequirementInput extends RecordIdInput {
 export interface UpdateFeedbackInput extends UpdateRequirementInput {
   requirementId?: number | null;
 }
-
 export interface AutoplanApi {
   mcpToolNames: McpToolName[];
   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
@@ -826,9 +953,15 @@ export interface AutoplanApi {
   startLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
   stopLoop: (input: ProjectIdInput) => Promise<AppSnapshot>;
   runOnce: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  startMcp: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  stopMcp: (input: ProjectIdInput) => Promise<AppSnapshot>;
+  mcpStatus: (input?: ProjectIdInput | null) => Promise<AppSnapshot>;
+  saveMcpConfig: (config: McpConfigInput) => Promise<AppSnapshot>;
   readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
   runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
+  acceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;
+  unacceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;
   createRequirement: (input: CreateIntakeInput) => Promise<AppSnapshot>;
   updateRequirement: (input: UpdateRequirementInput) => Promise<AppSnapshot>;
   deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;
@@ -838,11 +971,19 @@ export interface AutoplanApi {
   interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
   resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
   appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  createScript: (input: CreateScriptInput) => Promise<AppSnapshot>;
+  updateScript: (input: UpdateScriptInput) => Promise<AppSnapshot>;
+  deleteScript: (input: ScriptIdInput) => Promise<AppSnapshot>;
+  toggleScript: (input: ScriptIdInput) => Promise<AppSnapshot>;
+  runScript: (input: ScriptIdInput) => Promise<ScriptRunResult>;
+  stopScript: (input: ScriptIdInput) => Promise<AppSnapshot>;
+  pickScriptFile: (input?: { runtime?: ScriptRuntime }) => Promise<string | null>;
   getDroppedFilePath: (file: File) => string;
   toFileUrl: (filePath: string) => string;
   onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+  pickDirectory: () => Promise<string | null>;
+  openProjectFolder: (input: ProjectIdInput) => Promise<{ ok: boolean; error: string | null }>;
 }
-
 declare global {
   interface Window {
     autoplan: AutoplanApi;

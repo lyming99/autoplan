@@ -153,7 +153,7 @@ function loadPatchedLoopService({ spawnOverride }) {
     if (request === 'node:child_process') return fakeChildProcess;
     if (request === './database') return { nowIso };
     if (request === './agentCli') return patchedAgentCli;
-    if (request === './codexActivity' || request.startsWith('./loop/')) return require(path.join(path.dirname(loopServicePath), request));
+    if (request.startsWith('./')) return require(path.join(path.dirname(loopServicePath), request));
     return require(request);
   };
   vm.runInNewContext(

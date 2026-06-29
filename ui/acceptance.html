@@ -1,0 +1,690 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoPlan · 验收</title>
+    <style>
+      /* ============================================================
+         设计系统 · Design Tokens（与 workspace.html / tasks.html 完全一致）
+         ============================================================ */
+      :root {
+        color-scheme: light;
+        --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+        --brand-50: #eef4ff;
+        --brand-100: #dbe7ff;
+        --brand-500: #3b6ef5;
+        --brand-600: #255fbd;
+        --brand-700: #1d4a94;
+        --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+
+        --bg-app: #f4f6fb;
+        --bg-elevated: #ffffff;
+        --bg-soft: #f8fafd;
+        --bg-hover: #eef2f9;
+        --line: #e2e8f1;
+        --line-soft: #eef2f8;
+
+        --text-1: #172033;
+        --text-2: #475067;
+        --text-3: #7c879b;
+        --text-4: #a4adc0;
+
+        --success: #18a957;
+        --success-bg: #e7f7ee;
+        --warning: #e08600;
+        --warning-bg: #fdf3e3;
+        --danger: #e5484d;
+        --danger-bg: #fdecec;
+        --info: #2563eb;
+        --info-bg: #e8f0ff;
+
+        --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+        --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+        --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+        --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+
+        font-family: var(--font-sans);
+        background: var(--bg-app);
+        color: var(--text-1);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { overflow: hidden; font-size: 14px; -webkit-font-smoothing: antialiased; }
+      h1, h2, h3, h4, p { margin: 0; }
+      button { font: inherit; cursor: pointer; }
+      a { color: var(--brand-600); text-decoration: none; }
+      code { font-family: var(--font-mono); }
+      .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+      .icon {
+        width: 1em; height: 1em; flex: 0 0 auto;
+        display: inline-block; vertical-align: -0.15em;
+        fill: none; stroke: currentColor; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round;
+      }
+      .icon-sm { width: 14px; height: 14px; }
+
+      /* 应用骨架 */
+      .app { display: grid; grid-template-columns: 248px 1fr; height: 100vh; }
+
+      /* 侧边栏 */
+      .sidebar {
+        display: flex; flex-direction: column; gap: 6px;
+        padding: 22px 14px 18px;
+        background: var(--bg-elevated); border-right: 1px solid var(--line);
+      }
+      .brand { display: flex; align-items: center; gap: 12px; padding: 4px 10px 22px; }
+      .brand-mark {
+        display: grid; place-items: center; width: 40px; height: 40px;
+        border-radius: 12px; background: var(--brand-grad); color: #fff;
+        font-weight: 800; font-size: 18px; box-shadow: 0 8px 18px rgba(77, 110, 255, 0.35);
+      }
+      .brand-name { font-size: 17px; font-weight: 700; }
+      .brand-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+      .project-switcher {
+        margin: 0 4px 10px; padding: 10px;
+        border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft);
+      }
+      .project-label {
+        font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+        font-weight: 700; color: var(--text-4); margin-bottom: 8px;
+      }
+      .project-select-trigger {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-elevated); text-align: left;
+      }
+      .project-avatar {
+        width: 26px; height: 26px; flex: 0 0 auto; border-radius: 7px;
+        background: var(--brand-grad); color: #fff; font-weight: 700; font-size: 12px;
+        display: grid; place-items: center;
+      }
+      .project-main { min-width: 0; flex: 1 1 auto; }
+      .project-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .project-path { font-size: 11px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); }
+      .nav-group-label {
+        padding: 16px 12px 6px; font-size: 10.5px; letter-spacing: .12em;
+        text-transform: uppercase; color: var(--text-4); font-weight: 700;
+      }
+      .nav-item {
+        display: flex; align-items: center; gap: 12px; width: 100%;
+        padding: 10px 12px; border: 0; border-radius: var(--r-md);
+        background: transparent; color: var(--text-2); text-align: left;
+        font-size: 13.5px; font-weight: 500; transition: background .14s, color .14s;
+      }
+      .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+      .nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+      .nav-item.active .nav-ico { color: var(--brand-600); }
+      .nav-ico { width: 20px; height: 20px; flex: 0 0 auto; color: var(--text-3); display: grid; place-items: center; }
+      .nav-ico .icon { width: 18px; height: 18px; }
+      .nav-badge {
+        margin-left: auto; min-width: 20px; height: 20px; padding: 0 6px;
+        border-radius: 999px; background: var(--line); color: var(--text-2);
+        font-size: 11px; font-weight: 700; display: grid; place-items: center;
+      }
+      .nav-badge.accent { background: var(--warning-bg); color: var(--warning); }
+      .nav-item.active .nav-badge { background: var(--brand-600); color: #fff; }
+      .sidebar-footer {
+        margin-top: auto; padding: 12px; border-radius: var(--r-md);
+        background: var(--bg-soft); border: 1px solid var(--line-soft);
+      }
+      .loop-mini { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2); }
+      .loop-mini b { color: var(--text-1); }
+      .led { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-bg); }
+      .led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+      @keyframes led-pulse { 0%,100% { box-shadow: 0 0 0 4px var(--success-bg); } 50% { box-shadow: 0 0 0 7px rgba(24,169,87,.15); } }
+
+      /* 主区 */
+      .main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
+      .topbar {
+        display: flex; align-items: center; gap: 16px; padding: 16px 28px;
+        background: var(--bg-elevated); border-bottom: 1px solid var(--line); flex: 0 0 auto;
+      }
+      .topbar-title h1 { font-size: 18px; font-weight: 700; }
+      .topbar-title p { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+      .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px;
+        border-radius: 999px; font-size: 12px; font-weight: 600;
+        background: var(--bg-soft); border: 1px solid var(--line); color: var(--text-2);
+      }
+      .pill .led { width: 7px; height: 7px; box-shadow: 0 0 0 3px var(--success-bg); }
+
+      .view { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+
+      /* 通用组件 */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 7px;
+        padding: 8px 14px; border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--bg-elevated); color: var(--text-1); font-size: 12.5px; font-weight: 600;
+        transition: background .14s, border-color .14s, transform .06s;
+      }
+      .btn:hover { background: var(--bg-hover); }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary { background: var(--brand-600); border-color: var(--brand-600); color: #fff; }
+      .btn-primary:hover { background: var(--brand-700); }
+      .btn-sm { padding: 5px 10px; font-size: 11.5px; }
+      .btn-ghost { border-color: transparent; background: transparent; color: var(--text-3); }
+      .btn-ghost:hover { background: var(--bg-hover); color: var(--text-1); }
+      .btn-danger { color: var(--danger); }
+      .btn-danger:hover { background: var(--danger-bg); }
+      .btn .icon { width: 14px; height: 14px; }
+
+      .chip {
+        display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+        border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+      }
+      .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+      .chip-completed { color: var(--success); background: var(--success-bg); }
+      .chip-accepted { color: var(--success); background: var(--success-bg); }
+      .chip-pending { color: var(--text-3); background: var(--bg-soft); }
+
+      .mono { font-family: var(--font-mono); }
+
+      ::-webkit-scrollbar { width:9px; height:9px; }
+      ::-webkit-scrollbar-thumb { background:#d4dce8; border-radius:999px; border:2px solid transparent; background-clip:content-box; }
+      ::-webkit-scrollbar-track { background:transparent; }
+
+      .watermark { position:fixed; right:18px; bottom:14px; z-index:50; font-size:10.5px; color:var(--text-4); background:var(--bg-elevated); border:1px solid var(--line); padding:4px 10px; border-radius:999px; box-shadow:var(--shadow-sm); }
+
+      /* ============================================================
+         验收页专属
+         ============================================================ */
+      .acceptance-view {
+        height: 100%; min-height: 0; overflow: auto;
+        padding: 20px 28px 28px;
+        display: flex; flex-direction: column; gap: 16px;
+      }
+
+      /* 顶部说明 + 全部验收 */
+      .accept-bar {
+        display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+        padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r-lg);
+        background: var(--bg-elevated); box-shadow: var(--shadow-sm);
+      }
+      .accept-bar .accept-ico {
+        flex: 0 0 auto; width: 38px; height: 38px; border-radius: 11px;
+        display: grid; place-items: center; color: var(--success);
+        background: var(--success-bg);
+      }
+      .accept-bar .accept-ico .icon { width: 20px; height: 20px; }
+      .accept-bar .accept-text { min-width: 0; flex: 1 1 240px; }
+      .accept-bar .accept-text p { font-size: 13px; color: var(--text-2); line-height: 1.55; }
+      .accept-bar .accept-text b { color: var(--text-1); }
+      .accept-bar .accept-text .accept-meta {
+        margin-top: 5px; font-size: 11.5px; color: var(--text-3);
+        display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap;
+      }
+      .accept-bar .accept-text .accept-meta b { color: var(--text-1); font-family: var(--font-mono); }
+      .accept-bar .accept-text .accept-meta .meta-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); }
+      .accept-bar .accept-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+      /* 待验收分组 */
+      .accept-section-head {
+        display: flex; align-items: center; gap: 8px; padding: 0 2px;
+      }
+      .accept-section-head h2 { font-size: 13px; font-weight: 700; color: var(--text-1); display: flex; align-items: center; gap: 7px; }
+      .accept-section-head h2 .count {
+        font-size: 11.5px; font-weight: 600; color: var(--text-4);
+      }
+      .accept-section-head .hint { margin-left: auto; font-size: 11px; color: var(--text-4); }
+
+      .accept-groups { display: flex; flex-direction: column; gap: 12px; }
+      .accept-plan {
+        border: 1px solid var(--line); border-radius: var(--r-lg);
+        background: var(--bg-elevated); overflow: hidden; box-shadow: var(--shadow-sm);
+      }
+
+      /* 计划行 */
+      .accept-plan-head {
+        display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+        padding: 14px 16px;
+      }
+      .accept-plan-head .plan-main { min-width: 0; flex: 1 1 260px; }
+      .accept-plan-head .plan-path {
+        font-family: var(--font-mono); font-size: 12.5px; color: var(--text-1); font-weight: 600;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .accept-plan-head .plan-title { font-size: 13px; font-weight: 600; color: var(--text-1); margin-top: 3px; }
+      .accept-plan-progress { display: flex; align-items: center; gap: 10px; }
+      .progress { height: 6px; width: 110px; border-radius: 999px; background: var(--line); overflow: hidden; }
+      .progress > span { display: block; height: 100%; border-radius: 999px; background: var(--brand-grad); }
+      .progress.success > span { background: var(--success); }
+      .accept-plan-progress .progress-text { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); white-space: nowrap; }
+      .accept-plan-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+      /* 任务子列表（缩进） */
+      .accept-tasks {
+        border-top: 1px solid var(--line-soft);
+        padding: 8px 8px 10px 40px; /* 左缩进对齐计划行的勾选框宽度 */
+        display: flex; flex-direction: column; gap: 4px;
+        background: var(--bg-soft);
+      }
+      .accept-task {
+        display: flex; align-items: center; gap: 12px; padding: 10px 12px;
+        border: 1px solid transparent; border-radius: var(--r-md);
+        transition: border-color .14s, background .14s;
+      }
+      .accept-task:hover { border-color: var(--line); background: var(--bg-elevated); }
+      .accept-task.accepted { opacity: .62; }
+      .accept-task .task-key {
+        font-family: var(--font-mono); font-size: 10.5px; font-weight: 700;
+        color: var(--brand-600); flex: 0 0 auto;
+      }
+      .accept-task .task-title { font-size: 13px; font-weight: 500; color: var(--text-1); min-width: 0; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .accept-task .task-title.struck { text-decoration: line-through; color: var(--text-3); }
+      .accept-task .task-scope {
+        display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto;
+        font-family: var(--font-mono); font-size: 11px; color: var(--text-3);
+        max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .accept-task .task-scope .icon { width: 12px; height: 12px; color: var(--text-4); }
+
+      /* todo 风格复选框（计划级 / 任务级共用） */
+      .check {
+        flex: 0 0 auto; width: 19px; height: 19px; border-radius: 6px;
+        border: 1.5px solid #c3cee0; background: var(--bg-elevated);
+        display: grid; place-items: center; color: #fff;
+        transition: background .14s, border-color .14s, transform .06s;
+      }
+      .check .icon { width: 13px; height: 13px; stroke-width: 3; opacity: 0; transition: opacity .12s; }
+      .check:hover { border-color: var(--success); }
+      .check:active { transform: scale(.94); }
+      .check.checked { background: var(--success); border-color: var(--success); }
+      .check.checked .icon { opacity: 1; }
+      /* 半选态（计划级：部分子任务已验收） */
+      .check.indeterminate { border-color: var(--success); background: var(--bg-elevated); }
+      .check.indeterminate::after {
+        content: ""; width: 9px; height: 2.5px; border-radius: 2px; background: var(--success);
+      }
+      .check.indeterminate .icon { display: none; }
+
+      /* 已验收（最近）可折叠区 */
+      .accepted-card {
+        border: 1px solid var(--line); border-radius: var(--r-lg);
+        background: var(--bg-elevated); overflow: hidden; box-shadow: var(--shadow-sm);
+      }
+      .accepted-head {
+        display: flex; align-items: center; gap: 10px; width: 100%;
+        padding: 13px 16px; border: 0; background: transparent; text-align: left; font: inherit;
+      }
+      .accepted-head:hover { background: var(--bg-hover); }
+      .acc-caret { flex: 0 0 auto; width: 14px; height: 14px; color: var(--text-4); display: grid; place-items: center; transition: transform .16s; }
+      .acc-caret .icon { width: 14px; height: 14px; }
+      .accepted-card.collapsed .acc-caret { transform: rotate(-90deg); }
+      .accepted-head .acc-title { font-size: 14px; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+      .accepted-head .acc-title .count { font-size: 11.5px; font-weight: 600; color: var(--text-4); }
+      .accepted-head .acc-hint { margin-left: auto; font-size: 11px; color: var(--text-4); }
+      .accepted-body { display: flex; flex-direction: column; gap: 2px; padding: 4px 10px 10px; }
+      .accepted-card.collapsed .accepted-body { display: none; }
+      .accepted-item {
+        display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: var(--r-md);
+      }
+      .accepted-item:hover { background: var(--bg-soft); }
+      .accepted-item .ai-check { flex: 0 0 auto; }
+      .accepted-item .ai-main { min-width: 0; flex: 1 1 auto; }
+      .accepted-item .ai-title { font-size: 13px; font-weight: 500; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .accepted-item .ai-meta { font-size: 11px; color: var(--text-4); margin-top: 2px; display: inline-flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+      .accepted-item .ai-meta .meta-dot { width: 3px; height: 3px; border-radius: 50%; background: var(--text-4); }
+      .accepted-item .ai-time { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); white-space: nowrap; }
+      .accepted-item .ai-actions { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+      .ai-type { font-size: 10.5px; font-weight: 700; color: var(--success); background: var(--success-bg); padding: 2px 7px; border-radius: 5px; }
+
+      /* 空态 */
+      .empty {
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px;
+        padding: 64px 24px; text-align: center; color: var(--text-4);
+        border: 1px dashed var(--line); border-radius: var(--r-lg); background: var(--bg-elevated);
+      }
+      .empty .empty-ico {
+        width: 56px; height: 56px; border-radius: 15px; display: grid; place-items: center;
+        background: var(--success-bg); color: var(--success);
+      }
+      .empty .empty-ico .icon { width: 28px; height: 28px; }
+      .empty .empty-title { font-size: 14px; font-weight: 600; color: var(--text-2); }
+      .empty p { font-size: 12.5px; line-height: 1.55; max-width: 380px; }
+
+      /* 隐藏用：空态演示切换 */
+      .hidden { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-overview" viewBox="0 0 24 24"><path d="M4 13a8 8 0 1 1 16 0"></path><path d="m12 13 4-4"></path><path d="M6 19h12"></path></symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></symbol>
+      <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m15.5 5.5 3 3"></path><path d="M4 20l4.5-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20Z"></path></symbol>
+      <symbol id="icon-check-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="m8 12 3 3 5-6"></path></symbol>
+      <symbol id="icon-check-circle" viewBox="0 0 24 24"><path d="M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z"></path><path d="m8 12 3 3 5-6"></path></symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 7h11"></path><path d="M9 12h11"></path><path d="M9 17h11"></path><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"></circle></symbol>
+      <symbol id="icon-settings" viewBox="0 0 24 24"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"></path><path d="M19.4 13.5a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V20a2 2 0 1 1-4 0v-.1a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H4a2 2 0 1 1 0-4h.1a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H10a1.6 1.6 0 0 0 1-1.5V4a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V10a1.6 1.6 0 0 0 1.5 1H20a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1Z"></path></symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
+      <symbol id="icon-check-double" viewBox="0 0 24 24"><path d="m2 12 4 4 8-9"></path><path d="m11 19 1.5 1.5L22 9"></path></symbol>
+      <symbol id="icon-undo" viewBox="0 0 24 24"><path d="M9 14 4 9l5-5"></path><path d="M4 9h11a5 5 0 0 1 0 10h-3"></path></symbol>
+      <symbol id="icon-file" viewBox="0 0 24 24"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z"></path><path d="M14 3v5h5"></path></symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+      <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></symbol>
+      <symbol id="icon-script" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6"></path><path d="m8 6-6 6 6 6"></path></symbol>
+      <symbol id="icon-events" viewBox="0 0 24 24"><path d="M4 6h16"></path><path d="M4 12h16"></path><path d="M4 18h10"></path></symbol>
+    </svg>
+    <div class="app">
+      <!-- ===================== 应用侧边栏 ===================== -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <div class="brand-name">AutoPlan</div>
+            <div class="brand-sub">需求 · 计划 · 执行 · 验收</div>
+          </div>
+        </div>
+        <div class="project-switcher">
+          <div class="project-label">当前项目</div>
+          <div class="project-select-trigger">
+            <span class="project-avatar" style="background:linear-gradient(135deg,#4f7bff,#6d5dfc)">W</span>
+            <span class="project-main">
+              <span class="project-name">wenz_richtext</span>
+              <span class="project-path">wenz_flutter/wenz_richtext</span>
+            </span>
+          </div>
+        </div>
+        <div class="nav-group-label">工作区</div>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-overview"></use></svg></span> 概览</button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-target"></use></svg></span> 需求 <span class="nav-badge">4</span></button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-pencil"></use></svg></span> 反馈 <span class="nav-badge">2</span></button>
+        <button class="nav-item active"><span class="nav-ico"><svg class="icon"><use href="#icon-check-circle"></use></svg></span> 验收 <span class="nav-badge accent">5</span></button>
+        <div class="nav-group-label">执行</div>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-check-square"></use></svg></span> 任务与计划 <span class="nav-badge">1</span></button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-script"></use></svg></span> 脚本</button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-events"></use></svg></span> 事件流</button>
+        <button class="nav-item"><span class="nav-ico"><svg class="icon"><use href="#icon-settings"></use></svg></span> 设置</button>
+        <div class="sidebar-footer">
+          <div class="loop-mini"><span class="led running"></span><span>循环 <b>运行中</b></span></div>
+          <div style="font-size:11px;color:var(--text-3);margin-top:6px;font-family:var(--font-mono);">Codex · 思考 xhigh · 5s</div>
+        </div>
+      </aside>
+
+      <!-- ===================== 主区 ===================== -->
+      <div class="main">
+        <header class="topbar">
+          <div class="topbar-title">
+            <h1>验收</h1>
+            <p>对已完成的计划与任务逐项验收</p>
+          </div>
+          <div class="topbar-actions">
+            <span class="pill"><span class="led running"></span> running · execute-task</span>
+            <button class="btn btn-sm">单轮执行</button>
+            <button class="btn btn-sm btn-primary"><svg class="icon"><use href="#icon-events"></use></svg>启动</button>
+          </div>
+        </header>
+
+        <section class="view">
+          <div class="acceptance-view" id="acceptanceView">
+
+            <!-- 顶部说明 + 全部验收 -->
+            <div class="accept-bar">
+              <div class="accept-ico"><svg class="icon"><use href="#icon-check-circle"></use></svg></div>
+              <div class="accept-text">
+                <p>已完成但未验收的<b>计划与任务</b>，逐项勾选即完成验收；取消勾选可回退。</p>
+                <div class="accept-meta">
+                  <span>待验收 <b>2</b> 个计划</span>
+                  <span class="meta-dot"></span>
+                  <span><b>5</b> 个任务</span>
+                  <span class="meta-dot"></span>
+                  <span>最近验收 <b>06-27 10:06</b></span>
+                </div>
+              </div>
+              <div class="accept-actions">
+                <button class="btn btn-sm" id="toggleEmpty">预览空态</button>
+                <button class="btn btn-sm btn-primary" id="acceptAll"><svg class="icon"><use href="#icon-check-double"></use></svg>全部验收</button>
+              </div>
+            </div>
+
+            <!-- 待验收清单（按计划分组） -->
+            <div id="pendingBlock">
+              <div class="accept-section-head" style="margin-bottom:10px;">
+                <h2>待验收 <span class="count">2 个计划 · 5 个任务</span></h2>
+                <span class="hint">勾选复选框即验收，取消即回退</span>
+              </div>
+
+              <div class="accept-groups">
+
+                <!-- 计划 A：部分任务已验收（计划级半选） -->
+                <div class="accept-plan">
+                  <div class="accept-plan-head">
+                    <button type="button" class="check indeterminate" title="3 / 5 已验收"></button>
+                    <div class="plan-main">
+                      <div class="plan-path">plan_20260627-0810.md</div>
+                      <div class="plan-title">工具栏样式对齐飞书文档</div>
+                    </div>
+                    <div class="accept-plan-progress">
+                      <div class="progress success"><span style="width:100%"></span></div>
+                      <span class="progress-text">5 / 5 · 100%</span>
+                    </div>
+                    <span class="chip chip-completed">completed</span>
+                    <div class="accept-plan-actions">
+                      <button class="btn btn-sm"><svg class="icon"><use href="#icon-check-double"></use></svg>全部验收本计划</button>
+                      <button class="btn btn-sm btn-ghost"><svg class="icon"><use href="#icon-file"></use></svg>阅读全文</button>
+                    </div>
+                  </div>
+                  <div class="accept-tasks">
+                    <div class="accept-task">
+                      <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
+                      <span class="task-key">P001</span>
+                      <span class="task-title">悬浮态浅灰底样式</span>
+                      <span class="task-scope"><svg class="icon"><use href="#icon-file"></use></svg>lib/widgets/toolbar_item.dart</span>
+                    </div>
+                    <div class="accept-task">
+                      <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
+                      <span class="task-key">P002</span>
+                      <span class="task-title">工具栏分组竖线样式</span>
+                      <span class="task-scope"><svg class="icon"><use href="#icon-file"></use></svg>lib/widgets/toolbar.dart</span>
+                    </div>
+                    <div class="accept-task">
+                      <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
+                      <span class="task-key">P003</span>
+                      <span class="task-title">段落样式 H1/H2/H3 切换</span>
+                      <span class="task-scope"><svg class="icon"><use href="#icon-file"></use></svg>lib/blocks/paragraph.dart</span>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 计划 B：整体未验收（计划级空选） -->
+                <div class="accept-plan">
+                  <div class="accept-plan-head">
+                    <button type="button" class="check"></button>
+                    <div class="plan-main">
+                      <div class="plan-path">plan_20260626-1714.md</div>
+                      <div class="plan-title">截图粘贴 OSS 上传链路</div>
+                    </div>
+                    <div class="accept-plan-progress">
+                      <div class="progress success"><span style="width:100%"></span></div>
+                      <span class="progress-text">4 / 4 · 100%</span>
+                    </div>
+                    <span class="chip chip-completed">completed</span>
+                    <div class="accept-plan-actions">
+                      <button class="btn btn-sm"><svg class="icon"><use href="#icon-check-double"></use></svg>全部验收本计划</button>
+                      <button class="btn btn-sm btn-ghost"><svg class="icon"><use href="#icon-file"></use></svg>阅读全文</button>
+                    </div>
+                  </div>
+                  <div class="accept-tasks">
+                    <div class="accept-task">
+                      <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
+                      <span class="task-key">P101</span>
+                      <span class="task-title">截图粘贴 OSS 上传流程</span>
+                      <span class="task-scope"><svg class="icon"><use href="#icon-file"></use></svg>lib/services/oss_upload.dart</span>
+                    </div>
+                    <div class="accept-task">
+                      <button type="button" class="check"><svg class="icon"><use href="#icon-check"></use></svg></button>
+                      <span class="task-key">P102</span>
+                      <span class="task-title">上传进度弹窗组件</span>
+                      <span class="task-scope"><svg class="icon"><use href="#icon-file"></use></svg>lib/widgets/upload_progress.dart</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <!-- 空态（默认隐藏，点「预览空态」展示） -->
+            <div class="empty hidden" id="emptyState">
+              <div class="empty-ico"><svg class="icon"><use href="#icon-check-circle"></use></svg></div>
+              <div class="empty-title">暂无待验收项</div>
+              <p>当前项目所有已完成的计划与任务均已通过验收。新任务在循环自动验收通过并进入 <code>completed</code> 后会出现在这里，供你逐项确认。</p>
+              <button class="btn btn-sm" id="exitEmpty">返回有数据视图</button>
+            </div>
+
+            <!-- 已验收（最近）可折叠区 -->
+            <div class="accepted-card" id="acceptedCard">
+              <button type="button" class="accepted-head" aria-expanded="true">
+                <span class="acc-caret"><svg class="icon"><use href="#icon-chevron-down"></use></svg></span>
+                <span class="acc-title">已验收（最近）<span class="count">3</span></span>
+                <span class="acc-hint">点击折叠 / 展开</span>
+              </button>
+              <div class="accepted-body">
+                <div class="accepted-item">
+                  <span class="check checked ai-check"><svg class="icon"><use href="#icon-check"></use></svg></span>
+                  <div class="ai-main">
+                    <div class="ai-title">深色模式主题适配</div>
+                    <div class="ai-meta">
+                      <span class="ai-type">计划</span>
+                      <span class="mono">plan_20260625-0930.md</span>
+                      <span class="meta-dot"></span>
+                      <span>验收于 <span class="mono">06-26 14:22</span></span>
+                    </div>
+                  </div>
+                  <div class="ai-actions">
+                    <button class="btn btn-sm btn-ghost btn-danger"><svg class="icon"><use href="#icon-undo"></use></svg>取消验收</button>
+                  </div>
+                </div>
+                <div class="accepted-item">
+                  <span class="check checked ai-check"><svg class="icon"><use href="#icon-check"></use></svg></span>
+                  <div class="ai-main">
+                    <div class="ai-title">image 节点插入与渲染</div>
+                    <div class="ai-meta">
+                      <span class="ai-type">任务</span>
+                      <span class="mono">P004 · lib/nodes/image_node.dart</span>
+                      <span class="meta-dot"></span>
+                      <span>验收于 <span class="mono">06-27 10:05</span></span>
+                    </div>
+                  </div>
+                  <div class="ai-actions">
+                    <button class="btn btn-sm btn-ghost btn-danger"><svg class="icon"><use href="#icon-undo"></use></svg>取消验收</button>
+                  </div>
+                </div>
+                <div class="accepted-item">
+                  <span class="check checked ai-check"><svg class="icon"><use href="#icon-check"></use></svg></span>
+                  <div class="ai-main">
+                    <div class="ai-title">段落间距自适应调整</div>
+                    <div class="ai-meta">
+                      <span class="ai-type">任务</span>
+                      <span class="mono">P005 · lib/blocks/paragraph.dart</span>
+                      <span class="meta-dot"></span>
+                      <span>验收于 <span class="mono">06-27 10:06</span></span>
+                    </div>
+                  </div>
+                  <div class="ai-actions">
+                    <button class="btn btn-sm btn-ghost btn-danger"><svg class="icon"><use href="#icon-undo"></use></svg>取消验收</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div class="watermark">AutoPlan · 验收模块设计稿</div>
+
+    <script>
+      /* ---------- todo 复选框勾选 / 取消（演示交互态） ---------- */
+      document.querySelectorAll('.accept-tasks .check').forEach((box) => {
+        box.addEventListener('click', () => {
+          const task = box.closest('.accept-task');
+          const checked = box.classList.toggle('checked');
+          if (task) {
+            task.classList.toggle('accepted', checked);
+            task.querySelector('.task-title')?.classList.toggle('struck', checked);
+          }
+        });
+      });
+
+      /* ---------- 计划级「全部验收本计划」：勾选该计划下全部任务 ---------- */
+      document.querySelectorAll('.accept-plan-actions .btn').forEach((btn) => {
+        if (btn.textContent.includes('全部验收本计划')) {
+          btn.addEventListener('click', () => {
+            const plan = btn.closest('.accept-plan');
+            plan.querySelectorAll('.accept-tasks .check').forEach((box) => {
+              const task = box.closest('.accept-task');
+              box.classList.add('checked');
+              task.classList.add('accepted');
+              task.querySelector('.task-title')?.classList.add('struck');
+            });
+            const planBox = plan.querySelector('.accept-plan-head .check');
+            planBox.classList.remove('indeterminate');
+            planBox.classList.add('checked');
+          });
+        }
+      });
+
+      /* ---------- 计划级复选框：点击切换半选 / 全选（演示） ---------- */
+      document.querySelectorAll('.accept-plan-head .check').forEach((box) => {
+        box.addEventListener('click', () => {
+          if (box.classList.contains('checked')) {
+            box.classList.remove('checked');
+            box.classList.add('indeterminate');
+          } else {
+            box.classList.remove('indeterminate');
+            box.classList.add('checked');
+          }
+        });
+      });
+
+      /* ---------- 顶部「全部验收」：勾选全部待验收项 ---------- */
+      document.getElementById('acceptAll').addEventListener('click', () => {
+        document.querySelectorAll('#pendingBlock .check').forEach((box) => {
+          const task = box.closest('.accept-task');
+          box.classList.remove('indeterminate');
+          box.classList.add('checked');
+          if (task) {
+            task.classList.add('accepted');
+            task.querySelector('.task-title')?.classList.add('struck');
+          }
+        });
+      });
+
+      /* ---------- 「已验收（最近）」折叠 / 展开 ---------- */
+      const acceptedHead = document.querySelector('#acceptedCard .accepted-head');
+      acceptedHead.addEventListener('click', () => {
+        const card = document.getElementById('acceptedCard');
+        const collapsed = card.classList.toggle('collapsed');
+        acceptedHead.setAttribute('aria-expanded', String(!collapsed));
+      });
+
+      /* ---------- 「取消验收」：从已验收区移除勾选（演示回退） ---------- */
+      document.querySelectorAll('.accepted-item .ai-actions .btn').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const item = btn.closest('.accepted-item');
+          item.style.transition = 'opacity .18s';
+          item.style.opacity = '.35';
+        });
+      });
+
+      /* ---------- 空态预览切换 ---------- */
+      const pendingBlock = document.getElementById('pendingBlock');
+      const emptyState = document.getElementById('emptyState');
+      const acceptedCard = document.getElementById('acceptedCard');
+      document.getElementById('toggleEmpty').addEventListener('click', () => {
+        pendingBlock.classList.add('hidden');
+        emptyState.classList.remove('hidden');
+        acceptedCard.classList.add('hidden');
+      });
+      document.getElementById('exitEmpty').addEventListener('click', () => {
+        pendingBlock.classList.remove('hidden');
+        emptyState.classList.add('hidden');
+        acceptedCard.classList.remove('hidden');
+      });
+    </script>
+  </body>
+</html>

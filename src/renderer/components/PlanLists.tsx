@@ -266,12 +266,21 @@ export function TaskList({
   );
 }
 
+// 事件流增量渲染：初始仅渲染最近一批，点击「加载更多」分批展开更早事件。
+const EVENT_BATCH_SIZE = 30;
+
 export function EventList({ emptyText = '暂无事件。', events }: { emptyText?: string; events: AppEvent[] }) {
+  const [visibleCount, setVisibleCount] = useState(EVENT_BATCH_SIZE);
   if (!events.length) return <div className="empty">{emptyText}</div>;
+
+  // 可见计数按实际事件数收敛，事件集合变化时不出现计数错乱或空白。
+  const safeVisibleCount = Math.min(visibleCount, events.length);
+  const visibleEvents = events.slice(0, safeVisibleCount);
+  const remaining = events.length - safeVisibleCount;
 
   return (
     <div className="list compact event-list">
-      {events.map((event) => {
+      {visibleEvents.map((event) => {
         const display = formatEvent(event);
         return (
           <article
@@ -289,6 +298,15 @@ export function EventList({ emptyText = '暂无事件。', events }: { emptyText
           </article>
         );
       })}
+      {remaining > 0 ? (
+        <button
+          type="button"
+          className="btn-link event-list-more"
+          onClick={() => setVisibleCount((current) => current + EVENT_BATCH_SIZE)}
+        >
+          加载更多（剩余 {remaining} 条）
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -449,10 +467,10 @@ export function PlanList({
 }
 
 function comparePlanOrder(left: Plan, right: Plan) {
+  // 主排序键：创建时间 created_at 倒序（最新在前）；id 倒序兜底保证稳定。
   return (
-    Number(left.sort_order || 0) - Number(right.sort_order || 0) ||
-    String(left.created_at || '').localeCompare(String(right.created_at || '')) ||
-    Number(left.id || 0) - Number(right.id || 0)
+    String(right.created_at || '').localeCompare(String(left.created_at || '')) ||
+    Number(right.id || 0) - Number(left.id || 0)
   );
 }
 

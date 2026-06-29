@@ -189,7 +189,6 @@ export function groupTasksByPlan(tasks: PlanTask[]): TaskPlanGroup[] {
       };
     })
     .sort((left, right) => {
-      if (left.hasRunningTask !== right.hasRunningTask) return left.hasRunningTask ? -1 : 1;
       if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
         return right.sortTime - left.sortTime;
       }
@@ -241,4 +240,98 @@ export function scopeFileClassName(file: PlanTask['scope_files'][number]) {
   if (file.isValidation) return 'validation';
   if (file.canOpen) return 'openable';
   return '';
+}
+
+// ===== 验收（人工逐项验收）筛选/分组工具 =====
+// 验收态与执行态 status 正交：accepted_at 为 NULL=未验收、非空 ISO 时间=已验收、清空即取消。
+// 这里复用 matchesTaskStatusFilter 的「已完成」语义（不改其实现），不引入新的执行态取值。
+
+export function isPlanCompleted(plan: Plan) {
+  return normalizeTaskStatus(plan.status) === 'completed';
+}
+
+export function isTaskCompleted(task: PlanTask) {
+  return matchesTaskStatusFilter(task, 'completed');
+}
+
+export function isAcceptancePendingPlan(plan: Plan) {
+  return isPlanCompleted(plan) && !plan.accepted_at;
+}
+
+export function isAcceptancePendingTask(task: PlanTask) {
+  return isTaskCompleted(task) && !task.accepted_at;
+}
+
+export interface AcceptanceGroup {
+  plan: Plan;
+  /** 该计划内「已完成且未验收」的任务，按 groupTasksByPlan 的排序语义排列。 */
+  tasks: PlanTask[];
+}
+
+// 与 groupTasksByPlan 内任务排序一致：finished_at → started_at → updated_at（均降序），再回退原序。
+function compareTasksBySortTime(left: TimedPlanTask, right: TimedPlanTask, leftIndex: number, rightIndex: number) {
+  const leftTime = taskSortTime(left);
+  const rightTime = taskSortTime(right);
+  if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+  if (leftTime !== null && rightTime === null) return -1;
+  if (leftTime === null && rightTime !== null) return 1;
+  return leftIndex - rightIndex;
+}
+
+function planSortTime(plan: Plan): number | null {
+  return readTaskTime(plan.updated_at) ?? readTaskTime(plan.created_at);
+}
+
+/**
+ * 按计划分组的「待验收」结构：每个待验收计划（已完成且 accepted_at 为空）挂其下待验收任务。
+ * 保持 groupTasksByPlan 的分组/任务排序语义；不含已完成但已验收项，也不含未完成项。
+ */
+export function buildAcceptanceGroups(plans: Plan[], tasks: PlanTask[]): AcceptanceGroup[] {
+  const pendingTasks = tasks.filter(isAcceptancePendingTask);
+  return plans
+    .filter(isAcceptancePendingPlan)
+    .map((plan, planIndex) => {
+      const linked = pendingTasks
+        .map((task, taskIndex) => ({ task, taskIndex }))
+        .filter((entry) => isTaskAssociatedWithPlan(entry.task, plan))
+        .sort((left, right) => compareTasksBySortTime(left.task, right.task, left.taskIndex, right.taskIndex))
+        .map((entry) => entry.task);
+      const tasksTime = linked.length ? latestTaskTime(linked) : null;
+      return { plan, tasks: linked, planIndex, sortTime: tasksTime ?? planSortTime(plan) };
+    })
+    .sort((left, right) => {
+      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
+        return right.sortTime - left.sortTime;
+      }
+      if (left.sortTime !== null && right.sortTime === null) return -1;
+      if (left.sortTime === null && right.sortTime !== null) return 1;
+      return left.planIndex - right.planIndex;
+    })
+    .map(({ plan, tasks }) => ({ plan, tasks }));
+}
+
+export type AcceptedRecord =
+  | { targetType: 'plan'; plan: Plan; acceptedAt: string }
+  | { targetType: 'task'; task: PlanTask; acceptedAt: string };
+
+function sortAcceptedByTimeDesc(left: AcceptedRecord, right: AcceptedRecord) {
+  const leftTime = readTaskTime(left.acceptedAt);
+  const rightTime = readTaskTime(right.acceptedAt);
+  if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
+  if (leftTime !== null && rightTime === null) return -1;
+  if (leftTime === null && rightTime !== null) return 1;
+  return 0;
+}
+
+/**
+ * 「已验收（最近）」取数：把已验收的计划与任务合并为按 accepted_at 降序的扁平列表，供视图折叠区展示。
+ */
+export function buildRecentAccepted(plans: Plan[], tasks: PlanTask[], limit = 50): AcceptedRecord[] {
+  const acceptedPlans = plans
+    .filter((plan) => Boolean(plan.accepted_at))
+    .map((plan) => ({ targetType: 'plan' as const, plan, acceptedAt: String(plan.accepted_at) }));
+  const acceptedTasks = tasks
+    .filter((task) => Boolean(task.accepted_at))
+    .map((task) => ({ targetType: 'task' as const, task, acceptedAt: String(task.accepted_at) }));
+  return [...acceptedPlans, ...acceptedTasks].sort(sortAcceptedByTimeDesc).slice(0, limit);
 }

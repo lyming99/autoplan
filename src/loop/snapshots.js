@@ -16,7 +16,7 @@ const LOCAL_MCP_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
 
 function snapshot(service, helpers, projectId = null) {
     const projects = service.projects();
-    const mcp = mcpStatusSnapshot(service.db);
+    const mcp = mcpStatusSnapshot(service.db, readMcpLiveStatus(service));
     if (!projectId) return emptySnapshot(projects, mcp);
 
     const activeProject = service.project(projectId);
@@ -111,6 +111,10 @@ function snapshot(service, helpers, projectId = null) {
         'SELECT * FROM scan_files WHERE project_id = ? ORDER BY scanned_at DESC, file_path ASC',
         [projectId],
       ),
+      scripts: service.db.all(
+        'SELECT * FROM scripts WHERE project_id = ? ORDER BY sort_order ASC, id ASC',
+        [projectId],
+      ),
       activeOperation:
         runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
           ? operationSnapshotRow(runtime.activeOperation)
@@ -183,46 +187,65 @@ function intakeLinkedPlanSnapshotRow(row = {}, planSnapshotById = new Map()) {
   };
 }
 
-function mcpStatusSnapshot(db) {
+function mcpStatusSnapshot(db, liveStatus = null) {
   const settings = db?.getSettings ? db.getSettings('mcp.') : {};
-  const enabled = normalizeMcpBoolean(process.env.AUTOPLAN_MCP_ENABLED ?? settings['mcp.enabled'], MCP_DEFAULT_CONFIG.enabled);
-  const transport = normalizeMcpTransport(process.env.AUTOPLAN_MCP_TRANSPORT ?? settings['mcp.transport']);
-  const host = normalizeMcpHost(process.env.AUTOPLAN_MCP_HOST ?? settings['mcp.host']);
-  const port = normalizeMcpPort(process.env.AUTOPLAN_MCP_PORT ?? settings['mcp.port']);
-  const mcpPath = normalizeMcpPath(process.env.AUTOPLAN_MCP_PATH ?? settings['mcp.path']);
+  const enabledFromDb = normalizeMcpBoolean(process.env.AUTOPLAN_MCP_ENABLED ?? settings['mcp.enabled'], MCP_DEFAULT_CONFIG.enabled);
+  const transportFromDb = normalizeMcpTransport(process.env.AUTOPLAN_MCP_TRANSPORT ?? settings['mcp.transport']);
+  const hostFromDb = normalizeMcpHost(process.env.AUTOPLAN_MCP_HOST ?? settings['mcp.host']);
+  const portFromDb = normalizeMcpPort(process.env.AUTOPLAN_MCP_PORT ?? settings['mcp.port']);
+  const pathFromDb = normalizeMcpPath(process.env.AUTOPLAN_MCP_PATH ?? settings['mcp.path']);
   const authToken = normalizeMcpAuthToken(process.env.AUTOPLAN_MCP_AUTH_TOKEN ?? settings['mcp.authToken']);
   const latestEvent = db?.get
     ? db.get(
         `SELECT type, message, meta, created_at
          FROM events
-         WHERE type IN ('mcp.started', 'mcp.start.failed')
+         WHERE type IN ('mcp.started', 'mcp.start.failed', 'mcp.stopped')
          ORDER BY id DESC LIMIT 1`,
       )
     : null;
   const eventMeta = parseEventMeta(latestEvent?.meta);
   const eventMcp = eventMeta && typeof eventMeta === 'object' ? eventMeta.mcp : null;
-  const url = transport === 'http' ? `http://${host}:${port}${mcpPath}` : null;
-  const running = Boolean(enabled && latestEvent?.type === 'mcp.started');
-  const lastError = latestEvent?.type === 'mcp.start.failed'
-    ? eventMeta?.error || latestEvent.message || eventMcp?.lastError || 'MCP 服务启动失败'
-    : null;
+
+  // 实时运行态优先于事件推导：注入 mcpStatusProvider 时以进程真实状态为准，
+  // 未注入时退化为 db 配置 + 最近事件推导（保持原有行为，不抛错）。
+  const live = liveStatus && typeof liveStatus === 'object' ? liveStatus : null;
+  const enabled = live ? Boolean(live.enabled) : enabledFromDb;
+  const running = live ? Boolean(live.running) : Boolean(enabledFromDb && latestEvent?.type === 'mcp.started');
+  const lastError = live
+    ? (live.lastError || null)
+    : (latestEvent?.type === 'mcp.start.failed'
+      ? eventMeta?.error || latestEvent.message || eventMcp?.lastError || 'MCP 服务启动失败'
+      : null);
+
+  const transport = live?.transport || transportFromDb;
+  const isHttp = transport !== 'stdio';
+  const host = live?.host ?? (isHttp ? hostFromDb : null);
+  const port = live?.port ?? (isHttp ? portFromDb : null);
+  const mcpPath = isHttp ? pathFromDb : null;
+  const url = live?.url ?? (isHttp ? `http://${hostFromDb}:${portFromDb}${pathFromDb}` : null);
+  const startedAt = live?.startedAt || null;
+  const localOnly = transport !== 'http' || LOCAL_MCP_HOSTS.has(String(host).toLowerCase());
+
+  const hasAuthToken = Boolean(authToken);
+  const authTokenMasked = maskAuthToken(authToken);
 
   return {
     enabled,
     running,
     status: mcpStatusLabel({ enabled, running, lastError }),
     transport,
-    host: transport === 'http' ? host : null,
-    port: transport === 'http' ? port : null,
-    path: transport === 'http' ? mcpPath : null,
+    host,
+    port,
+    path: mcpPath,
     url,
-    authToken,
-    authHeader: authToken ? `Authorization: Bearer ${authToken}` : '',
-    localOnly: transport !== 'http' || LOCAL_MCP_HOSTS.has(String(host).toLowerCase()),
+    hasAuthToken,
+    authTokenMasked,
+    authHeader: 'Authorization: Bearer <token>',
+    localOnly,
     tools: MCP_TOOL_NAMES,
     toolDocs: MCP_TOOL_DOCS,
     connectionExample: transport === 'http'
-      ? `http://${host}:${port}${mcpPath}`
+      ? (url || `http://${hostFromDb}:${portFromDb}${pathFromDb}`)
       : 'npm run mcp:stdio',
     note: transport === 'http'
       ? '默认仅监听本机地址，供本机 MCP 客户端连接。'
@@ -233,6 +256,7 @@ function mcpStatusSnapshot(db) {
       createdAt: latestEvent.created_at,
     } : null,
     lastError,
+    startedAt,
   };
 }
 
@@ -273,6 +297,25 @@ function normalizeMcpAuthToken(value) {
   return String(value || MCP_DEFAULT_CONFIG.authToken).trim();
 }
 
+/** 脱敏 authToken：仅保留末 4 位（前缀 ····），无密钥时为空串，过短密钥完全遮蔽避免泄露。 */
+function maskAuthToken(value) {
+  const token = String(value || '').trim();
+  if (!token) return '';
+  if (token.length <= 4) return '····';
+  return `····${token.slice(-4)}`;
+}
+
+/** 读取注入的实时 MCP 状态（mcpStatusProvider 返回 mcpServer.status()）；未注入或异常时退化为 null。 */
+function readMcpLiveStatus(service) {
+  if (!service || typeof service.mcpStatusProvider !== 'function') return null;
+  try {
+    const status = service.mcpStatusProvider();
+    return status && typeof status === 'object' ? status : null;
+  } catch {
+    return null;
+  }
+}
+
 function emptySnapshot(projects, mcp = null) {
   return {
     activeProjectId: null,
@@ -287,6 +330,7 @@ function emptySnapshot(projects, mcp = null) {
     tasks: [],
     events: [],
     scans: [],
+    scripts: [],
     activeOperation: null,
     activeOperations: [],
     lastOperation: null,

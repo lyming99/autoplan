@@ -57,5 +57,6 @@ export function createUnavailableLinkedPlan(projectId: number, item: LinkedPlanI
     },
     created_at: '',
     updated_at: '',
+    accepted_at: null,
   };
 }

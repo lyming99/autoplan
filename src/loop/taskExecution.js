@@ -39,7 +39,7 @@ async function processPlan(service, helpers, workspace, plan) {
       }
       const result = await service.executeTask(workspace, plan, firstPendingTask);
       if (result.exitCode === 0) {
-        service.completeTask(workspace, plan, firstPendingTask, result);
+        await service.completeTask(workspace, plan, firstPendingTask, result);
       }
       return;
     }
@@ -133,7 +133,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
           break;
         }
         if (result.exitCode === 0) {
-          service.completeTask(workspace, plan, task, result);
+          await service.completeTask(workspace, plan, task, result);
         }
         results.push({ task, result });
         if (result.exitCode !== 0) break;
@@ -167,7 +167,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
           return { task, result: { exitCode: -1, finishedAt } };
         }
         if (result.exitCode === 0) {
-          service.completeTask(workspace, plan, task, result);
+          await service.completeTask(workspace, plan, task, result);
         }
         return { task, result };
       }),
@@ -277,6 +277,14 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         ...startedSessionContext,
       });
       if (failedTask) markTaskLifecycleEventRecorded(error);
+      await service.runHookScripts(plan.project_id, 'on:fail', {
+        failedStage: 'task',
+        planId: plan.id,
+        taskId: task.id,
+        taskKey: task.task_key,
+        error: errorMessage,
+        ...failure,
+      });
       throw error;
     }
     const finishedAt = nowIso();
@@ -299,11 +307,20 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         ...failure,
         ...taskResultSessionContextFields(result),
       });
+      await service.runHookScripts(plan.project_id, 'on:fail', {
+        failedStage: 'task',
+        planId: plan.id,
+        taskId: task.id,
+        taskKey: task.task_key,
+        exitCode: result.exitCode,
+        log: result.logFile || null,
+        ...failure,
+      });
     }
     return result;
   }
 
-function completeTask(service, helpers, workspace, plan, task, result) {
+async function completeTask(service, helpers, workspace, plan, task, result) {
     const planFile = path.join(workspace, plan.file_path);
     const finishedAt = result?.finishedAt || nowIso();
     service.markTaskCompletedInPlan(workspace, planFile, task, result);
@@ -319,7 +336,21 @@ function completeTask(service, helpers, workspace, plan, task, result) {
     });
     service.refreshPlanProgress(plan.id, planFile);
     service.emitUpdate(plan.project_id);
-  }
+    // task:after 钩子：单任务执行成功后触发，携带 plan/task/workspace/结果
+    await service.runHookScripts(plan.project_id, 'task:after', {
+      planId: plan.id,
+      planFilePath: plan.file_path,
+      taskId: completedTask.id,
+      taskKey: completedTask.task_key,
+      scopeFiles: parseScopeFiles(completedTask.scope),
+      exitCode: result?.exitCode,
+      log: result?.logFile || null,
+    });
+}
+
+function parseScopeFiles(scope) {
+  return String(scope || '').split(',').map((part) => part.trim()).filter(Boolean);
+}
 
 function refreshPlanProgress(service, helpers, planId, planFile) {
   const { hashFile } = helpers;
