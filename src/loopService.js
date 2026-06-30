@@ -24,7 +24,6 @@ const {
   codexSessionContextFields,
   effectiveAgentCliConfig,
   extractCodexSessionId,
-  hasAgentCliOverride,
   hasAnyOwnProperty,
   hasCodexSessionOption,
   isCodexResumeFailure,
@@ -67,19 +66,24 @@ const snapshots = require('./loop/snapshots');
 const concurrency = require('./loop/concurrency');
 const workspaceFiles = require('./loop/workspaceFiles');
 const intakeAttachments = require('./loop/intakeAttachments');
-const { parseEventMeta } = snapshots;
 const { isAcceptanceTask } = concurrency;
 const {
   hashFile,
   hashText,
+  normalizeEnvVarsJson,
   normalizeRelative,
   readSnippet,
-  resolveSafeAutoPlanIntakePlanPath,
   safePart,
   tailText,
+  timestampForPath,
   workspaceKey,
   workspaceToolEnv,
 } = workspaceFiles;
+const acceptance = require('./loop/acceptance');
+const agentCliRunner = require('./loop/agentCliRunner');
+const intakeDeletion = require('./loop/intakeDeletion');
+const planAgentCli = require('./loop/planAgentCli');
+const planLifecycle = require('./loop/planLifecycle');
 const taskExecution = require('./loop/taskExecution');
 const validationFlow = require('./loop/validation');
 const { classifyExecutionFailure } = validationFlow;
@@ -99,25 +103,17 @@ const {
 } = require('./loop/taskEvents');
 
 const SHELL_COMMAND_TIMEOUT_MS = 10 * 60 * 1000;
-const PLAN_GENERATION_FORMAT_GUARD_TITLE = 'AutoPlan 任务拆解格式硬性要求（必须遵守）';
-const CLAUDE_SESSION_INPUT_KEYS = [
-  'agentCliSessionId',
-  'agentCliSessionRequestedId',
-  'claudeSessionId',
-  'claudeSessionRequestedId',
-  'sessionId',
-];
-
-// 人工验收态与执行态正交：只允许对「已完成」项验收（计划 status='completed'、任务 status ∈ 已完成集合），
-// 与渲染层 matchesTaskStatusFilter 的「已完成」语义一致，不新增 status 取值。
-const ACCEPTABLE_PLAN_STATUS = 'completed';
-const ACCEPTABLE_TASK_STATUSES = Object.freeze(['completed', 'done', 'passed']);
-const LINKED_INTAKE_COMPLETED_STATUS = 'completed';
-const LINKED_INTAKE_TERMINAL_STATUSES = Object.freeze(['completed', 'closed']);
-const LINKED_INTAKE_COMPLETION_SOURCES = Object.freeze([
-  { table: 'requirements', countKey: 'requirements', idsKey: 'requirementIds' },
-  { table: 'feedback', countKey: 'feedback', idsKey: 'feedbackIds' },
-]);
+const {
+  planGenerationGuardedPrompt,
+  opencodePlanSessionTitle,
+  isOpenCodeSessionMissing,
+  requestedAgentCliSessionId,
+  agentCliSessionContextFields,
+  agentCliSessionStateFor,
+  isClaudeSessionMissing,
+  agentCliResultSessionContextFields,
+  CLAUDE_SESSION_INPUT_KEYS,
+} = agentCliRunner;
 
 class LoopService extends EventEmitter {
   constructor(db) {
@@ -752,180 +748,24 @@ class LoopService extends EventEmitter {
     this.emitUpdate(projectId);
   }
 
-  deleteIntake(projectId, intakeType, intakeId, options = {}) {
-    const normalizedType = intakeType === 'feedback' ? 'feedback' : 'requirement';
-    const table = normalizedType === 'feedback' ? 'feedback' : 'requirements';
-    const ownerTypes = intakeAttachments.intakeAttachmentOwnerTypes(normalizedType);
-    const sourceName = normalizedType === 'feedback' ? '反馈' : '需求';
-    const intake = this.db.get(`SELECT * FROM ${table} WHERE id = ? AND project_id = ?`, [intakeId, projectId]);
-    if (!intake) throw new Error(`${sourceName}不存在`);
-
-    const project = this.project(projectId);
-    const attachments = this.db.all(
-      `SELECT * FROM attachments
-       WHERE project_id = ? AND owner_id = ? AND owner_type IN (${ownerTypes.map(() => '?').join(',')})
-       ORDER BY id ASC`,
-      [projectId, intakeId, ...ownerTypes],
-    );
-    const planId = Number(intake.linked_plan_id || 0) || null;
-    const plan = planId
-      ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId])
-      : null;
-    if (planId) {
-      this.stopPlanOperations(projectId, planId, {
-        archive: false,
-        errorMessage: `${sourceName} #${intakeId} 已删除，关联计划已停止`,
-        addOperationEvent: false,
-      });
-    }
-
-    const planFileDelete = plan
-      ? this.safeAutoPlanIntakePlanFileDeleteTarget(project, plan, normalizedType, intakeId)
-      : null;
-    const updatedAt = nowIso();
-    const statements = [];
-    if (normalizedType === 'requirement') {
-      statements.push({
-        sql: 'UPDATE feedback SET requirement_id = NULL, updated_at = ? WHERE project_id = ? AND requirement_id = ?',
-        params: [updatedAt, projectId, intakeId],
-      });
-    }
-    if (plan) {
-      statements.push(
-        { sql: 'DELETE FROM plan_tasks WHERE plan_id = ?', params: [plan.id] },
-        { sql: 'DELETE FROM plans WHERE id = ? AND project_id = ?', params: [plan.id, projectId] },
-      );
-      for (const scanPath of uniqueNonEmptyStrings(plan.file_path, planFileDelete?.relativePath)) {
-        statements.push({
-          sql: "DELETE FROM scan_files WHERE project_id = ? AND scan_type = 'plan' AND file_path = ?",
-          params: [projectId, scanPath],
-        });
-      }
-    }
-    statements.push(
-      {
-        sql: `DELETE FROM attachments
-              WHERE project_id = ? AND owner_id = ? AND owner_type IN (${ownerTypes.map(() => '?').join(',')})`,
-        params: [projectId, intakeId, ...ownerTypes],
-      },
-      { sql: `DELETE FROM ${table} WHERE id = ? AND project_id = ?`, params: [intakeId, projectId] },
-    );
-    this.db.runBatch(statements);
-    if (planFileDelete) {
-      if (planFileDelete.safe) this.deleteResolvedPlanFile(plan, planFileDelete);
-      else this.recordPlanFileDeleteSkipped(plan, planFileDelete);
-    }
-    const attachmentFiles = this.deleteAttachmentFiles(attachments, options.attachmentsRoot);
-    this.addEvent(projectId, 'intake.deleted', `${sourceName} #${intakeId} 已删除${plan ? '，关联计划和任务已删除' : ''}`, {
-      intakeType: normalizedType,
-      intakeId,
-      planId: plan?.id || null,
-      planFile: planFileDelete,
-      attachments: {
-        total: attachments.length,
-        ...attachmentFiles,
-      },
-    });
-    this.emitUpdate(projectId, { immediate: true });
-    return this.snapshot(projectId);
+  deleteIntake(projectId, intakeType, intakeId, options) {
+    return intakeDeletion.deleteIntake(this, projectId, intakeType, intakeId, options);
   }
 
-  deleteAttachmentFiles(attachments = [], attachmentsRoot = '') {
-    const root = String(attachmentsRoot || '').trim();
-    const result = { deleted: 0, skipped: 0, failed: 0 };
-    if (!root) {
-      result.skipped = attachments.length;
-      return result;
-    }
-    const rootPath = path.resolve(root);
-    for (const attachment of attachments) {
-      const storedPath = String(attachment?.stored_path || '').trim();
-      const filePath = storedPath
-        ? (path.isAbsolute(storedPath) ? path.resolve(storedPath) : path.resolve(rootPath, storedPath))
-        : '';
-      if (!filePath || !isInsideDirectory(rootPath, filePath)) {
-        result.skipped += 1;
-        continue;
-      }
-      try {
-        if (fs.existsSync(filePath)) {
-          if (!fs.statSync(filePath).isFile()) {
-            result.skipped += 1;
-            continue;
-          }
-          fs.unlinkSync(filePath);
-          result.deleted += 1;
-        } else {
-          result.skipped += 1;
-        }
-      } catch {
-        result.failed += 1;
-      }
-    }
-    return result;
+  deleteAttachmentFiles(attachments, attachmentsRoot) {
+    return intakeDeletion.deleteAttachmentFiles(attachments, attachmentsRoot);
   }
 
   safeAutoPlanIntakePlanFileDeleteTarget(project, plan, intakeType, intakeId) {
-    const safety = resolveSafeAutoPlanIntakePlanPath(project?.workspace_path, plan?.file_path, intakeType, intakeId);
-    const result = {
-      safe: safety.safe,
-      reason: safety.reason || '',
-      relativePath: safety.relativePath || String(plan?.file_path || ''),
-      filePath: safety.filePath || '',
-      planDir: safety.planDir || '',
-      intakeType,
-      intakeId,
-      deleted: false,
-    };
-    if (!safety.safe) result.expectedPattern = safety.expectedPattern || '';
-    return result;
+    return intakeDeletion.safeAutoPlanIntakePlanFileDeleteTarget(project, plan, intakeType, intakeId);
   }
 
-  recordPlanFileDeleteSkipped(plan, result = {}) {
-    if (!plan) return;
-    this.addEvent(plan.project_id, 'plan.file.delete.skipped', `关联计划文件未删除：${result.reason || '路径不安全'}`, {
-      planId: plan.id,
-      intakeType: result.intakeType,
-      intakeId: result.intakeId,
-      filePath: plan.file_path,
-      reason: result.reason,
-      expectedPattern: result.expectedPattern,
-    });
+  recordPlanFileDeleteSkipped(plan, result) {
+    return intakeDeletion.recordPlanFileDeleteSkipped(this, plan, result);
   }
 
   deleteResolvedPlanFile(plan, result) {
-    if (!result?.safe || !result.filePath) return result;
-    try {
-      if (fs.existsSync(result.filePath)) {
-        const realPlanDir = fs.realpathSync(result.planDir);
-        const realFilePath = fs.realpathSync(result.filePath);
-        if (!isInsideDirectory(realPlanDir, realFilePath)) {
-          result.safe = false;
-          result.reason = 'realpath_outside_docs_plan';
-          this.addEvent(plan.project_id, 'plan.file.delete.skipped', '关联计划文件未删除：真实路径超出 docs/plan', {
-            planId: plan.id,
-            filePath: result.relativePath,
-            intakeType: result.intakeType,
-            intakeId: result.intakeId,
-            reason: result.reason,
-          });
-          return result;
-        }
-        fs.unlinkSync(result.filePath);
-        result.deleted = true;
-      }
-      return result;
-    } catch (error) {
-      result.reason = error?.message || String(error);
-      this.addEvent(plan.project_id, 'plan.file.delete.failed', `关联计划文件删除失败：${result.reason}`, {
-        planId: plan.id,
-        filePath: result.relativePath,
-        intakeType: result.intakeType,
-        intakeId: result.intakeId,
-        error: result.reason,
-      });
-      return result;
-    }
+    return intakeDeletion.deleteResolvedPlanFile(this, plan, result);
   }
 
   /** 恢复被中断的 plan：blocked → pending，plan → pending，循环运行时自动继续执行 */
@@ -941,159 +781,43 @@ class LoopService extends EventEmitter {
   }
 
   /** 人工验收：对已完成的计划/任务置 accepted_at（不改变执行态 status），并记事件；重复验收刷新时间不报错。 */
-  acceptItem(projectId, { targetType, id } = {}) {
-    const target = this.acceptanceTargetRow(projectId, targetType, id);
-    const acceptedAt = nowIso();
-    const result = this.writeAcceptance(targetType, target, acceptedAt, projectId);
-    this.emitUpdate(projectId);
-    return result;
+  acceptItem(projectId, target) {
+    return acceptance.acceptItem(this, projectId, target);
   }
 
   /** 取消人工验收：清空 accepted_at（NULL），不改变执行态 status，并记事件；重复取消保持 NULL 不报错。 */
-  unacceptItem(projectId, { targetType, id } = {}) {
-    const target = this.acceptanceTargetRow(projectId, targetType, id, { requireCompleted: false });
-    const updatedAt = nowIso();
-    const result = this.writeAcceptance(targetType, target, null, projectId, updatedAt);
-    this.emitUpdate(projectId);
-    return result;
+  unacceptItem(projectId, target) {
+    return acceptance.unacceptItem(this, projectId, target);
   }
 
   /** 校验收目标：按 targetType 路由 plan/task、校验归属当前项目与「已完成」态；不存在或不可验收时抛中文错误。 */
-  acceptanceTargetRow(projectId, targetType, id, options = {}) {
-    const normalizedId = Number(id);
-    if (!Number.isFinite(normalizedId) || normalizedId <= 0) throw new Error('验收目标 ID 无效');
-    const requireCompleted = options.requireCompleted !== false;
-    if (targetType === 'plan') {
-      const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [normalizedId, projectId]);
-      if (!plan) throw new Error('计划不存在');
-      if (requireCompleted && plan.status !== ACCEPTABLE_PLAN_STATUS) {
-        throw new Error('仅可验收已完成的计划/任务');
-      }
-      return plan;
-    }
-    if (targetType === 'task') {
-      const task = this.db.get(
-        `SELECT plan_tasks.*
-         FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
-         WHERE plan_tasks.id = ? AND plans.project_id = ?`,
-        [normalizedId, projectId],
-      );
-      if (!task) throw new Error('任务不存在');
-      if (requireCompleted && !ACCEPTABLE_TASK_STATUSES.includes(task.status)) {
-        throw new Error('仅可验收已完成的计划/任务');
-      }
-      return task;
-    }
-    throw new Error('验收目标类型无效');
+  acceptanceTargetRow(projectId, targetType, id, options) {
+    return acceptance.acceptanceTargetRow(this, projectId, targetType, id, options);
   }
 
   /**
    * 写入单条验收态的私有 helper（acceptItem/unacceptItem 与 acceptItems/unacceptItems 共用）。
    * 只置/清 accepted_at 并记事件，绝不执行脚本或任务——验收模块是纯人工确认，与
    * 「完整验收」任务经 runTask→validatePlan 执行 validation_command 的链路完全解耦。
-   * acceptedAt 非空 → 验收（accepted_at=acceptedAt、updated_at=acceptedAt，记 *.accepted 事件）；
-   * acceptedAt 为 null → 取消验收（accepted_at=NULL、updated_at=updatedAt，记 *.unaccepted 事件）。
-   * 返回 { targetType, id, accepted_at }，供单目标/批量调用方回传。
    */
-  writeAcceptance(targetType, row, acceptedAt, projectId, updatedAt = acceptedAt ?? nowIso()) {
-    if (targetType === 'plan') {
-      if (acceptedAt) {
-        this.db.run(
-          'UPDATE plans SET accepted_at = ?, updated_at = ? WHERE id = ? AND project_id = ?',
-          [acceptedAt, acceptedAt, row.id, projectId],
-        );
-        this.addEvent(projectId, 'plan.accepted', `plan #${row.id} 已验收`, {
-          targetType: 'plan',
-          id: row.id,
-          planId: row.id,
-          accepted_at: acceptedAt,
-        });
-      } else {
-        this.db.run(
-          'UPDATE plans SET accepted_at = NULL, updated_at = ? WHERE id = ? AND project_id = ?',
-          [updatedAt, row.id, projectId],
-        );
-        this.addEvent(projectId, 'plan.unaccepted', `plan #${row.id} 已取消验收`, {
-          targetType: 'plan',
-          id: row.id,
-          planId: row.id,
-          accepted_at: null,
-        });
-      }
-      return { targetType, id: row.id, accepted_at: acceptedAt ?? null };
-    }
-    if (acceptedAt) {
-      this.db.run(
-        'UPDATE plan_tasks SET accepted_at = ?, updated_at = ? WHERE id = ?',
-        [acceptedAt, acceptedAt, row.id],
-      );
-      this.addEvent(projectId, 'task.accepted', `${row.task_key} 已验收`, {
-        targetType: 'task',
-        id: row.id,
-        taskId: row.id,
-        planId: row.plan_id,
-        taskKey: row.task_key,
-        accepted_at: acceptedAt,
-      });
-    } else {
-      this.db.run(
-        'UPDATE plan_tasks SET accepted_at = NULL, updated_at = ? WHERE id = ?',
-        [updatedAt, row.id],
-      );
-      this.addEvent(projectId, 'task.unaccepted', `${row.task_key} 已取消验收`, {
-        targetType: 'task',
-        id: row.id,
-        taskId: row.id,
-        planId: row.plan_id,
-        taskKey: row.task_key,
-        accepted_at: null,
-      });
-    }
-    return { targetType, id: row.id, accepted_at: acceptedAt ?? null };
+  writeAcceptance(targetType, row, acceptedAt, projectId, updatedAt) {
+    return acceptance.writeAcceptance(this, targetType, row, acceptedAt, projectId, updatedAt);
   }
 
   /**
    * 批量人工验收：对一组已完成的计划/任务一次性置 accepted_at（不改变执行态 status）。
-   * 先全量预校验（acceptanceTargetRow，requireCompleted:true），任一目标非法即整体抛中文错误、
-   * 不写任何行（全有或全无）；全部通过后用同一时间戳逐条 UPDATE+addEvent，最后一次 emitUpdate。
-   * 纯人工确认：绝不调用 validatePlan/runShell/runCodex/executeTask/runOnce，不读/不执行 validation_command，不启动任何任务/脚本。
+   * 纯人工确认：绝不调用 validatePlan/runShell/runCodex/executeTask/runOnce，不读/不执行 validation_command。
    */
   acceptItems(projectId, targets) {
-    const normalized = normalizeAcceptanceTargets(targets, '批量验收目标列表为空');
-    // 先全量预校验（全有或全无）：任一目标非法即整体抛错，在此之前不写任何行
-    const rows = normalized.map(({ targetType, id }) => ({
-      targetType,
-      row: this.acceptanceTargetRow(projectId, targetType, id),
-    }));
-    // 全部校验通过 → 用同一时间戳逐条写入 + 记事件（不执行任何脚本/任务）
-    const acceptedAt = nowIso();
-    const items = rows.map(({ targetType, row }) =>
-      this.writeAcceptance(targetType, row, acceptedAt, projectId),
-    );
-    this.emitUpdate(projectId);
-    return { accepted: items.length, items };
+    return acceptance.acceptItems(this, projectId, targets);
   }
 
   /**
    * 批量取消人工验收：对一组计划/任务一次性清空 accepted_at（NULL），不改变执行态 status。
-   * 先全量预校验（acceptanceTargetRow，requireCompleted:false），任一目标非法即整体抛中文错误、
-   * 不写任何行；全部通过后用同一时间戳逐条 UPDATE+addEvent，最后一次 emitUpdate。
-   * 纯人工确认：绝不调用 validatePlan/runShell/runCodex/executeTask/runOnce，不读/不执行 validation_command，不启动任何任务/脚本。
+   * 纯人工确认：绝不调用 validatePlan/runShell/runCodex/executeTask/runOnce，不读/不执行 validation_command。
    */
   unacceptItems(projectId, targets) {
-    const normalized = normalizeAcceptanceTargets(targets, '批量取消验收目标列表为空');
-    // 先全量预校验（全有或全无）
-    const rows = normalized.map(({ targetType, id }) => ({
-      targetType,
-      row: this.acceptanceTargetRow(projectId, targetType, id, { requireCompleted: false }),
-    }));
-    // 全部校验通过 → 用同一时间戳逐条写入 + 记事件
-    const updatedAt = nowIso();
-    const items = rows.map(({ targetType, row }) =>
-      this.writeAcceptance(targetType, row, null, projectId, updatedAt),
-    );
-    this.emitUpdate(projectId);
-    return { unaccepted: items.length, items };
+    return acceptance.unacceptItems(this, projectId, targets);
   }
 
   /** 向现有 plan 追加一个任务：写回 plan 文件 + syncPlanTasks 重新解析 */
@@ -1118,236 +842,47 @@ class LoopService extends EventEmitter {
   }
 
   hasPlanForIssueHash(projectId, issueHash) {
-    return Boolean(
-      this.db.get('SELECT id FROM plans WHERE project_id = ? AND issue_hash = ? LIMIT 1', [projectId, issueHash]),
-    );
+    return planLifecycle.hasPlanForIssueHash(this, projectId, issueHash);
   }
 
   nextRunnablePlan(projectId) {
-    return this.db.get(
-      `SELECT * FROM plans
-       WHERE project_id = ? AND status NOT IN ('completed', 'interrupted', 'draft')
-       ORDER BY sort_order ASC, created_at ASC, id ASC
-       LIMIT 1`,
-      [projectId],
-    );
+    return planLifecycle.nextRunnablePlan(this, projectId);
   }
 
   nextPlanSortOrder(projectId) {
-    const row = this.db.get('SELECT COALESCE(MAX(sort_order), 0) AS sort_order FROM plans WHERE project_id = ?', [projectId]);
-    return Number(row?.sort_order || 0) + 1;
+    return planLifecycle.nextPlanSortOrder(this, projectId);
   }
 
   activateDraftPlan(plan) {
-    if (!plan?.id) return plan;
-    const currentPlan = plan.project_id != null
-      ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [plan.id, plan.project_id])
-      : this.db.get('SELECT * FROM plans WHERE id = ?', [plan.id]);
-    if (!currentPlan) return plan;
-    if (currentPlan.status !== 'draft') return currentPlan;
-
-    const updatedAt = nowIso();
-    this.db.runBatch([
-      {
-        sql: 'UPDATE plans SET status = ?, updated_at = ? WHERE id = ? AND status = ?',
-        params: ['running', updatedAt, currentPlan.id, 'draft'],
-      },
-      {
-        sql: `INSERT INTO events (project_id, type, message, meta, created_at)
-              SELECT ?, ?, ?, ?, ?
-              WHERE EXISTS (
-                SELECT 1 FROM plans
-                WHERE id = ? AND status != ? AND updated_at = ?
-              )`,
-        params: [
-          currentPlan.project_id,
-          'plan.draft.started',
-          `草稿计划 #${currentPlan.id} 已开始执行`,
-          JSON.stringify({ planId: currentPlan.id }),
-          updatedAt,
-          currentPlan.id,
-          'draft',
-          updatedAt,
-        ],
-      },
-    ]);
-    const activatedPlan = this.db.get('SELECT * FROM plans WHERE id = ?', [currentPlan.id]);
-    if (!activatedPlan) return currentPlan;
-    if (activatedPlan.status === 'draft') {
-      throw new Error(`草稿计划 #${currentPlan.id} 激活失败`);
-    }
-    this.emitUpdate(activatedPlan.project_id);
-    return activatedPlan;
+    return planLifecycle.activateDraftPlan(this, plan);
   }
 
   reorderPlans(projectId, planIds) {
-    const normalizedProjectId = Number(projectId || 0);
-    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
-    if (!Array.isArray(planIds)) throw new Error('计划顺序无效');
-
-    const orderedIds = planIds.map((id) => Number(id));
-    if (orderedIds.some((id) => !Number.isInteger(id) || id <= 0)) throw new Error('计划顺序包含非法 ID');
-    if (new Set(orderedIds).size !== orderedIds.length) throw new Error('计划顺序包含重复 ID');
-
-    const existingPlans = this.db.all(
-      'SELECT id, sort_order FROM plans WHERE project_id = ? ORDER BY sort_order ASC, created_at ASC, id ASC',
-      [normalizedProjectId],
-    );
-    if (orderedIds.length !== existingPlans.length) throw new Error('计划顺序缺少或多出计划');
-
-    const existingIds = new Set(existingPlans.map((plan) => Number(plan.id)));
-    for (const id of orderedIds) {
-      if (!existingIds.has(id)) throw new Error('计划顺序包含不属于当前项目的计划');
-    }
-
-    const currentOrderById = new Map(existingPlans.map((plan) => [Number(plan.id), Number(plan.sort_order || 0)]));
-    const updatedAt = nowIso();
-    orderedIds.forEach((id, index) => {
-      const sortOrder = index + 1;
-      if (currentOrderById.get(id) === sortOrder) return;
-      this.db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ? AND project_id = ?', [
-        sortOrder,
-        updatedAt,
-        id,
-        normalizedProjectId,
-      ]);
-    });
-    this.emitUpdate(normalizedProjectId);
-    return this.snapshot(normalizedProjectId);
+    return planLifecycle.reorderPlans(this, projectId, planIds);
   }
 
-  insertPlan({ projectId, issueHash, filePath, hash, status, sortOrder, agentCliConfig }) {
-    const createdAt = nowIso();
-    const normalizedSortOrder = Number.isFinite(Number(sortOrder)) && Number(sortOrder) > 0
-      ? Number(sortOrder)
-      : this.nextPlanSortOrder(projectId);
-    const columns = [
-      'project_id',
-      'issue_hash',
-      'file_path',
-      'hash',
-      'status',
-      'sort_order',
-      'total_tasks',
-      'completed_tasks',
-      'validation_passed',
-      'created_at',
-      'updated_at',
-    ];
-    const values = [projectId, issueHash, filePath, hash, status, normalizedSortOrder, 0, 0, 0, createdAt, createdAt];
-    for (const [column, value] of planAgentCliColumnValues(this.planColumns(), agentCliConfig)) {
-      columns.push(column);
-      values.push(value);
-    }
-    return this.db.insert(
-      `INSERT INTO plans (${columns.join(', ')}) VALUES (${columns.map(() => '?').join(', ')})`,
-      values,
-    );
+  insertPlan(input) {
+    return planLifecycle.insertPlan(this, input);
   }
 
   planAgentCliConfig(plan) {
-    const projectDefaults = this.status(plan.project_id);
-    const eventSnapshot = this.planAgentCliEventSnapshot(plan.project_id, plan.id);
-    const sourceSnapshot = this.planSourceAgentCliSnapshot(plan.project_id, plan.id);
-    const snapshotDefaults = eventSnapshot || sourceSnapshot || projectDefaults;
-    if (hasAgentCliOverride(plan)) return effectiveAgentCliConfig(snapshotDefaults, plan);
-    if (eventSnapshot) return effectiveAgentCliConfig(projectDefaults, eventSnapshot);
-    if (sourceSnapshot) return effectiveAgentCliConfig(projectDefaults, sourceSnapshot);
-    return effectiveAgentCliConfig(projectDefaults);
+    return planAgentCli.planAgentCliConfig(this, plan);
   }
 
   planSnapshotAgentCliConfig(plan) {
-    return this.planAgentCliConfig(plan);
+    return planAgentCli.planSnapshotAgentCliConfig(this, plan);
   }
 
   planAgentCliEventSnapshot(projectId, planId) {
-    const rows = this.db.all(
-      `SELECT meta FROM events
-       WHERE project_id = ? AND type = 'plan.generated' AND meta IS NOT NULL
-       ORDER BY id DESC
-       LIMIT 40`,
-      [projectId],
-    );
-    for (const row of rows) {
-      const meta = parseEventMeta(row.meta);
-      if (!meta || typeof meta !== 'object') continue;
-      if (Number(meta.planId ?? meta.plan_id) === Number(planId) && hasAgentCliOverride(meta)) return meta;
-    }
-    return null;
+    return planAgentCli.planAgentCliEventSnapshot(this, projectId, planId);
   }
 
   planSourceAgentCliSnapshot(projectId, planId) {
-    const requirement = this.db.get('SELECT * FROM requirements WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [
-      projectId,
-      planId,
-    ]);
-    if (requirement && hasAgentCliOverride(requirement)) return requirement;
-    const feedback = this.db.get('SELECT * FROM feedback WHERE project_id = ? AND linked_plan_id = ? LIMIT 1', [projectId, planId]);
-    if (feedback && hasAgentCliOverride(feedback)) return feedback;
-    return null;
+    return planAgentCli.planSourceAgentCliSnapshot(this, projectId, planId);
   }
 
   completeLinkedIntakesForPlan(plan) {
-    const requestedPlanId = Number(plan?.id || 0);
-    let projectId = Number(plan?.project_id || 0);
-    if (!requestedPlanId) return linkedIntakeCompletionResult(requestedPlanId, projectId);
-
-    if (!projectId) {
-      const persistedPlan = this.db.get('SELECT project_id FROM plans WHERE id = ?', [requestedPlanId]);
-      projectId = Number(persistedPlan?.project_id || 0);
-    }
-    if (!projectId) return linkedIntakeCompletionResult(requestedPlanId, projectId);
-
-    const rowsBySource = Object.fromEntries(
-      LINKED_INTAKE_COMPLETION_SOURCES.map((source) => [
-        source.countKey,
-        this.db.all(
-          `SELECT id FROM ${source.table}
-           WHERE project_id = ? AND linked_plan_id = ?
-             AND (status IS NULL OR LOWER(TRIM(status)) NOT IN (?, ?))
-           ORDER BY id ASC`,
-          [projectId, requestedPlanId, ...LINKED_INTAKE_TERMINAL_STATUSES],
-        ),
-      ]),
-    );
-    const completionSummary = {};
-    for (const source of LINKED_INTAKE_COMPLETION_SOURCES) {
-      const rows = rowsBySource[source.countKey] || [];
-      completionSummary[source.countKey] = rows.length;
-      completionSummary[source.idsKey] = rows.map((row) => Number(row.id));
-    }
-    const result = linkedIntakeCompletionResult(requestedPlanId, projectId, completionSummary);
-    if (result.total === 0) return result;
-
-    const updatedAt = nowIso();
-    result.updatedAt = updatedAt;
-    this.db.runBatch([
-      ...LINKED_INTAKE_COMPLETION_SOURCES.map((source) => ({
-        sql: `UPDATE ${source.table}
-              SET status = ?, updated_at = ?
-              WHERE project_id = ? AND linked_plan_id = ?
-                AND (status IS NULL OR LOWER(TRIM(status)) NOT IN (?, ?))`,
-        params: [
-          LINKED_INTAKE_COMPLETED_STATUS,
-          updatedAt,
-          projectId,
-          requestedPlanId,
-          ...LINKED_INTAKE_TERMINAL_STATUSES,
-        ],
-      })),
-      {
-        sql: 'INSERT INTO events (project_id, type, message, meta, created_at) VALUES (?, ?, ?, ?, ?)',
-        params: [
-          projectId,
-          'plan.linked_intakes.completed',
-          `关联需求/反馈已标记完成：需求 ${result.requirements} 条，反馈 ${result.feedback} 条`,
-          JSON.stringify(result),
-          updatedAt,
-        ],
-      },
-    ]);
-    this.emitUpdate(projectId);
-    return result;
+    return planLifecycle.completeLinkedIntakesForPlan(this, plan);
   }
 
   async generatePlan(projectId, workspace, issueScan) {
@@ -2128,164 +1663,6 @@ class LoopService extends EventEmitter {
   snapshot(projectId = null) {
     return snapshots.snapshot(this, loopFlowHelpers(), projectId);
   }
-}
-
-function timestampForPath() {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
-    now.getHours(),
-  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-}
-
-/** 规范化用户环境变量为 JSON 串：过滤空名、按 name 去重保序、value 强制为字符串，JSON.stringify 入库。 */
-function normalizeEnvVarsJson(envVars) {
-  const seen = new Set();
-  const entries = [];
-  for (const entry of Array.isArray(envVars) ? envVars : []) {
-    if (!entry || typeof entry !== 'object') continue;
-    const name = String(entry.name ?? '').trim();
-    if (!name || seen.has(name)) continue;
-    seen.add(name);
-    entries.push({ name, value: String(entry.value ?? '') });
-  }
-  return JSON.stringify(entries);
-}
-
-function linkedIntakeCompletionResult(planId, projectId, overrides = {}) {
-  const requirements = Number(overrides.requirements || 0);
-  const feedback = Number(overrides.feedback || 0);
-  return {
-    planId: Number(planId || 0) || null,
-    projectId: Number(projectId || 0) || null,
-    requirements,
-    feedback,
-    total: requirements + feedback,
-    requirementIds: Array.isArray(overrides.requirementIds) ? overrides.requirementIds : [],
-    feedbackIds: Array.isArray(overrides.feedbackIds) ? overrides.feedbackIds : [],
-    updatedAt: overrides.updatedAt || null,
-  };
-}
-
-/**
- * 规范化批量验收目标列表：非数组/元素非法抛「验收目标列表无效」；去重保序、Number(id)；
- * 空列表抛调用方指定的中文错误。targetType/id 的合法性交由 acceptanceTargetRow 复用既有校验。
- * 去重保序：同目标多次出现只处理一次（幂等，避免重复 UPDATE/事件）。
- */
-function normalizeAcceptanceTargets(targets, emptyMessage) {
-  if (!Array.isArray(targets)) throw new Error('验收目标列表无效');
-  const seen = new Set();
-  const normalized = [];
-  for (const entry of targets) {
-    if (!entry || typeof entry !== 'object') throw new Error('验收目标列表无效');
-    const targetType = entry.targetType;
-    const id = Number(entry.id);
-    const key = `${targetType}:${id}`;
-    if (seen.has(key)) continue; // 去重保序：同目标多次出现只处理一次
-    seen.add(key);
-    normalized.push({ targetType, id });
-  }
-  if (normalized.length === 0) throw new Error(emptyMessage);
-  return normalized;
-}
-
-function planGenerationGuardedPrompt(prompt, label, operation = {}) {
-  if (!isPlanGenerationOperation(label, operation)) return prompt;
-  const text = String(prompt || '');
-  if (text.includes(PLAN_GENERATION_FORMAT_GUARD_TITLE)) return text;
-  return `${text.trimEnd()}\n\n${PLAN_GENERATION_FORMAT_GUARD_TITLE}\n${[
-    '- 必须包含二级标题 `## 任务拆解`，所有开发任务只能放在这个章节里。',
-    '- 每个任务行必须独占一行，并严格使用 `- [ ] P001: 任务标题 <!-- scope: src/file.js,src/other.ts -->`。',
-    '- 禁止把任务拆解写成普通段落、代码块、表格、引用块或嵌套 checkbox；验收要点可以缩进，但不能写成 checkbox 任务。',
-    '- 缺少明确影响范围时写 `<!-- scope: unknown -->`；最后一个完整验收任务也使用连续编号，例如 `- [ ] P007: 完整验收 <!-- scope: validation -->`。',
-    '- 任务编号按 P001、P002 递增；不要跳号、复用编号或把多个任务写在同一行。',
-  ].join('\n')}`;
-}
-
-function isPlanGenerationOperation(label, operation = {}) {
-  const text = String(label || '');
-  return text === 'generate-plan' || text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-') || Boolean(operation.intakeType);
-}
-
-function opencodePlanSessionTitle(projectId, planId) {
-  return `AutoPlan project ${Number(projectId || 0)} plan ${Number(planId || 0)}`;
-}
-
-function isOpenCodeSessionMissing(output) {
-  return /(?:session\s+not\s+found|unknown\s+session|invalid\s+session)/i.test(String(output || ''));
-}
-
-function requestedAgentCliSessionId(operation = {}) {
-  return normalizeAgentCliSessionId(
-    operation.agentCliSessionId
-      || operation.agentCliSessionRequestedId
-      || operation.claudeSessionId
-      || operation.claudeSessionRequestedId
-      || operation.sessionId,
-  );
-}
-
-function agentCliSessionContextFields(provider, options = {}) {
-  const sessionId = normalizeAgentCliSessionId(options.sessionId);
-  const requestedId = normalizeAgentCliSessionId(options.requestedId);
-  const mode = options.mode || (sessionId ? 'resume' : 'new');
-  const state = options.state || mode;
-  const context = {
-    agentCliSessionMode: mode,
-    agentCliSessionState: state,
-  };
-  if (sessionId) context.agentCliSessionId = sessionId;
-  if (requestedId) context.agentCliSessionRequestedId = requestedId;
-  if (options.fallback) context.agentCliSessionFallback = true;
-  if (provider === 'claude') {
-    if (sessionId) context.claudeSessionId = sessionId;
-    if (requestedId) context.claudeSessionRequestedId = requestedId;
-    context.claudeSessionMode = mode;
-    context.claudeSessionState = state;
-    if (options.fallback) context.claudeSessionFallback = true;
-  }
-  return context;
-}
-
-function agentCliSessionStateFor(mode, requestedState, fallback = false) {
-  if (fallback) return 'fallback-new';
-  if (mode === 'resume' && requestedState === 'plan-resume') return 'plan-resume';
-  return mode || requestedState || 'new';
-}
-
-function isClaudeSessionMissing(output) {
-  return /(?:session\s+not\s+found|unknown\s+session|invalid\s+session|conversation\s+not\s+found|no\s+conversation)/i.test(String(output || ''));
-}
-
-function isInsideDirectory(rootPath, targetPath) {
-  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
-  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
-  const relativePath = path.relative(resolvedRoot, resolvedTarget);
-  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
-}
-
-function normalizePathForCompare(value) {
-  return process.platform === 'win32' ? String(value).toLowerCase() : String(value);
-}
-
-function uniqueNonEmptyStrings(...values) {
-  return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
-}
-
-function agentCliResultSessionContextFields(result = {}) {
-  const provider = result.agentCliProvider || result.provider;
-  if (provider === DEFAULT_AGENT_CLI_PROVIDER) return codexSessionContextFields(result);
-  if (provider === 'opencode') return opencodeSessionContextFields(result);
-  if (provider === 'claude') {
-    return agentCliSessionContextFields('claude', {
-      sessionId: result.agentCliSessionId || result.claudeSessionId || result.sessionId,
-      requestedId: result.agentCliSessionRequestedId || result.claudeSessionRequestedId,
-      mode: result.agentCliSessionMode || result.claudeSessionMode,
-      state: result.agentCliSessionState || result.claudeSessionState,
-      fallback: result.agentCliSessionFallback || result.claudeSessionFallback,
-    });
-  }
-  return {};
 }
 
 function loopFlowHelpers() {

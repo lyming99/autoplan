@@ -258,21 +258,20 @@ export function useWorkspaceController() {
     }));
   }, []);
 
-  const createRequirement = useCallback(
-    async (body: string) => {
+  const createIntake = useCallback(
+    async (type: IntakeType, body: string) => {
       if (!projectId) return false;
       try {
-        const next = await window.autoplan.createRequirement({
+        const provider = composerCliProviders[type];
+        const next = await window.autoplan[type === 'requirement' ? 'createRequirement' : 'createFeedback']({
           projectId,
           body,
-          attachments: pendingAttachments.requirement,
-          agentCliProvider: composerCliProviders.requirement,
-          ...(composerCliProviders.requirement === 'claude'
-            ? {}
-            : { codexReasoningEffort: composerCodexReasoning.requirement }),
+          attachments: pendingAttachments[type],
+          agentCliProvider: provider,
+          ...(provider === 'claude' ? {} : { codexReasoningEffort: composerCodexReasoning[type] }),
         });
         setSnapshot(next);
-        setPendingAttachments((current) => ({ ...current, requirement: [] }));
+        setPendingAttachments((current) => ({ ...current, [type]: [] }));
         setError(null);
         return true;
       } catch (e) {
@@ -280,33 +279,11 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [composerCliProviders.requirement, composerCodexReasoning.requirement, pendingAttachments.requirement, projectId, setSnapshot, setError, showError],
+    [composerCliProviders, composerCodexReasoning, pendingAttachments, projectId, setSnapshot, setError, showError],
   );
 
-  const createFeedback = useCallback(
-    async (body: string) => {
-      if (!projectId) return false;
-      try {
-        const next = await window.autoplan.createFeedback({
-          projectId,
-          body,
-          attachments: pendingAttachments.feedback,
-          agentCliProvider: composerCliProviders.feedback,
-          ...(composerCliProviders.feedback === 'claude'
-            ? {}
-            : { codexReasoningEffort: composerCodexReasoning.feedback }),
-        });
-        setSnapshot(next);
-        setPendingAttachments((current) => ({ ...current, feedback: [] }));
-        setError(null);
-        return true;
-      } catch (e) {
-        showError(e);
-        return false;
-      }
-    },
-    [composerCliProviders.feedback, composerCodexReasoning.feedback, pendingAttachments.feedback, projectId, setSnapshot, setError, showError],
-  );
+  const createRequirement = useCallback((body: string) => createIntake('requirement', body), [createIntake]);
+  const createFeedback = useCallback((body: string) => createIntake('feedback', body), [createIntake]);
 
   const updateRequirement = useCallback(
     async (id: number, input: { title?: string; body?: string; status?: string }) => {

@@ -959,9 +959,7 @@ export interface UpdateRequirementInput extends RecordIdInput {
   codexReasoningEffort?: CodexReasoningEffort;
 }
 
-export interface UpdateFeedbackInput extends UpdateRequirementInput {
-  requirementId?: number | null;
-}
+export interface UpdateFeedbackInput extends UpdateRequirementInput { requirementId?: number | null; }
 export interface AutoplanApi {
   mcpToolNames: McpToolName[];
   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;

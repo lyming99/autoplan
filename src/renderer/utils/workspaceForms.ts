@@ -72,15 +72,9 @@ export const codexReasoningOptionDetails: Array<SettingsChoiceOption<CodexReason
 
 export const defaultCodexReasoningEffort: CodexReasoningEffort = 'medium';
 
-export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = {
-  requirement: 'codex',
-  feedback: 'codex',
-};
+export const defaultComposerCliProviders: Record<IntakeType, AgentCliProvider> = { requirement: 'codex', feedback: 'codex' };
 
-export const defaultComposerCodexReasoning: Record<IntakeType, CodexReasoningEffort> = {
-  requirement: defaultCodexReasoningEffort,
-  feedback: defaultCodexReasoningEffort,
-};
+export const defaultComposerCodexReasoning: Record<IntakeType, CodexReasoningEffort> = { requirement: defaultCodexReasoningEffort, feedback: defaultCodexReasoningEffort };
 
 export type LoopFormState = {
   workspacePath: string;

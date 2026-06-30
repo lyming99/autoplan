@@ -7,9 +7,10 @@ const checkedExtensions = new Set(['.css', '.js', '.ts', '.tsx']);
 const defaultMaxLines = 600;
 
 const fileLimits = new Map([
-  // scripts/smoke-test.js: 新增 oh-my-pi 后端 smoke + MCP create_project + 源码断言使行数略超 3000。
-  ['scripts/smoke-test.js', 3250],
-  // src/loopService.js: 新增脚本 CRUD/运行通道、验收 accept/unaccept 与 MCP 启停配置 IPC 聚合逻辑。
+  // scripts/smoke-test.js: agent 后端场景（codex/claude/opencode/oh-my-pi session 复用、反馈回归）集中在此，
+  // 与共享 fixture/spawn 断言 helper 深度耦合，跨文件拆分风险高、收益低，暂整体保留并放宽上限。
+  ['scripts/smoke-test.js', 3600],
+  // src/loopService.js: 验收/需求删除/计划生命周期/agent-CLI 配置等逻辑已抽离到 src/loop/*.js，仅保留调度核心。
   ['src/loopService.js', 1700],
   // src/loop/agentCliConfig.js: 新增 oh-my-pi 显示名分支（原 699 已贴近上限）使行数略超 700。
   ['src/loop/agentCliConfig.js', 720],

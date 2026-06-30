@@ -21,6 +21,12 @@ const { classifyExecutionFailure } = require('./validation');
 const { MAX_PARALLEL_TASKS, taskParallelScopes } = require('./concurrency');
 const { taskScopeText } = require('./planParser');
 const { normalizeRelative } = require('./workspaceFiles');
+const { agentCliSessionContextFields } = require('./agentCliRunner');
+const {
+  taskAgentCliSessionId,
+  taskResultSessionId,
+  taskResultSessionContextFields,
+} = require('./taskSessionContext');
 
 /** 退避重试序列：首次等待 5s，逐次递增，上限 30s */
 const TASK_RETRY_BACKOFF_SECONDS = Object.freeze([5, 10, 20, 30]);
@@ -590,59 +596,3 @@ module.exports = {
   TASK_RETRY_BACKOFF_SECONDS,
 };
 
-function taskAgentCliSessionId(task) {
-  return normalizeAgentCliSessionId(
-    task?.agent_cli_session_id
-      || task?.agentCliSessionId
-      || task?.claude_session_id
-      || task?.claudeSessionId,
-  );
-}
-
-function taskResultSessionId(result) {
-  if (result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER) return operationCodexSessionId(result);
-  if (result?.agentCliProvider === 'claude') {
-    return normalizeAgentCliSessionId(
-      result.agentCliSessionId
-        || result.claudeSessionId
-        || result.sessionId,
-    );
-  }
-  return '';
-}
-
-function taskResultSessionContextFields(result) {
-  if (result?.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER) return codexSessionContextFields(result);
-  if (result?.agentCliProvider === 'claude') {
-    return agentCliSessionContextFields('claude', {
-      sessionId: result.agentCliSessionId || result.claudeSessionId || result.sessionId,
-      requestedId: result.agentCliSessionRequestedId || result.claudeSessionRequestedId,
-      mode: result.agentCliSessionMode || result.claudeSessionMode,
-      state: result.agentCliSessionState || result.claudeSessionState,
-      fallback: result.agentCliSessionFallback || result.claudeSessionFallback,
-    });
-  }
-  return {};
-}
-
-function agentCliSessionContextFields(provider, options = {}) {
-  const sessionId = normalizeAgentCliSessionId(options.sessionId);
-  const requestedId = normalizeAgentCliSessionId(options.requestedId);
-  const mode = options.mode || (sessionId ? 'resume' : 'new');
-  const state = options.state || mode;
-  const context = {
-    agentCliSessionMode: mode,
-    agentCliSessionState: state,
-  };
-  if (sessionId) context.agentCliSessionId = sessionId;
-  if (requestedId) context.agentCliSessionRequestedId = requestedId;
-  if (options.fallback) context.agentCliSessionFallback = true;
-  if (provider === 'claude') {
-    if (sessionId) context.claudeSessionId = sessionId;
-    if (requestedId) context.claudeSessionRequestedId = requestedId;
-    context.claudeSessionMode = mode;
-    context.claudeSessionState = state;
-    if (options.fallback) context.claudeSessionFallback = true;
-  }
-  return context;
-}

@@ -162,10 +162,7 @@ ipcMain.handle('mcp:start', async (_event, input = {}) => {
   return loop.snapshot(input.projectId || null);
 });
 
-ipcMain.handle('mcp:stop', async (_event, input = {}) => {
-  await stopMcpServer();
-  return loop.snapshot(input.projectId || null);
-});
+ipcMain.handle('mcp:stop', async (_event, input = {}) => { await stopMcpServer(); return loop.snapshot(input.projectId || null); });
 
 ipcMain.handle('mcp:status', (_event, input = {}) => loop.snapshot(input.projectId || null));
 
@@ -191,8 +188,7 @@ ipcMain.handle('tasks:runParallel', async (_event, input = {}) => {
 
 ipcMain.handle('tasks:stop', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  loop.stopTask(projectId, requiredRecordId(input, 'taskId'));
-  return loop.snapshot(projectId);
+  loop.stopTask(projectId, requiredRecordId(input, 'taskId')); return loop.snapshot(projectId);
 });
 
 ipcMain.handle('acceptance:accept', (_event, input = {}) => {

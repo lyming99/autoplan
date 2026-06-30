@@ -221,10 +221,33 @@ function safePart(value) {
   return String(value).replace(/[^A-Za-z0-9_.-]+/g, '_');
 }
 
+function timestampForPath() {
+  const now = new Date();
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(
+    now.getHours(),
+  )}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+/** 规范化用户环境变量为 JSON 串：过滤空名、按 name 去重保序、value 强制为字符串，JSON.stringify 入库。 */
+function normalizeEnvVarsJson(envVars) {
+  const seen = new Set();
+  const entries = [];
+  for (const entry of Array.isArray(envVars) ? envVars : []) {
+    if (!entry || typeof entry !== 'object') continue;
+    const name = String(entry.name ?? '').trim();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    entries.push({ name, value: String(entry.value ?? '') });
+  }
+  return JSON.stringify(entries);
+}
+
 module.exports = {
   ensureWorkspaceDirs,
   hashFile,
   hashText,
+  normalizeEnvVarsJson,
   normalizeRelative,
   readSnippet,
   resolveSafeAutoPlanIntakePlanPath,
@@ -235,6 +258,7 @@ module.exports = {
   scanDirectoryInWorker,
   scanDirectorySync,
   tailText,
+  timestampForPath,
   WORKSPACE_RUNTIME_DIR,
   workspaceKey,
   workspaceToolEnv,
