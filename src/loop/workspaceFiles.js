@@ -150,8 +150,55 @@ function resolveWorkspaceChildPath(workspace, filePath) {
   return '';
 }
 
+function resolveSafeAutoPlanIntakePlanPath(workspace, filePath, intakeType, intakeId) {
+  const workspaceValue = String(workspace || '').trim();
+  const filePathValue = String(filePath || '').trim();
+  const normalizedType = intakeType === 'feedback' ? 'feedback' : 'requirement';
+  const normalizedId = String(intakeId || '').replace(/[^0-9a-zA-Z_-]/g, '');
+  const result = {
+    safe: false,
+    reason: '',
+    filePath: '',
+    relativePath: '',
+    planDir: '',
+    expectedPattern: normalizedId ? `plan_${normalizedType}_${normalizedId}_*.md` : '',
+  };
+  if (!workspaceValue) return { ...result, reason: 'workspace_empty' };
+  if (!filePathValue) return { ...result, reason: 'file_path_empty' };
+  if (!normalizedId) return { ...result, reason: 'intake_id_invalid' };
+
+  const workspaceRoot = path.resolve(workspaceValue);
+  const planDir = path.resolve(workspaceRoot, 'docs', 'plan');
+  const resolvedPath = path.resolve(workspaceRoot, filePathValue);
+  const relativeToPlanDir = path.relative(planDir, resolvedPath);
+  const relativeToPlanDirForCompare = normalizePathForCompare(relativeToPlanDir);
+  const insidePlanDir =
+    relativeToPlanDirForCompare !== '' &&
+    !relativeToPlanDirForCompare.startsWith('..') &&
+    !path.isAbsolute(relativeToPlanDirForCompare);
+
+  result.filePath = resolvedPath;
+  result.relativePath = normalizeRelative(workspaceRoot, resolvedPath);
+  result.planDir = planDir;
+  if (!insidePlanDir) return { ...result, reason: 'outside_docs_plan' };
+
+  const expectedName = new RegExp(`^plan_${escapeRegExp(normalizedType)}_${escapeRegExp(normalizedId)}_.+\\.md$`);
+  if (!expectedName.test(path.basename(resolvedPath))) {
+    return { ...result, reason: 'filename_mismatch' };
+  }
+  return { ...result, safe: true, reason: '' };
+}
+
 function normalizeRelative(root, fullPath) {
   return path.relative(root, fullPath).replaceAll(path.sep, '/');
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizePathForCompare(value) {
+  return process.platform === 'win32' ? String(value).toLowerCase() : String(value);
 }
 
 function workspaceKey(workspace) {
@@ -180,6 +227,7 @@ module.exports = {
   hashText,
   normalizeRelative,
   readSnippet,
+  resolveSafeAutoPlanIntakePlanPath,
   resolveWorkspaceChildPath,
   safePart,
   saveScan,

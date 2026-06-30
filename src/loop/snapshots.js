@@ -219,12 +219,20 @@ function mcpStatusSnapshot(db, liveStatus = null) {
 
   const transport = live?.transport || transportFromDb;
   const isHttp = transport !== 'stdio';
-  const host = live?.host ?? (isHttp ? hostFromDb : null);
-  const port = live?.port ?? (isHttp ? portFromDb : null);
-  const mcpPath = isHttp ? pathFromDb : null;
-  const url = live?.url ?? (isHttp ? `http://${hostFromDb}:${portFromDb}${pathFromDb}` : null);
-  const startedAt = live?.startedAt || null;
+  const eventHost = eventMcp && latestEvent?.type === 'mcp.started' ? eventMcp.host : null;
+  const eventPort = eventMcp && latestEvent?.type === 'mcp.started' ? eventMcp.port : null;
+  const eventPath = eventMcp && latestEvent?.type === 'mcp.started' ? eventMcp.path : null;
+  const eventUrl = eventMcp && latestEvent?.type === 'mcp.started' ? eventMcp.url : null;
+  const host = live?.host ?? (isHttp ? (eventHost ?? hostFromDb) : null);
+  const port = live?.port ?? (isHttp ? (eventPort ?? portFromDb) : null);
+  const mcpPath = live?.path ?? (isHttp ? (eventPath ?? pathFromDb) : null);
+  const url = live?.url ?? (isHttp ? (eventUrl || `http://${host}:${port}${mcpPath}`) : null);
+  const startedAt = live?.startedAt || (latestEvent?.type === 'mcp.started' ? eventMcp?.startedAt : null) || null;
   const localOnly = transport !== 'http' || LOCAL_MCP_HOSTS.has(String(host).toLowerCase());
+  const fallbackPortInUse = isHttp
+    && running
+    && Number(port) !== Number(portFromDb)
+    && Number(portFromDb) === MCP_DEFAULT_CONFIG.port;
 
   const hasAuthToken = Boolean(authToken);
   const authTokenMasked = maskAuthToken(authToken);
@@ -247,9 +255,7 @@ function mcpStatusSnapshot(db, liveStatus = null) {
     connectionExample: transport === 'http'
       ? (url || `http://${hostFromDb}:${portFromDb}${pathFromDb}`)
       : 'npm run mcp:stdio',
-    note: transport === 'http'
-      ? '默认仅监听本机地址，供本机 MCP 客户端连接。'
-      : 'stdio 模式由 MCP 客户端启动 AutoPlan MCP 进程。',
+    note: mcpStatusNote({ transport, fallbackPortInUse, configuredPort: portFromDb, port }),
     lastEvent: latestEvent ? {
       type: latestEvent.type,
       message: latestEvent.message,
@@ -264,6 +270,12 @@ function mcpStatusLabel({ enabled, running, lastError }) {
   if (!enabled) return 'disabled';
   if (lastError) return 'error';
   return running ? 'running' : 'configured';
+}
+
+function mcpStatusNote({ transport, fallbackPortInUse, configuredPort, port }) {
+  if (transport !== 'http') return 'stdio 模式由 MCP 客户端启动 AutoPlan MCP 进程。';
+  if (fallbackPortInUse) return `默认端口 ${configuredPort} 被占用，已自动使用可用端口 ${port}。`;
+  return '默认仅监听本机地址，供本机 MCP 客户端连接。';
 }
 
 function normalizeMcpBoolean(value, fallback) {

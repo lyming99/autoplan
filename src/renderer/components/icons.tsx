@@ -345,6 +345,24 @@ const undoIcon = (
   </>
 );
 
+// 太阳图标：浅色主题
+const sunIcon = (
+  <>
+    <circle cx="12" cy="12" r="4.5" />
+    <path d="M12 1.5v2" />
+    <path d="M12 20.5v2" />
+    <path d="m4.2 4.2 1.4 1.4" />
+    <path d="m18.4 18.4 1.4 1.4" />
+    <path d="M1.5 12h2" />
+    <path d="M20.5 12h2" />
+    <path d="m4.2 19.8 1.4-1.4" />
+    <path d="m18.4 5.6 1.4-1.4" />
+  </>
+);
+
+// 月亮图标：深色主题
+const moonIcon = <path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3a7 7 0 0 0 9.7 10.2z" />;
+
 const ICONS = {
   overview: overviewIcon,
   requirement: requirementIcon,
@@ -405,6 +423,8 @@ const ICONS = {
   'check-double': checkDoubleIcon,
   'chevron-down': chevronDownIcon,
   undo: undoIcon,
+  sun: sunIcon,
+  moon: moonIcon,
 } as const;
 
 export type IconName = keyof typeof ICONS;

@@ -91,7 +91,7 @@ export function Composer({
   const selectedProviderOption = cliSelection?.options.find((option) => option.value === selectedProvider);
   const selectedReasoning = cliSelection?.reasoningByType[type] || cliSelection?.reasoningOptions[1]?.value || 'medium';
   const selectedReasoningOption = cliSelection?.reasoningOptions.find((option) => option.value === selectedReasoning);
-  const draftHelp = '创建为草稿后只生成计划，不会立即进入执行队列；确认后可在任务与计划中手动执行。';
+  const draftHelp = '创建为草稿后只生成计划，不会立即进入执行队列；确认后可在计划与任务中手动执行。';
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();

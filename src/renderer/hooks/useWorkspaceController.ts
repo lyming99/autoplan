@@ -141,6 +141,23 @@ export function useWorkspaceController() {
     window.alert(msg);
   }, [setError]);
 
+  const resetPlanReaderState = useCallback(() => {
+    planReadRequestRef.current += 1;
+    setPlanReadState(createEmptyPlanReadState());
+  }, []);
+
+  const clearDeletedPlanReader = useCallback((next: AppSnapshot) => {
+    const readingPlan = planReadState.plan;
+    if (!readingPlan || Number(readingPlan.id) <= 0) return;
+
+    const readingPlanId = Number(readingPlan.id);
+    const readingProjectId = Number(readingPlan.project_id);
+    const stillExists = next.plans.some(
+      (plan) => Number(plan.id) === readingPlanId && Number(plan.project_id) === readingProjectId,
+    );
+    if (!stillExists) resetPlanReaderState();
+  }, [planReadState.plan, resetPlanReaderState]);
+
   const updateLoopForm: Dispatch<SetStateAction<LoopFormState>> = useCallback((action) => {
     setLoopFormDirty(true);
     setLoopForm(action);
@@ -200,12 +217,11 @@ export function useWorkspaceController() {
   }, [tabParam]);
 
   useEffect(() => {
-    planReadRequestRef.current += 1;
-    setPlanReadState(createEmptyPlanReadState());
+    resetPlanReaderState();
     return () => {
       planReadRequestRef.current += 1;
     };
-  }, [projectId]);
+  }, [projectId, resetPlanReaderState]);
 
   const addPendingFiles = useCallback((type: IntakeType, files: FileList | File[] | null) => {
     const selectedFiles = Array.from(files || []);
@@ -314,6 +330,7 @@ export function useWorkspaceController() {
       try {
         const next = await window.autoplan.deleteRequirement({ projectId, id });
         setSnapshot(next);
+        clearDeletedPlanReader(next);
         setError(null);
         return true;
       } catch (e) {
@@ -321,7 +338,7 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [projectId, setSnapshot, setError, showError],
+    [clearDeletedPlanReader, projectId, setSnapshot, setError, showError],
   );
 
   const updateFeedback = useCallback(
@@ -346,6 +363,7 @@ export function useWorkspaceController() {
       try {
         const next = await window.autoplan.deleteFeedback({ projectId, id });
         setSnapshot(next);
+        clearDeletedPlanReader(next);
         setError(null);
         return true;
       } catch (e) {
@@ -353,7 +371,7 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [projectId, setSnapshot, setError, showError],
+    [clearDeletedPlanReader, projectId, setSnapshot, setError, showError],
   );
 
   const submitLoopConfig = async (event: FormEvent<HTMLFormElement>) => {
@@ -535,9 +553,8 @@ export function useWorkspaceController() {
   );
 
   const closePlanReader = useCallback(() => {
-    planReadRequestRef.current += 1;
-    setPlanReadState(createEmptyPlanReadState());
-  }, []);
+    resetPlanReaderState();
+  }, [resetPlanReaderState]);
 
   const refreshPlanReader = useCallback(() => {
     if (planReadState.loading) return;

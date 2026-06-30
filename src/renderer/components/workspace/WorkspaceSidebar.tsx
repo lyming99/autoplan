@@ -1,5 +1,6 @@
-import { Fragment } from 'react';
+import { Fragment, useCallback } from 'react';
 import type { Project, ProjectState, WorkspaceTab } from '../../types';
+import { type ThemeMode, useTheme } from '../../hooks/useTheme';
 import { Icon, type IconName } from '../icons';
 import {
   agentCliProviderLabel,
@@ -20,7 +21,7 @@ const WORKSPACE_NAV: NavItem[] = [
 ];
 
 const EXEC_NAV: NavItem[] = [
-  { id: 'tasks', label: '任务与计划', icon: 'tasks' },
+  { id: 'tasks', label: '计划与任务', icon: 'tasks' },
   { id: 'scripts', label: '脚本', icon: 'script' },
   { id: 'events', label: '事件流', icon: 'events' },
   { id: 'settings', label: '设置', icon: 'settings' },
@@ -62,6 +63,16 @@ export function WorkspaceSidebar({
   scriptCount?: number;
   onSwitchProject: (id: number) => void;
 }) {
+  const { theme, setTheme } = useTheme();
+
+  const themeIcon = theme === 'light' ? 'sun' : theme === 'dark' ? 'moon' : 'sliders';
+  const themeLabel = theme === 'light' ? '浅色模式' : theme === 'dark' ? '深色模式' : '跟随系统';
+
+  const cycleTheme = useCallback(() => {
+    const next: Record<ThemeMode, ThemeMode> = { light: 'dark', dark: 'auto', auto: 'light' };
+    setTheme(next[theme]);
+  }, [theme, setTheme]);
+
   const openFolder = async () => {
     try {
       const result = await window.autoplan.openProjectFolder({ projectId });
@@ -140,6 +151,17 @@ export function WorkspaceSidebar({
       ))}
 
       <div className="sidebar-footer">
+        <button
+          type="button"
+          className="theme-toggle"
+          title={`主题：${themeLabel} — 点击循环切换`}
+          aria-label={`当前主题：${themeLabel}，点击切换`}
+          onClick={cycleTheme}
+        >
+          <Icon name={themeIcon} size={16} />
+          <span>{themeLabel}</span>
+        </button>
+
         <div className="loop-mini">
           <span className={`led ${state?.running ? 'running' : 'stopped'}`} />
           <span>

@@ -59,6 +59,7 @@ export function McpControlPanel({
   const tone = mcpStatusTone(mcp);
   const running = Boolean(mcp?.running);
   const failed = Boolean(mcp?.lastError || mcp?.status === 'error');
+  const connectionAddress = mcp?.url || mcp?.connectionExample || 'http://127.0.0.1:43847/mcp';
   const isHttp = mcpForm.transport === 'http';
   const mcpTools = mcp?.tools?.length ? mcp.tools : window.autoplan.mcpToolNames;
   const mcpToolDocs = mcp?.toolDocs?.length
@@ -131,7 +132,7 @@ export function McpControlPanel({
         <div className="set-card-body">
           <InfoRow label="传输方式">{mcp?.transport === 'stdio' ? 'stdio' : 'HTTP Streamable'}</InfoRow>
           <InfoRow label="访问范围">{mcp?.localOnly === false ? '已显式允许非本机绑定' : '默认仅本机访问'}</InfoRow>
-          <InfoRow label="连接地址"><span className="mono">{mcp?.connectionExample || 'http://127.0.0.1:43847/mcp'}</span></InfoRow>
+          <InfoRow label="连接地址"><span className="mono">{connectionAddress}</span></InfoRow>
           <InfoRow label="鉴权状态">
             {mcp?.hasAuthToken
               ? <>已设置密钥（<span className="mono">{mcp.authTokenMasked || '····'}</span>）</>

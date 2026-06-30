@@ -82,13 +82,11 @@ class AutoPlanMcpServer {
       });
     });
 
-    await new Promise((resolve, reject) => {
-      const onError = (error) => reject(new Error(describeListenError(error, this.config.port)));
-      this.httpServer.once('error', onError);
-      this.httpServer.listen(this.config.port, this.config.host, () => {
-        this.httpServer.off('error', onError);
-        resolve();
-      });
+    await listenHttpServer(this.httpServer, this.config.port, this.config.host).catch(async (error) => {
+      if (!shouldFallbackToAvailablePort(error, this.config)) {
+        throw new Error(describeListenError(error, this.config.port));
+      }
+      await listenHttpServer(this.httpServer, 0, this.config.host);
     });
 
     const address = this.httpServer.address();
@@ -183,16 +181,20 @@ function createMcpServer(options = {}) {
 function normalizeMcpConfig(input = {}, env = process.env) {
   const transport = String(input.transport || env.AUTOPLAN_MCP_TRANSPORT || DEFAULT_MCP_CONFIG.transport).toLowerCase();
   const normalizedTransport = transport === 'stdio' ? 'stdio' : 'http';
+  const inputHasPort = Object.prototype.hasOwnProperty.call(input || {}, 'port');
+  const envHasPort = env.AUTOPLAN_MCP_PORT !== undefined && env.AUTOPLAN_MCP_PORT !== null && env.AUTOPLAN_MCP_PORT !== '';
+  const port = normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port);
   return {
     ...DEFAULT_MCP_CONFIG,
     ...input,
     enabled: input.enabled ?? env.AUTOPLAN_MCP_ENABLED !== '0',
     transport: normalizedTransport,
     host: String(input.host || env.AUTOPLAN_MCP_HOST || DEFAULT_MCP_CONFIG.host).trim() || DEFAULT_MCP_CONFIG.host,
-    port: normalizePort(input.port ?? env.AUTOPLAN_MCP_PORT, DEFAULT_MCP_CONFIG.port),
+    port,
     path: normalizeHttpPath(input.path || env.AUTOPLAN_MCP_PATH || DEFAULT_MCP_CONFIG.path),
     authToken: normalizeAuthToken(input.authToken || env.AUTOPLAN_MCP_AUTH_TOKEN || DEFAULT_MCP_CONFIG.authToken),
     allowRemote: input.allowRemote ?? env.AUTOPLAN_MCP_ALLOW_REMOTE === '1',
+    autoPortFallback: input.autoPortFallback ?? (!inputHasPort && !envHasPort && port === DEFAULT_MCP_CONFIG.port),
   };
 }
 
@@ -235,6 +237,29 @@ function normalizeHttpPath(value) {
 
 function normalizeAuthToken(value) {
   return String(value || '').trim();
+}
+
+function shouldFallbackToAvailablePort(error, config) {
+  return error?.code === 'EADDRINUSE'
+    && config?.autoPortFallback
+    && config?.transport === 'http'
+    && Number(config.port) === DEFAULT_MCP_CONFIG.port;
+}
+
+function listenHttpServer(server, port, host) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, host);
+  });
 }
 
 function isAuthorizedRequest(request, authToken) {

@@ -33,13 +33,17 @@ const MCP_FIELD_NORMALIZERS = {
 
 function mcpServerConfig(db, env = process.env) {
   const settings = db?.getSettings ? db.getSettings('mcp.') : {};
+  const envPort = env.AUTOPLAN_MCP_PORT;
+  const settingsPort = settings['mcp.port'];
+  const port = envPort ?? settingsPort;
   return {
     enabled: normalizeMcpEnabled(env.AUTOPLAN_MCP_ENABLED ?? settings['mcp.enabled']),
     transport: env.AUTOPLAN_MCP_TRANSPORT ?? settings['mcp.transport'],
     host: env.AUTOPLAN_MCP_HOST ?? settings['mcp.host'],
-    port: env.AUTOPLAN_MCP_PORT ?? settings['mcp.port'],
+    port,
     path: env.AUTOPLAN_MCP_PATH ?? settings['mcp.path'],
     authToken: env.AUTOPLAN_MCP_AUTH_TOKEN ?? settings['mcp.authToken'],
+    autoPortFallback: shouldAutoFallbackPort(envPort, settingsPort, settings['mcp.portExplicit']),
   };
 }
 
@@ -55,6 +59,13 @@ function saveMcpSettings(db, input = {}) {
     if (next === current) continue;
     if (db && db.setSetting) db.setSetting(settingKey, next);
     changed = true;
+  }
+  if (hasOwnInput(input, MCP_FIELD_INPUT_KEYS.port)) {
+    const current = db && db.getSetting ? db.getSetting('mcp.portExplicit', '') : '';
+    if (current !== 'true') {
+      if (db && db.setSetting) db.setSetting('mcp.portExplicit', 'true');
+      changed = true;
+    }
   }
   return changed;
 }
@@ -86,6 +97,12 @@ function normalizeMcpPath(value) {
 function normalizeMcpAuthToken(value) {
   // 允许清空：传入空值时返回空串（不抛错），空串以空串落库表示关闭 Bearer 鉴权。
   return String(value || '').trim();
+}
+
+function shouldAutoFallbackPort(envPort, settingsPort, settingsPortExplicit) {
+  if (envPort !== undefined && envPort !== null && envPort !== '') return false;
+  if (normalizeMcpEnabled(settingsPortExplicit) === true && settingsPortExplicit !== undefined && settingsPortExplicit !== null && settingsPortExplicit !== '') return false;
+  return normalizeMcpPort(settingsPort) === MCP_DEFAULT_CONFIG.port;
 }
 
 function hasOwnInput(source, keys) {

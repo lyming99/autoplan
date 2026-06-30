@@ -75,7 +75,11 @@ export function IntakePanel({
   };
 
   const deleteItem = async (item: IntakeItem) => {
-    if (!window.confirm(`确定删除${sourceTypeName(type)} #${item.id} 吗？关联任务会被中断。`)) return;
+    const linkedPlanId = linkedPlanIdOf(item);
+    const cascadeWarning = linkedPlanId === null
+      ? '该记录及其附件会被删除。'
+      : `关联 Plan #${linkedPlanId}、全部任务和运行中执行会一并停止并删除。`;
+    if (!window.confirm(`确定删除${sourceTypeName(type)} #${item.id} 吗？${cascadeWarning}`)) return;
     const ok = await onDelete(item.id);
     if (ok && editingId === item.id) setEditingId(null);
   };

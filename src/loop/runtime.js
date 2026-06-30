@@ -235,6 +235,32 @@ function stopRuntimeTask(projectId, taskId, task, runtime, callbacks) {
   else callbacks.setPhase(projectId, 'stopped');
 }
 
+function stopRuntimePlanOperations(runtime, planId, options = {}) {
+  if (!runtime?.activeOperations || !planId) return [];
+  const archive = options.archive !== false;
+  const stoppedAt = options.stoppedAt || nowIso();
+  const matches = findRuntimeOperations(
+    runtime,
+    (operation) => Number(operation?.planId) === Number(planId),
+  );
+  const stopped = [];
+  for (const entry of matches) {
+    if (entry.operation) {
+      entry.operation.cancelled = true;
+      entry.operation.cancelledAt = stoppedAt;
+    }
+    if (entry.operation && options.errorMessage && !entry.operation.errorMessage) {
+      entry.operation.errorMessage = options.errorMessage;
+    }
+    killChildProcess(entry.child);
+    stopped.push({ ...entry, stoppedAt });
+    if (archive) archiveRuntimeOperation(runtime, entry.operationKey);
+    else removeRuntimeOperation(runtime, entry.operationKey);
+  }
+  refreshRuntimeActive(runtime);
+  return stopped;
+}
+
 function setProjectPhase(db, projectId, phase) {
   db.run('UPDATE project_states SET phase = ?, updated_at = ? WHERE project_id = ?', [
     phase,
@@ -265,6 +291,8 @@ function archiveRuntimeOperation(runtime, operationKey) {
       projectId: op.projectId || null,
       planId: op.planId || null,
       taskId: op.taskId || null,
+      cancelled: Boolean(op.cancelled),
+      cancelledAt: op.cancelledAt || null,
       ...agentCliContextFields(op),
       logFile: op.logFile || null,
       lastFile: op.lastFile || null,
@@ -284,6 +312,18 @@ function archiveRuntimeOperation(runtime, operationKey) {
   } else {
     runtime.activeChildren.clear();
     runtime.activeOperations.clear();
+  }
+  refreshRuntimeActive(runtime);
+}
+
+function removeRuntimeOperation(runtime, operationKey) {
+  if (!runtime) return;
+  if (operationKey) {
+    runtime.activeChildren?.delete(operationKey);
+    runtime.activeOperations?.delete(operationKey);
+  } else {
+    runtime.activeChildren?.clear();
+    runtime.activeOperations?.clear();
   }
   refreshRuntimeActive(runtime);
 }
@@ -433,6 +473,7 @@ module.exports = {
   runtimeProjectSummary,
   scheduleProjectRuntime,
   setProjectPhase,
+  stopRuntimePlanOperations,
   stopProjectRuntime,
   stopRuntimeTask,
   waitForChild,

@@ -53,6 +53,7 @@ type TaskListPlanFilter = {
   totalTaskCount: number;
 };
 type PlanListProps = ComponentProps<typeof BasePlanList> & {
+  onRunDraft?: (plan: Plan, task: PlanTask) => Promise<void> | void;
   selectedPlanId?: number | null;
   onSelectPlan?: (plan: Plan) => void;
 };
@@ -342,6 +343,7 @@ function taskPlanGroupAnchorId(group: TaskPlanGroup) {
 export function PlanList({
   plans,
   emptyText,
+  onRunDraft,
   onRunParallel,
   selectedPlanId,
   onSelectPlan,
@@ -374,27 +376,37 @@ export function PlanList({
 
   async function runDraftPlan(plan: Plan) {
     setDraftRunError('');
+    setDraftRunningPlanId(plan.id);
     if (onRunParallel && plan.concurrency_suggestion?.hasSafeParallelBatches) {
-      onRunParallel({
-        plan,
-        batches: plan.concurrency_suggestion.batches.map((batch) => ({
-          taskIds: batch.tasks.map((task) => task.id),
-        })),
-      });
+      try {
+        await onRunParallel({
+          plan,
+          batches: plan.concurrency_suggestion.batches.map((batch) => ({
+            taskIds: batch.tasks.map((task) => task.id),
+          })),
+        });
+      } catch (error) {
+        setDraftRunError(error instanceof Error ? error.message : '草稿计划启动失败');
+      } finally {
+        setDraftRunningPlanId(null);
+      }
       return;
     }
 
     const task = firstPendingTaskForPlan(plan, props.tasks || []);
     if (!task) {
+      setDraftRunningPlanId(null);
       setDraftRunError('草稿计划暂无可执行任务');
       return;
     }
+    if (!onRunDraft) {
+      setDraftRunningPlanId(null);
+      setDraftRunError('草稿计划执行入口不可用');
+      return;
+    }
 
-    setDraftRunningPlanId(plan.id);
     try {
-      await (window.autoplan as typeof window.autoplan & {
-        runTask: (input: { projectId: number; taskId: number }) => Promise<unknown>;
-      }).runTask({ projectId: plan.project_id, taskId: task.id });
+      await onRunDraft(plan, task);
     } catch (error) {
       setDraftRunError(error instanceof Error ? error.message : '草稿计划启动失败');
     } finally {
@@ -403,7 +415,9 @@ export function PlanList({
   }
 
   function renderPlanControls(plan: Plan) {
-    const draftRunDisabledReason = isDraftPlan(plan) ? draftPlanRunDisabledReason(plan, props.tasks || []) : '';
+    const draftRunDisabledReason = isDraftPlan(plan)
+      ? draftPlanRunDisabledReason(plan, props.tasks || [], Boolean(onRunDraft), Boolean(onRunParallel))
+      : '';
     const selected = effectiveSelectedPlanId === plan.id;
 
     return (
@@ -502,9 +516,10 @@ function isCompletedPlan(plan: Plan) {
   return Boolean(plan.validation_passed) || plan.status === 'completed';
 }
 
-function draftPlanRunDisabledReason(plan: Plan, tasks: PlanTask[]) {
+function draftPlanRunDisabledReason(plan: Plan, tasks: PlanTask[], canRunDraft: boolean, canRunParallel: boolean) {
   if (!isDraftPlan(plan)) return '';
-  if (plan.concurrency_suggestion?.hasSafeParallelBatches) return '';
+  if (canRunParallel && plan.concurrency_suggestion?.hasSafeParallelBatches) return '';
+  if (!canRunDraft) return '草稿计划执行入口不可用';
   return firstPendingTaskForPlan(plan, tasks) ? '' : '草稿计划暂无可执行任务';
 }
 

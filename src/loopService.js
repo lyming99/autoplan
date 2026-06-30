@@ -1,6 +1,7 @@
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
 const path = require('node:path');
+const { AsyncLocalStorage } = require('node:async_hooks');
 const { spawn } = require('node:child_process');
 const { nowIso } = require('./database');
 const { CodexActivityPrinter } = require('./codexActivity');
@@ -47,8 +48,6 @@ const {
   ensureProjectRuntime,
   existingProjectRuntime,
   findActiveRuntimeProject,
-  findRuntimeOperations,
-  killChildProcess,
   normalizeRuntimeStatus,
   recordRuntimeError,
   registerRuntimeOperation,
@@ -56,6 +55,7 @@ const {
   runtimeProjectSummary,
   scheduleProjectRuntime,
   setProjectPhase,
+  stopRuntimePlanOperations,
   stopProjectRuntime,
   stopRuntimeTask,
   waitForChild,
@@ -74,6 +74,7 @@ const {
   hashText,
   normalizeRelative,
   readSnippet,
+  resolveSafeAutoPlanIntakePlanPath,
   safePart,
   tailText,
   workspaceKey,
@@ -111,6 +112,12 @@ const CLAUDE_SESSION_INPUT_KEYS = [
 // 与渲染层 matchesTaskStatusFilter 的「已完成」语义一致，不新增 status 取值。
 const ACCEPTABLE_PLAN_STATUS = 'completed';
 const ACCEPTABLE_TASK_STATUSES = Object.freeze(['completed', 'done', 'passed']);
+const LINKED_INTAKE_COMPLETED_STATUS = 'completed';
+const LINKED_INTAKE_TERMINAL_STATUSES = Object.freeze(['completed', 'closed']);
+const LINKED_INTAKE_COMPLETION_SOURCES = Object.freeze([
+  { table: 'requirements', countKey: 'requirements', idsKey: 'requirementIds' },
+  { table: 'feedback', countKey: 'feedback', idsKey: 'feedbackIds' },
+]);
 
 class LoopService extends EventEmitter {
   constructor(db) {
@@ -119,6 +126,7 @@ class LoopService extends EventEmitter {
     this.runtimes = new Map();
     // 由 main.js 在持有 mcpServer 句柄后注入：返回 mcpServer?.status?.()，供快照叠加实时运行态。
     this.mcpStatusProvider = null;
+    this.hookOperationContext = new AsyncLocalStorage();
     // 全局定时调度器句柄（setInterval，60s，unref 不阻塞进程退出）：由 main.js 创建 loop 后调
     // startScheduler、will-quit 调 stopScheduler 启停；独立于循环运行态。
     this.scheduleTimer = null;
@@ -395,6 +403,7 @@ class LoopService extends EventEmitter {
       }
 
       await this.processPlan(workspace, nextPlan);
+      if (!this.planExists(projectId, nextPlan.id)) return;
       if (runtime.running) {
         this.setPhase(projectId, 'waiting');
       } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
@@ -432,13 +441,15 @@ class LoopService extends EventEmitter {
     runtime.busy = true;
     try {
       if (this.isFinalAcceptanceTask(executablePlan.id, task)) {
-        await this.validatePlan(workspace, executablePlan, { task });
+        const result = await this.validatePlan(workspace, executablePlan, { task });
+        if (result?.cancelled || !this.planExists(projectId, executablePlan.id)) return;
       } else {
         const backoff = taskExecution.TASK_RETRY_BACKOFF_SECONDS;
         let attempt = 0;
         let result;
         do {
           result = await this.executeTask(workspace, executablePlan, task);
+          if (result?.cancelled || !this.taskExists(projectId, executablePlan.id, task.id)) return;
           if (result.exitCode === 0) break;
           attempt++;
           if (attempt <= backoff.length && !classifyExecutionFailure(result).environmentBlocked) {
@@ -451,14 +462,17 @@ class LoopService extends EventEmitter {
                 taskKey: task.task_key,
                 attempt,
                 delaySeconds,
-              });
+              },
+            );
             await new Promise((resolve) => setTimeout(resolve, delaySeconds * 1000));
+            if (!this.taskExists(projectId, executablePlan.id, task.id)) return;
           }
         } while (result.exitCode !== 0 && attempt <= backoff.length && !classifyExecutionFailure(result).environmentBlocked);
         if (result.exitCode === 0) {
           await this.completeTask(workspace, executablePlan, task, result);
         }
       }
+      if (!this.planExists(projectId, executablePlan.id)) return;
       if (runtime.running) {
         this.setPhase(projectId, 'waiting');
       } else if (this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
@@ -485,8 +499,9 @@ class LoopService extends EventEmitter {
       throw new Error(`工作区正在被项目「${workspaceOwner.name}」使用，请先停止对应循环`);
     }
 
-    const batches = this.validatedParallelTaskBatches(workspace, plan, confirmedBatches);
     const executablePlan = this.activateDraftPlan(plan);
+    if (executablePlan.validation_passed || executablePlan.status === 'completed') throw new Error('计划已完成，不能启动并发执行');
+    const batches = this.validatedParallelTaskBatches(workspace, executablePlan, confirmedBatches);
     runtime.busy = true;
     try {
       for (let index = 0; index < batches.length; index += 1) {
@@ -495,12 +510,14 @@ class LoopService extends EventEmitter {
           batchIndex: index + 1,
           batchCount: batches.length,
         });
+        if (!this.planExists(projectId, executablePlan.id)) return;
+        if (results.some((entry) => entry?.result?.cancelled)) return;
         const failedTaskIds = results
           .filter((entry) => Number(entry?.result?.exitCode) !== 0)
           .map((entry) => entry.task.id);
         const continueNext = failedTaskIds.length === 0;
         this.addEvent(projectId, 'tasks.parallel.finished', `并发批次 ${index + 1}/${batches.length} 执行完成`, {
-          planId: plan.id,
+          planId: executablePlan.id,
           batchIndex: index + 1,
           batchCount: batches.length,
           taskIds: tasks.map((task) => task.id),
@@ -547,6 +564,71 @@ class LoopService extends EventEmitter {
        WHERE plan_tasks.id = ? AND plans.project_id = ?`,
       [taskId, projectId],
     );
+  }
+
+  planExists(projectId, planId) {
+    if (!planId) return false;
+    if (!projectId) return Boolean(this.db.get('SELECT 1 FROM plans WHERE id = ?', [planId]));
+    return Boolean(this.db.get('SELECT 1 FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]));
+  }
+
+  taskExists(projectId, planId, taskId) {
+    if (!planId || !taskId) return false;
+    if (!projectId) {
+      return Boolean(this.db.get('SELECT 1 FROM plan_tasks WHERE id = ? AND plan_id = ?', [taskId, planId]));
+    }
+    return Boolean(
+      this.db.get(
+        `SELECT 1
+         FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+         WHERE plan_tasks.id = ? AND plan_tasks.plan_id = ? AND plans.project_id = ?`,
+        [taskId, planId, projectId],
+      ),
+    );
+  }
+
+  operationTargetExists(operation = {}) {
+    const projectId = Number(operation.projectId || 0);
+    const planId = Number(operation.planId || 0);
+    const taskId = Number(operation.taskId || 0);
+    if (!planId) return true;
+    if (!this.planExists(projectId, planId)) return false;
+    if (taskId && !this.taskExists(projectId, planId, taskId)) return false;
+    return true;
+  }
+
+  stopPlanOperations(projectId, planId, options = {}) {
+    const runtime = this.existingRuntime(projectId);
+    const stopped = stopRuntimePlanOperations(runtime, planId, {
+      archive: options.archive !== false,
+      errorMessage: options.errorMessage || `plan #${planId} 已停止`,
+    });
+    if (!stopped.length) return stopped;
+    const finishedAt = options.finishedAt || nowIso();
+    for (const entry of stopped) {
+      const operation = entry.operation || {};
+      const activeTaskId = operation.taskId || null;
+      const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;
+      const stoppedTask = activeTaskId && options.taskStatus
+        ? this.finishTaskRun(activeTaskId, options.taskStatus, finishedAt, { onlyIfRunning: true })
+        : null;
+      const eventTask = stoppedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: planId } : null);
+      if (eventTask && options.taskEventType) {
+        this.addTaskLifecycleEvent(projectId, options.taskEventType, eventTask, {
+          ...agentCliContextFields(operation, { defaultProvider: true }),
+          planId,
+          taskId: activeTaskId || undefined,
+          status: options.taskEventStatus || options.taskStatus,
+          finishedAt,
+          log: operation.logFile,
+          exitCode: typeof operation.exitCode === 'number' ? operation.exitCode : undefined,
+        });
+      } else if (options.addOperationEvent !== false) {
+        this.addEvent(projectId, 'operation.stopping', operation.label || `plan #${planId}`);
+      }
+    }
+    this.emitUpdate(projectId, { immediate: true });
+    return stopped;
   }
 
   startTaskRun(taskId, startedAt = nowIso()) {
@@ -652,32 +734,13 @@ class LoopService extends EventEmitter {
   interruptPlan(projectId, planId) {
     const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
     if (!plan) return;
-    // 若当前正在执行该 plan 的任务，kill 进程
-    const runtime = this.runtime(projectId);
-    const activePlanOperations = runtime
-      ? findRuntimeOperations(runtime, (operation) => Number(operation?.planId) === Number(planId))
-      : [];
-    for (const activeEntry of activePlanOperations) {
-      const finishedAt = nowIso();
-      killChildProcess(activeEntry.child);
-      const activeTaskId = activeEntry.operation?.taskId;
-      const activeTask = activeTaskId ? this.taskForProject(projectId, activeTaskId) : null;
-      const interruptedTask = activeTaskId
-        ? this.finishTaskRun(activeTaskId, 'blocked', finishedAt, { onlyIfRunning: true })
-        : null;
-      const eventTask = interruptedTask || activeTask || (activeTaskId ? { id: activeTaskId, plan_id: planId } : null);
-      if (eventTask) {
-        this.addTaskLifecycleEvent(projectId, TASK_EVENT_TYPES.INTERRUPTED, eventTask, {
-          ...agentCliContextFields(activeEntry.operation, { defaultProvider: true }),
-          planId,
-          taskId: activeTaskId || undefined,
-          status: TASK_EVENT_STATUS.INTERRUPTED,
-          finishedAt,
-          log: activeEntry.operation?.logFile,
-          exitCode: typeof activeEntry.operation?.exitCode === 'number' ? activeEntry.operation.exitCode : undefined,
-        });
-      }
-    }
+    this.stopPlanOperations(projectId, planId, {
+      taskStatus: 'blocked',
+      taskEventType: TASK_EVENT_TYPES.INTERRUPTED,
+      taskEventStatus: TASK_EVENT_STATUS.INTERRUPTED,
+      errorMessage: `plan #${planId} 已中断`,
+      addOperationEvent: false,
+    });
     // 其余未完成任务 → blocked
     this.db.run(
       `UPDATE plan_tasks SET status = ?, updated_at = ?
@@ -687,6 +750,182 @@ class LoopService extends EventEmitter {
     this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['interrupted', nowIso(), planId]);
     this.addEvent(projectId, 'plan.interrupted', `plan #${planId} 已中断，未完成任务已挂起`);
     this.emitUpdate(projectId);
+  }
+
+  deleteIntake(projectId, intakeType, intakeId, options = {}) {
+    const normalizedType = intakeType === 'feedback' ? 'feedback' : 'requirement';
+    const table = normalizedType === 'feedback' ? 'feedback' : 'requirements';
+    const ownerTypes = intakeAttachments.intakeAttachmentOwnerTypes(normalizedType);
+    const sourceName = normalizedType === 'feedback' ? '反馈' : '需求';
+    const intake = this.db.get(`SELECT * FROM ${table} WHERE id = ? AND project_id = ?`, [intakeId, projectId]);
+    if (!intake) throw new Error(`${sourceName}不存在`);
+
+    const project = this.project(projectId);
+    const attachments = this.db.all(
+      `SELECT * FROM attachments
+       WHERE project_id = ? AND owner_id = ? AND owner_type IN (${ownerTypes.map(() => '?').join(',')})
+       ORDER BY id ASC`,
+      [projectId, intakeId, ...ownerTypes],
+    );
+    const planId = Number(intake.linked_plan_id || 0) || null;
+    const plan = planId
+      ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId])
+      : null;
+    if (planId) {
+      this.stopPlanOperations(projectId, planId, {
+        archive: false,
+        errorMessage: `${sourceName} #${intakeId} 已删除，关联计划已停止`,
+        addOperationEvent: false,
+      });
+    }
+
+    const planFileDelete = plan
+      ? this.safeAutoPlanIntakePlanFileDeleteTarget(project, plan, normalizedType, intakeId)
+      : null;
+    const updatedAt = nowIso();
+    const statements = [];
+    if (normalizedType === 'requirement') {
+      statements.push({
+        sql: 'UPDATE feedback SET requirement_id = NULL, updated_at = ? WHERE project_id = ? AND requirement_id = ?',
+        params: [updatedAt, projectId, intakeId],
+      });
+    }
+    if (plan) {
+      statements.push(
+        { sql: 'DELETE FROM plan_tasks WHERE plan_id = ?', params: [plan.id] },
+        { sql: 'DELETE FROM plans WHERE id = ? AND project_id = ?', params: [plan.id, projectId] },
+      );
+      for (const scanPath of uniqueNonEmptyStrings(plan.file_path, planFileDelete?.relativePath)) {
+        statements.push({
+          sql: "DELETE FROM scan_files WHERE project_id = ? AND scan_type = 'plan' AND file_path = ?",
+          params: [projectId, scanPath],
+        });
+      }
+    }
+    statements.push(
+      {
+        sql: `DELETE FROM attachments
+              WHERE project_id = ? AND owner_id = ? AND owner_type IN (${ownerTypes.map(() => '?').join(',')})`,
+        params: [projectId, intakeId, ...ownerTypes],
+      },
+      { sql: `DELETE FROM ${table} WHERE id = ? AND project_id = ?`, params: [intakeId, projectId] },
+    );
+    this.db.runBatch(statements);
+    if (planFileDelete) {
+      if (planFileDelete.safe) this.deleteResolvedPlanFile(plan, planFileDelete);
+      else this.recordPlanFileDeleteSkipped(plan, planFileDelete);
+    }
+    const attachmentFiles = this.deleteAttachmentFiles(attachments, options.attachmentsRoot);
+    this.addEvent(projectId, 'intake.deleted', `${sourceName} #${intakeId} 已删除${plan ? '，关联计划和任务已删除' : ''}`, {
+      intakeType: normalizedType,
+      intakeId,
+      planId: plan?.id || null,
+      planFile: planFileDelete,
+      attachments: {
+        total: attachments.length,
+        ...attachmentFiles,
+      },
+    });
+    this.emitUpdate(projectId, { immediate: true });
+    return this.snapshot(projectId);
+  }
+
+  deleteAttachmentFiles(attachments = [], attachmentsRoot = '') {
+    const root = String(attachmentsRoot || '').trim();
+    const result = { deleted: 0, skipped: 0, failed: 0 };
+    if (!root) {
+      result.skipped = attachments.length;
+      return result;
+    }
+    const rootPath = path.resolve(root);
+    for (const attachment of attachments) {
+      const storedPath = String(attachment?.stored_path || '').trim();
+      const filePath = storedPath
+        ? (path.isAbsolute(storedPath) ? path.resolve(storedPath) : path.resolve(rootPath, storedPath))
+        : '';
+      if (!filePath || !isInsideDirectory(rootPath, filePath)) {
+        result.skipped += 1;
+        continue;
+      }
+      try {
+        if (fs.existsSync(filePath)) {
+          if (!fs.statSync(filePath).isFile()) {
+            result.skipped += 1;
+            continue;
+          }
+          fs.unlinkSync(filePath);
+          result.deleted += 1;
+        } else {
+          result.skipped += 1;
+        }
+      } catch {
+        result.failed += 1;
+      }
+    }
+    return result;
+  }
+
+  safeAutoPlanIntakePlanFileDeleteTarget(project, plan, intakeType, intakeId) {
+    const safety = resolveSafeAutoPlanIntakePlanPath(project?.workspace_path, plan?.file_path, intakeType, intakeId);
+    const result = {
+      safe: safety.safe,
+      reason: safety.reason || '',
+      relativePath: safety.relativePath || String(plan?.file_path || ''),
+      filePath: safety.filePath || '',
+      planDir: safety.planDir || '',
+      intakeType,
+      intakeId,
+      deleted: false,
+    };
+    if (!safety.safe) result.expectedPattern = safety.expectedPattern || '';
+    return result;
+  }
+
+  recordPlanFileDeleteSkipped(plan, result = {}) {
+    if (!plan) return;
+    this.addEvent(plan.project_id, 'plan.file.delete.skipped', `关联计划文件未删除：${result.reason || '路径不安全'}`, {
+      planId: plan.id,
+      intakeType: result.intakeType,
+      intakeId: result.intakeId,
+      filePath: plan.file_path,
+      reason: result.reason,
+      expectedPattern: result.expectedPattern,
+    });
+  }
+
+  deleteResolvedPlanFile(plan, result) {
+    if (!result?.safe || !result.filePath) return result;
+    try {
+      if (fs.existsSync(result.filePath)) {
+        const realPlanDir = fs.realpathSync(result.planDir);
+        const realFilePath = fs.realpathSync(result.filePath);
+        if (!isInsideDirectory(realPlanDir, realFilePath)) {
+          result.safe = false;
+          result.reason = 'realpath_outside_docs_plan';
+          this.addEvent(plan.project_id, 'plan.file.delete.skipped', '关联计划文件未删除：真实路径超出 docs/plan', {
+            planId: plan.id,
+            filePath: result.relativePath,
+            intakeType: result.intakeType,
+            intakeId: result.intakeId,
+            reason: result.reason,
+          });
+          return result;
+        }
+        fs.unlinkSync(result.filePath);
+        result.deleted = true;
+      }
+      return result;
+    } catch (error) {
+      result.reason = error?.message || String(error);
+      this.addEvent(plan.project_id, 'plan.file.delete.failed', `关联计划文件删除失败：${result.reason}`, {
+        planId: plan.id,
+        filePath: result.relativePath,
+        intakeType: result.intakeType,
+        intakeId: result.intakeId,
+        error: result.reason,
+      });
+      return result;
+    }
   }
 
   /** 恢复被中断的 plan：blocked → pending，plan → pending，循环运行时自动继续执行 */
@@ -900,16 +1139,45 @@ class LoopService extends EventEmitter {
   }
 
   activateDraftPlan(plan) {
-    if (!plan || plan.status !== 'draft') return plan;
+    if (!plan?.id) return plan;
+    const currentPlan = plan.project_id != null
+      ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [plan.id, plan.project_id])
+      : this.db.get('SELECT * FROM plans WHERE id = ?', [plan.id]);
+    if (!currentPlan) return plan;
+    if (currentPlan.status !== 'draft') return currentPlan;
+
     const updatedAt = nowIso();
-    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ? AND status = ?', [
-      'running',
-      updatedAt,
-      plan.id,
-      'draft',
+    this.db.runBatch([
+      {
+        sql: 'UPDATE plans SET status = ?, updated_at = ? WHERE id = ? AND status = ?',
+        params: ['running', updatedAt, currentPlan.id, 'draft'],
+      },
+      {
+        sql: `INSERT INTO events (project_id, type, message, meta, created_at)
+              SELECT ?, ?, ?, ?, ?
+              WHERE EXISTS (
+                SELECT 1 FROM plans
+                WHERE id = ? AND status != ? AND updated_at = ?
+              )`,
+        params: [
+          currentPlan.project_id,
+          'plan.draft.started',
+          `草稿计划 #${currentPlan.id} 已开始执行`,
+          JSON.stringify({ planId: currentPlan.id }),
+          updatedAt,
+          currentPlan.id,
+          'draft',
+          updatedAt,
+        ],
+      },
     ]);
-    this.addEvent(plan.project_id, 'plan.draft.started', `草稿计划 #${plan.id} 已开始执行`, { planId: plan.id });
-    return { ...plan, status: 'running', updated_at: updatedAt };
+    const activatedPlan = this.db.get('SELECT * FROM plans WHERE id = ?', [currentPlan.id]);
+    if (!activatedPlan) return currentPlan;
+    if (activatedPlan.status === 'draft') {
+      throw new Error(`草稿计划 #${currentPlan.id} 激活失败`);
+    }
+    this.emitUpdate(activatedPlan.project_id);
+    return activatedPlan;
   }
 
   reorderPlans(projectId, planIds) {
@@ -1019,6 +1287,69 @@ class LoopService extends EventEmitter {
     return null;
   }
 
+  completeLinkedIntakesForPlan(plan) {
+    const requestedPlanId = Number(plan?.id || 0);
+    let projectId = Number(plan?.project_id || 0);
+    if (!requestedPlanId) return linkedIntakeCompletionResult(requestedPlanId, projectId);
+
+    if (!projectId) {
+      const persistedPlan = this.db.get('SELECT project_id FROM plans WHERE id = ?', [requestedPlanId]);
+      projectId = Number(persistedPlan?.project_id || 0);
+    }
+    if (!projectId) return linkedIntakeCompletionResult(requestedPlanId, projectId);
+
+    const rowsBySource = Object.fromEntries(
+      LINKED_INTAKE_COMPLETION_SOURCES.map((source) => [
+        source.countKey,
+        this.db.all(
+          `SELECT id FROM ${source.table}
+           WHERE project_id = ? AND linked_plan_id = ?
+             AND (status IS NULL OR LOWER(TRIM(status)) NOT IN (?, ?))
+           ORDER BY id ASC`,
+          [projectId, requestedPlanId, ...LINKED_INTAKE_TERMINAL_STATUSES],
+        ),
+      ]),
+    );
+    const completionSummary = {};
+    for (const source of LINKED_INTAKE_COMPLETION_SOURCES) {
+      const rows = rowsBySource[source.countKey] || [];
+      completionSummary[source.countKey] = rows.length;
+      completionSummary[source.idsKey] = rows.map((row) => Number(row.id));
+    }
+    const result = linkedIntakeCompletionResult(requestedPlanId, projectId, completionSummary);
+    if (result.total === 0) return result;
+
+    const updatedAt = nowIso();
+    result.updatedAt = updatedAt;
+    this.db.runBatch([
+      ...LINKED_INTAKE_COMPLETION_SOURCES.map((source) => ({
+        sql: `UPDATE ${source.table}
+              SET status = ?, updated_at = ?
+              WHERE project_id = ? AND linked_plan_id = ?
+                AND (status IS NULL OR LOWER(TRIM(status)) NOT IN (?, ?))`,
+        params: [
+          LINKED_INTAKE_COMPLETED_STATUS,
+          updatedAt,
+          projectId,
+          requestedPlanId,
+          ...LINKED_INTAKE_TERMINAL_STATUSES,
+        ],
+      })),
+      {
+        sql: 'INSERT INTO events (project_id, type, message, meta, created_at) VALUES (?, ?, ?, ?, ?)',
+        params: [
+          projectId,
+          'plan.linked_intakes.completed',
+          `关联需求/反馈已标记完成：需求 ${result.requirements} 条，反馈 ${result.feedback} 条`,
+          JSON.stringify(result),
+          updatedAt,
+        ],
+      },
+    ]);
+    this.emitUpdate(projectId);
+    return result;
+  }
+
   async generatePlan(projectId, workspace, issueScan) {
     return planGeneration.generatePlan(this, loopFlowHelpers(), projectId, workspace, issueScan);
   }
@@ -1096,6 +1427,7 @@ class LoopService extends EventEmitter {
   async runCodexWithPlanGuard(workspace, prompt, label, operation, planFile) {
     const before = planFile && fs.existsSync(planFile) ? fs.readFileSync(planFile, 'utf8') : null;
     const result = await this.runCodex(workspace, prompt, label, operation);
+    if (!this.operationTargetExists(operation)) return result;
     if (before !== null) {
       const changed = !fs.existsSync(planFile) || fs.readFileSync(planFile, 'utf8') !== before;
       if (changed) {
@@ -1176,6 +1508,19 @@ class LoopService extends EventEmitter {
       startedAt: nowIso(),
     };
     if (!isCodexProvider) clearCodexSessionFields(activeOperation);
+    const cancelledResult = () => ({
+      exitCode: -1,
+      logFile,
+      lastFile,
+      provider: activeOperation.agentCliProvider,
+      agentCliProvider: activeOperation.agentCliProvider,
+      command: activeOperation.agentCliCommand,
+      agentCliCommand: activeOperation.agentCliCommand,
+      output: '',
+      errorMessage: '操作目标已删除',
+      cancelled: true,
+    });
+    const operationCancelled = () => Boolean(activeOperation.cancelled) || !this.operationTargetExists(operation);
     let operationKey = null;
     let capturedSessionId = '';
     let capturedClaudeSessionId = '';
@@ -1379,6 +1724,7 @@ class LoopService extends EventEmitter {
             taskId: operation.taskId || null,
           });
           const resume = await runAttempt([], 'resume');
+          if (operationCancelled()) return cancelledResult();
           const resumeMissing = resume.exitCode !== 0 && isOpenCodeSessionMissing(resume.output);
           if (!resumeMissing) {
             const result = resultFor(resume, 'resume');
@@ -1406,6 +1752,7 @@ class LoopService extends EventEmitter {
         }
 
         const fresh = await runAttempt([], 'new');
+        if (operationCancelled()) return cancelledResult();
         const result = resultFor(fresh, 'new');
         if (result.opencodeSessionId && opencodePlanId) {
           this.updatePlanAgentCliSession(opencodePlanId, result.opencodeSessionId);
@@ -1430,6 +1777,7 @@ class LoopService extends EventEmitter {
             taskId: operation.taskId || null,
           });
           const resume = await runAttempt([], 'resume');
+          if (operationCancelled()) return cancelledResult();
           const resumeMissing = resume.exitCode !== 0 && isClaudeSessionMissing(`${resume.output || ''}\n${resume.errorMessage || ''}`);
           if (!resumeMissing) return resultFor(resume, 'resume');
 
@@ -1469,11 +1817,13 @@ class LoopService extends EventEmitter {
         }
 
         const fresh = await runAttempt([], 'new');
+        if (operationCancelled()) return cancelledResult();
         return resultFor(fresh, 'new');
       }
 
       if (!isCodexProvider) {
         const attempt = await runAttempt([], '');
+        if (operationCancelled()) return cancelledResult();
         return resultFor(attempt, '');
       }
 
@@ -1490,6 +1840,7 @@ class LoopService extends EventEmitter {
           taskId: operation.taskId || null,
         });
         const resume = await runAttempt(codexResumeSessionArgs(requestedSessionId, lastFile, { reasoningEffort: codexReasoningEffort }), 'resume');
+        if (operationCancelled()) return cancelledResult();
         const resumeFailed = resume.exitCode !== 0 && !extractCodexSessionId(resume.output) && isCodexResumeFailure(resume.output);
         if (!resumeFailed) return resultFor(resume, 'resume');
 
@@ -1525,6 +1876,7 @@ class LoopService extends EventEmitter {
       }
 
       const fresh = await runAttempt(codexNewSessionArgs(workspace, lastFile, { reasoningEffort: codexReasoningEffort }), 'new');
+      if (operationCancelled()) return cancelledResult();
       return resultFor(fresh, 'new');
     } finally {
       clearInterval(tailTimer);
@@ -1538,6 +1890,13 @@ class LoopService extends EventEmitter {
   }
 
   async runShell(workspace, command, label, operation = {}) {
+    const inheritedOperation = this.hookOperationContext.getStore() || {};
+    operation = {
+      ...operation,
+      projectId: operation.projectId ?? inheritedOperation.projectId ?? undefined,
+      planId: operation.planId ?? inheritedOperation.planId ?? undefined,
+      taskId: operation.taskId ?? inheritedOperation.taskId ?? undefined,
+    };
     const projectIdForEmit = operation.projectId;
     const runtime = this.runtime(projectIdForEmit);
     if (!runtime) throw new Error('projectId is required for shell operations');
@@ -1604,6 +1963,17 @@ class LoopService extends EventEmitter {
       }
       fs.writeFileSync(logFile, output, 'utf8');
       if (runtime.activeOperations.has(operationKey)) activeOperation.exitCode = exitCode;
+      if (activeOperation.cancelled || !this.operationTargetExists(operation)) {
+        return {
+          exitCode: -1,
+          output,
+          logFile,
+          errorMessage: '操作目标已删除',
+          timedOut,
+          timeoutMs,
+          cancelled: true,
+        };
+      }
       return { exitCode, output, logFile, errorMessage, timedOut, timeoutMs };
     } finally {
       clearInterval(tailTimer);
@@ -1620,7 +1990,14 @@ class LoopService extends EventEmitter {
 
   /** 循环钩子：执行某阶段下所有已启用脚本，单脚本异常不冒泡；仅 validation:before 可中断 */
   async runHookScripts(projectId, stage, context = {}) {
-    return scriptHooks.runHookScripts(this, projectId, stage, context);
+    return this.hookOperationContext.run(
+      {
+        projectId,
+        planId: context.planId ?? null,
+        taskId: context.taskId ?? null,
+      },
+      () => scriptHooks.runHookScripts(this, projectId, stage, context),
+    );
   }
 
   /** 手动运行单个脚本（scripts:run），返回 ScriptRunResult */
@@ -1775,6 +2152,21 @@ function normalizeEnvVarsJson(envVars) {
   return JSON.stringify(entries);
 }
 
+function linkedIntakeCompletionResult(planId, projectId, overrides = {}) {
+  const requirements = Number(overrides.requirements || 0);
+  const feedback = Number(overrides.feedback || 0);
+  return {
+    planId: Number(planId || 0) || null,
+    projectId: Number(projectId || 0) || null,
+    requirements,
+    feedback,
+    total: requirements + feedback,
+    requirementIds: Array.isArray(overrides.requirementIds) ? overrides.requirementIds : [],
+    feedbackIds: Array.isArray(overrides.feedbackIds) ? overrides.feedbackIds : [],
+    updatedAt: overrides.updatedAt || null,
+  };
+}
+
 /**
  * 规范化批量验收目标列表：非数组/元素非法抛「验收目标列表无效」；去重保序、Number(id)；
  * 空列表抛调用方指定的中文错误。targetType/id 的合法性交由 acceptanceTargetRow 复用既有校验。
@@ -1863,6 +2255,21 @@ function agentCliSessionStateFor(mode, requestedState, fallback = false) {
 
 function isClaudeSessionMissing(output) {
   return /(?:session\s+not\s+found|unknown\s+session|invalid\s+session|conversation\s+not\s+found|no\s+conversation)/i.test(String(output || ''));
+}
+
+function isInsideDirectory(rootPath, targetPath) {
+  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
+  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
+  const relativePath = path.relative(resolvedRoot, resolvedTarget);
+  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
+}
+
+function normalizePathForCompare(value) {
+  return process.platform === 'win32' ? String(value).toLowerCase() : String(value);
+}
+
+function uniqueNonEmptyStrings(...values) {
+  return Array.from(new Set(values.map((value) => String(value || '').trim()).filter(Boolean)));
 }
 
 function agentCliResultSessionContextFields(result = {}) {

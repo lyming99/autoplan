@@ -112,6 +112,8 @@ export function TaskList({
                       const running = task.status === 'running';
                       const completed = task.status === 'completed';
                       const durationLabel = formatTaskDuration(task as TimedPlanTask);
+                      const isRunningLike = ['running', 'processing', 'stopping'].includes(task.status);
+                      const isCompletedLike = ['completed', 'done', 'passed', 'accepted'].includes(task.status);
                       return (
                         <article className={`task-item${running ? ' running' : ''}`} key={task.id}>
                           <div className="task-top">
@@ -156,10 +158,10 @@ export function TaskList({
                           <button
                             type="button"
                             className="btn btn-sm btn-primary"
-                            disabled={completed || running}
+                            disabled={isRunningLike}
                             onClick={() => onRun?.(task)}
                           >
-                            执行
+                            {isCompletedLike ? '重新执行' : '执行'}
                           </button>
                           <button
                             type="button"

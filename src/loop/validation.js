@@ -33,10 +33,13 @@ function hasFinalAcceptanceTask(service, helpers, planId) {
 
 function completeAcceptanceTask(service, helpers, workspace, plan, task, result) {
   const { hashFile } = helpers;
+    if (!taskTargetExists(service, plan, task)) return null;
     const planFile = path.join(workspace, plan.file_path);
     const finishedAt = result?.finishedAt || nowIso();
     service.markTaskCompletedInPlan(workspace, planFile, task, result);
+    if (!taskTargetExists(service, plan, task)) return null;
     const completedTask = service.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+    if (!taskTargetExists(service, plan, completedTask)) return null;
     const totals = service.db.get(
       `SELECT COUNT(*) AS total,
               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
@@ -49,6 +52,7 @@ function completeAcceptanceTask(service, helpers, workspace, plan, task, result)
       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
       [hash, 'completed', Number(totals.total || 0), Number(totals.completed || 0), nowIso(), plan.id],
     );
+    service.completeLinkedIntakesForPlan(plan);
     const planAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
     service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
       ...planAgentCliContext,
@@ -61,10 +65,14 @@ function completeAcceptanceTask(service, helpers, workspace, plan, task, result)
       acceptanceTask: true,
     });
     service.emitUpdate(plan.project_id);
+    return completedTask;
   }
 
 async function validatePlan(service, helpers, workspace, plan, options = {}) {
   const { tailText } = helpers;
+    if (!planTargetExists(service, plan)) {
+      return { exitCode: -1, output: '', errorMessage: '计划目标已删除', cancelled: true, finishedAt: nowIso() };
+    }
     service.setPhase(plan.project_id, 'validate');
     const planFile = path.join(workspace, plan.file_path);
     const planAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
@@ -74,6 +82,9 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
     if (acceptanceTask) {
       acceptanceStartedAt = nowIso();
       startedAcceptanceTask = service.startTaskRun(acceptanceTask.id, acceptanceStartedAt) || acceptanceTask;
+      if (!taskTargetExists(service, plan, startedAcceptanceTask)) {
+        return { exitCode: -1, output: '', errorMessage: '验收任务目标已删除', cancelled: true, finishedAt: nowIso() };
+      }
     }
     let validationSessionId = validationTaskSessionId(startedAcceptanceTask, planAgentCliContext.agentCliProvider);
     let validationSessionState = validationSessionId ? 'resume' : 'new';
@@ -101,14 +112,17 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
       // 验收命令为空：跳过校验，直接标记完成。
       const validation = { exitCode: 0, output: '', logFile: null, finishedAt: nowIso() };
       attachValidationSessionContext(validation, planAgentCliContext.agentCliProvider, validationSessionId, validationSessionState);
+      if (!planTargetExists(service, plan)) return { ...validation, exitCode: -1, cancelled: true };
       service.db.run(
         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
         ['completed', validation.finishedAt, plan.id],
       );
+      const linkedIntakes = service.completeLinkedIntakesForPlan(plan);
       service.addEvent(plan.project_id, 'plan.completed', '任务全部完成（验收命令为空，已跳过校验）', {
         ...planAgentCliContext,
         ...validationResultSessionContextFields(validation, planAgentCliContext.agentCliProvider),
         planId: plan.id,
+        linkedIntakes,
       });
       if (startedAcceptanceTask) service.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
       return validation;
@@ -119,9 +133,13 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
       planFilePath: plan.file_path,
       validationCommand: command,
     });
+    if (!planTargetExists(service, plan)) {
+      return { exitCode: -1, output: '', logFile: null, errorMessage: '计划目标已删除', cancelled: true, finishedAt: nowIso() };
+    }
     if (beforeHook.aborted) {
       const aborted = { exitCode: 1, output: '', logFile: null, errorMessage: '前置钩子中断了验收', finishedAt: nowIso() };
       attachValidationSessionContext(aborted, planAgentCliContext.agentCliProvider, validationSessionId, validationSessionState);
+      if (!planTargetExists(service, plan)) return { ...aborted, exitCode: -1, cancelled: true };
       service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['validation_failed', aborted.finishedAt, plan.id]);
       service.addEvent(plan.project_id, 'validation.aborted', `前置钩子中断了验收：${command}`, {
         ...planAgentCliContext,
@@ -142,13 +160,19 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
       }
       return aborted;
     }
-    let validation = await service.runShell(workspace, command, `validate-${plan.id}`, { projectId: plan.project_id });
+    let validation = await service.runShell(workspace, command, `validate-${plan.id}`, {
+      projectId: plan.project_id,
+      planId: plan.id,
+      taskId: startedAcceptanceTask?.id,
+    });
+    if (validation?.cancelled || !planTargetExists(service, plan)) return { ...validation, exitCode: -1, cancelled: true, finishedAt: nowIso() };
     let validationFailure = classifyExecutionFailure(validation);
     for (
       let attempt = 1;
       validation.exitCode !== 0 && attempt <= 2 && !isEnvironmentBlockingFailure(validationFailure);
       attempt += 1
     ) {
+      if (!planTargetExists(service, plan)) return { ...validation, exitCode: -1, cancelled: true, finishedAt: nowIso() };
       service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
         'validation_failed',
         nowIso(),
@@ -174,6 +198,7 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
           state: validationSessionState,
         }),
       }, planFile);
+      if (repair?.cancelled || !planTargetExists(service, plan)) return { ...repair, exitCode: -1, cancelled: true, finishedAt: nowIso() };
       const repairSessionId = validationResultSessionId(repair, planAgentCliContext.agentCliProvider);
       if (repairSessionId) {
         validationSessionId = repairSessionId;
@@ -182,25 +207,32 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
       }
       validation = await service.runShell(workspace, command, `validate-${plan.id}-repair-${attempt}`, {
         projectId: plan.project_id,
+        planId: plan.id,
+        taskId: startedAcceptanceTask?.id,
       });
+      if (validation?.cancelled || !planTargetExists(service, plan)) return { ...validation, exitCode: -1, cancelled: true, finishedAt: nowIso() };
       validationFailure = classifyExecutionFailure(validation);
     }
     attachValidationSessionContext(validation, planAgentCliContext.agentCliProvider, validationSessionId, validationSessionState);
 
     if (validation.exitCode === 0) {
       validation.finishedAt = nowIso();
+      if (validation?.cancelled || !planTargetExists(service, plan)) return { ...validation, exitCode: -1, cancelled: true };
       service.db.run(
         'UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?',
         ['completed', validation.finishedAt, plan.id],
       );
+      const linkedIntakes = service.completeLinkedIntakesForPlan(plan);
       service.addEvent(plan.project_id, 'plan.completed', plan.file_path, {
         ...planAgentCliContext,
         ...validationResultSessionContextFields(validation, planAgentCliContext.agentCliProvider),
         planId: plan.id,
+        linkedIntakes,
       });
       if (startedAcceptanceTask) service.completeAcceptanceTask(workspace, plan, startedAcceptanceTask, validation);
     } else {
       validation.finishedAt = nowIso();
+      if (validation?.cancelled || !planTargetExists(service, plan)) return { ...validation, exitCode: -1, cancelled: true };
       service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
         'validation_failed',
         validation.finishedAt,
@@ -432,7 +464,9 @@ function attachValidationSessionContext(result, provider, sessionId, state) {
 function writeValidationSession(service, plan, task, provider, sessionId, updatedAt = nowIso()) {
   const normalizedSessionId = normalizeAgentCliSessionId(sessionId);
   if (!normalizedSessionId || !supportsValidationSession(provider)) return;
+  if (!planTargetExists(service, plan)) return;
   if (task?.id) {
+    if (!taskTargetExists(service, plan, task)) return;
     if (provider === DEFAULT_AGENT_CLI_PROVIDER) {
       service.updateTaskCodexSession(task.id, normalizedSessionId, updatedAt);
     } else if (provider === 'claude') {
@@ -441,6 +475,23 @@ function writeValidationSession(service, plan, task, provider, sessionId, update
     return;
   }
   service.updatePlanAgentCliSession(plan.id, normalizedSessionId, updatedAt);
+}
+
+function planTargetExists(service, plan) {
+  const planId = Number(plan?.id || 0);
+  const projectId = Number(plan?.project_id || 0);
+  if (!planId) return false;
+  if (typeof service.planExists === 'function') return service.planExists(projectId, planId);
+  return Boolean(service.db.get('SELECT 1 FROM plans WHERE id = ?', [planId]));
+}
+
+function taskTargetExists(service, plan, task) {
+  const taskId = Number(task?.id || 0);
+  if (!taskId) return false;
+  const planId = Number(plan?.id || task?.plan_id || 0);
+  const projectId = Number(plan?.project_id || 0);
+  if (typeof service.taskExists === 'function') return service.taskExists(projectId, planId, taskId);
+  return Boolean(service.db.get('SELECT 1 FROM plan_tasks WHERE id = ? AND plan_id = ?', [taskId, planId]));
 }
 
 function agentCliSessionContextFields(provider, options = {}) {

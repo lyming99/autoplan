@@ -690,6 +690,8 @@ export interface ActiveOperation extends AgentCliSessionInfo, CodexSessionInfo {
   startedAt: string | null;
   finishedAt?: string | null;
   exitCode?: number | null;
+  cancelled?: boolean | null;
+  cancelledAt?: string | null;
   logTail: string;
   activity: ActivityLine[];
 }

@@ -493,7 +493,7 @@ describe('parseCron 校验与解析', () => {
     assert.equal(parsed.minute.has(0), false);
   });
 
-  it('带步长的区间 "0-30/10"'， () => {
+  it('带步长的区间 "0-30/10"', () => {
     const parsed = parseCron('0-30/10 * * * *');
     assert.equal(parsed.minute.has(0), true);
     assert.equal(parsed.minute.has(10), true);

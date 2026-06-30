@@ -4,7 +4,7 @@ import { getTimestampMs } from '../../utils/time';
 import { Icon, type IconName } from '../icons';
 import { ScriptEditorModal } from './ScriptEditorModal';
 
-type ScriptFilter = 'all' | 'hook' | 'manual';
+type ScriptFilter = 'all' | 'hook' | 'manual' | 'schedule';
 
 const RUNTIME_META: Record<ScriptRuntime, { ext: string; tag: string }> = {
   node: { ext: '.node', tag: 'node' },
@@ -131,11 +131,14 @@ export function WorkspaceScriptsView({
   const counts = useMemo(() => {
     let hook = 0;
     let manual = 0;
+    let schedule = 0;
     for (const script of scripts) {
-      if (readTriggerMode(script) === 'hook') hook += 1;
+      const mode = readTriggerMode(script);
+      if (mode === 'hook') hook += 1;
+      else if (mode === 'schedule') schedule += 1;
       else manual += 1;
     }
-    return { all: scripts.length, hook, manual };
+    return { all: scripts.length, hook, manual, schedule };
   }, [scripts]);
 
   const visible = useMemo(() => {
@@ -144,6 +147,7 @@ export function WorkspaceScriptsView({
       const mode = readTriggerMode(script);
       if (filter === 'hook' && mode !== 'hook') return false;
       if (filter === 'manual' && mode !== 'manual') return false;
+      if (filter === 'schedule' && mode !== 'schedule') return false;
       if (!term) return true;
       const stage = readHookStage(script);
       const haystack = [script.name, stage ?? '', stage ? HOOK_STAGE_LABEL[stage] : '']
@@ -196,6 +200,14 @@ export function WorkspaceScriptsView({
             onClick={() => setFilter('manual')}
           >
             手动
+          </FilterTab>
+          <FilterTab
+            active={filter === 'schedule'}
+            count={counts.schedule}
+            icon="clock"
+            onClick={() => setFilter('schedule')}
+          >
+            定时
           </FilterTab>
         </div>
         <div className="scripts-toolbar-spacer">

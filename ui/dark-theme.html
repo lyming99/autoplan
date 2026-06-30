@@ -1,0 +1,754 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoPlan · 暗色主题设计稿 · Midnight Indigo</title>
+    <style>
+      /* ============================================================
+         新暗色主题 · Midnight Indigo
+         —— 深空蓝紫基调，三档背景递进，语义色按暗色提亮，统一黑色软阴影
+         这些 token 值即 src/renderer/styles/layout.css 的
+         [data-theme="dark"] 块落地值（P001 设计稿 = P002 实现的唯一基线）
+         ============================================================ */
+      :root {
+        color-scheme: dark;
+        --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+        /* Brand —— 提亮以在深底保持可读，呼应蓝紫渐变 */
+        --brand-50: #1b2040;
+        --brand-100: #232a52;
+        --brand-400: #7c9cff;
+        --brand-500: #6b8af6;
+        --brand-600: #8aa5ff;
+        --brand-700: #a9c0ff;
+        --brand-border: #2f3a60;
+        --brand-grad: linear-gradient(135deg, #6d8bff 0%, #9d7bff 100%);
+
+        /* 背景 —— 三档递进 + hover，带极淡蓝紫调的中性深色 */
+        --bg-app: #0e1020;
+        --bg-elevated: #181b2e;
+        --bg-soft: #131626;
+        --bg-hover: #232740;
+        /* 分隔线 —— 加深对比，卡片暗色下仍有清晰边界 */
+        --line: #2b2f48;
+        --line-soft: #20243b;
+
+        /* 文本 —— 递进对比，正文/次要文本对背景达 WCAG AA */
+        --text-1: #e8ebf7;
+        --text-2: #aab2c8;
+        --text-3: #8b93b0;
+        --text-4: #6b7390;
+
+        /* 语义色 —— 主色按暗色提亮，*-bg 同色相极低饱和暗底 */
+        --success: #43d178;
+        --success-bg: #0e2a18;
+        --success-border: #1c4730;
+        --warning: #eab53d;
+        --warning-bg: #2a2008;
+        --warning-border: #4a3814;
+        --danger: #f97076;
+        --danger-bg: #2a0e10;
+        --danger-border: #4d1c20;
+        --info: #6ea8ff;
+        --info-bg: #0e1a33;
+        --info-border: #1c2f56;
+
+        --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+        /* 阴影 —— 统一更高不透明度的黑色软阴影 */
+        --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+        --shadow-md: 0 6px 18px rgba(0, 0, 0, 0.45);
+        --shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.55);
+        /* 聚焦环 —— 半透明品牌辉光，深底可见 */
+        --focus-ring: 0 0 0 3px rgba(124, 156, 255, 0.4);
+        --bg-elevated-glass: rgba(24, 27, 46, 0.86);
+
+        /* 滚动条 —— 与新基调协调 */
+        --scroll-thumb: #363c5c;
+        --scroll-thumb-hover: #4a517a;
+
+        /* 代码 / 终端 / 活动日志面板 —— 比页面基调更深一档 + 提亮前景，融入而非突兀 */
+        --code-bg: #0b0d18;
+        --code-gutter-bg: #080a12;
+        --code-gutter-fg: #4a5478;
+        --code-fg: #e6ebfb;
+        --code-muted: #97a2c8;
+        --code-info: #8fb6ff;
+        --code-success: #7fe0a8;
+        --code-error: #ff9aa0;
+
+        font-family: var(--font-sans);
+        background: var(--bg-app);
+        color: var(--text-1);
+      }
+
+      * { box-sizing: border-box; }
+      html, body { margin: 0; }
+      body { min-height: 100vh; font-size: 14px; -webkit-font-smoothing: antialiased; padding: 0 0 80px; }
+      h1, h2, h3, h4, p { margin: 0; }
+      button { font: inherit; cursor: pointer; }
+      a { color: var(--brand-600); text-decoration: none; }
+      .mono { font-family: var(--font-mono); }
+
+      ::-webkit-scrollbar { width: 9px; height: 9px; }
+      ::-webkit-scrollbar-thumb { background: var(--scroll-thumb); border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+      ::-webkit-scrollbar-thumb:hover { background: var(--scroll-thumb-hover); background-clip: content-box; }
+      ::-webkit-scrollbar-track { background: transparent; }
+
+      .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+      .icon {
+        width: 1em; height: 1em; flex: 0 0 auto;
+        display: inline-block; vertical-align: -0.15em;
+        fill: none; stroke: currentColor; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round;
+      }
+
+      /* ---------- 文档骨架 ---------- */
+      .wrap { max-width: 1180px; margin: 0 auto; padding: 0 32px; }
+      .doc-head {
+        background: var(--bg-elevated);
+        border-bottom: 1px solid var(--line);
+        box-shadow: var(--shadow-sm);
+      }
+      .doc-head .wrap { display: flex; align-items: center; gap: 16px; padding-top: 26px; padding-bottom: 26px; }
+      .brand-mark {
+        display: grid; place-items: center; width: 48px; height: 48px;
+        border-radius: 14px; background: var(--brand-grad); color: #fff;
+        font-weight: 800; font-size: 22px;
+        box-shadow: 0 8px 20px rgba(124, 156, 255, 0.35);
+      }
+      .doc-head h1 { font-size: 22px; font-weight: 800; letter-spacing: -0.01em; }
+      .doc-head .grad-word { background: var(--brand-grad); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+      .doc-head p { font-size: 13px; color: var(--text-3); margin-top: 5px; max-width: 760px; line-height: 1.6; }
+      .doc-meta { margin-left: auto; display: flex; flex-direction: column; gap: 6px; align-items: flex-end; }
+      .doc-meta .tag {
+        display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px;
+        border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em;
+        background: var(--brand-50); color: var(--brand-700); border: 1px solid var(--brand-border);
+      }
+      .doc-meta .tag.aa { background: var(--success-bg); color: var(--success); border-color: var(--success-border); }
+      .doc-meta .tag .dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+
+      .section { margin-top: 44px; }
+      .section-title { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+      .section-title h2 { font-size: 18px; font-weight: 800; }
+      .section-title .idx { font-family: var(--font-mono); font-size: 12px; color: var(--text-4); font-weight: 700; }
+      .section-desc { font-size: 13px; color: var(--text-3); margin-bottom: 20px; line-height: 1.6; }
+
+      /* ---------- 色板 ---------- */
+      .group-label {
+        font-size: 11px; letter-spacing: .12em; text-transform: uppercase;
+        font-weight: 800; color: var(--text-4); margin: 26px 0 12px;
+      }
+      .group-label:first-child { margin-top: 0; }
+      .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(208px, 1fr)); gap: 14px; }
+      .sw {
+        display: flex; align-items: center; gap: 12px; padding: 12px;
+        background: var(--bg-elevated); border: 1px solid var(--line);
+        border-radius: var(--r-md); box-shadow: var(--shadow-sm);
+      }
+      .sw-chip {
+        width: 44px; height: 44px; flex: 0 0 auto; border-radius: 10px;
+        border: 1px solid rgba(255,255,255,.06);
+        display: grid; place-items: center;
+        font-weight: 800; font-size: 13px;
+      }
+      .sw-chip.grad { background: var(--brand-grad); }
+      .sw-chip.glass {
+        background: var(--bg-elevated-glass);
+        background-image:
+          linear-gradient(45deg, #2a2f48 25%, transparent 25%, transparent 75%, #2a2f48 75%),
+          linear-gradient(45deg, #2a2f48 25%, transparent 25%, transparent 75%, #2a2f48 75%);
+        background-size: 12px 12px; background-position: 0 0, 6px 6px;
+      }
+      .sw-info { min-width: 0; flex: 1 1 auto; }
+      .sw-name { font-size: 12.5px; font-weight: 700; color: var(--text-1); }
+      .sw-val { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); margin-top: 3px; word-break: break-all; }
+      .sw-contrast { font-size: 10px; font-weight: 700; margin-top: 5px; letter-spacing: .03em; }
+      .sw-contrast .ratio { font-family: var(--font-mono); color: var(--text-3); margin-right: 6px; }
+      .sw-contrast .badge { padding: 1px 6px; border-radius: 4px; }
+      .badge-pass { background: var(--success-bg); color: var(--success); }
+      .badge-large { background: var(--warning-bg); color: var(--warning); }
+      .badge-low { background: var(--danger-bg); color: var(--danger); }
+
+      /* shadow / ring 效果样张 */
+      .sw-chip.shadow-box { background: var(--bg-soft); border: 1px solid var(--line); }
+      .sw-chip.ring-box { background: var(--bg-soft); border: 1px solid var(--line); }
+      .sw-chip.scroll-box { background: var(--bg-soft); border: 1px solid var(--line); position: relative; overflow: hidden; }
+      .sw-chip.scroll-box::after { content: ""; position: absolute; right: 5px; top: 6px; bottom: 6px; width: 7px; border-radius: 999px; background: var(--scroll-thumb); border: 2px solid var(--bg-soft); background-clip: content-box; }
+
+      /* ---------- 组件预览 ---------- */
+      .components { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
+      .demo-card { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
+      .demo-card.span-2 { grid-column: span 2; }
+      @media (max-width: 820px) { .demo-card.span-2 { grid-column: auto; } }
+      .demo-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
+      .demo-head h3 { font-size: 13px; font-weight: 700; }
+      .demo-head .demo-sub { margin-left: auto; font-size: 11px; color: var(--text-4); font-family: var(--font-mono); }
+      .demo-body { padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+      .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+      .row .label { font-size: 11px; color: var(--text-4); font-weight: 700; min-width: 56px; }
+
+      /* 通用组件（与 workspace.html 设计稿同构，仅换成暗色 token） */
+      .btn {
+        display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+        padding: 9px 16px; border: 1px solid var(--line); border-radius: var(--r-md);
+        background: var(--bg-elevated); color: var(--text-1); font-size: 13px; font-weight: 600;
+        transition: background .14s, border-color .14s, transform .06s;
+      }
+      .btn:hover { background: var(--bg-hover); }
+      .btn:active { transform: translateY(1px); }
+      .btn-primary { background: var(--brand-grad); border-color: transparent; color: #fff; box-shadow: 0 8px 20px rgba(124, 156, 255, 0.3); }
+      .btn-primary:hover { filter: brightness(1.06); background: var(--brand-grad); }
+      .btn-danger { background: var(--danger-bg); border-color: var(--danger-border); color: var(--danger); }
+      .btn-danger:hover { background: rgba(249, 112, 118, 0.16); }
+      .btn-sm { padding: 6px 12px; font-size: 12px; }
+      .btn .icon { width: 14px; height: 14px; }
+
+      .chip {
+        display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px;
+        border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: .02em; text-transform: uppercase;
+      }
+      .chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+      .chip-pending { color: var(--text-3); background: var(--bg-soft); }
+      .chip-running { color: var(--info); background: var(--info-bg); }
+      .chip-completed { color: var(--success); background: var(--success-bg); }
+      .chip-failed { color: var(--danger); background: var(--danger-bg); }
+      .chip-waiting { color: var(--warning); background: var(--warning-bg); }
+      .chip-accepted { color: var(--success); background: var(--success-bg); }
+      .chip-key { color: var(--brand-700); background: var(--brand-50); font-family: var(--font-mono); }
+      .chip-key::before { display: none; }
+
+      .field { display: flex; flex-direction: column; gap: 6px; }
+      .field label { font-size: 11.5px; font-weight: 600; color: var(--text-3); }
+      .field input, .field textarea {
+        width: 100%; padding: 9px 11px; border: 1px solid var(--line); border-radius: var(--r-sm);
+        background: var(--bg-elevated); color: var(--text-1); font: inherit; font-size: 13px;
+      }
+      .field input::placeholder, .field textarea::placeholder { color: var(--text-4); }
+      .field input:focus, .field textarea:focus { outline: none; border-color: var(--brand-500); box-shadow: var(--focus-ring); }
+      .field input.mono { font-family: var(--font-mono); font-size: 12px; }
+
+      .toggle { position: relative; display: inline-block; width: 42px; height: 24px; }
+      .toggle input { opacity: 0; width: 0; height: 0; }
+      .toggle .track { position: absolute; inset: 0; border-radius: 999px; background: var(--line); transition: background .16s; }
+      .toggle .thumb { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: #fff; box-shadow: var(--shadow-sm); transition: transform .16s; }
+      .toggle input:checked + .track { background: var(--brand-grad); }
+      .toggle input:checked + .track + .thumb { transform: translateX(18px); }
+      .toggle input:focus-visible + .track { box-shadow: var(--focus-ring); }
+
+      .progress { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; flex: 1 1 auto; }
+      .progress > span { display: block; height: 100%; border-radius: 999px; background: var(--brand-grad); }
+      .progress.success > span { background: var(--success); }
+      .progress.danger > span { background: var(--danger); }
+
+      .led { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-bg); }
+      .led.running { animation: led-pulse 1.6s ease-in-out infinite; }
+      @keyframes led-pulse { 0%,100% { box-shadow: 0 0 0 4px var(--success-bg); } 50% { box-shadow: 0 0 0 7px rgba(67, 209, 120, .18); } }
+
+      /* 迷你应用骨架（顶栏 + 侧栏 + 循环渐变卡） */
+      .mini-app { display: grid; grid-template-columns: 168px 1fr; border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; box-shadow: var(--shadow-sm); }
+      .mini-side { background: var(--bg-elevated); border-right: 1px solid var(--line); padding: 12px 10px; display: flex; flex-direction: column; gap: 4px; }
+      .mini-side .mini-brand { display: flex; align-items: center; gap: 8px; padding: 2px 4px 10px; }
+      .mini-side .mini-brand .mk { width: 26px; height: 26px; border-radius: 8px; background: var(--brand-grad); color: #fff; font-weight: 800; font-size: 13px; display: grid; place-items: center; }
+      .mini-side .mini-brand b { font-size: 12.5px; }
+      .mini-nav-item { display: flex; align-items: center; gap: 8px; padding: 7px 9px; border-radius: var(--r-sm); color: var(--text-2); font-size: 12px; font-weight: 500; }
+      .mini-nav-item .nav-ico { width: 16px; height: 16px; color: var(--text-3); }
+      .mini-nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+      .mini-nav-item.active .nav-ico { color: var(--brand-600); }
+      .mini-main { background: var(--bg-app); }
+      .mini-topbar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: var(--bg-elevated); border-bottom: 1px solid var(--line); }
+      .mini-topbar b { font-size: 12.5px; }
+      .mini-topbar .mini-search { margin-left: auto; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-app); font-size: 11px; color: var(--text-4); }
+      .mini-topbar .mini-search .icon { width: 12px; height: 12px; }
+      .mini-content { padding: 12px; }
+      .loop-card {
+        background: var(--brand-grad); color: #fff; border-radius: var(--r-md); padding: 14px 16px;
+        position: relative; overflow: hidden; box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+      }
+      .loop-card::before { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 85% 15%, rgba(255,255,255,.22), transparent 50%); }
+      .loop-card > * { position: relative; z-index: 1; }
+      .loop-card .lc-top { display: flex; align-items: center; gap: 8px; font-size: 12px; opacity: .92; }
+      .loop-card .lc-phase { font-size: 15px; font-weight: 800; margin-top: 4px; }
+      .stat-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+      .stat-mini .s { background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-sm); padding: 10px; box-shadow: var(--shadow-sm); }
+      .stat-mini .s b { font-size: 16px; font-weight: 800; }
+      .stat-mini .s span { display: block; font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
+
+      /* 脚本卡片 + 语言徽章 + 语言圆点 + 手动触发器 */
+      .script-card { position: relative; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-md); padding: 13px 14px; box-shadow: var(--shadow-sm); }
+      .script-card.t-manual::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; border-radius: var(--r-md) 0 0 var(--r-md); background: #a78bfa; }
+      .sc-head { display: flex; align-items: center; gap: 10px; }
+      .sc-ico { width: 30px; height: 30px; border-radius: 8px; background: var(--brand-50); color: var(--brand-600); display: grid; place-items: center; }
+      .sc-ico .icon { width: 16px; height: 16px; }
+      .sc-title { font-size: 13px; font-weight: 700; }
+      .sc-path { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-4); margin-top: 2px; }
+      .sc-desc { font-size: 12px; color: var(--text-3); margin-top: 10px; line-height: 1.55; }
+      .sc-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+      .sc-lang { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; font-family: var(--font-mono); border: 1px solid transparent; }
+      .sc-lang.node { color: #6bd968; background: #0d1f0a; border-color: #1a3d16; }
+      .sc-lang.shell { color: #e6b422; background: #1f1800; border-color: #3d2e08; }
+      .sc-lang.ps { color: #5ba4e6; background: #0a1628; border-color: #162a48; }
+      .sc-lang.cmd { color: #9ca3b0; background: #1a1d22; border-color: #2d3138; }
+      .sc-trigger { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px; font-size: 10.5px; font-weight: 700; }
+      .sc-trigger.manual { color: #a78bfa; background: #1a1630; }
+      .sc-trigger.hook { color: var(--info); background: var(--info-bg); }
+      .lang-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto; }
+      .lang-dot.node { background: #6bd968; }
+      .lang-dot.bash { background: #e6b422; }
+      .lang-dot.ps { background: #6bade6; }
+      .lang-dot.cmd { background: #9ca3b0; }
+      .led-mini { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
+      .led-mini.fail { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-bg); }
+      .sc-meta { margin-left: auto; font-size: 10.5px; color: var(--text-4); font-family: var(--font-mono); }
+
+      /* 代码 / 终端面板 —— 比基调更深一档，提亮前景，融入页面 */
+      .term {
+        background: var(--code-bg); border-radius: 0 0 var(--r-md) var(--r-md);
+        border: 1px solid var(--line-soft); border-top: 0;
+        font-family: var(--font-mono); font-size: 12px; line-height: 1.65; color: var(--code-fg);
+        overflow: hidden;
+      }
+      .term-tabs { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--line-soft); border-bottom: 0; }
+      .term-tab { padding: 4px 10px; border-radius: var(--r-sm); font-size: 11px; font-weight: 700; color: var(--text-3); }
+      .term-tab.active { background: var(--bg-hover); color: var(--text-1); }
+      .code-editor { display: grid; grid-template-columns: auto minmax(0,1fr); }
+      .code-gutter { padding: 12px 8px 12px 14px; text-align: right; color: var(--code-gutter-fg); background: var(--code-gutter-bg); user-select: none; }
+      .code-gutter .ln { display: block; }
+      .code-input { padding: 12px 16px; color: var(--code-fg); white-space: pre; overflow-x: auto; }
+      .code-input .kw { color: #c4b8ff; }
+      .code-input .str { color: #7fe0a8; }
+      .code-input .com { color: var(--code-muted); font-style: italic; }
+      .code-input .fn { color: #8fb6ff; }
+      .log-body { padding: 12px 14px; white-space: pre-wrap; }
+      .log-line { color: var(--code-muted); }
+      .log-line.lvl-i { color: var(--code-info); }
+      .log-line.lvl-s { color: var(--code-success); }
+      .log-line.lvl-e { color: var(--code-error); }
+
+      /* 搜索结果弹层 + 定位高亮 */
+      .search-pop {
+        background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-md);
+        box-shadow: var(--shadow-lg); padding: 6px; max-width: 360px;
+      }
+      .search-pop .sp-head { font-size: 10.5px; font-weight: 700; color: var(--text-4); padding: 4px 8px; letter-spacing: .08em; text-transform: uppercase; }
+      .search-row { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: var(--r-sm); }
+      .search-row:hover, .search-row.locate { background: var(--bg-hover); }
+      .search-row .sr-ico { width: 16px; height: 16px; color: var(--text-3); flex: 0 0 auto; }
+      .search-row .sr-text { font-size: 12.5px; color: var(--text-2); min-width: 0; }
+      .search-row .sr-text b { color: var(--text-1); }
+      .search-row .sr-mark { color: var(--brand-700); background: var(--brand-50); border-radius: 3px; padding: 0 3px; font-weight: 700; }
+      .search-row .sr-kind { margin-left: auto; font-size: 10.5px; color: var(--text-4); font-family: var(--font-mono); }
+      .search-locate-highlight {
+        position: relative; border-radius: 4px; padding: 0 3px;
+        background: rgba(110, 168, 255, 0.22); color: var(--brand-700); font-weight: 700;
+        box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.45);
+        animation: search-locate-pulse-dark 1.6s ease-in-out infinite;
+      }
+      @keyframes search-locate-pulse-dark {
+        0%, 100% { box-shadow: 0 0 0 1px rgba(110, 168, 255, 0.45); background: rgba(110, 168, 255, 0.18); }
+        50% { box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.7); background: rgba(110, 168, 255, 0.32); }
+      }
+
+      .footnote { font-size: 11.5px; color: var(--text-4); line-height: 1.7; margin-top: 14px; }
+      .footnote code { font-family: var(--font-mono); font-size: 11px; padding: 1px 5px; border-radius: 4px; background: var(--bg-soft); color: var(--brand-700); }
+
+      .watermark { position: fixed; right: 18px; bottom: 14px; z-index: 50; font-size: 10.5px; color: var(--text-4); background: var(--bg-elevated); border: 1px solid var(--line); padding: 4px 10px; border-radius: 999px; box-shadow: var(--shadow-sm); }
+    </style>
+  </head>
+  <body>
+    <svg class="icon-sprite" aria-hidden="true" focusable="false">
+      <symbol id="icon-plus" viewBox="0 0 24 24"><path d="M12 5v14"></path><path d="M5 12h14"></path></symbol>
+      <symbol id="icon-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"></path></symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"></path></symbol>
+      <symbol id="icon-overview" viewBox="0 0 24 24"><path d="M4 13a8 8 0 1 1 16 0"></path><path d="m12 13 4-4"></path><path d="M6 19h12"></path></symbol>
+      <symbol id="icon-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"></circle><circle cx="12" cy="12" r="3"></circle></symbol>
+      <symbol id="icon-pencil" viewBox="0 0 24 24"><path d="m15.5 5.5 3 3"></path><path d="M4 20l4.5-1 9-9a2.1 2.1 0 0 0-3-3l-9 9L4 20Z"></path></symbol>
+      <symbol id="icon-check-square" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"></rect><path d="m8 12 3 3 5-6"></path></symbol>
+      <symbol id="icon-list" viewBox="0 0 24 24"><path d="M9 7h11"></path><path d="M9 12h11"></path><path d="M9 17h11"></path><circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none"></circle><circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none"></circle></symbol>
+      <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7-11-7Z"></path></symbol>
+      <symbol id="icon-stop" viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1"></rect></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.2-3.2"></path></symbol>
+      <symbol id="icon-terminal" viewBox="0 0 24 24"><path d="M5 8l4 4-4 4"></path><path d="M13 16h6"></path><rect x="3" y="4" width="18" height="16" rx="2"></rect></symbol>
+      <symbol id="icon-code" viewBox="0 0 24 24"><path d="m8 8-4 4 4 4"></path><path d="m16 8 4 4-4 4"></path><path d="m13 6-2 12"></path></symbol>
+      <symbol id="icon-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z"></path></symbol>
+      <symbol id="icon-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14"></path><path d="m13 6 6 6-6 6"></path></symbol>
+    </svg>
+
+    <!-- ===================== 文档头 ===================== -->
+    <header class="doc-head">
+      <div class="wrap">
+        <div class="brand-mark">A</div>
+        <div>
+          <h1>新暗色主题 · <span class="grad-word">Midnight Indigo</span></h1>
+          <p>AutoPlan 暗色主题视觉基线。从偏 GitHub 风格的纯冷灰黑升级为带品牌温度的「深空蓝紫」：三档背景递进、分隔线加深、语义色按暗色提亮、统一黑色软阴影。下方色板与组件暗色态即 <code class="mono" style="font-size:12px;color:var(--brand-700);">layout.css [data-theme="dark"]</code> 的落地基线。</p>
+        </div>
+        <div class="doc-meta">
+          <span class="tag"><span class="dot"></span>深空蓝紫 · Midnight Indigo</span>
+          <span class="tag aa"><span class="dot"></span>正文 / 次要文本 WCAG AA</span>
+        </div>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <!-- ===================== 色板 ===================== -->
+      <section class="section">
+        <div class="section-title"><span class="idx">01</span><h2>色板色卡</h2></div>
+        <p class="section-desc">每个色卡的 hex 值由页面内联脚本直接读取对应 CSS 变量渲染（单一事实来源，与实现零漂移）。文本色卡额外标注对 <code style="font-family:var(--font-mono);color:var(--brand-700);">--bg-elevated</code> 的实际对比度与 WCAG 判定。</p>
+
+        <div class="group-label">Brand 品牌色</div>
+        <div class="swatch-grid">
+          <div class="sw"><span class="sw-chip" style="background:var(--brand-50)"></span><div class="sw-info"><div class="sw-name">brand-50</div><div class="sw-val" data-var="brand-50"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--brand-100)"></span><div class="sw-info"><div class="sw-name">brand-100</div><div class="sw-val" data-var="brand-100"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--brand-400)"></span><div class="sw-info"><div class="sw-name">brand-400</div><div class="sw-val" data-var="brand-400"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--brand-500)"></span><div class="sw-info"><div class="sw-name">brand-500</div><div class="sw-val" data-var="brand-500"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--brand-600)"></span><div class="sw-info"><div class="sw-name">brand-600</div><div class="sw-val" data-var="brand-600"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--brand-700)"></span><div class="sw-info"><div class="sw-name">brand-700</div><div class="sw-val" data-var="brand-700"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--brand-border)"></span><div class="sw-info"><div class="sw-name">brand-border</div><div class="sw-val" data-var="brand-border"></div></div></div>
+          <div class="sw"><span class="sw-chip grad"></span><div class="sw-info"><div class="sw-name">brand-grad</div><div class="sw-val" data-var="brand-grad"></div></div></div>
+        </div>
+
+        <div class="group-label">Background 背景层级（app / soft / elevated / hover 递进）</div>
+        <div class="swatch-grid">
+          <div class="sw"><span class="sw-chip" style="background:var(--bg-app)"></span><div class="sw-info"><div class="sw-name">bg-app</div><div class="sw-val" data-var="bg-app"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--bg-soft)"></span><div class="sw-info"><div class="sw-name">bg-soft</div><div class="sw-val" data-var="bg-soft"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--bg-elevated)"></span><div class="sw-info"><div class="sw-name">bg-elevated</div><div class="sw-val" data-var="bg-elevated"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--bg-hover)"></span><div class="sw-info"><div class="sw-name">bg-hover</div><div class="sw-val" data-var="bg-hover"></div></div></div>
+        </div>
+
+        <div class="group-label">Line 分隔线</div>
+        <div class="swatch-grid">
+          <div class="sw"><span class="sw-chip" style="background:var(--line)"></span><div class="sw-info"><div class="sw-name">line</div><div class="sw-val" data-var="line"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--line-soft)"></span><div class="sw-info"><div class="sw-name">line-soft</div><div class="sw-val" data-var="line-soft"></div></div></div>
+        </div>
+
+        <div class="group-label">Text 文本色（对比度 vs bg-elevated）</div>
+        <div class="swatch-grid">
+          <div class="sw text-sw" data-contrast-vs="--bg-elevated"><span class="sw-chip" style="background:var(--text-1);color:var(--bg-app)">Aa</span><div class="sw-info"><div class="sw-name">text-1 · 主</div><div class="sw-val" data-var="text-1"></div><div class="sw-contrast"></div></div></div>
+          <div class="sw text-sw" data-contrast-vs="--bg-elevated"><span class="sw-chip" style="background:var(--text-2);color:var(--bg-app)">Aa</span><div class="sw-info"><div class="sw-name">text-2 · 次</div><div class="sw-val" data-var="text-2"></div><div class="sw-contrast"></div></div></div>
+          <div class="sw text-sw" data-contrast-vs="--bg-elevated"><span class="sw-chip" style="background:var(--text-3);color:var(--bg-app)">Aa</span><div class="sw-info"><div class="sw-name">text-3 · 三</div><div class="sw-val" data-var="text-3"></div><div class="sw-contrast"></div></div></div>
+          <div class="sw text-sw" data-contrast-vs="--bg-elevated"><span class="sw-chip" style="background:var(--text-4);color:var(--bg-app)">Aa</span><div class="sw-info"><div class="sw-name">text-4 · 弱</div><div class="sw-val" data-var="text-4"></div><div class="sw-contrast"></div></div></div>
+        </div>
+
+        <div class="group-label">Success 成功</div>
+        <div class="swatch-grid">
+          <div class="sw text-sw" data-contrast-vs="--success-bg"><span class="sw-chip" style="background:var(--success)"></span><div class="sw-info"><div class="sw-name">success</div><div class="sw-val" data-var="success"></div><div class="sw-contrast"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--success-bg)"></span><div class="sw-info"><div class="sw-name">success-bg</div><div class="sw-val" data-var="success-bg"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--success-border)"></span><div class="sw-info"><div class="sw-name">success-border</div><div class="sw-val" data-var="success-border"></div></div></div>
+        </div>
+
+        <div class="group-label">Warning 警告</div>
+        <div class="swatch-grid">
+          <div class="sw text-sw" data-contrast-vs="--warning-bg"><span class="sw-chip" style="background:var(--warning)"></span><div class="sw-info"><div class="sw-name">warning</div><div class="sw-val" data-var="warning"></div><div class="sw-contrast"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--warning-bg)"></span><div class="sw-info"><div class="sw-name">warning-bg</div><div class="sw-val" data-var="warning-bg"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--warning-border)"></span><div class="sw-info"><div class="sw-name">warning-border</div><div class="sw-val" data-var="warning-border"></div></div></div>
+        </div>
+
+        <div class="group-label">Danger 危险</div>
+        <div class="swatch-grid">
+          <div class="sw text-sw" data-contrast-vs="--danger-bg"><span class="sw-chip" style="background:var(--danger)"></span><div class="sw-info"><div class="sw-name">danger</div><div class="sw-val" data-var="danger"></div><div class="sw-contrast"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--danger-bg)"></span><div class="sw-info"><div class="sw-name">danger-bg</div><div class="sw-val" data-var="danger-bg"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--danger-border)"></span><div class="sw-info"><div class="sw-name">danger-border</div><div class="sw-val" data-var="danger-border"></div></div></div>
+        </div>
+
+        <div class="group-label">Info 信息</div>
+        <div class="swatch-grid">
+          <div class="sw text-sw" data-contrast-vs="--info-bg"><span class="sw-chip" style="background:var(--info)"></span><div class="sw-info"><div class="sw-name">info</div><div class="sw-val" data-var="info"></div><div class="sw-contrast"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--info-bg)"></span><div class="sw-info"><div class="sw-name">info-bg</div><div class="sw-val" data-var="info-bg"></div></div></div>
+          <div class="sw"><span class="sw-chip" style="background:var(--info-border)"></span><div class="sw-info"><div class="sw-name">info-border</div><div class="sw-val" data-var="info-border"></div></div></div>
+        </div>
+
+        <div class="group-label">Effect 阴影 / 聚焦环 / 玻璃 / 滚动条</div>
+        <div class="swatch-grid">
+          <div class="sw"><span class="sw-chip shadow-box" style="box-shadow:var(--shadow-sm)"></span><div class="sw-info"><div class="sw-name">shadow-sm</div><div class="sw-val" data-var="shadow-sm"></div></div></div>
+          <div class="sw"><span class="sw-chip shadow-box" style="box-shadow:var(--shadow-md)"></span><div class="sw-info"><div class="sw-name">shadow-md</div><div class="sw-val" data-var="shadow-md"></div></div></div>
+          <div class="sw"><span class="sw-chip shadow-box" style="box-shadow:var(--shadow-lg)"></span><div class="sw-info"><div class="sw-name">shadow-lg</div><div class="sw-val" data-var="shadow-lg"></div></div></div>
+          <div class="sw"><span class="sw-chip ring-box" style="box-shadow:var(--focus-ring)"></span><div class="sw-info"><div class="sw-name">focus-ring</div><div class="sw-val" data-var="focus-ring"></div></div></div>
+          <div class="sw"><span class="sw-chip glass"></span><div class="sw-info"><div class="sw-name">bg-elevated-glass</div><div class="sw-val" data-var="bg-elevated-glass"></div></div></div>
+          <div class="sw"><span class="sw-chip scroll-box"></span><div class="sw-info"><div class="sw-name">scrollbar-thumb</div><div class="sw-val" data-var="scroll-thumb"></div><div style="font-family:var(--font-mono);font-size:11px;color:var(--text-4);margin-top:2px;">hover <span data-var="scroll-thumb-hover"></span></div></div></div>
+        </div>
+      </section>
+
+      <!-- ===================== 组件暗色态 ===================== -->
+      <section class="section">
+        <div class="section-title"><span class="idx">02</span><h2>组件暗色态预览</h2></div>
+        <p class="section-desc">代表性组件用新暗色 token 渲染，便于与实现逐一对照。结构与既有 <code style="font-family:var(--font-mono);color:var(--brand-700);">ui/*.html</code> 设计稿同构，仅替换为 Midnight Indigo 暗色 token。</p>
+
+        <div class="components">
+          <!-- 顶栏 / 侧栏导航 + 循环渐变卡 + 统计卡 -->
+          <div class="demo-card span-2">
+            <div class="demo-head"><h3>顶栏 / 侧栏导航</h3><span class="demo-sub">nav-item · active / loop-card · gradient · stat</span></div>
+            <div class="demo-body">
+              <div class="mini-app">
+                <aside class="mini-side">
+                  <div class="mini-brand"><span class="mk">A</span><b>AutoPlan</b></div>
+                  <div class="mini-nav-item"><svg class="icon nav-ico" aria-hidden="true"><use href="#icon-overview"></use></svg> 概览</div>
+                  <div class="mini-nav-item active"><svg class="icon nav-ico" aria-hidden="true"><use href="#icon-target"></use></svg> 需求</div>
+                  <div class="mini-nav-item"><svg class="icon nav-ico" aria-hidden="true"><use href="#icon-pencil"></use></svg> 反馈</div>
+                  <div class="mini-nav-item"><svg class="icon nav-ico" aria-hidden="true"><use href="#icon-check-square"></use></svg> 计划与任务</div>
+                  <div class="mini-nav-item"><svg class="icon nav-ico" aria-hidden="true"><use href="#icon-list"></use></svg> 事件流</div>
+                </aside>
+                <div class="mini-main">
+                  <div class="mini-topbar">
+                    <b>需求模块</b>
+                    <span class="mini-search"><svg class="icon" aria-hidden="true"><use href="#icon-search"></use></svg> 搜索需求 / 反馈 / 任务…</span>
+                    <button class="btn btn-sm btn-primary"><svg class="icon" aria-hidden="true"><use href="#icon-play"></use></svg>启动</button>
+                  </div>
+                  <div class="mini-content">
+                    <div class="loop-card">
+                      <div class="lc-top"><span class="led running"></span><span>循环运行中 · 间隔 5s</span></div>
+                      <div class="lc-phase">当前阶段 · execute-task</div>
+                    </div>
+                    <div class="stat-mini">
+                      <div class="s"><b style="color:var(--brand-600)">4</b><span>待处理需求</span></div>
+                      <div class="s"><b style="color:var(--info)">3/7</b><span>任务进度</span></div>
+                      <div class="s"><b style="color:var(--success)">12</b><span>已完成任务</span></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 按钮 -->
+          <div class="demo-card">
+            <div class="demo-head"><h3>按钮</h3><span class="demo-sub">primary / default / danger</span></div>
+            <div class="demo-body">
+              <div class="row">
+                <button class="btn btn-primary"><svg class="icon" aria-hidden="true"><use href="#icon-play"></use></svg>启动</button>
+                <button class="btn">保存配置</button>
+                <button class="btn btn-danger"><svg class="icon" aria-hidden="true"><use href="#icon-stop"></use></svg>停止</button>
+              </div>
+              <div class="row">
+                <button class="btn btn-sm btn-primary">小主按钮</button>
+                <button class="btn btn-sm">次按钮</button>
+                <button class="btn btn-sm btn-danger">危险</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 芯片 / 状态徽章 -->
+          <div class="demo-card">
+            <div class="demo-head"><h3>芯片 / 状态徽章</h3><span class="demo-sub">chip · lang · trigger</span></div>
+            <div class="demo-body">
+              <div class="row">
+                <span class="chip chip-pending">pending</span>
+                <span class="chip chip-running">running</span>
+                <span class="chip chip-completed">done</span>
+                <span class="chip chip-failed">failed</span>
+                <span class="chip chip-waiting">draft</span>
+                <span class="chip chip-accepted">accepted</span>
+              </div>
+              <div class="row">
+                <span class="chip-key">P004</span>
+                <span class="chip chip-running">scan.done</span>
+                <span class="lang-dot node"></span><span class="lang-dot bash"></span><span class="lang-dot ps"></span><span class="lang-dot cmd"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 输入框 / 聚焦环 -->
+          <div class="demo-card">
+            <div class="demo-head"><h3>输入框</h3><span class="demo-sub">field · focus-ring</span></div>
+            <div class="demo-body">
+              <div class="field">
+                <label>工作区路径</label>
+                <input class="mono" value="D:\project\GitHub\autoplan" />
+              </div>
+              <div class="field">
+                <label>聚焦态（focus-ring 可见）</label>
+                <input value="聚焦时显示品牌辉光" autofocus style="border-color:var(--brand-500);box-shadow:var(--focus-ring);" />
+              </div>
+            </div>
+          </div>
+
+          <!-- 开关 -->
+          <div class="demo-card">
+            <div class="demo-head"><h3>开关</h3><span class="demo-sub">toggle · on / off</span></div>
+            <div class="demo-body">
+              <div class="row">
+                <span class="label">启用</span>
+                <label class="toggle"><input type="checkbox" checked /><span class="track"></span><span class="thumb"></span></label>
+                <span style="font-size:12px;color:var(--text-2)">已启用 · grad</span>
+              </div>
+              <div class="row">
+                <span class="label">禁用</span>
+                <label class="toggle"><input type="checkbox" /><span class="track"></span><span class="thumb"></span></label>
+                <span style="font-size:12px;color:var(--text-3)">未启用 · line</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="demo-card">
+            <div class="demo-head"><h3>进度条</h3><span class="demo-sub">brand-grad / success / danger</span></div>
+            <div class="demo-body">
+              <div class="row"><span class="label">3 / 7</span><div class="progress"><span style="width:43%"></span></div><span style="font-size:11px;color:var(--text-4);font-family:var(--font-mono)">43%</span></div>
+              <div class="row"><span class="label">已完成</span><div class="progress success"><span style="width:100%"></span></div><span style="font-size:11px;color:var(--success);font-family:var(--font-mono)">100%</span></div>
+              <div class="row"><span class="label">异常</span><div class="progress danger"><span style="width:18%"></span></div><span style="font-size:11px;color:var(--danger);font-family:var(--font-mono)">18%</span></div>
+            </div>
+          </div>
+
+          <!-- 脚本卡片 + 语言徽章 + 触发器 -->
+          <div class="demo-card span-2">
+            <div class="demo-head"><h3>脚本卡片 + 语言徽章 + 触发器</h3><span class="demo-sub">script-card · sc-lang(node/shell/ps/cmd) · sc-trigger(manual/hook) · led</span></div>
+            <div class="demo-body">
+              <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
+                <div class="script-card">
+                  <div class="sc-head"><span class="sc-ico"><svg class="icon" aria-hidden="true"><use href="#icon-bolt"></use></svg></span><div><div class="sc-title">build-and-lint</div><div class="sc-path">scripts/build.node</div></div></div>
+                  <div class="sc-desc">循环结束后执行：安装依赖、构建产物、运行验收命令，失败即上报。</div>
+                  <div class="sc-foot">
+                    <span class="sc-lang node"><span class="lang-dot node"></span>Node.js</span>
+                    <span class="sc-trigger hook">循环结束</span>
+                    <span class="led-mini"></span><span class="sc-meta">exit 0 · 1.2s</span>
+                  </div>
+                </div>
+                <div class="script-card t-manual">
+                  <div class="sc-head"><span class="sc-ico" style="color:#a78bfa;background:#1a1630;"><svg class="icon" aria-hidden="true"><use href="#icon-terminal"></use></svg></span><div><div class="sc-title">清理临时文件</div><div class="sc-path">scripts/clean.sh</div></div></div>
+                  <div class="sc-desc">手动触发，清理工作区下的 .last.txt / .tmp 缓存，回收磁盘。</div>
+                  <div class="sc-foot">
+                    <span class="sc-lang shell"><span class="lang-dot bash"></span>Bash</span>
+                    <span class="sc-trigger manual">手动</span>
+                    <span class="led-mini fail"></span><span class="sc-meta">exit 1 · 0.4s</span>
+                  </div>
+                </div>
+                <div class="script-card">
+                  <div class="sc-head"><span class="sc-ico"><svg class="icon" aria-hidden="true"><use href="#icon-bolt"></use></svg></span><div><div class="sc-title">reset-state</div><div class="sc-path">scripts/reset.ps1</div></div></div>
+                  <div class="sc-desc">验收前重置本地状态，保证验收命令在干净环境下执行。</div>
+                  <div class="sc-foot">
+                    <span class="sc-lang ps"><span class="lang-dot ps"></span>PowerShell</span>
+                    <span class="sc-trigger hook">验收前</span>
+                    <span class="led-mini"></span><span class="sc-meta">exit 0 · 0.8s</span>
+                  </div>
+                </div>
+                <div class="script-card">
+                  <div class="sc-head"><span class="sc-ico"><svg class="icon" aria-hidden="true"><use href="#icon-bolt"></use></svg></span><div><div class="sc-title">deploy-bat</div><div class="sc-path">scripts/deploy.bat</div></div></div>
+                  <div class="sc-desc">任务后发布到本机预览目录，仅 Windows CMD 运行时可用。</div>
+                  <div class="sc-foot">
+                    <span class="sc-lang cmd"><span class="lang-dot cmd"></span>CMD</span>
+                    <span class="sc-trigger hook">任务后</span>
+                    <span class="led-mini"></span><span class="sc-meta">exit 0 · 2.1s</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 代码 / 终端面板 -->
+          <div class="demo-card span-2">
+            <div class="demo-head"><h3>代码 / 终端面板</h3><span class="demo-sub">code-gutter · code-input · log-line(lvl-i/s/e) · 比基调更深一档</span></div>
+            <div class="demo-body" style="padding-bottom:0;">
+              <div class="term-tabs">
+                <span class="term-tab active">Node.js</span>
+                <span class="term-tab">Bash</span>
+                <span class="term-tab">PowerShell</span>
+                <span class="term-tab">CMD</span>
+                <span style="margin-left:auto;font-size:10.5px;color:var(--text-4);font-family:var(--font-mono);">.node · LF</span>
+              </div>
+              <div class="term">
+                <div class="code-editor">
+                  <div class="code-gutter"><span class="ln">1</span><span class="ln">2</span><span class="ln">3</span><span class="ln">4</span><span class="ln">5</span></div>
+                  <pre class="code-input"><span class="com">// 循环结束后执行：构建并验收</span>
+<span class="kw">const</span> { exec } = <span class="fn">require</span>(<span class="str">'child_process'</span>);
+<span class="fn">exec</span>(<span class="str">'npm run build'</span>, (err) =&gt; {
+  <span class="kw">if</span> (err) process.exit(<span class="str">1</span>);
+});</pre>
+                </div>
+                <div style="height:1px;background:var(--line-soft);"></div>
+                <div class="log-body"><span class="log-line lvl-i">[info] build started</span>
+<span class="log-line lvl-s">[success] build finished in 1.2s</span>
+<span class="log-line lvl-e">[error] validation failed · exit code 1</span>
+<span class="log-line">[info] retry scheduled</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 搜索结果弹层 + 定位高亮 -->
+          <div class="demo-card span-2">
+            <div class="demo-head"><h3>搜索结果弹层 + 定位高亮</h3><span class="demo-sub">search-pop · search-locate-highlight · pulse-dark</span></div>
+            <div class="demo-body">
+              <div style="position:relative;">
+                <div class="search-pop">
+                  <div class="sp-head">结果 · 4 命中</div>
+                  <div class="search-row locate">
+                    <svg class="icon sr-ico" aria-hidden="true"><use href="#icon-target"></use></svg>
+                    <span class="sr-text">需求 #6 · 富文本<span class="search-locate-highlight">图片粘贴</span>流程</span>
+                    <span class="sr-kind">requirement</span>
+                  </div>
+                  <div class="search-row">
+                    <svg class="icon sr-ico" aria-hidden="true"><use href="#icon-pencil"></use></svg>
+                    <span class="sr-text">反馈 #3 · <span class="sr-mark">图片粘贴</span>上传到 OSS</span>
+                    <span class="sr-kind">feedback</span>
+                  </div>
+                  <div class="search-row">
+                    <svg class="icon sr-ico" aria-hidden="true"><use href="#icon-check-square"></use></svg>
+                    <span class="sr-text">P002 · 截图<span class="sr-mark">粘贴</span>走 OSS 上传</span>
+                    <span class="sr-kind">task</span>
+                  </div>
+                </div>
+              </div>
+              <p class="footnote">命中项用 <code>search-locate-highlight</code> 描边脉冲高亮（<code>@keyframes search-locate-pulse-dark</code>），非定位命中用 <code>brand-50 / brand-700</code> 标记底色，弹层投影为 <code>--shadow-lg</code> 黑色软阴影。</p>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <div class="watermark">AutoPlan · 暗色主题设计稿 · Midnight Indigo</div>
+
+    <script>
+      /* 单一事实来源：色卡 hex 直接读取 CSS 变量，杜绝标注与渲染漂移。 */
+      (function () {
+        var root = getComputedStyle(document.documentElement);
+        function varValue(name) { return root.getPropertyValue('--' + name).trim(); }
+        document.querySelectorAll('[data-var]').forEach(function (el) {
+          var v = varValue(el.getAttribute('data-var'));
+          el.textContent = v || '—';
+        });
+
+        /* 对比度计算（WCAG）：解析 #hex / rgba()，对文本 sw 标注实际比值与判定。 */
+        function parse(s) {
+          s = s.trim();
+          var m;
+          if (s[0] === '#') {
+            var hex = s.slice(1);
+            if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+            return [parseInt(hex.slice(0,2),16), parseInt(hex.slice(2,4),16), parseInt(hex.slice(4,6),16), 1];
+          }
+          m = s.match(/rgba?\(([^)]+)\)/i);
+          if (m) {
+            var p = m[1].split(',').map(function (x) { return parseFloat(x); });
+            return [p[0], p[1], p[2], p[3] == null ? 1 : p[3]];
+          }
+          return null;
+        }
+        function lin(c) { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); }
+        function lum(rgba) { return 0.2126 * lin(rgba[0]) + 0.7152 * lin(rgba[1]) + 0.0722 * lin(rgba[2]); }
+        function blendOver(fg, bg) { // 把带 alpha 的前景叠到不透明背景上
+          var a = fg[3];
+          return [Math.round(bg[0] * (1 - a) + fg[0] * a), Math.round(bg[1] * (1 - a) + fg[1] * a), Math.round(bg[2] * (1 - a) + fg[2] * a), 1];
+        }
+        function contrast(fg, bg) {
+          var l1 = lum(fg), l2 = lum(bg);
+          var hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+          return (hi + 0.05) / (lo + 0.05);
+        }
+        document.querySelectorAll('.text-sw').forEach(function (sw) {
+          var fgVar = sw.querySelector('[data-var]').getAttribute('data-var');
+          var bgVar = sw.getAttribute('data-contrast-vs') || '--bg-elevated';
+          var fg = parse(varValue(fgVar));
+          var bg = parse(varValue(bgVar.replace(/^--/, '')));
+          if (!fg || !bg) return;
+          var eff = fg[3] < 1 ? blendOver(fg, bg) : fg;
+          var r = contrast(eff, bg);
+          var box = sw.querySelector('.sw-contrast');
+          if (!box) return;
+          var cls = r >= 4.5 ? 'badge-pass' : (r >= 3 ? 'badge-large' : 'badge-low');
+          var label = r >= 4.5 ? 'AA' : (r >= 3 ? 'AA Large' : 'Low');
+          box.innerHTML = '<span class="ratio">' + r.toFixed(2) + ':1</span><span class="badge ' + cls + '">' + label + '</span>';
+        });
+      })();
+    </script>
+  </body>
+</html>

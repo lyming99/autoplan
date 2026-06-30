@@ -255,10 +255,7 @@ ipcMain.handle('requirements:update', (_event, input = {}) => {
 ipcMain.handle('requirements:delete', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const id = requiredRecordId(input);
-  const rec = db.get('SELECT linked_plan_id FROM requirements WHERE id = ? AND project_id = ?', [id, projectId]);
-  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
-  deleteIntakeRecord('requirements', 'requirement', projectId, id);
-  return loop.snapshot(projectId);
+  return loop.deleteIntake(projectId, 'requirement', id, { attachmentsRoot: attachmentsRoot() });
 });
 
 ipcMain.handle('feedback:create', (_event, input = {}) => {
@@ -296,10 +293,7 @@ ipcMain.handle('feedback:update', (_event, input = {}) => {
 ipcMain.handle('feedback:delete', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const id = requiredRecordId(input);
-  const rec = db.get('SELECT linked_plan_id FROM feedback WHERE id = ? AND project_id = ?', [id, projectId]);
-  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
-  deleteIntakeRecord('feedback', 'feedback', projectId, id);
-  return loop.snapshot(projectId);
+  return loop.deleteIntake(projectId, 'feedback', id, { attachmentsRoot: attachmentsRoot() });
 });
 
 // 中断需求/反馈关联的计划任务
@@ -826,20 +820,4 @@ function normalizeDraftIntakeInput(input = {}) {
     createAsDraft,
     status: createAsDraft ? 'draft' : mergedInput.status,
   };
-}
-
-function deleteIntakeRecord(table, ownerType, projectId, id) {
-  const current = db.get(`SELECT id FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
-  if (!current) throw new Error('记录不存在');
-
-  if (ownerType === 'requirement') {
-    db.run('UPDATE feedback SET requirement_id = NULL, updated_at = ? WHERE project_id = ? AND requirement_id = ?', [
-      nowIso(),
-      projectId,
-      id,
-    ]);
-  }
-
-  db.run('DELETE FROM attachments WHERE project_id = ? AND owner_type = ? AND owner_id = ?', [projectId, ownerType, id]);
-  db.run(`DELETE FROM ${table} WHERE id = ? AND project_id = ?`, [id, projectId]);
 }

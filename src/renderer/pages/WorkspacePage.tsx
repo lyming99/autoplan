@@ -402,6 +402,9 @@ export function WorkspacePage() {
                         }).runTaskBatches({ projectId, planId: plan.id, batches, manual: true }),
                       )
                     }
+                    onRunDraft={(plan, task) =>
+                      runLoopAction(() => window.autoplan.runTask({ projectId: plan.project_id || projectId, taskId: task.id }))
+                    }
                     onRefreshReader={refreshPlanReader}
                     onSelectPlan={planSelectionState.selectPlan}
                     plans={filteredItems.plans}
@@ -556,7 +559,7 @@ function formatSearchLocateFallback(result: WorkspaceSearchResult) {
 
 
 function tabTitle(tab: WorkspaceTab) {
-  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', acceptance: '验收模块', tasks: '任务与计划', scripts: '脚本模块', events: '事件流', settings: '设置' }[tab];
+  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', acceptance: '验收模块', tasks: '计划与任务', scripts: '脚本模块', events: '事件流', settings: '设置' }[tab];
 }
 
 function tabSubtitle(tab: WorkspaceTab, project: Project | null) {

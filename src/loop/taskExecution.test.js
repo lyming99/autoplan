@@ -29,7 +29,7 @@ function restoreSetTimeout() {
 // ---------------------------------------------------------------------------
 
 function makeService(overrides = {}) {
-  const calls = { executeTask: [], completeTask: [], addEvent: [], setPhase: [], recordTaskFailure: [] };
+  const calls = { executeTask: [], completeTask: [], addEvent: [], setPhase: [], recordTaskFailure: [], validatePlan: [] };
   const svc = {
     _calls: calls,
     activateDraftPlan: (plan) => plan,
@@ -40,19 +40,21 @@ function makeService(overrides = {}) {
     },
     isFinalAcceptanceTask: () => false,
     hasFinalAcceptanceTask: () => false,
-    validatePlan: async () => {},
+    validatePlan: async (workspace, plan, options) => {
+      calls.validatePlan.push({ workspace, planId: plan.id, planStatus: plan.status, options });
+    },
     setPhase(projectId, phase) {
       calls.setPhase.push({ projectId, phase });
     },
     executeTask: async (workspace, plan, task, options) => {
-      calls.executeTask.push({ workspace, planId: plan.id, taskId: task.id, taskKey: task.task_key, options });
+      calls.executeTask.push({ workspace, planId: plan.id, planStatus: plan.status, taskId: task.id, taskKey: task.task_key, options });
       return svc._executeTaskResult || { exitCode: 0 };
     },
     addEvent(projectId, type, message, meta) {
       calls.addEvent.push({ projectId, type, message, meta });
     },
     completeTask: async (workspace, plan, task, result) => {
-      calls.completeTask.push({ planId: plan.id, taskId: task.id, taskKey: task.task_key, result });
+      calls.completeTask.push({ planId: plan.id, planStatus: plan.status, taskId: task.id, taskKey: task.task_key, result });
     },
     recordTaskFailure(projectId, plan, task, finishedAt, meta) {
       calls.recordTaskFailure.push({ projectId, planId: plan.id, taskId: task.id, taskKey: task.task_key, meta });
@@ -137,6 +139,51 @@ describe('processPlan 退避重试', () => {
 
     assert.equal(validateCalled, true, '验收任务应调用 validatePlan');
     assert.equal(service._calls.executeTask.length, 0, '验收任务不应调用 executeTask');
+  });
+
+  it('draft plan 会先激活并把同步后的非草稿 plan 传给 executeTask', async () => {
+    const task = makeTask();
+    const draftPlan = makePlan({ status: 'draft', updated_at: 'old' });
+    const activatedPlan = { ...draftPlan, status: 'running', updated_at: 'fresh' };
+    let activatedInput = null;
+    const service = makeService({
+      activateDraftPlan: (plan) => {
+        activatedInput = plan;
+        return activatedPlan;
+      },
+      db: {
+        all: () => [task],
+        get: () => activatedPlan,
+      },
+    });
+    service._executeTaskResult = { exitCode: 0, logFile: '/tmp/ok.log' };
+
+    await processPlan(service, HELPERS, WORKSPACE, draftPlan);
+
+    assert.equal(activatedInput, draftPlan, 'processPlan 应复用统一草稿激活入口');
+    assert.equal(service._calls.executeTask.length, 1, '应继续执行首个 pending 任务');
+    assert.equal(service._calls.executeTask[0].planStatus, 'running', 'executeTask 不应收到 draft plan');
+    assert.equal(service._calls.completeTask[0].planStatus, 'running', 'completeTask 不应收到 draft plan');
+  });
+
+  it('draft plan 的最终验收分支也使用激活后的非草稿 plan', async () => {
+    const task = makeTask({ task_key: 'P999', title: '完整验收' });
+    const draftPlan = makePlan({ status: 'draft', updated_at: 'old' });
+    const activatedPlan = { ...draftPlan, status: 'running', updated_at: 'fresh' };
+    const service = makeService({
+      activateDraftPlan: () => activatedPlan,
+      db: {
+        all: () => [task],
+        get: () => activatedPlan,
+      },
+      isFinalAcceptanceTask: () => true,
+    });
+
+    await processPlan(service, HELPERS, WORKSPACE, draftPlan);
+
+    assert.equal(service._calls.validatePlan.length, 1, '最终验收任务应调用 validatePlan');
+    assert.equal(service._calls.validatePlan[0].planStatus, 'running', 'validatePlan 不应收到 draft plan');
+    assert.equal(service._calls.executeTask.length, 0, '最终验收任务不应调用 executeTask');
   });
 
   it('executeTask 首次成功（exitCode === 0）则直接 completeTask，不重试', async () => {

@@ -49,9 +49,20 @@ function appendTask(service, helpers, projectId, planId, title) {
     }
     fs.writeFileSync(planFile, content, 'utf8');
 
-    // 若 plan 被中断过，恢复为 pending 让新任务可执行
+    // 若 plan 被中断或已完成，恢复状态让新任务可执行
     if (plan.status === 'interrupted') {
       service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
+    } else if (plan.status === 'completed' || plan.validation_passed === 1) {
+      service.db.run(
+        'UPDATE plans SET status = ?, validation_passed = 0, updated_at = ? WHERE id = ?',
+        ['pending', nowIso(), planId],
+      );
+      service.addEvent(
+        projectId,
+        'plan.reactivated',
+        `计划 #${planId} 因追加任务 ${taskKey} 重新激活`,
+        { planId, reason: 'task_appended', taskKey },
+      );
     }
     // 重新解析任务入库
     service.syncPlanTasks(planId, planFile);

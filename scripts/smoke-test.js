@@ -75,6 +75,7 @@ async function main() {
     await assertLoopConfigPersistenceSmoke(db, loop, tempRoot);
     await assertMcpToolsSmoke(db, loop, tempRoot);
     await assertIntakeLinkedPlanPreviewSmoke(db, loop, tempRoot);
+    await assertIntakeCascadeDeletionSmoke(db, loop, tempRoot);
 
     loop.configure(projectId, {
       workspacePath: workspace,
@@ -316,6 +317,8 @@ async function main() {
 
     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
 
+    await assertDraftPlanExecutionSmoke(db, loop, workspace, projectId);
+
     await assertWorkspaceOpenFileIpcSmoke(db, loop, workspace, projectId);
 
     await assertProjectFolderIpcSmoke(db, loop, workspace, projectId);
@@ -477,6 +480,8 @@ async function assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId) {
   );
   const planId = insertPlan(db, projectId, planRel, 'final-acceptance-smoke');
   loop.syncPlanTasks(planId, planFile);
+  const linkedRequirementId = insertRequirement(db, projectId);
+  db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [planId, nowIso(), linkedRequirementId]);
   const acceptanceTask = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P002']);
   assert.equal(acceptanceTask.scope, 'validation', 'final acceptance task should use validation scope');
 
@@ -498,6 +503,7 @@ async function assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId) {
   assert.equal(acceptedPlan.status, 'completed', 'final acceptance task should complete the plan');
   assert.equal(acceptedPlan.validation_passed, 1, 'final acceptance task should mark validation_passed');
   assert.equal(acceptedTask.status, 'completed', 'final acceptance task should be completed');
+  assert.equal(db.get('SELECT status FROM requirements WHERE id = ?', [linkedRequirementId]).status, 'completed', 'final acceptance task should complete linked requirement');
   assert.match(fs.readFileSync(planFile, 'utf8'), /- \[x\] P002: 完整验收/, 'final acceptance checkbox should be checked');
   const acceptanceEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
   assertTaskEventOrder(acceptanceEvents, ['task.succeeded', 'task.started'], 'final acceptance task events');
@@ -1442,6 +1448,17 @@ function assertMcpToolError(result, pattern, label) {
   assert.match(result?.content?.[0]?.text || '', pattern, `${label} 错误信息应可定位`);
 }
 
+async function assertMcpCompletedIntakeFilter(db, loop, projectId, table, intakeId, label) {
+  const isRequirement = table === 'requirements';
+  const tool = isRequirement ? MCP_TOOL_NAMES.LIST_REQUIREMENTS : MCP_TOOL_NAMES.LIST_FEEDBACK;
+  const key = isRequirement ? 'requirements' : 'feedback';
+  const context = { db, loop };
+  const open = assertMcpToolData(await callMcpTool(tool, { projectId, status: 'open' }, context), `${label} open MCP 查询`);
+  const completed = assertMcpToolData(await callMcpTool(tool, { projectId, status: 'completed' }, context), `${label} completed MCP 查询`);
+  assert.equal(open[key].some((item) => Number(item.id) === Number(intakeId)), false, `${label} 不应出现在 MCP open 列表`);
+  assert.equal(completed[key].some((item) => Number(item.id) === Number(intakeId)), true, `${label} 应出现在 MCP completed 列表`);
+}
+
 function assertMcpProjectRow(db, projectId, expected, label) {
   const project = db.get('SELECT * FROM projects WHERE id = ?', [projectId]);
   assert.ok(project, `${label} 应存在项目记录`);
@@ -1495,12 +1512,12 @@ function insertProject(db, loop, name, workspacePath) {
   return id;
 }
 
-function insertPlan(db, projectId, filePath, issueHash) {
+function insertPlan(db, projectId, filePath, issueHash, status = 'running') {
   const now = nowIso();
   return db.insert(
     `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    [projectId, issueHash, filePath, `${issueHash}-hash`, 'running', 0, 0, 0, now, now],
+    [projectId, issueHash, filePath, `${issueHash}-hash`, status, 0, 0, 0, now, now],
   );
 }
 
@@ -1715,6 +1732,99 @@ function assertMissingLinkedIntakePlanSnapshot(item, linkedPlanId, label) {
   assert.equal(item.linked_plan_status ?? null, null, `${label} 不应伪造 Plan 状态`);
   assert.equal(item.linked_plan_completed_tasks ?? null, null, `${label} 不应伪造已完成任务数`);
   assert.equal(item.linked_plan_total_tasks ?? null, null, `${label} 不应伪造任务总数`);
+}
+
+async function assertIntakeCascadeDeletionSmoke(db, loop, tempRoot) {
+  const workspace = path.join(tempRoot, 'intake-cascade-deletion-workspace');
+  const attachmentsRoot = path.join(tempRoot, 'intake-cascade-deletion-attachments');
+  const projectId = insertProject(db, loop, 'Intake Cascade Deletion Smoke Project', workspace);
+  loop.configure(projectId, { workspacePath: workspace, intervalSeconds: 5, validationCommand: '' });
+  loop.ensureWorkspaceDirs(workspace);
+
+  const requirementId = insertRequirement(db, projectId);
+  const relatedFeedbackId = insertFeedback(db, projectId);
+  db.run('UPDATE feedback SET requirement_id = ?, updated_at = ? WHERE id = ?', [requirementId, nowIso(), relatedFeedbackId]);
+
+  const attachmentSource = path.join(tempRoot, 'intake-cascade-attachment.txt');
+  fs.writeFileSync(attachmentSource, 'cascade attachment', 'utf8');
+  const [attachment] = saveAttachments(db, attachmentsRoot, 'requirement', requirementId, [
+    { path: attachmentSource, name: 'cascade-attachment.txt', type: 'text/plain' },
+  ], projectId);
+  assert.ok(attachment, '级联删除 smoke 应成功保存需求附件');
+
+  const planRel = path.join('docs', 'plan', `plan_requirement_${requirementId}_cascade-smoke.md`);
+  const planFile = path.join(workspace, planRel);
+  fs.mkdirSync(path.dirname(planFile), { recursive: true });
+  fs.writeFileSync(
+    planFile,
+    [
+      '# Cascade deletion smoke',
+      '',
+      '- [ ] D001: 删除时停止运行中任务 <!-- scope: src/delete.js -->',
+      '- [ ] D002: 删除后快照不再展示任务 <!-- scope: validation -->',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const planId = insertPlan(db, projectId, planRel, 'intake-cascade-delete-smoke');
+  loop.syncPlanTasks(planId, planFile);
+  db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [planId, nowIso(), requirementId]);
+  db.run(
+    `INSERT OR REPLACE INTO scan_files
+     (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [projectId, 'plan', planRel, 'cascade-scan-hash', fs.statSync(planFile).size, nowIso(), nowIso()],
+  );
+
+  const task = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC LIMIT 1', [planId]);
+  const startedAt = nowIso();
+  db.run('UPDATE plan_tasks SET status = ?, started_at = ?, updated_at = ? WHERE id = ?', [
+    'running',
+    startedAt,
+    startedAt,
+    task.id,
+  ]);
+  const runtime = loop.runtime(projectId);
+  const activeOperation = {
+    projectId,
+    planId,
+    taskId: task.id,
+    label: 'cascade delete smoke active task',
+    startedAt,
+  };
+  const child = {
+    killed: false,
+    kill() {
+      this.killed = true;
+    },
+  };
+  runtime.activeOperations.set('cascade-delete-smoke', activeOperation);
+  runtime.activeChildren.set('cascade-delete-smoke', child);
+  runtime.activeOperation = activeOperation;
+  runtime.activeChild = child;
+  assert.equal(loop.snapshot(projectId).activeOperations.length, 1, '删除前快照应暴露运行中操作');
+
+  const next = loop.deleteIntake(projectId, 'requirement', requirementId, { attachmentsRoot });
+
+  assert.equal(child.killed, true, '级联删除应停止关联运行中任务');
+  assert.equal(next.requirements.some((item) => item.id === requirementId), false, '级联删除后快照不应包含需求');
+  assert.equal(next.plans.some((plan) => plan.id === planId), false, '级联删除后快照不应包含关联 plan');
+  assert.equal(next.tasks.some((item) => item.plan_id === planId), false, '级联删除后快照不应包含关联任务');
+  assert.deepEqual(next.activeOperations, [], '级联删除后快照不应包含关联 active operation');
+  assert.equal(db.get('SELECT COUNT(*) AS count FROM plan_tasks WHERE plan_id = ?', [planId]).count, 0, '级联删除应清理 plan_tasks');
+  assert.equal(db.get('SELECT COUNT(*) AS count FROM plans WHERE id = ?', [planId]).count, 0, '级联删除应清理 plans');
+  assert.equal(db.get('SELECT COUNT(*) AS count FROM attachments WHERE id = ?', [attachment.id]).count, 0, '级联删除应清理附件记录');
+  assert.equal(db.get('SELECT requirement_id FROM feedback WHERE id = ?', [relatedFeedbackId]).requirement_id, null, '删除需求应清空相关反馈引用');
+  assert.equal(fs.existsSync(attachment.stored_path), false, '级联删除应删除附件文件');
+  assert.equal(fs.existsSync(planFile), false, '级联删除应删除安全路径内的计划文件');
+  assert.equal(
+    db.get("SELECT COUNT(*) AS count FROM scan_files WHERE project_id = ? AND scan_type = 'plan' AND file_path = ?", [
+      projectId,
+      planRel,
+    ]).count,
+    0,
+    '级联删除应清理计划扫描缓存',
+  );
 }
 
 async function assertAttachmentPersistenceSmoke(db, loop, tempRoot) {
@@ -1974,6 +2084,118 @@ async function assertScopeConcurrencySmoke(db, loop, workspace, projectId) {
     '并发批次完成应记录事件',
   );
   assert.equal(fs.readFileSync(planFile, 'utf8').includes('- [x] S001'), true, '并发完成应写回对应 checkbox');
+}
+
+async function assertDraftPlanExecutionSmoke(db, loop, workspace, projectId) {
+  const single = createDraftExecutionSmokePlan(db, loop, workspace, projectId, {
+    fileName: 'draft-single-smoke.md',
+    issueHash: 'draft-single-smoke',
+    title: 'Draft single smoke',
+    tasks: [
+      '- [ ] D101: 启动草稿单任务 <!-- scope: smoke/draft-single-a.js -->',
+      '- [ ] D102: 保留后续任务 <!-- scope: smoke/draft-single-b.js -->',
+    ],
+  });
+  assertDraftSnapshot(loop.snapshot(projectId), single.planId, true, '单任务执行前');
+
+  const singleLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'draft-single.log');
+  fs.mkdirSync(path.dirname(singleLogFile), { recursive: true });
+  fs.writeFileSync(singleLogFile, 'draft single ok', 'utf8');
+  const originalRunCodex = loop.runCodex.bind(loop);
+  try {
+    loop.runCodex = async (_workspace, prompt, _label, operation = {}) => {
+      assert.equal(operation.planId, single.planId, '草稿单任务执行应携带 planId');
+      assert.match(prompt, /只执行指定任务 D101/, '草稿单任务 prompt 应锁定首个任务');
+      assert.notEqual(db.get('SELECT status FROM plans WHERE id = ?', [single.planId]).status, 'draft', 'agent 启动前 plan 应已退出 draft');
+      return { exitCode: 0, logFile: singleLogFile, lastFile: path.join(workspace, 'draft-single-last.txt') };
+    };
+    await loop.runTask(projectId, single.tasks[0].id);
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+
+  const singlePlanRow = db.get('SELECT * FROM plans WHERE id = ?', [single.planId]);
+  assert.notEqual(singlePlanRow.status, 'draft', 'runTask 后数据库 plan.status 不应仍为 draft');
+  const singleSnapshot = loop.snapshot(projectId);
+  assertDraftSnapshot(singleSnapshot, single.planId, false, '单任务执行后');
+  assert.equal(taskByKey(singleSnapshot, 'D101').status, 'completed', '草稿单任务执行后首个任务应完成');
+  assert.equal(countDraftStartedEvents(singleSnapshot, single.planId), 1, '草稿单任务应只记录一次 plan.draft.started');
+
+  const parallel = createDraftExecutionSmokePlan(db, loop, workspace, projectId, {
+    fileName: 'draft-parallel-smoke.md',
+    issueHash: 'draft-parallel-smoke',
+    title: 'Draft parallel smoke',
+    tasks: [
+      '- [ ] D201: 实现并发分支 A <!-- scope: smoke/draft-parallel-a.js -->',
+      '- [ ] D202: 实现并发分支 B <!-- scope: smoke/draft-parallel-b.js -->',
+    ],
+  });
+  assertDraftSnapshot(loop.snapshot(projectId), parallel.planId, true, '并发执行前');
+
+  const parallelLogFile = path.join(workspace, 'docs', 'progress', 'logs', 'draft-parallel.log');
+  fs.writeFileSync(parallelLogFile, 'draft parallel ok', 'utf8');
+  const parallelStarted = [];
+  try {
+    loop.runCodex = async (_workspace, _prompt, _label, operation = {}) => {
+      const task = db.get('SELECT task_key FROM plan_tasks WHERE id = ?', [operation.taskId]);
+      parallelStarted.push(task.task_key);
+      assert.notEqual(db.get('SELECT status FROM plans WHERE id = ?', [parallel.planId]).status, 'draft', '并发 agent 启动前 plan 应已退出 draft');
+      return { exitCode: 0, logFile: parallelLogFile, lastFile: path.join(workspace, `${task.task_key}-last.txt`) };
+    };
+    await loop.runTaskBatches(projectId, parallel.planId, [{ taskIds: parallel.tasks.map((task) => task.id) }]);
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+
+  assert.deepEqual(parallelStarted.sort(), ['D201', 'D202'], '草稿并发执行应启动确认批次中的两个任务');
+  const parallelPlanRow = db.get('SELECT * FROM plans WHERE id = ?', [parallel.planId]);
+  assert.notEqual(parallelPlanRow.status, 'draft', 'runTaskBatches 后数据库 plan.status 不应仍为 draft');
+  const parallelSnapshot = loop.snapshot(projectId);
+  assertDraftSnapshot(parallelSnapshot, parallel.planId, false, '并发执行后');
+  assert.equal(taskByKey(parallelSnapshot, 'D201').status, 'completed', '草稿并发任务 D201 应完成');
+  assert.equal(taskByKey(parallelSnapshot, 'D202').status, 'completed', '草稿并发任务 D202 应完成');
+  assert.equal(countDraftStartedEvents(parallelSnapshot, parallel.planId), 1, '草稿并发执行应只记录一次 plan.draft.started');
+  assert.ok(
+    parallelSnapshot.events.some((event) => event.type === 'tasks.parallel.finished' && event.meta?.planId === parallel.planId),
+    '草稿并发执行应保留并发完成事件',
+  );
+}
+
+function createDraftExecutionSmokePlan(db, loop, workspace, projectId, options) {
+  const planRel = path.join('docs', 'plan', options.fileName);
+  const planFile = path.join(workspace, planRel);
+  fs.mkdirSync(path.dirname(planFile), { recursive: true });
+  fs.writeFileSync(
+    planFile,
+    [
+      `# ${options.title}`,
+      '',
+      ...options.tasks,
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const planId = insertPlan(db, projectId, planRel, options.issueHash);
+  loop.syncPlanTasks(planId, planFile);
+  db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['draft', nowIso(), planId]);
+  const tasks = db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC', [planId]);
+  assert.equal(tasks.length, options.tasks.length, `${options.title} 应同步任务`);
+  return { planId, planFile, tasks };
+}
+
+function assertDraftSnapshot(snapshot, planId, expectedDraft, label) {
+  const plan = snapshot.plans.find((item) => item.id === planId);
+  assert.ok(plan, `${label} 应包含目标 plan 快照`);
+  assert.equal(plan.is_draft, expectedDraft, `${label} is_draft 应符合预期`);
+  if (expectedDraft) {
+    assert.equal(plan.status, 'draft', `${label} status 应为 draft`);
+  } else {
+    assert.notEqual(plan.status, 'draft', `${label} status 不应为 draft`);
+  }
+}
+
+function countDraftStartedEvents(snapshot, planId) {
+  return snapshot.events.filter((event) => event.type === 'plan.draft.started' && event.meta?.planId === planId).length;
 }
 
 async function assertWorkspaceOpenFileIpcSmoke(db, loop, workspace, projectId) {
@@ -2948,6 +3170,8 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
     emptyValidationPlanRel,
     'feedback10-empty-validation',
   );
+  const emptyRequirementId = insertRequirement(db, regressionProjectId);
+  db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [emptyValidationPlanId, nowIso(), emptyRequirementId]);
   await loop.validatePlan(
     regressionWorkspace,
     db.get('SELECT * FROM plans WHERE id = ?', [emptyValidationPlanId]),
@@ -2962,6 +3186,40 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
     [regressionProjectId],
   );
   assert.match(emptyValidationEvent.message, /验收命令为空/, '空验收命令应记录跳过说明');
+  assert.equal(db.get('SELECT status FROM requirements WHERE id = ?', [emptyRequirementId]).status, 'completed', '空验收命令完成后关联需求应同步 completed');
+  assert.equal(
+    loop.snapshot(regressionProjectId).requirements.find((item) => Number(item.id) === Number(emptyRequirementId))?.status,
+    'completed',
+    '空验收命令完成后需求快照应展示 completed',
+  );
+  await assertMcpCompletedIntakeFilter(db, loop, regressionProjectId, 'requirements', emptyRequirementId, '空验收命令关联需求');
+
+  const successValidationPlanRel = path.join('docs', 'plan', 'feedback10-success-validation.md');
+  const successValidationPlanFile = path.join(regressionWorkspace, successValidationPlanRel);
+  fs.writeFileSync(
+    successValidationPlanFile,
+    ['# Feedback 10 success validation smoke', '', '- [x] V003: success validation <!-- scope: smoke/validation.js -->', ''].join('\n'),
+    'utf8',
+  );
+  const successValidationPlanId = insertPlan(db, regressionProjectId, successValidationPlanRel, 'feedback10-success-validation');
+  const successFeedbackId = insertFeedback(db, regressionProjectId);
+  db.run('UPDATE feedback SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [successValidationPlanId, nowIso(), successFeedbackId]);
+  const originalSuccessRunShell = loop.runShell.bind(loop);
+  loop.configure(regressionProjectId, { validationCommand: 'smoke success validation' });
+  try {
+    loop.runShell = async () => ({ exitCode: 0, output: 'ok', logFile: null });
+    await loop.validatePlan(regressionWorkspace, db.get('SELECT * FROM plans WHERE id = ?', [successValidationPlanId]));
+  } finally {
+    loop.runShell = originalSuccessRunShell;
+    loop.configure(regressionProjectId, { validationCommand: '' });
+  }
+  assert.equal(db.get('SELECT status FROM feedback WHERE id = ?', [successFeedbackId]).status, 'completed', '验收命令成功后关联反馈应同步 completed');
+  assert.equal(
+    loop.snapshot(regressionProjectId).feedback.find((item) => Number(item.id) === Number(successFeedbackId))?.status,
+    'completed',
+    '验收命令成功后反馈快照应展示 completed',
+  );
+  await assertMcpCompletedIntakeFilter(db, loop, regressionProjectId, 'feedback', successFeedbackId, '验收命令成功关联反馈');
 
   const blockedValidationPlanRel = path.join('docs', 'plan', 'feedback10-blocked-validation.md');
   const blockedValidationPlanFile = path.join(regressionWorkspace, blockedValidationPlanRel);
@@ -2977,6 +3235,8 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
     blockedValidationPlanRel,
     'feedback10-blocked-validation',
   );
+  const blockedFeedbackId = insertFeedback(db, regressionProjectId);
+  db.run('UPDATE feedback SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [blockedValidationPlanId, nowIso(), blockedFeedbackId]);
   const blockedValidationLog = path.join(regressionWorkspace, 'docs', 'progress', 'logs', 'blocked-validation.log');
   fs.mkdirSync(path.dirname(blockedValidationLog), { recursive: true });
   fs.writeFileSync(blockedValidationLog, 'PathAccessException: Permission denied while reading .dart_tool', 'utf8');
@@ -3015,6 +3275,7 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
   const blockedValidationMeta = JSON.parse(blockedValidationEvent.meta);
   assert.equal(blockedValidationMeta.failureKind, 'environment_permission', 'validation.blocked should classify permission blockers');
   assert.equal(blockedValidationMeta.environmentBlocked, true, 'validation.blocked should mark environment blockers');
+  assert.equal(db.get('SELECT status FROM feedback WHERE id = ?', [blockedFeedbackId]).status, 'open', '验收失败时关联反馈应保持 open');
 
   const handlers = loadMainIpcHandlers(db, loop);
   const createRequirement = handlers.get('requirements:create');

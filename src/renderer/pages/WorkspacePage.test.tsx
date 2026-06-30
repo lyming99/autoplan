@@ -30,6 +30,19 @@ function expectCountAtLeast(sourceText: string, snippet: string, minimum: number
   expect(count >= minimum, message);
 }
 
+describe('Theme provider build chain regression', () => {
+  it('keeps the JSX ThemeProvider in a TSX module imported by the renderer entry', () => {
+    const themeProvider = source('src', 'renderer', 'hooks', 'useTheme.tsx');
+    const main = source('src', 'renderer', 'main.tsx');
+
+    expectIncludes(themeProvider, 'export function ThemeProvider', 'ThemeProvider should remain exported from the TSX hook module');
+    expectIncludes(themeProvider, '<ThemeContext.Provider value={value}>', 'ThemeProvider should keep its JSX provider wrapper in a TSX file');
+    expectIncludes(themeProvider, 'export function useTheme()', 'useTheme hook API should remain exported with the provider');
+    expectIncludes(main, "import { ThemeProvider } from './hooks/useTheme';", 'renderer entry should resolve ThemeProvider through the extensionless TSX import');
+    expect(!main.includes("from './hooks/useTheme.ts'"), 'renderer entry should not import the removed .ts hook module explicitly');
+  });
+});
+
 describe('Workspace task page structure', () => {
   it('keeps the task page split into Plan and task columns', () => {
     const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
@@ -54,6 +67,18 @@ describe('Workspace task page structure', () => {
     expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
     expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
     expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
+  });
+
+  it('routes draft execution through the parent snapshot refresh action', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const wrappedPlanList = source('src', 'renderer', 'components', 'PlanLists.tsx');
+
+    expectIncludes(wrappedPlanList, 'onRunDraft?: (plan: Plan, task: PlanTask) => Promise<void> | void;', 'Plan list should accept a parent draft-run callback');
+    expectIncludes(wrappedPlanList, 'await onRunDraft(plan, task);', 'draft single-task execution should delegate to the parent callback');
+    expect(!wrappedPlanList.includes('window.autoplan.runTask'), 'Plan list should not call tasks:run directly and drop the returned snapshot');
+    expectIncludes(page, 'onRunDraft={(plan, task) =>', 'WorkspacePage should wire the draft-run callback');
+    expectIncludes(page, 'runLoopAction(() => window.autoplan.runTask', 'draft execution should reuse runLoopAction');
+    expectIncludes(page, 'taskId: task.id', 'draft execution should target the selected pending task');
   });
 
   it('keeps task grouping, status filters, and scope semantic classes wired', () => {
@@ -126,6 +151,50 @@ describe('Workspace intake Plan preview binding', () => {
   });
 });
 
+describe('Workspace intake cascade delete wiring', () => {
+  it('keeps the delete confirmation explicit about linked plans, tasks, and running executions', () => {
+    const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
+
+    expectIncludes(intakePanel, 'const linkedPlanId = linkedPlanIdOf(item);', 'delete confirmation should inspect the linked Plan ID');
+    expectIncludes(intakePanel, 'const cascadeWarning = linkedPlanId === null', 'delete confirmation should branch on linked Plan presence');
+    expectIncludes(
+      intakePanel,
+      '关联 Plan #${linkedPlanId}、全部任务和运行中执行会一并停止并删除。',
+      'linked intake delete confirmation should warn that Plan, tasks, and running executions are stopped and deleted',
+    );
+    expectIncludes(intakePanel, 'const ok = await onDelete(item.id);', 'delete flow should wait for backend deletion result');
+    expectIncludes(intakePanel, 'if (ok && editingId === item.id) setEditingId(null);', 'delete flow should only clear local edit state after success');
+  });
+
+  it('clears the Plan reader only after a successful delete snapshot removes the current Plan', () => {
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+
+    expectIncludes(controller, 'const resetPlanReaderState = useCallback', 'controller should centralize Plan reader reset');
+    expectIncludes(controller, 'const clearDeletedPlanReader = useCallback((next: AppSnapshot) => {', 'controller should compare the returned snapshot before clearing');
+    expectIncludes(controller, 'const stillExists = next.plans.some(', 'reader cleanup should check whether the current Plan still exists');
+    expectIncludes(controller, 'if (!stillExists) resetPlanReaderState();', 'reader cleanup should close/reset deleted Plan reads');
+    expectCountAtLeast(controller, 'clearDeletedPlanReader(next);', 2, 'requirement and feedback delete success paths should both clear deleted readers');
+    expectIncludes(
+      controller,
+      '[clearDeletedPlanReader, projectId, setSnapshot, setError, showError]',
+      'delete callbacks should include reader cleanup in their dependency arrays',
+    );
+    expectIncludes(controller, 'catch (e) {\n        showError(e);\n        return false;', 'delete failures should keep current UI state and surface backend errors');
+  });
+
+  it('keeps delete IPC handlers and renderer API declarations aligned with snapshot-returning cascade deletes', () => {
+    const main = source('src', 'main.js');
+    const types = source('src', 'renderer', 'types.ts');
+
+    expectIncludes(main, "ipcMain.handle('requirements:delete'", 'main process should expose requirement deletion IPC');
+    expectIncludes(main, "return loop.deleteIntake(projectId, 'requirement', id, { attachmentsRoot: attachmentsRoot() });", 'requirement deletion IPC should use the unified cascade service');
+    expectIncludes(main, "ipcMain.handle('feedback:delete'", 'main process should expose feedback deletion IPC');
+    expectIncludes(main, "return loop.deleteIntake(projectId, 'feedback', id, { attachmentsRoot: attachmentsRoot() });", 'feedback deletion IPC should use the unified cascade service');
+    expectIncludes(types, 'deleteRequirement: (input: RecordIdInput) => Promise<AppSnapshot>;', 'renderer API should type requirement deletion as snapshot-returning');
+    expectIncludes(types, 'deleteFeedback: (input: RecordIdInput) => Promise<AppSnapshot>;', 'renderer API should type feedback deletion as snapshot-returning');
+  });
+});
+
 describe('Workspace settings page structure', () => {
   it('defines four settings panes with navigation metadata', () => {
     const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
@@ -140,6 +209,8 @@ describe('Workspace settings page structure', () => {
   it('keeps CLI, scope, and MCP interactions represented in source', () => {
     const composer = source('src', 'renderer', 'components', 'Composer.tsx');
     const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+    const mcpPanel = source('src', 'renderer', 'components', 'workspace', 'McpControlPanel.tsx');
+    const snapshots = source('src', 'loop', 'snapshots.js');
 
     expectIncludes(settingsView, 'agentCliOptionDetails.map', 'CLI provider should use segmented option data');
     expectIncludes(settingsView, 'codexReasoningOptionDetails.map', 'Codex reasoning should render option cards');
@@ -155,6 +226,10 @@ describe('Workspace settings page structure', () => {
     expectIncludes(settingsView, '<InfoRow label="请求头">', 'MCP pane should show the standard auth header');
     expectIncludes(settingsView, '<InfoRow label="工具清单">', 'MCP pane should expose tool list as readonly info');
     expectIncludes(settingsView, 'AUTOPLAN_MCP_ENABLED=0', 'MCP pane should keep the disable reminder');
+    expectIncludes(mcpPanel, 'const connectionAddress = mcp?.url || mcp?.connectionExample', 'MCP pane should prefer the live URL over configured defaults');
+    expectIncludes(mcpPanel, '<InfoRow label="连接地址"><span className="mono">{connectionAddress}</span></InfoRow>', 'MCP pane should render the resolved connection address');
+    expectIncludes(snapshots, '默认端口 ${configuredPort} 被占用，已自动使用可用端口 ${port}。', 'MCP snapshot should describe fallback port usage as a non-error note');
+    expectIncludes(snapshots, 'eventMcp && latestEvent?.type === \'mcp.started\' ? eventMcp.url : null', 'MCP snapshot should recover the real URL from started event metadata');
   });
 });
 

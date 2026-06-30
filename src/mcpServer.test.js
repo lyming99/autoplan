@@ -1,7 +1,7 @@
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
-const { createMcpServer, describeListenError } = require('./mcpServer');
+const { DEFAULT_MCP_CONFIG, createMcpServer, describeListenError } = require('./mcpServer');
 
 /**
  * 临时把 process.platform 改写为指定值，用于覆盖 describeListenError 的 darwin 平台分支。
@@ -16,6 +16,62 @@ function withPlatform(platform, fn) {
   } finally {
     Object.defineProperty(process, 'platform', original);
   }
+}
+
+function listen(server, port, host) {
+  return new Promise((resolve, reject) => {
+    const onError = (error) => {
+      server.off('listening', onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off('error', onError);
+      resolve();
+    };
+    server.once('error', onError);
+    server.once('listening', onListening);
+    server.listen(port, host);
+  });
+}
+
+async function occupyPortIfAvailable(port, host) {
+  const occupier = http.createServer();
+  try {
+    await listen(occupier, port, host);
+    return occupier;
+  } catch (error) {
+    await closeServer(occupier);
+    if (error?.code === 'EADDRINUSE') return null;
+    throw error;
+  }
+}
+
+function closeServer(server) {
+  return new Promise((resolve) => {
+    if (!server?.listening) {
+      resolve();
+      return;
+    }
+    server.close(() => resolve());
+  });
+}
+
+function readHealth(state) {
+  const url = `http://${state.host}:${state.port}/health`;
+  return new Promise((resolve, reject) => {
+    http.get(url, (response) => {
+      const chunks = [];
+      response.on('data', (chunk) => chunks.push(Buffer.from(chunk)));
+      response.on('end', () => {
+        try {
+          assert.equal(response.statusCode, 200);
+          resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+        } catch (error) {
+          reject(error);
+        }
+      });
+    }).on('error', reject);
+  });
 }
 
 describe('describeListenError 错误码分类', () => {
@@ -70,10 +126,34 @@ describe('describeListenError 平台感知分支', () => {
 });
 
 describe('MCP HTTP 监听失败集成路径', () => {
+  it('默认端口被占用时自动回退到可用端口并暴露真实状态', async () => {
+    const host = '127.0.0.1';
+    const defaultPort = DEFAULT_MCP_CONFIG.port;
+    const occupier = await occupyPortIfAvailable(defaultPort, host);
+    const server = createMcpServer({
+      config: { transport: 'http', host, port: defaultPort, autoPortFallback: true },
+    });
+    try {
+      const state = await server.start();
+      assert.equal(state.running, true);
+      assert.equal(state.lastError, null);
+      assert.notEqual(state.port, defaultPort, '默认端口冲突时应监听替代端口');
+      assert.equal(state.url, `http://${host}:${state.port}${DEFAULT_MCP_CONFIG.path}`);
+
+      const health = await readHealth(state);
+      assert.equal(health.running, true);
+      assert.equal(health.port, state.port, 'health 状态应返回真实监听端口');
+      assert.equal(health.url, state.url, 'health 状态应返回真实连接地址');
+    } finally {
+      await server.stop().catch(() => undefined);
+      await closeServer(occupier);
+    }
+  });
+
   it('绑定已占用端口时 start() 以分类文案 reject 且 lastError 与之一致、running 保持 false', async () => {
     // 占用一个临时端口制造 EADDRINUSE，触发 startHttp 的 listen 'error' 事件。
     const occupier = http.createServer();
-    await new Promise((resolve) => occupier.listen(0, '127.0.0.1', resolve));
+    await listen(occupier, 0, '127.0.0.1');
     const occupiedPort = occupier.address().port;
 
     const server = createMcpServer({
@@ -95,7 +175,7 @@ describe('MCP HTTP 监听失败集成路径', () => {
       assert.match(status.lastError, /占用/, 'lastError 应携带分类后可处置文案');
     } finally {
       await server.stop().catch(() => undefined);
-      await new Promise((resolve) => occupier.close(() => resolve()));
+      await closeServer(occupier);
     }
   });
 

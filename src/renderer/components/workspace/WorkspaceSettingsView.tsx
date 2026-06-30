@@ -1,5 +1,6 @@
 import { useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
 import type { McpStatus } from '../../types';
+import { useTheme, type ThemeMode } from '../../hooks/useTheme';
 import {
   agentCliDefaultCommand,
   agentCliOptionDetails,
@@ -14,11 +15,12 @@ import {
 } from '../../utils/workspaceForms';
 import { McpControlPanel, mcpStatusText, mcpStatusTone } from './McpControlPanel';
 
-type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp' | 'env';
+type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'mcp' | 'env';
 
 const SETTINGS_NAV: Array<{ id: SettingsPane; label: string; hint: string; icon: string }> = [
   { id: 'loop', label: '循环控制', hint: '路径、间隔、验收命令', icon: 'loop' },
   { id: 'cli', label: 'CLI 后端', hint: 'Provider 与 Codex 深度', icon: 'cli' },
+  { id: 'appearance', label: '外观', hint: '浅色 / 深色 / 跟随系统', icon: 'theme' },
   { id: 'scope', label: 'scope 文件', hint: '打开方式与编辑器命令', icon: 'scope' },
   { id: 'mcp', label: 'MCP 接入', hint: '服务状态与工具清单', icon: 'mcp' },
   { id: 'env', label: '环境变量', hint: '注入到脚本与 CLI 执行环境', icon: 'env' },
@@ -76,10 +78,14 @@ export function WorkspaceSettingsView({
   const [activePane, setActivePane] = useState<SettingsPane>('loop');
   const isCodexProvider = isCodexAgentCliProvider(loopForm.agentCliProvider);
   const mcpStatus = mcpStatusText(mcp);
+  const { theme, setTheme } = useTheme();
+
+  const themeModeLabel = theme === 'light' ? '浅色' : theme === 'dark' ? '深色' : '跟随系统';
 
   const navMeta: Record<SettingsPane, { label: string; tone?: string }> = {
     loop: { label: running ? '运行中' : '已停止', tone: running ? 'ok' : '' },
     cli: { label: agentCliNavLabel(loopForm.agentCliProvider), tone: isCodexProvider ? 'ok' : '' },
+    appearance: { label: themeModeLabel },
     scope: { label: scopeModeLabel(scopeFileOpenSettings.mode) },
     mcp: { label: mcpStatus, tone: mcpStatusTone(mcp) },
     env: { label: loopForm.envVars.length ? `${loopForm.envVars.length} 个` : '未配置' },
@@ -254,6 +260,49 @@ export function WorkspaceSettingsView({
               </div>
 
               <SettingsActions running={running} onToggleRun={onToggleRun} />
+            </section>
+          ) : null}
+
+          {activePane === 'appearance' ? (
+            <section className="settings-pane active" aria-labelledby="settings-appearance-title">
+              <div className="pane-head">
+                <h2 id="settings-appearance-title"><span className="pane-ico" aria-hidden="true" />外观</h2>
+                <p>选择界面主题，切换即时生效并自动保存偏好。</p>
+              </div>
+
+              <div className="set-card">
+                <div className="set-card-head">
+                  <h3>主题模式</h3>
+                  <div className="set-card-hint">浅色、深色或跟随操作系统设置</div>
+                </div>
+                <div className="set-card-body">
+                  <label className="field">
+                    <span className="field-label">主题</span>
+                    <div className="segmented" role="radiogroup" aria-label="主题模式">
+                      {([
+                        { value: 'light' as ThemeMode, label: '浅色', desc: '始终使用浅色界面' },
+                        { value: 'dark' as ThemeMode, label: '深色', desc: '始终使用深色界面' },
+                        { value: 'auto' as ThemeMode, label: '跟随系统', desc: '根据操作系统设置自动切换' },
+                      ] as const).map((option) => {
+                        const active = theme === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`seg-opt${active ? ' active' : ''}`}
+                            aria-pressed={active}
+                            onClick={() => setTheme(option.value)}
+                          >
+                            <span>{option.label}</span>
+                            <span className="seg-note">{option.desc}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <span className="field-hint">切换后即时生效，偏好自动保存到本地浏览器存储。</span>
+                  </label>
+                </div>
+              </div>
             </section>
           ) : null}
 

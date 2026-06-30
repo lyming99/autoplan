@@ -36,8 +36,13 @@ function isEnvironmentBlocking(result) {
 
 async function processPlan(service, helpers, workspace, plan) {
     plan = service.activateDraftPlan ? service.activateDraftPlan(plan) : plan;
+    if (!plan) return;
+    if (!planTargetExists(service, plan)) return;
     const planFile = path.join(workspace, plan.file_path);
     service.syncPlanTasks(plan.id, planFile);
+    if (!planTargetExists(service, plan)) return;
+    const syncedPlan = service.db.get('SELECT * FROM plans WHERE id = ?', [plan.id]);
+    if (syncedPlan) plan = syncedPlan;
     const pendingTasks = service.db.all(
       `SELECT * FROM plan_tasks WHERE plan_id = ? AND status = 'pending'
        ORDER BY sort_order ASC`,
@@ -46,14 +51,17 @@ async function processPlan(service, helpers, workspace, plan) {
     if (pendingTasks.length) {
       const firstPendingTask = pendingTasks[0];
       if (service.isFinalAcceptanceTask(plan.id, firstPendingTask)) {
-        await service.validatePlan(workspace, plan, { task: firstPendingTask });
+        const result = await service.validatePlan(workspace, plan, { task: firstPendingTask });
+        if (result?.cancelled) return;
         return;
       }
       service.setPhase(plan.project_id, 'execute-task');
       let attempt = 0;
       let result;
       do {
+        if (!taskTargetExists(service, plan, firstPendingTask)) return;
         result = await service.executeTask(workspace, plan, firstPendingTask);
+        if (!taskTargetExists(service, plan, firstPendingTask) || result?.cancelled) return;
         if (result.exitCode === 0) break;
         attempt++;
         if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
@@ -68,6 +76,7 @@ async function processPlan(service, helpers, workspace, plan) {
               delaySeconds,
             });
           await sleep(delaySeconds * 1000);
+          if (!taskTargetExists(service, plan, firstPendingTask)) return;
         }
       } while (result.exitCode !== 0 && attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result));
       if (result.exitCode === 0) {
@@ -79,7 +88,8 @@ async function processPlan(service, helpers, workspace, plan) {
       const currentPlan = service.db.get('SELECT status, validation_passed FROM plans WHERE id = ?', [plan.id]);
       if (currentPlan?.validation_passed || currentPlan?.status === 'completed') return;
     }
-    await service.validatePlan(workspace, plan);
+    const result = await service.validatePlan(workspace, plan);
+    if (result?.cancelled) return;
   }
 
 function previousPlanCodexSessionId(service, helpers, planId, task) {
@@ -151,11 +161,19 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
       );
       const results = [];
       for (const task of tasks) {
-        let result;
+        let result = null;
         try {
           let attempt = 0;
           do {
+            if (!taskTargetExists(service, plan, task)) {
+              result = cancelledTaskResult();
+              break;
+            }
             result = await service.executeTask(workspace, plan, task, { parallel: false });
+            if (!taskTargetExists(service, plan, task) || result?.cancelled) {
+              result = cancelledTaskResult(result);
+              break;
+            }
             if (result.exitCode === 0) break;
             attempt++;
             if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
@@ -170,16 +188,28 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
                   delaySeconds,
                 });
               await sleep(delaySeconds * 1000);
+              if (!taskTargetExists(service, plan, task)) {
+                result = cancelledTaskResult(result);
+                break;
+              }
             }
           } while (result.exitCode !== 0 && attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result));
         } catch (error) {
           const finishedAt = nowIso();
+          if (!taskTargetExists(service, plan, task)) {
+            results.push({ task, result: { exitCode: -1, finishedAt, cancelled: true } });
+            break;
+          }
           if (!taskLifecycleEventRecorded(error)) {
             service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
               error: error?.message || String(error),
             });
           }
           results.push({ task, result: { exitCode: -1, finishedAt } });
+          break;
+        }
+        if (!taskTargetExists(service, plan, task) || result?.cancelled) {
+          results.push({ task, result: cancelledTaskResult(result) });
           break;
         }
         if (result.exitCode === 0) {
@@ -204,11 +234,19 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
     );
     const results = await Promise.all(
       tasks.map(async (task) => {
-        let result;
+        let result = null;
         try {
           let attempt = 0;
           do {
+            if (!taskTargetExists(service, plan, task)) {
+              result = cancelledTaskResult();
+              break;
+            }
             result = await service.executeTask(workspace, plan, task, { parallel: true });
+            if (!taskTargetExists(service, plan, task) || result?.cancelled) {
+              result = cancelledTaskResult(result);
+              break;
+            }
             if (result.exitCode === 0) break;
             attempt++;
             if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
@@ -221,12 +259,20 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
                   taskKey: task.task_key,
                   attempt,
                   delaySeconds,
-                });
+                },
+              );
               await sleep(delaySeconds * 1000);
+              if (!taskTargetExists(service, plan, task)) {
+                result = cancelledTaskResult(result);
+                break;
+              }
             }
           } while (result.exitCode !== 0 && attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result));
         } catch (error) {
           const finishedAt = nowIso();
+          if (!taskTargetExists(service, plan, task)) {
+            return { task, result: { exitCode: -1, finishedAt, cancelled: true } };
+          }
           if (!taskLifecycleEventRecorded(error)) {
             service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
               error: error?.message || String(error),
@@ -234,6 +280,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
           }
           return { task, result: { exitCode: -1, finishedAt } };
         }
+        if (!taskTargetExists(service, plan, task) || result?.cancelled) return { task, result: cancelledTaskResult(result) };
         if (result.exitCode === 0) {
           await service.completeTask(workspace, plan, task, result);
         }
@@ -245,9 +292,15 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
 
 async function executeTask(service, helpers, workspace, plan, task, options = {}) {
   const { tailText } = helpers;
+    if (!taskTargetExists(service, plan, task)) {
+      return { exitCode: -1, output: '', errorMessage: '任务目标已删除', cancelled: true, finishedAt: nowIso() };
+    }
     service.setPhase(plan.project_id, 'execute-task');
     const startedAt = nowIso();
     const startedTask = service.startTaskRun(task.id, startedAt) || task;
+    if (!taskTargetExists(service, plan, startedTask)) {
+      return { exitCode: -1, output: '', errorMessage: '任务目标已删除', cancelled: true, finishedAt: nowIso() };
+    }
     const taskAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
     const isTaskCodexProvider = taskAgentCliContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
     const isTaskClaudeProvider = taskAgentCliContext.agentCliProvider === 'claude';
@@ -292,6 +345,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       ...startedSessionContext,
     });
     const planFile = path.join(workspace, plan.file_path);
+    clearTaskCompletionMarkInPlan(planFile, startedTask);
     const completionRules = [
       '- 这是无人值守执行：不要提问、不要请求确认、不要等待用户输入，所有不确定项自行基于代码推断并直接落地修改',
       '- plan 文件是只读上下文：不要修改 plan 文件，不要勾选 checkbox，不要更新 plan 进度区',
@@ -337,6 +391,10 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       }, planFile);
     } catch (error) {
       const finishedAt = nowIso();
+      if (!taskTargetExists(service, plan, task)) {
+        markTaskLifecycleEventRecorded(error);
+        return { exitCode: -1, output: '', errorMessage: '任务目标已删除', cancelled: true, finishedAt };
+      }
       const errorMessage = error?.message || String(error);
       const failure = classifyExecutionFailure({ exitCode: -1, errorMessage });
       const failedTask = service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
@@ -358,6 +416,9 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
     }
     const finishedAt = nowIso();
     result.finishedAt = finishedAt;
+    if (!taskTargetExists(service, plan, task)) {
+      return { ...result, exitCode: -1, cancelled: true };
+    }
     const capturedSessionId = taskResultSessionId(result);
     if (capturedSessionId) {
       if (result.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER) {
@@ -368,6 +429,9 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
     }
     const succeeded = result.exitCode === 0;
     if (!succeeded) {
+      if (!taskTargetExists(service, plan, task)) {
+        return { ...result, exitCode: -1, cancelled: true };
+      }
       const failure = classifyExecutionFailure(result);
       service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
         ...agentCliContextFields(result, { defaultProvider: true }),
@@ -390,10 +454,13 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
   }
 
 async function completeTask(service, helpers, workspace, plan, task, result) {
+    if (!taskTargetExists(service, plan, task)) return null;
     const planFile = path.join(workspace, plan.file_path);
     const finishedAt = result?.finishedAt || nowIso();
     service.markTaskCompletedInPlan(workspace, planFile, task, result);
+    if (!taskTargetExists(service, plan, task)) return null;
     const completedTask = service.finishTaskRun(task.id, TASK_EVENT_STATUS.COMPLETED, finishedAt) || task;
+    if (!taskTargetExists(service, plan, completedTask)) return null;
     service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
       ...agentCliContextFields(result, { defaultProvider: true }),
       planId: plan.id,
@@ -415,6 +482,7 @@ async function completeTask(service, helpers, workspace, plan, task, result) {
       exitCode: result?.exitCode,
       log: result?.logFile || null,
     });
+    return completedTask;
 }
 
 function parseScopeFiles(scope) {
@@ -423,6 +491,8 @@ function parseScopeFiles(scope) {
 
 function refreshPlanProgress(service, helpers, planId, planFile) {
   const { hashFile } = helpers;
+    const persistedPlan = service.db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+    if (!persistedPlan) return null;
     const totals = service.db.get(
       `SELECT COUNT(*) AS total,
               SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) AS completed
@@ -438,6 +508,20 @@ function refreshPlanProgress(service, helpers, planId, planFile) {
       'UPDATE plans SET hash = ?, status = ?, total_tasks = ?, completed_tasks = ?, updated_at = ? WHERE id = ?',
       [hash, status, total, completed, nowIso(), planId],
     );
+    return service.db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+  }
+
+function clearTaskCompletionMarkInPlan(planFile, task) {
+    if (!fs.existsSync(planFile)) return;
+    const key = escapeRegExp(String(task.task_key || ''));
+    // 将 checkbox 从 [x]/[X] 重置为 [ ]（pending 态）
+    const checkboxRe = new RegExp(`(^\\s*[-*]\\s+\\[)([ xX])(\\]\\s+${key}(?:\\b|[:：\\s-]))`, 'm');
+    let content = fs.readFileSync(planFile, 'utf8');
+    content = content.replace(checkboxRe, '$1 $3');
+    // 移除 "AutoPlan 完成" 注释行
+    const noteRe = new RegExp(`^\\s*-\\s+${key}\\s+AutoPlan 完成：.*$\\n?`, 'm');
+    content = content.replace(noteRe, '');
+    fs.writeFileSync(planFile, content, 'utf8');
   }
 
 function markTaskCompletedInPlan(service, helpers, workspace, planFile, task, result) {
@@ -464,6 +548,33 @@ function markTaskCompletedInPlan(service, helpers, workspace, planFile, task, re
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function planTargetExists(service, plan) {
+  const planId = Number(plan?.id || 0);
+  const projectId = Number(plan?.project_id || 0);
+  if (!planId) return false;
+  if (typeof service.planExists === 'function') return service.planExists(projectId, planId);
+  return Boolean(service.db.get('SELECT 1 FROM plans WHERE id = ?', [planId]));
+}
+
+function taskTargetExists(service, plan, task) {
+  const taskId = Number(task?.id || 0);
+  if (!taskId) return false;
+  const planId = Number(plan?.id || task?.plan_id || 0);
+  const projectId = Number(plan?.project_id || 0);
+  if (typeof service.taskExists === 'function') return service.taskExists(projectId, planId, taskId);
+  return Boolean(service.db.get('SELECT 1 FROM plan_tasks WHERE id = ? AND plan_id = ?', [taskId, planId]));
+}
+
+function cancelledTaskResult(result = {}) {
+  return {
+    ...result,
+    exitCode: -1,
+    cancelled: true,
+    errorMessage: result.errorMessage || '任务目标已删除',
+    finishedAt: result.finishedAt || nowIso(),
+  };
 }
 
 module.exports = {
