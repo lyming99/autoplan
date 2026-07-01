@@ -8,7 +8,7 @@
 
 随着AI越来越智能，项目开发只需要需求与反馈的循环，就可以让项目无限趋近100%完成任务。
 
-这个可以验证，[ai哲学，解决99%编程问题](https://www.bilibili.com/video/BV1TsEC6DEik)
+这个可以验证，[ai哲学，解决99%编程问题](https://www.bilibili.com/video/BV1TsEC6DEik)。
 
 
 ## 理念
