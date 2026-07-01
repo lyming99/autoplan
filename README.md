@@ -92,6 +92,9 @@ AI不会淘汰你，淘汰你的是其它人，或者说是你自己。
 当你不知所措，迷失方向的时候，不妨参考这个视频，
 [这套循环，60天不出结果，我拜你为师](https://www.bilibili.com/video/BV1H2KU6oEgz)。
 
+
+![](./snapshot/chat.jpg)
+
 ## 最后
 
 遇到问题？欢迎联系微信：lyming555，Email: 44185539@qq.com
