@@ -59,31 +59,6 @@
 ![](./snapshot/workspace.png)
 
 
-## 自动化发布
-
-项目通过 GitHub Actions + electron-builder 发布 Windows、macOS、Linux 三端产物。发布 workflow 支持推送 `v*` tag 自动触发，也支持在 GitHub Actions 页面手动触发。
-
-### Beta 版本说明
-
-Beta 版本用于更快分发近期修复和功能更新，是未完整人工测试的预发布版本，不等同于稳定正式版，也不承诺零缺陷。当前 beta 发布策略是：AI 修复问题后，只要项目编译通过即可发布，用于减少人工测试和等待时间。
-
-如果你下载测试或日常使用 beta 版本时发现问题，请直接到 GitHub Issue 界面提交反馈，尽量附上复现步骤、截图或日志。后续 AutoPlan/AI 流程会持续从 Issue 中发现问题，生成修复计划并继续处理。
-
-
-## 开发
-
-```bash
-npm install
-npm run dev        # 启动开发模式（Vite + Electron）
-npm run check      # TypeScript + 主进程/预加载/冒烟脚本静态检查
-npm run smoke      # 核心流程冒烟测试（含空验收、单条 CLI 覆盖、Codex 深度与 MCP 工具 stub 覆盖）
-npm run package:win  # 打包 Windows 安装包
-```
-
-> 真实的 Claude CLI 调用需要本机安装并认证 `claude`；真实 MCP 客户端连通性需手动验证。`npm run smoke` 通过 stub 覆盖后端路由、Agent CLI 会话隔离、Codex 思考深度参数转换和 MCP 工具写入核心分支，不依赖真实二进制或外部 MCP 客户端。
-
-
-
 ## 理念
 
 随着AI越来越智能，编程任务其实就可以像人工智能驾驶一样，逐渐卸载方向盘了。
