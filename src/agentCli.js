@@ -178,6 +178,13 @@ function normalizeOpenCodeSessionTitle(value) {
   return text ? text.slice(0, 160) : '';
 }
 
+// OpenCode agent 名来自 .opencode/agents/<name>.md 的文件名（去掉扩展名），约定为小写字母/
+// 数字/连字符（如 AutoPlan 专用 agent autoplan-plan）。未知或非法取值返回空串，不注入 --agent。
+function normalizeOpenCodeAgentName(value) {
+  const text = String(value || '').trim().toLowerCase();
+  return /^[a-z0-9][a-z0-9-]*$/.test(text) ? text : '';
+}
+
 function opencodeCliArgs(options = {}) {
   // --dangerously-skip-permissions：无人值守模式下必须自动批准 external_directory 等权限，
   // 否则每次访问工作区文件都会触发权限请求并被自动拒绝（auto-rejecting），导致工具调用全部失败、
@@ -187,6 +194,11 @@ function opencodeCliArgs(options = {}) {
   const title = normalizeOpenCodeSessionTitle(options.title || options.opencodeSessionTitle);
   if (sessionId) args.push('--session', sessionId);
   if (title) args.push('--title', title);
+  // 计划生成阶段注入 AutoPlan 专用受限 agent（见 src/loop/opencodeAgent.js，P001/P002）。
+  // --agent 必须位于 run / --format / --dangerously-skip-permissions 与 --session / --title
+  // 之后、位置 prompt 之前（位置 prompt 在 runAgentCliAttempt 中追加，本函数返回时其后尚无 prompt）。
+  const agent = normalizeOpenCodeAgentName(options.agent || options.opencodeAgent);
+  if (agent) args.push('--agent', agent);
   return args;
 }
 
@@ -220,16 +232,18 @@ function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptio
   if (normalizedProvider === 'opencode') {
     const sessionId = normalizeAgentCliSessionId(agentCliOptions.sessionId || agentCliOptions.opencodeSessionId);
     const title = normalizeOpenCodeSessionTitle(agentCliOptions.title || agentCliOptions.opencodeSessionTitle);
+    const agent = normalizeOpenCodeAgentName(agentCliOptions.agent || agentCliOptions.opencodeAgent);
     return {
       provider: normalizedProvider,
       agentCliProvider: normalizedProvider,
       command: resolvedCommand,
-      args: opencodeCliArgs({ sessionId, title }),
+      args: opencodeCliArgs({ sessionId, title, agent }),
       lastFileSource: 'stdout',
       useShell: false,
       promptSource: 'argument',
       agentCliSessionId: sessionId,
       agentCliSessionTitle: title,
+      ...(agent ? { opencodeAgent: agent } : {}),
     };
   }
   if (normalizedProvider === 'oh-my-pi') {
@@ -294,11 +308,15 @@ async function runAgentCliAttempt(options) {
     const spillover = writePromptSpilloverFile(spawnSpec, prompt, workspace);
     if (spillover) {
       // prompt（连同 run 子命令自身参数、转义/call 开销）会超过命令行字符上限（cmd.exe 路径仅
-      // 8191，CreateProcess 路径 32767），已落盘为附件文件，仅以简短指针消息作为位置参数，
-      // 并用 -f 投递完整指令。opencode 的 run 子命令不读 stdin，必须走位置参数。
+      // 8191，CreateProcess 路径 32767）：已把完整 prompt 落盘为文件，用 `-f` 作为「消息附件」投递，
+      // 位置参数只放 spillover.pointerMessage 这条权威指针指令。注意 opencode 的 `-f/--file` 语义是
+      // "File(s) to attach to message"（把文件作为消息附件，见 opencode.ai/docs/cli），而非「从文件读取
+      // prompt」——真正的用户消息是位置参数这条指令，附件需模型主动读取，故指针指令必须权威且明确。
+      // opencode 的 run 子命令不读 stdin，必须走位置参数；仅 promptSource=argument（opencode）走此分支，
+      // codex/claude/oh-my-pi（stdin）不受影响。
       spawnSpec.args = [...spawnSpec.args, spillover.pointerMessage, '-f', spillover.filePath];
       promptSpillover = spillover;
-      const note = `\n[AutoPlan] prompt 过长（${spillover.promptChars} 字符），已写入附件 ${spillover.filePath} 并以 -f 投递，规避命令行长度上限。\n`;
+      const note = `\n[AutoPlan] prompt 过长（${spillover.promptChars} 字符），已写入附件 ${spillover.filePath} 并以 -f 作为消息附件投递，规避命令行长度上限。\n`;
       safeWriteStream(stream, note);
       appendOperationBuffer(activeOperation, note);
     } else {
@@ -644,7 +662,12 @@ function writePromptSpilloverFile(spawnSpec, prompt, workspace) {
     const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const filePath = path.join(tmpDir, `prompt-${stamp}.md`);
     fs.writeFileSync(filePath, text, 'utf8');
-    return { filePath, promptBytes: Buffer.byteLength(text, 'utf8'), promptChars, pointerMessage: '完整指令见随附的 prompt 文件，请按其内容执行。' };
+    // 位置参数只放一条「权威指针指令」：opencode 的 `-f/--file` 语义是 "File(s) to attach to message"
+    // （把文件作为消息附件，见 opencode.ai/docs/cli），而非「从文件读取 prompt」——真正的用户消息是
+    // 这条位置参数指令，附件内容需模型主动读取。故必须明确告知完整唯一指令就在附件里、必须完整读取
+    // 并严格按其执行、禁止转而探索仓库或重写主题，否则 agentic 模型易忽略附件而自主发挥（反馈 #14 根因）。
+    const pointerMessage = `你的完整唯一指令已作为附件 ${filePath} 提供。必须完整读取该附件，并严格按照其内容执行；禁止转而探索仓库、禁止自主重写任务主题。`;
+    return { filePath, promptBytes: Buffer.byteLength(text, 'utf8'), promptChars, pointerMessage };
   } catch {
     return null;
   }
@@ -799,6 +822,7 @@ module.exports = {
   normalizeCodexReasoningEffort,
   normalizeAgentCliCommand,
   normalizeAgentCliProvider,
+  normalizeOpenCodeAgentName,
   readableAgentCliError,
   runAgentCliAttempt,
   writePromptSpilloverFile,

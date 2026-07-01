@@ -188,6 +188,53 @@ describe('OpenCode backend spec', () => {
   });
 });
 
+describe('OpenCode 计划生成专用 agent 注入（P002）', () => {
+  it('传入 agent 选项时 spawn 参数含 --agent autoplan-plan', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt', [], { agent: 'autoplan-plan' });
+
+    expectIncludes(spec.args, '--agent');
+    expectIncludes(spec.args, 'autoplan-plan');
+    expectEqual(spec.opencodeAgent, 'autoplan-plan');
+  });
+
+  it('不传 agent 选项时（任务执行/修复）参数不含 --agent', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt', [], {
+      sessionId: 'ses_12345',
+      title: 'AutoPlan task exec',
+    });
+
+    expectNotIncludes(spec.args, '--agent');
+    expectEqual(spec.opencodeAgent, undefined);
+  });
+
+  it('--agent 位于 --format / --session / --title 之后，值紧随其后', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt', [], {
+      sessionId: 'ses_12345',
+      title: 'AutoPlan title',
+      agent: 'autoplan-plan',
+    });
+    const args = spec.args;
+    const idxFormat = args.indexOf('--format');
+    const idxSession = args.indexOf('--session');
+    const idxTitle = args.indexOf('--title');
+    const idxAgent = args.indexOf('--agent');
+
+    expectTruthy(idxFormat >= 0 && idxSession >= 0 && idxTitle >= 0 && idxAgent >= 0);
+    expectTruthy(idxAgent > idxFormat);
+    expectTruthy(idxAgent > idxSession);
+    expectTruthy(idxAgent > idxTitle);
+    expectEqual(args[idxAgent + 1], 'autoplan-plan');
+  });
+
+  it('拒绝非法 agent 名（含空格/特殊字符），不注入 --agent', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt', [], {
+      agent: 'Bad Agent!; rm -rf',
+    });
+
+    expectNotIncludes(spec.args, '--agent');
+  });
+});
+
 describe('Oh My Pi backend spec', () => {
   it('normalizes oh-my-pi and degrades unknown providers to codex', () => {
     expectIncludes([...AGENT_CLI_PROVIDERS], 'oh-my-pi');
@@ -276,7 +323,10 @@ describe('OpenCode prompt spillover (命令行长度上限规避)', () => {
       expectTruthy(spillover);
       expectTruthy(spillover.filePath);
       expectTruthy(spillover.promptChars > WIN_CMD_LIMIT);
-      expectIncludes(spillover.pointerMessage, 'prompt');
+      // P003：指针消息为权威指令，含附件路径与"禁止转而探索"措辞（不再含糊提示）
+      expectIncludes(spillover.pointerMessage, spillover.filePath);
+      expectIncludes(spillover.pointerMessage, '禁止转而探索');
+      expectIncludes(spillover.pointerMessage, '必须完整读取');
       // 文件确实落盘且内容与原 prompt 一致
       expectTruthy(fs.existsSync(spillover.filePath));
       expectEqual(fs.readFileSync(spillover.filePath, 'utf8'), longPrompt);

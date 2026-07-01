@@ -87,9 +87,47 @@ contextBridge.exposeInMainWorld('autoplan', {
   stopScript: (input) => ipcRenderer.invoke('scripts:stop', input),
   getDroppedFilePath: (file) => webUtils.getPathForFile(file),
   toFileUrl,
+  updateStatus: () => ipcRenderer.invoke('updates:status'),
+  checkForUpdates: () => ipcRenderer.invoke('updates:check'),
+  dismissUpdate: (input) => ipcRenderer.invoke('updates:dismiss', input),
+  setAutoUpdateCheck: (enabled) => ipcRenderer.invoke('updates:setAutoCheck', { enabled }),
+  openExternal: (url) => ipcRenderer.invoke('shell:openExternal', { url }),
   onLoopUpdate: (handler) => {
     const listener = (_event, snapshot) => handler(snapshot);
     ipcRenderer.on('loop:update', listener);
     return () => ipcRenderer.removeListener('loop:update', listener);
   },
+  onUpdateStatus: (handler) => {
+    const listener = (_event, status) => handler(status);
+    ipcRenderer.on('updates:status', listener);
+    return () => ipcRenderer.removeListener('updates:status', listener);
+  },
+  // Chat 对话模块（需求 #26 / #28）
+  chatSend: (payload) => ipcRenderer.invoke('chat:send', payload),
+  chatStop: (payload) => ipcRenderer.invoke('chat:stop', payload),
+  chatClear: (payload) => ipcRenderer.invoke('chat:clear', payload),
+  chatHistory: (payload) => ipcRenderer.invoke('chat:history', payload),
+  chatSaveConfig: (config) => ipcRenderer.invoke('chat:saveConfig', config),
+  chatGetConfig: () => ipcRenderer.invoke('chat:getConfig'),
+  onChatChunk: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('chat:chunk', listener);
+    return () => ipcRenderer.removeListener('chat:chunk', listener);
+  },
+  onChatDone: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('chat:done', listener);
+    return () => ipcRenderer.removeListener('chat:done', listener);
+  },
+  // AI 配置（需求 #28）
+  aiConfigList: (payload) => ipcRenderer.invoke('ai-config:list', payload),
+  aiConfigCreate: (payload) => ipcRenderer.invoke('ai-config:create', payload),
+  aiConfigUpdate: (payload) => ipcRenderer.invoke('ai-config:update', payload),
+  aiConfigDelete: (payload) => ipcRenderer.invoke('ai-config:delete', payload),
+  aiConfigGet: (payload) => ipcRenderer.invoke('ai-config:get', payload),
+  // 对话管理（需求 #28）
+  conversationList: (payload) => ipcRenderer.invoke('conversation:list', payload),
+  conversationCreate: (payload) => ipcRenderer.invoke('conversation:create', payload),
+  conversationUpdate: (payload) => ipcRenderer.invoke('conversation:update', payload),
+  conversationDelete: (payload) => ipcRenderer.invoke('conversation:delete', payload),
 });

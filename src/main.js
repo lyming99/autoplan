@@ -10,6 +10,25 @@ const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
 const { parseCron } = require('./loop/scriptHooks');
 const { mcpServerConfig, saveMcpSettings } = require('./mcpConfig');
 const { createMcpServer } = require('./mcpServer');
+const { createUpdateChecker } = require('./updateChecker');
+const { createLlmClient } = require('./chat/llmClient');
+const { getChatToolDefinitions } = require('./chat/chatTools');
+const {
+  createChatController,
+  createConversation,
+  listConversations,
+  updateConversation,
+  deleteConversation,
+  ensureDefaultConversation,
+} = require('./chat/chatController');
+const {
+  createAiConfig,
+  updateAiConfig,
+  deleteAiConfig,
+  listAiConfigs,
+  getAiConfig,
+  maskApiKey,
+} = require('./chat/aiConfigService');
 
 if (protocol?.registerSchemesAsPrivileged) {
   protocol.registerSchemesAsPrivileged([
@@ -21,7 +40,10 @@ let mainWindow;
 let db;
 let loop;
 let mcpServer;
+let updateChecker;
+let chatControllers;
 let fileProtocolRegistered = false;
+const UPDATE_REPO = 'lyming99/autoplan';
 
 async function createApp() {
   Menu.setApplicationMenu(null);
@@ -29,6 +51,7 @@ async function createApp() {
   await db.init();
   registerFileProtocol();
   loop = new LoopService(db);
+  chatControllers = new Map();
   loop.on('update', (snapshot) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('loop:update', snapshot);
@@ -36,6 +59,8 @@ async function createApp() {
   });
   // 模块级 mcpServer 在启停过程中被重新赋值，故以闭包懒读取其最新状态注入快照。
   loop.setMcpStatusProvider(() => mcpServer?.status?.());
+  // 更新检查器（需求 #24）：检查完成后经 onCheck 向渲染进程推送 updates:status。
+  updateChecker = createUpdateChecker({ app, net, db, repo: UPDATE_REPO, onCheck: broadcastUpdateStatus });
 
   mainWindow = new BrowserWindow({
     width: 1220,
@@ -52,6 +77,7 @@ async function createApp() {
   });
   await loadRenderer(mainWindow);
   scheduleMcpServerStart();
+  scheduleUpdateCheck();
 }
 
 app.whenReady().then(() => createApp().catch((error) => console.error('[app] startup failed', error)));
@@ -63,7 +89,78 @@ app.on('window-all-closed', () => {
 app.on('before-quit', () => {
   if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
   if (loop) loop.stop();
+  if (updateChecker) updateChecker.stop();
 });
+
+ipcMain.handle('updates:status', () => (updateChecker ? updateChecker.status() : defaultUpdateStatus()));
+
+ipcMain.handle('updates:check', async () => {
+  if (!updateChecker) return { ok: false, error: 'checker unavailable', ...defaultUpdateStatus() };
+  // check() 内部完成 onCheck 推送，此处仅返回结果给调用方。
+  return updateChecker.check();
+});
+
+ipcMain.handle('updates:dismiss', (_event, input) => {
+  if (!updateChecker) return defaultUpdateStatus();
+  const next = updateChecker.dismiss(input);
+  broadcastUpdateStatus();
+  return next;
+});
+
+ipcMain.handle('updates:setAutoCheck', (_event, input = {}) => {
+  if (!updateChecker) return defaultUpdateStatus();
+  const next = updateChecker.setAutoCheck(input && input.enabled);
+  broadcastUpdateStatus();
+  return next;
+});
+
+// 外链统一经主进程 shell.openExternal 打开（需求 #24 更新提醒等），仅放行 http/https，避免渲染进程直接跳转。
+ipcMain.handle('shell:openExternal', async (_event, input = {}) => {
+  const url = typeof input === 'string' ? input : input && input.url;
+  if (typeof url !== 'string' || !/^https?:\/\//i.test(url)) return { ok: false, error: 'invalid url' };
+  try {
+    await shell.openExternal(url);
+    return { ok: true, error: null };
+  } catch (error) {
+    return { ok: false, error: String(error?.message || error) };
+  }
+});
+
+function defaultUpdateStatus() {
+  return {
+    currentVersion: typeof app?.getVersion === 'function' ? String(app.getVersion() || '0.0.0') : '0.0.0',
+    latestVersion: '',
+    latestName: '',
+    htmlUrl: '',
+    publishedAt: '',
+    lastCheckedAt: '',
+    dismissedVersion: '',
+    hasUpdate: false,
+    stableUpdate: false,
+    autoCheck: true,
+    intervalMinutes: 360,
+  };
+}
+
+function broadcastUpdateStatus() {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('updates:status', updateChecker ? updateChecker.status() : defaultUpdateStatus());
+  }
+}
+
+function scheduleUpdateCheck() {
+  if (!updateChecker) return;
+  // start() 内部按 update.autoCheck 决定是否挂载周期定时器；autoCheck 关闭时不启动。
+  updateChecker.start();
+  if (db.getSetting('update.autoCheck', 'true') === 'false') return;
+  // autoCheck 开启：延迟触发首次检查，避免与启动期 MCP/渲染加载争抢资源。
+  const firstCheck = setTimeout(() => {
+    updateChecker.check().catch(() => {
+      /* 检查失败已在结果中结构化，不影响其它功能 */
+    });
+  }, 5000);
+  if (typeof firstCheck.unref === 'function') firstCheck.unref();
+}
 
 ipcMain.handle('snapshot', (_event, input = {}) => loop.snapshot(input.projectId || null));
 
@@ -449,6 +546,181 @@ ipcMain.handle('scripts:stop', (_event, input = {}) => {
   loop.stopScript(projectId, scriptId);
   return loop.snapshot(projectId);
 });
+
+// ------------------------------------------------------- chat:* IPC（需求 #26）----------------------------------------------
+
+ipcMain.handle('chat:send', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const message = String(input.message || '').trim();
+  if (!message) return { accepted: false, error: '消息不能为空' };
+
+  let conversationId = Number(input.conversationId || 0);
+  if (!conversationId) {
+    // 向后兼容：未传 conversationId 时自动使用/创建项目的默认对话
+    conversationId = ensureDefaultConversation(db, projectId);
+  }
+
+  const controller = getOrCreateChatController(conversationId);
+  controller.send(message);
+  return { accepted: true, conversationId };
+});
+
+ipcMain.handle('chat:stop', (_event, input = {}) => {
+  const conversationId = Number(input.conversationId || 0);
+  if (!conversationId) return { stopped: false, error: 'conversationId 不能为空' };
+  const controller = chatControllers?.get(conversationId);
+  if (controller) controller.stop();
+  return { stopped: true };
+});
+
+ipcMain.handle('chat:clear', (_event, input = {}) => {
+  const conversationId = Number(input.conversationId || 0);
+  if (!conversationId) return { cleared: false, error: 'conversationId 不能为空' };
+  const controller = chatControllers?.get(conversationId);
+  if (controller) controller.clearHistory();
+  // 即使当前无活跃 controller 也清理 DB
+  db.run('DELETE FROM chat_messages WHERE conversation_id = ?', [conversationId]);
+  return { cleared: true };
+});
+
+ipcMain.handle('chat:history', (_event, input = {}) => {
+  const conversationId = Number(input.conversationId || 0);
+  if (!conversationId) return [];
+  const controller = chatControllers?.get(conversationId);
+  if (controller) return controller.getHistory();
+  return db.all(
+    'SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC',
+    [conversationId],
+  );
+});
+
+ipcMain.handle('chat:saveConfig', (_event, config = {}) => {
+  const keys = ['provider', 'baseUrl', 'apiKey', 'model', 'temperature'];
+  for (const key of keys) {
+    if (config[key] !== undefined) {
+      db.setSetting(`chat.${key}`, String(config[key]));
+    }
+  }
+  return { saved: true };
+});
+
+ipcMain.handle('chat:getConfig', () => {
+  const settings = db.getSettings('chat.');
+  const apiKey = settings['chat.apiKey'] || '';
+  return {
+    provider: settings['chat.provider'] || 'openai',
+    baseUrl: settings['chat.baseUrl'] || 'https://api.openai.com',
+    hasApiKey: Boolean(apiKey),
+    maskedKey: maskApiKey(apiKey),
+    model: settings['chat.model'] || 'gpt-4o',
+    temperature: settings['chat.temperature'] || '0.3',
+  };
+});
+
+// ------------------------------------------------------- ai-config:* IPC（需求 #28）------------------------------------------------
+
+ipcMain.handle('ai-config:list', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return listAiConfigs(db, projectId);
+});
+
+ipcMain.handle('ai-config:get', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'configId');
+  const config = getAiConfig(db, id);
+  if (!config) throw new Error('AI 配置不存在');
+  return config;
+});
+
+ipcMain.handle('ai-config:create', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return createAiConfig(db, { ...input, projectId });
+});
+
+ipcMain.handle('ai-config:update', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'configId');
+  return updateAiConfig(db, id, input);
+});
+
+ipcMain.handle('ai-config:delete', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'configId');
+  return deleteAiConfig(db, id);
+});
+
+// ------------------------------------------------------- conversation:* IPC（需求 #28）-----------------------------------------
+
+ipcMain.handle('conversation:list', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return listConversations(db, projectId);
+});
+
+ipcMain.handle('conversation:create', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return createConversation(db, { ...input, projectId });
+});
+
+ipcMain.handle('conversation:update', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'conversationId');
+  return updateConversation(db, id, input);
+});
+
+ipcMain.handle('conversation:delete', (_event, input = {}) => {
+  const id = requiredRecordId(input, 'conversationId');
+  // 如果该对话正在运行中，先停止
+  const controller = chatControllers?.get(id);
+  if (controller) controller.stop();
+  chatControllers.delete(id);
+  return deleteConversation(db, id);
+});
+
+// ------------------------------------------------------- chat:* (continued) -------------------------------------------------------
+
+function getOrCreateChatController(conversationId) {
+  const existing = chatControllers.get(conversationId);
+  if (existing && existing.isActive()) return existing;
+
+  // 清理已结束的 controller（非活跃实例）
+  chatControllers.delete(conversationId);
+
+  const conversation = db.get('SELECT * FROM conversations WHERE id = ?', [conversationId]);
+  if (!conversation) throw new Error('对话不存在');
+
+  const projectId = conversation.project_id;
+  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
+  if (!project) throw new Error('项目不存在');
+
+  const workspacePath = String(project.workspace_path || '').trim();
+  if (!workspacePath) throw new Error('项目工作区路径为空');
+
+  const tools = getChatToolDefinitions({
+    db,
+    projectId,
+    workspacePath,
+    intakeService: intakeService(),
+  });
+
+  const controller = createChatController({
+    db,
+    llmClient: createLlmClient,
+    chatTools: tools,
+    conversationId,
+    projectId,
+    workspacePath,
+    onEvent: ({ type, data }) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('chat:chunk', { type, data });
+      }
+    },
+    onDone: ({ status, error }) => {
+      chatControllers.delete(conversationId);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('chat:done', { status, error });
+      }
+    },
+  });
+
+  chatControllers.set(conversationId, controller);
+  return controller;
+}
 
 function attachmentsRoot() {
   return path.join(app.getPath('userData'), 'data', 'attachments');

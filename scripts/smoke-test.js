@@ -8,6 +8,7 @@ const { AppDatabase, nowIso } = require('../src/database');
 const { createIntakeService } = require('../src/intakeService');
 const { LoopService } = require('../src/loopService');
 const { MCP_TOOL_NAMES, callMcpTool } = require('../src/mcpTools');
+const { createUpdateChecker } = require('../src/updateChecker');
 const {
   createFakeChild,
   createSpawnOnlyChild,
@@ -363,7 +364,9 @@ async function main() {
     loop.stop(multiProjectB);
     assert.equal(loop.snapshot(multiProjectB).state.running, 0, '项目 B 应可独立停止');
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, project folder pick/open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, oh-my-pi backend, multi-loop, scripts module, script file source, mcp control, acceptance module, batch acceptance');
+    await assertUpdateCheckerIpcSmoke(db, loop);
+
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, project folder pick/open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, oh-my-pi backend, multi-loop, scripts module, script file source, mcp control, acceptance module, batch acceptance, update checker');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -3559,6 +3562,91 @@ function assertTaskDurationShape(task, label) {
 function assertIsoString(value, message) {
   assert.equal(typeof value, 'string', message);
   assert.ok(Number.isFinite(Date.parse(value)), message);
+}
+
+// 更新检查 IPC（需求 #24）：用 stub fetch 构造真实 updateChecker 注入主进程 VM，
+// 不依赖真实网络/GitHub，覆盖 updates:* 返回结构、dismiss/setAutoCheck 落库，以及 shell:openExternal 的 http/https 校验。
+async function assertUpdateCheckerIpcSmoke(db, loop) {
+  const stubFetch = async () => ({
+    ok: true,
+    status: 200,
+    text: async () =>
+      JSON.stringify({
+        tag_name: 'v9.9.9',
+        name: 'Smoke Release',
+        html_url: 'https://github.com/lyming99/autoplan/releases/tag/v9.9.9',
+        published_at: '2026-07-01T00:00:00Z',
+        body: 'smoke release notes',
+        prerelease: false,
+        draft: false,
+      }),
+  });
+  const checker = createUpdateChecker({ app: { getVersion: () => '0.0.0' }, db, fetch: stubFetch });
+
+  const openedUrls = [];
+  const handlers = loadMainIpcHandlers(db, loop, {
+    updateChecker: checker,
+    shell: {
+      openExternal: async (url) => {
+        openedUrls.push(url);
+      },
+      openPath: async () => '',
+      showItemInFolder: () => {},
+    },
+  });
+
+  const statusHandler = handlers.get('updates:status');
+  const checkHandler = handlers.get('updates:check');
+  const dismissHandler = handlers.get('updates:dismiss');
+  const setAutoCheckHandler = handlers.get('updates:setAutoCheck');
+  const openExternalHandler = handlers.get('shell:openExternal');
+  assert.equal(typeof statusHandler, 'function', '主进程应注册 updates:status IPC handler');
+  assert.equal(typeof checkHandler, 'function', '主进程应注册 updates:check IPC handler');
+  assert.equal(typeof dismissHandler, 'function', '主进程应注册 updates:dismiss IPC handler');
+  assert.equal(typeof setAutoCheckHandler, 'function', '主进程应注册 updates:setAutoCheck IPC handler');
+  assert.equal(typeof openExternalHandler, 'function', '主进程应注册 shell:openExternal IPC handler');
+
+  // 检查前状态：沿用 settings 默认（autoCheck=true、无 latestVersion），不应误报更新。
+  const initialStatus = statusHandler();
+  assert.equal(initialStatus.currentVersion, '0.0.0');
+  assert.equal(initialStatus.autoCheck, true);
+  assert.equal(initialStatus.hasUpdate, false);
+
+  // updates:check：返回结构 + 落库（latestVersion/lastCheckedAt），v 前缀去除。
+  const checkResult = await checkHandler();
+  assert.equal(checkResult.ok, true, 'updates:check 成功应返回 ok:true');
+  assert.equal(checkResult.release.version, '9.9.9', '应去除 tag 前导 v');
+  assert.equal(checkResult.hasUpdate, true, '9.9.9 > 0.0.0 应判定有更新');
+  assert.equal(db.getSetting('update.latestVersion'), '9.9.9', '应落库最新正式版号');
+  assert.equal(db.getSetting('update.latestHtmlUrl'), 'https://github.com/lyming99/autoplan/releases/tag/v9.9.9');
+  assert.ok(db.getSetting('update.lastCheckedAt'), '应落库上次检查时间');
+
+  const statusAfter = statusHandler();
+  assert.equal(statusAfter.latestVersion, '9.9.9');
+  assert.equal(statusAfter.hasUpdate, true);
+
+  // updates:dismiss：落库 dismissedVersion，本轮 hasUpdate 归零。
+  await dismissHandler(null, '9.9.9');
+  assert.equal(db.getSetting('update.dismissedVersion'), '9.9.9', 'updates:dismiss 应落库 dismissedVersion');
+  assert.equal(statusHandler().hasUpdate, false, '忽略后本轮不再提示');
+
+  // updates:setAutoCheck：落库 autoCheck 并即时返回最新状态。
+  const offResult = await setAutoCheckHandler(null, { enabled: false });
+  assert.equal(db.getSetting('update.autoCheck'), 'false', 'updates:setAutoCheck(false) 应落库');
+  assert.equal(offResult.autoCheck, false);
+  // 关闭后再开启，验证往返落库（开启会重排调度，结尾 checker.stop() 清理定时器）。
+  await setAutoCheckHandler(null, { enabled: true });
+  assert.equal(db.getSetting('update.autoCheck'), 'true', 'updates:setAutoCheck(true) 应落库');
+
+  // shell:openExternal：仅放行 http/https，交由主进程 shell.openExternal。
+  const okOpen = await openExternalHandler(null, { url: 'https://github.com/lyming99/autoplan/releases' });
+  assert.equal(okOpen.ok, true, 'https 外链应允许打开');
+  assert.equal(openedUrls.at(-1), 'https://github.com/lyming99/autoplan/releases', '应交给 shell.openExternal');
+  const badOpen = await openExternalHandler(null, { url: 'file:///etc/passwd' });
+  assert.equal(badOpen.ok, false, '非 http(s) 外链应被拒绝');
+  assert.ok(!openedUrls.includes('file:///etc/passwd'), '非 http(s) 外链不应调用 shell.openExternal');
+
+  checker.stop();
 }
 
 main().catch((error) => {

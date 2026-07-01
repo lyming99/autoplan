@@ -8,6 +8,7 @@ import {
   scopeFileStatus,
   acceptanceSelectionKey,
   type AcceptanceGroup,
+  type AcceptedGroup,
   type AcceptedRecord,
 } from '../../utils/planTasks';
 
@@ -16,6 +17,7 @@ type AcceptanceTarget = 'plan' | 'task';
 interface AcceptanceViewProps {
   projectId: number;
   groups: AcceptanceGroup[];
+  acceptedGroups: AcceptedGroup[];
   recentAccepted: AcceptedRecord[];
   onAccept: (targetType: AcceptanceTarget, id: number) => void;
   onUnaccept: (targetType: AcceptanceTarget, id: number) => void;
@@ -58,10 +60,6 @@ function primaryScopeLabel(task: PlanTask) {
   return String(task.scope || '').trim();
 }
 
-function recordId(record: AcceptedRecord) {
-  return record.targetType === 'plan' ? record.plan.id : record.task.id;
-}
-
 /** 将选择集合解析为验收目标列表（plan:123 → { targetType:'plan', id:123 }） */
 function selectionTargets(selection: Set<string>): { targetType: AcceptanceTarget; id: number }[] {
   const results: { targetType: AcceptanceTarget; id: number }[] = [];
@@ -84,6 +82,7 @@ function selectionTargets(selection: Set<string>): { targetType: AcceptanceTarge
 export function AcceptanceView({
   projectId,
   groups,
+  acceptedGroups,
   recentAccepted,
   onAccept,
   onUnaccept,
@@ -96,8 +95,18 @@ export function AcceptanceView({
     () => groups.reduce((sum, group) => sum + group.tasks.length, 0),
     [groups],
   );
+  const acceptedPlanCount = useMemo(
+    () => acceptedGroups.filter((group) => group.plan && group.plan.accepted_at).length,
+    [acceptedGroups],
+  );
+  const acceptedTaskCount = useMemo(
+    () => acceptedGroups.reduce((sum, group) => sum + group.tasks.length, 0),
+    [acceptedGroups],
+  );
+  const acceptedItemCount = acceptedPlanCount + acceptedTaskCount;
   const latestAcceptedAt = recentAccepted.length ? recentAccepted[0].acceptedAt : '';
   const hasPending = groups.length > 0;
+  const hasAccepted = acceptedGroups.length > 0;
 
   function handleToggleSelection(key: string) {
     setSelection((prev) => {
@@ -106,6 +115,10 @@ export function AcceptanceView({
       else next.add(key);
       return next;
     });
+  }
+
+  function toggleAcceptedCollapsed() {
+    setAcceptedCollapsed((current) => !current);
   }
 
   function acceptAllPending() {
@@ -134,10 +147,15 @@ export function AcceptanceView({
     return keys;
   }, [groups]);
 
-  const allAcceptedKeys = useMemo(
-    () => recentAccepted.map((r) => acceptanceSelectionKey(r.targetType, recordId(r))),
-    [recentAccepted],
-  );
+  // 已完成验收侧可选项：仅「已验收计划」与其下「已验收任务」可被取消验收，归入多选集合。
+  const allAcceptedKeys = useMemo(() => {
+    const keys: string[] = [];
+    acceptedGroups.forEach((g) => {
+      if (g.plan && g.plan.accepted_at) keys.push(acceptanceSelectionKey('plan', g.plan.id));
+      g.tasks.forEach((t) => keys.push(acceptanceSelectionKey('task', t.id)));
+    });
+    return keys;
+  }, [acceptedGroups]);
 
   const allSelectableKeys = useMemo(
     () => [...allPendingKeys, ...allAcceptedKeys],
@@ -183,6 +201,10 @@ export function AcceptanceView({
                 <span>
                   <b>{pendingTaskCount}</b> 个任务
                 </span>
+                <span className="meta-dot" aria-hidden="true" />
+                <span>
+                  已完成验收 <b>{acceptedItemCount}</b> 项
+                </span>
                 {latestAcceptedAt ? (
                   <>
                     <span className="meta-dot" aria-hidden="true" />
@@ -209,6 +231,7 @@ export function AcceptanceView({
         )}
       </div>
 
+      {/* 待验收 一级区块 */}
       {hasPending ? (
         <>
           <div className="accept-section-head">
@@ -237,16 +260,48 @@ export function AcceptanceView({
         <AcceptanceEmpty />
       )}
 
-      {recentAccepted.length ? (
-        <AcceptedSection
-          records={recentAccepted}
-          collapsed={acceptedCollapsed}
-          onToggle={() => setAcceptedCollapsed((current) => !current)}
-          onUnaccept={onUnaccept}
-          selection={selection}
-          onToggleSelection={handleToggleSelection}
-        />
-      ) : null}
+      {/* 已完成验收 一级区块：始终可见，按计划分组展示全部已验收项 */}
+      <div className={`accept-section accepted-section${acceptedCollapsed ? ' collapsed' : ''}`}>
+        <div
+          className="accept-section-head accept-section-head-toggle"
+          role="button"
+          tabIndex={0}
+          aria-expanded={!acceptedCollapsed}
+          onClick={toggleAcceptedCollapsed}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              toggleAcceptedCollapsed();
+            }
+          }}
+        >
+          <span className="acc-caret" aria-hidden="true">
+            <Icon name="chevron-down" size={14} />
+          </span>
+          <h2>
+            已完成验收
+            <span className="count">
+              {acceptedPlanCount} 个计划 · {acceptedTaskCount} 个任务
+            </span>
+          </h2>
+          <span className="hint">点击折叠 / 展开 · 逐项或批量取消验收</span>
+        </div>
+        {acceptedCollapsed ? null : hasAccepted ? (
+          <div className="accept-groups accepted-groups">
+            {acceptedGroups.map((group, index) => (
+              <AcceptedPlanCard
+                key={group.plan ? `plan:${group.plan.id}` : `ungrouped:${index}`}
+                group={group}
+                onUnaccept={onUnaccept}
+                selection={selection}
+                onToggleSelection={handleToggleSelection}
+              />
+            ))}
+          </div>
+        ) : (
+          <AcceptedEmpty />
+        )}
+      </div>
     </div>
   );
 }
@@ -472,106 +527,148 @@ function PendingTaskRow({
   );
 }
 
-function recordMetaLine(record: AcceptedRecord) {
-  if (record.targetType === 'plan') return planFileLabel(record.plan);
-  const key = record.task.task_key || `#${record.task.id}`;
-  const scope = primaryScopeLabel(record.task);
-  return scope ? `${key} · ${scope}` : key;
-}
-
-function AcceptedSection({
-  records,
-  collapsed,
-  onToggle,
+/** 「已完成验收」计划卡：标题/文件路径/进度对齐 PendingPlanCard，其下挂已验收任务行。 */
+function AcceptedPlanCard({
+  group,
   onUnaccept,
   selection,
   onToggleSelection,
 }: {
-  records: AcceptedRecord[];
-  collapsed: boolean;
-  onToggle: () => void;
+  group: AcceptedGroup;
   onUnaccept: (targetType: AcceptanceTarget, id: number) => void;
   selection: Set<string>;
   onToggleSelection: (key: string) => void;
 }) {
+  const { plan, tasks } = group;
+  const isPlanAccepted = Boolean(plan && plan.accepted_at);
+  const planKey = plan ? acceptanceSelectionKey('plan', plan.id) : '';
+  const pct = plan ? planCompletedPct(plan) : 0;
+  const progressText = plan ? planProgressText(plan) : '';
   return (
-    <div className={`accepted-card${collapsed ? ' collapsed' : ''}`}>
-      <button type="button" className="accepted-head" aria-expanded={!collapsed} onClick={onToggle}>
-        <span className="acc-caret" aria-hidden="true">
-          <Icon name="chevron-down" size={14} />
+    <div className="accept-plan accepted-plan">
+      <div className="accept-plan-head">
+        {plan ? (
+          <SelectionCheckbox
+            checked={selection.has(planKey)}
+            onClick={() => onToggleSelection(planKey)}
+          />
+        ) : (
+          <span className="sel-check-spacer" aria-hidden="true" />
+        )}
+        <span className="check checked ai-check" aria-hidden="true">
+          <Icon name="check" size={13} />
         </span>
-        <span className="acc-title">
-          已验收（最近）
-          <span className="count">{records.length}</span>
-        </span>
-        <span className="acc-hint">点击折叠 / 展开</span>
-      </button>
-      {collapsed ? null : (
-        <div className="accepted-body">
-          {records.map((record) => (
-            <AcceptedRow
-              key={`${record.targetType}-${recordId(record)}`}
-              record={record}
+        <div className="plan-main">
+          <div className="plan-path mono" title={plan ? plan.file_path || undefined : undefined}>
+            {plan ? planFileLabel(plan) : '未分组'}
+          </div>
+          <div className="plan-title">
+            {plan ? planTitle(plan) || '未命名计划' : '未分组已验收任务'}
+          </div>
+        </div>
+        {plan ? (
+          <div className="accept-plan-progress">
+            {progressText ? (
+              <>
+                <div className={`progress${pct >= 100 ? ' success' : ''}`}>
+                  <span style={{ width: `${pct}%` }} />
+                </div>
+                <span className="progress-text mono">{progressText}</span>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+        <span className="chip chip-completed">已验收</span>
+        <div className="accept-plan-actions">
+          {isPlanAccepted && plan ? (
+            <button
+              type="button"
+              className="btn btn-sm accept-undo-btn"
+              onClick={() => onUnaccept('plan', plan.id)}
+              title="取消验收此计划，回到待验收"
+            >
+              <Icon name="undo" size={14} aria-hidden="true" />
+              取消验收
+            </button>
+          ) : null}
+        </div>
+      </div>
+      {tasks.length ? (
+        <div className="accept-tasks">
+          {tasks.map((task) => (
+            <AcceptedTaskRow
+              key={task.id}
+              task={task}
               onUnaccept={onUnaccept}
               selection={selection}
               onToggleSelection={onToggleSelection}
             />
           ))}
         </div>
-      )}
+      ) : null}
     </div>
   );
 }
 
-function AcceptedRow({
-  record,
+/** 「已完成验收」任务行：与 PendingTaskRow 结构对齐，挂「取消验收」按钮。 */
+function AcceptedTaskRow({
+  task,
   onUnaccept,
   selection,
   onToggleSelection,
 }: {
-  record: AcceptedRecord;
+  task: PlanTask;
   onUnaccept: (targetType: AcceptanceTarget, id: number) => void;
   selection: Set<string>;
   onToggleSelection: (key: string) => void;
 }) {
-  const isPlan = record.targetType === 'plan';
-  const id = recordId(record);
-  const title = record.targetType === 'plan' ? planTitle(record.plan) || '未命名计划' : record.task.title;
-  const metaLine = recordMetaLine(record);
-  const selKey = acceptanceSelectionKey(record.targetType, id);
+  const scopeFile = primaryScopeFile(task);
+  const scopeText = primaryScopeLabel(task);
+  const scopeTitle = scopeFile ? scopeFileStatus(scopeFile) : scopeText;
+  const taskKey = acceptanceSelectionKey('task', task.id);
   return (
-    <div className="accepted-item" id={`workspace-acceptance-${record.targetType}-${id}`}>
+    <div className="accept-task accepted-task" id={`workspace-acceptance-task-${task.id}`}>
       <SelectionCheckbox
-        checked={selection.has(selKey)}
-        onClick={() => onToggleSelection(selKey)}
+        checked={selection.has(taskKey)}
+        onClick={() => onToggleSelection(taskKey)}
       />
       <span className="check checked ai-check" aria-hidden="true">
         <Icon name="check" size={13} />
       </span>
-      <div className="ai-main">
-        <div className="ai-title" title={title}>
-          {title}
-        </div>
-        <div className="ai-meta">
-          <span className="ai-type">{isPlan ? '计划' : '任务'}</span>
-          {metaLine ? <span className="mono">{metaLine}</span> : null}
-          <span className="meta-dot" aria-hidden="true" />
-          <span>
-            验收于 <span className="mono">{formatChinaDateTime(record.acceptedAt)}</span>
-          </span>
-        </div>
-      </div>
+      <span className="task-key mono">{task.task_key || `#${task.id}`}</span>
+      <span className="task-title" title={task.title}>
+        {task.title}
+      </span>
+      {scopeText ? (
+        <span className="task-scope" title={scopeTitle}>
+          <Icon name="file" size={12} aria-hidden="true" />
+          <span className="mono">{scopeText}</span>
+        </span>
+      ) : null}
       <div className="ai-actions">
         <button
           type="button"
           className="btn btn-sm accept-undo-btn"
-          onClick={() => onUnaccept(record.targetType, id)}
-          title="取消验收，回到待验收"
+          onClick={() => onUnaccept('task', task.id)}
+          title="取消验收此任务，回到待验收"
         >
           <Icon name="undo" size={14} aria-hidden="true" />
           取消验收
         </button>
       </div>
+    </div>
+  );
+}
+
+/** 「已完成验收」为空时的提示（不整块消失）。 */
+function AcceptedEmpty() {
+  return (
+    <div className="accept-empty accepted-empty">
+      <div className="empty-ico" aria-hidden="true">
+        <Icon name="check-double" size={28} />
+      </div>
+      <div className="empty-title">暂无已验收项</div>
+      <p>已完成的计划与任务在通过验收后会归入此处，按计划分组展示全部历史记录。</p>
     </div>
   );
 }

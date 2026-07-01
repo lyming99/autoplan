@@ -1,5 +1,5 @@
 export type IntakeType = 'requirement' | 'feedback';
-export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'acceptance' | 'tasks' | 'scripts' | 'events' | 'settings';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'acceptance' | 'tasks' | 'scripts' | 'events' | 'settings' | 'chat';
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
 export type AgentCliProvider = 'codex' | 'claude' | 'opencode' | 'oh-my-pi' | string;
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | string;
@@ -960,6 +960,210 @@ export interface UpdateRequirementInput extends RecordIdInput {
 }
 
 export interface UpdateFeedbackInput extends UpdateRequirementInput { requirementId?: number | null; }
+
+/** 正式版本更新检查的 GitHub Releases 来源（仅正式版，不含 beta） */
+export const AUTOPLAN_RELEASES_URL = 'https://github.com/lyming99/autoplan/releases';
+
+/** 最新正式版 Release 解析结果（主进程 updateChecker.parseLatestRelease 产物） */
+export interface UpdateLatestRelease {
+  version: string;
+  name: string;
+  htmlUrl: string;
+  publishedAt: string;
+  body: string;
+  summary: string;
+  isPrerelease: boolean;
+  isDraft: boolean;
+  isStable: boolean;
+}
+
+/** 更新检查状态快照（主进程 updateChecker.status() 产物） */
+export interface UpdateStatus {
+  currentVersion: string;
+  latestVersion: string;
+  latestName: string;
+  htmlUrl: string;
+  publishedAt: string;
+  lastCheckedAt: string;
+  dismissedVersion: string;
+  hasUpdate: boolean;
+  stableUpdate: boolean;
+  autoCheck: boolean;
+  intervalMinutes: number;
+}
+
+/** updates:check 结果：在 UpdateStatus 基础上附带本次抓取的 ok/error/release */
+export interface UpdateCheckResult extends UpdateStatus {
+  ok: boolean;
+  error: string | null;
+  release: UpdateLatestRelease | null;
+}
+
+/** Chat 对话模块（需求 #26）*/
+
+/** AI 配置（需求 #28）*/
+export interface AiConfig {
+  id: number;
+  projectId: number;
+  name: string;
+  provider: 'openai' | 'deepseek' | 'anthropic' | string;
+  baseUrl: string;
+  hasApiKey: boolean;
+  maskedKey: string;
+  model: string;
+  temperature: string;
+  thinkingDepth: 'low' | 'medium' | 'high' | null;
+  thinkingBudgetTokens: number | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 对话（需求 #28）*/
+export interface Conversation {
+  id: number;
+  project_id: number;
+  projectId: number;
+  title: string;
+  ai_config_id: number | null;
+  aiConfigId: number | null;
+  created_at: string;
+  createdAt: string;
+  updated_at: string;
+  updatedAt: string;
+}
+
+/** Chat 对话配置（扩展：需求 #28 增加思考深度字段） */
+export interface ChatConfig {
+  provider: 'openai' | 'anthropic' | string;
+  baseUrl: string;
+  hasApiKey: boolean;
+  maskedKey: string;
+  model: string;
+  temperature: string;
+  thinkingDepth?: string | null;
+  thinkingBudgetTokens?: number | null;
+}
+
+export type ChatRole = 'user' | 'assistant' | 'tool' | 'system';
+
+export interface ChatMessage {
+  id: number;
+  project_id?: number;
+  projectId: number;
+  role: ChatRole;
+  content: string;
+  tool_calls?: string | null;
+  toolCalls: ChatToolCall[] | null;
+  tool_result?: string | null;
+  toolResult: Record<string, unknown> | null;
+  status: 'streaming' | 'done' | 'aborted' | 'error';
+  created_at?: string;
+  createdAt: string;
+}
+
+export interface ChatToolCall {
+  name: string;
+  args: Record<string, unknown>;
+}
+
+export type ChatChunkEvent =
+  | { type: 'thinking_start' }
+  | { type: 'thinking_delta'; content: string }
+  | { type: 'thinking_end' }
+  | { type: 'text_delta'; content: string }
+  | { type: 'tool_start'; name: string; args: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; result: Record<string, unknown> }
+  | { type: 'error'; message: string }
+  | { type: 'status'; status: string };
+
+export type ChatDoneStatus = 'done' | 'aborted' | 'error' | 'max_rounds';
+
+export interface ChatDoneEvent {
+  status: ChatDoneStatus;
+  error?: string;
+}
+
+export interface ChatSendPayload {
+  projectId: number;
+  conversationId?: number;
+  message: string;
+}
+
+export interface ChatClearPayload {
+  projectId?: number;
+  conversationId: number;
+}
+
+export interface ChatStopPayload {
+  conversationId: number;
+}
+
+export interface ChatHistoryPayload {
+  conversationId: number;
+}
+
+export interface ChatSaveConfigInput {
+  provider: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  temperature: string;
+}
+
+/** AI 配置 CRUD 载荷（需求 #28）*/
+export interface AiConfigCreateInput {
+  projectId: number;
+  name: string;
+  provider?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  temperature?: string;
+  thinkingDepth?: 'low' | 'medium' | 'high' | null;
+  thinkingBudgetTokens?: number | null;
+}
+
+export interface AiConfigUpdateInput {
+  configId: number;
+  name?: string;
+  provider?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  temperature?: string;
+  thinkingDepth?: 'low' | 'medium' | 'high' | null;
+  thinkingBudgetTokens?: number | null;
+}
+
+export interface AiConfigDeleteInput {
+  configId: number;
+}
+
+export interface AiConfigGetInput {
+  configId: number;
+}
+
+/** 对话 CRUD 载荷（需求 #28）*/
+export interface ConversationCreateInput {
+  projectId: number;
+  title?: string;
+  aiConfigId?: number | null;
+}
+
+export interface ConversationUpdateInput {
+  conversationId: number;
+  title?: string;
+  aiConfigId?: number | null;
+}
+
+export interface ConversationDeleteInput {
+  conversationId: number;
+}
+
+export interface ConversationListInput {
+  projectId: number;
+}
+
 export interface AutoplanApi {
   mcpToolNames: McpToolName[];
   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
@@ -1002,6 +1206,32 @@ export interface AutoplanApi {
   onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   openProjectFolder: (input: ProjectIdInput) => Promise<{ ok: boolean; error: string | null }>;
+  updateStatus: () => Promise<UpdateStatus>;
+  checkForUpdates: () => Promise<UpdateCheckResult>;
+  dismissUpdate: (version?: string | { version?: string } | null) => Promise<UpdateStatus>;
+  setAutoUpdateCheck: (enabled: boolean) => Promise<UpdateStatus>;
+  onUpdateStatus: (handler: (status: UpdateStatus) => void) => () => void;
+  openExternal: (url: string) => Promise<{ ok: boolean; error: string | null }>;
+  // Chat 对话模块（需求 #26 / #28）
+  chatSend: (payload: ChatSendPayload) => Promise<{ accepted: boolean; conversationId?: number; error?: string }>;
+  chatStop: (payload: ChatStopPayload) => Promise<{ stopped: boolean; error?: string }>;
+  chatClear: (payload: ChatClearPayload) => Promise<{ cleared: boolean; error?: string }>;
+  chatHistory: (payload: ChatHistoryPayload) => Promise<ChatMessage[]>;
+  chatSaveConfig: (config: ChatSaveConfigInput) => Promise<{ saved: boolean }>;
+  chatGetConfig: () => Promise<ChatConfig>;
+  onChatChunk: (handler: (event: { type: string; data: Record<string, unknown> }) => void) => () => void;
+  onChatDone: (handler: (event: ChatDoneEvent) => void) => () => void;
+  // AI 配置（需求 #28）
+  aiConfigList: (payload: ConversationListInput) => Promise<AiConfig[]>;
+  aiConfigCreate: (payload: AiConfigCreateInput) => Promise<AiConfig>;
+  aiConfigUpdate: (payload: AiConfigUpdateInput) => Promise<AiConfig>;
+  aiConfigDelete: (payload: AiConfigDeleteInput) => Promise<{ deleted: boolean }>;
+  aiConfigGet: (payload: AiConfigGetInput) => Promise<AiConfig | null>;
+  // 对话管理（需求 #28）
+  conversationList: (payload: ConversationListInput) => Promise<Conversation[]>;
+  conversationCreate: (payload: ConversationCreateInput) => Promise<Conversation>;
+  conversationUpdate: (payload: ConversationUpdateInput) => Promise<Conversation>;
+  conversationDelete: (payload: ConversationDeleteInput) => Promise<{ deleted: boolean; id: number }>;
 }
 declare global {
   interface Window {

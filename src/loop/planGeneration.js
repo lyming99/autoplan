@@ -92,6 +92,11 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
     const sourceName = intake.__type === 'feedback' ? '反馈' : '需求';
     service.setPhase(projectId, 'generate-plan');
     const planAgentCliConfig = effectiveAgentCliConfig(service.status(projectId), intake);
+    // provider 判定复用 effectiveAgentCliConfig，与 P002 runCodex 的计划生成判定保持一致，避免漂移。
+    // OpenCode 是完全 agentic 后端，倾向主动通读整仓“自行发挥”而忽略反馈正文与格式约束，故需在 prompt
+    // 层弱化“自主阅读源码”措辞、并跳过短正文自动注入的 README/目录概览（既膨胀 prompt 易触发 spillover，
+    // 又强化“读项目”倾向）。claude/codex/oh-my-pi 行为不变。
+    const isOpenCodeProvider = planAgentCliConfig.provider === 'opencode';
     const safeId = String(intake.id).replace(/[^0-9a-zA-Z_-]/g, '');
     const planFile = path.join(
       workspace,
@@ -100,6 +105,17 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       `plan_${intake.__type}_${safeId}_${timestampForPath()}.md`,
     );
     const attachmentPrompt = service.intakeAttachmentPrompt(projectId, workspace, intake, sourceName);
+    // OpenCode 后端弱化“自主阅读源码/README/目录树”措辞，改为“优先依据反馈正文；仅可为推断 scope
+    // 读取少量明确文件”，避免把 agentic 后端引向整仓探索。其余后端保留原有鼓励结合项目代码的措辞。
+    const explorationGuidance = isOpenCodeProvider
+      ? [
+          '无论需求描述多么简短或模糊，都必须优先依据给定的需求/反馈正文直接产出开发计划；禁止反问用户、禁止请求补充信息、禁止输出“请告诉我…/需要更多信息”之类的话。需求不明确时，按最合理的解释推进。',
+          '按最优工程方案推进，无需征求确认。仅可为推断某个任务的 scope 而读取少量明确文件；禁止通读整仓（README、目录树、源码全量浏览）后再“自行发挥”，也不要主动联网检索。',
+        ]
+      : [
+          '无论需求描述多么简短或模糊，都必须基于项目实际代码独立分析，直接产出开发计划；禁止反问用户、禁止请求补充信息、禁止输出“请告诉我…/需要更多信息”之类的话。需求不明确时，按最合理的解释推进并自行从代码中推断影响范围。',
+          '按最优工程方案推进，无需征求确认。需求简短时，先阅读相关模块源码（README、目录树、相关文件）再给出针对该项目的具体任务，而不是泛泛而谈。',
+        ];
     const promptParts = [
       '你是需求整理与开发计划生成者。',
       `请根据以下${sourceName}，生成一个开发计划和验收标准。`,
@@ -117,14 +133,14 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       '- 必须包含总体验收标准和进度区',
       '- 只写 plan 文件，不要改业务代码',
       '',
-      '无论需求描述多么简短或模糊，都必须基于项目实际代码独立分析，直接产出开发计划；禁止反问用户、禁止请求补充信息、禁止输出“请告诉我…/需要更多信息”之类的话。需求不明确时，按最合理的解释推进并自行从代码中推断影响范围。',
-      '按最优工程方案推进，无需征求确认。需求简短时，先阅读相关模块源码（README、目录树、相关文件）再给出针对该项目的具体任务，而不是泛泛而谈。',
+      ...explorationGuidance,
       '',
       `${sourceName} #${intake.id} 内容：`,
       String(intake.body || '').trim() || '（正文为空）',
     ];
-    // 短正文时注入项目上下文，帮助模型判断需求涉及范围
-    if (String(intake.body || '').trim().length < 20) {
+    // 短正文时注入项目上下文，帮助模型判断需求涉及范围。OpenCode 后端跳过该注入：既膨胀 prompt
+    // 易触发 spillover，又强化“读项目”倾向而偏离反馈正文（claude/codex/oh-my-pi 行为不变）。
+    if (!isOpenCodeProvider && String(intake.body || '').trim().length < 20) {
       const ctx = [];
       try {
         const readmePath = path.join(workspace, 'README.md');
@@ -179,6 +195,29 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         intakeType: intake.__type,
         intakeId: intake.id,
         error: result.errorMessage || `生成${sourceName} #${intake.id} 计划失败`,
+        log: result.logFile || null,
+      });
+      service.db.run(
+        `UPDATE ${table} SET generate_fail_count = COALESCE(generate_fail_count, 0) + 1, last_generate_fail_at = ?, updated_at = ? WHERE id = ?`,
+        [nowIso(), nowIso(), intake.id],
+      );
+      return null;
+    }
+
+    // 校验产物格式（stdout 兜底落盘与 opencode 直接写盘两条路径均经此）：必须含 `## 任务拆解`
+    // 二级标题与至少一行 `- [ ] P0NN: ... <!-- scope: ... -->`。畸形 plan 不落库（不 insertPlan/syncPlanTasks），
+    // 记录 plan.format.invalid 事件并按既有计划生成失败链路处理（on:fail + generate_fail_count 自增）。
+    if (!isPlanContentValid(fs.readFileSync(planFile, 'utf8'))) {
+      service.addEvent(projectId, 'plan.format.invalid', `${agentLabel} 生成${sourceName} #${intake.id} 的计划格式不合规（缺少 ## 任务拆解 或合规任务行）：${result.logFile}`, {
+        ...agentContext,
+        logFile: result.logFile || null,
+        planFilePath: normalizeRelative(workspace, planFile),
+      });
+      await service.runHookScripts(projectId, 'on:fail', {
+        failedStage: 'plan',
+        intakeType: intake.__type,
+        intakeId: intake.id,
+        error: `生成${sourceName} #${intake.id} 的计划格式不合规`,
         log: result.logFile || null,
       });
       service.db.run(
@@ -280,6 +319,21 @@ function recoverPlanFromStdout(planFile, stdout) {
   return false;
 }
 
+// 校验落盘/恢复的 plan 内容是否同时满足：
+//  1) 含 `## 任务拆解` 二级标题；
+//  2) 至少一行匹配 `- [ ] P0NN: ... <!-- scope: ... -->` 的合规任务行。
+// 编号连续性、scope 合法性等由 syncPlanTasks 后续处理；本处仅校验格式存在性，
+// 用于拦截 OpenCode 等 agentic 后端产出/截断导致的畸形 plan（反馈 #14）。
+function isPlanContentValid(content) {
+  const text = typeof content === 'string' ? content : '';
+  if (!text.trim()) return false;
+  // 二级标题 `## 任务拆解`（容忍其后紧跟冒号/空白；不匹配 ### 等更深层级）
+  if (!/^##\s+任务拆解/m.test(text)) return false;
+  // 至少一行合规任务行：可选缩进 + `- [ ] P<编号>:` + 标题 + `<!-- scope: ... -->`
+  if (!/^[^\S\r\n]*-\s*\[\s*\]\s+P\d+\s*:.*<!--\s*scope\s*:/m.test(text)) return false;
+  return true;
+}
+
 function draftPlanRequested(intake = {}) {
   return intake?.createAsDraft === true || intake?.draft === true || String(intake?.status || '') === 'draft';
 }
@@ -288,5 +342,6 @@ module.exports = {
   generatePlan,
   generatePlanForIntake,
   intakeAttachmentPrompt,
+  isPlanContentValid,
   recoverPlanFromStdout,
 };

@@ -214,6 +214,50 @@ class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_scripts_project_hook_stage
       ON scripts (project_id, hook_stage);
 
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        role TEXT NOT NULL,
+        content TEXT NOT NULL,
+        tool_calls TEXT,
+        tool_result TEXT,
+        status TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_project
+      ON chat_messages (project_id, created_at);
+
+      CREATE TABLE IF NOT EXISTS ai_configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        name TEXT NOT NULL,
+        provider TEXT NOT NULL DEFAULT 'openai',
+        base_url TEXT NOT NULL DEFAULT '',
+        api_key TEXT NOT NULL DEFAULT '',
+        model TEXT NOT NULL DEFAULT '',
+        temperature TEXT NOT NULL DEFAULT '0.3',
+        thinking_depth TEXT,
+        thinking_budget_tokens INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ai_configs_project
+      ON ai_configs (project_id);
+
+      CREATE TABLE IF NOT EXISTS conversations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER,
+        title TEXT NOT NULL DEFAULT '',
+        ai_config_id INTEGER,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_conversations_project
+      ON conversations (project_id);
+
       CREATE TABLE IF NOT EXISTS loop_state (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         running INTEGER NOT NULL DEFAULT 0,
@@ -272,6 +316,11 @@ class AppDatabase {
     this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('project_states', 'env_vars', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('chat_messages', 'conversation_id', 'INTEGER');
+    this.db.run(`
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation
+      ON chat_messages (conversation_id, created_at)
+    `);
 
     const defaultProjectId = this.ensureDefaultProject();
     this.ensureDefaultSettings();
@@ -279,6 +328,8 @@ class AppDatabase {
     this.assignLegacyRows(defaultProjectId);
     this.backfillPlanSortOrders();
     this.ensureProjectState(defaultProjectId);
+    this.migrateChatToAiConfigs(defaultProjectId);
+    this.migrateChatMessagesToConversation(defaultProjectId);
   }
 
   ensureDefaultProject() {
@@ -334,9 +385,71 @@ class AppDatabase {
       'mcp.port': '43847',
       'mcp.path': '/mcp',
       'mcp.authToken': generateSecretToken(),
+      // 更新检查（需求 #24）：默认开启、6 小时间隔；lastCheckedAt/dismissedVersion 初始为空。
+      'update.autoCheck': 'true',
+      'update.intervalMinutes': '360',
+      'update.lastCheckedAt': '',
+      'update.dismissedVersion': '',
+      // 对话模块（需求 #26）：LLM 接口默认配置
+      'chat.provider': 'openai',
+      'chat.baseUrl': 'https://api.openai.com',
+      'chat.apiKey': '',
+      'chat.model': 'gpt-4o',
+      'chat.temperature': '0.3',
     };
     for (const [key, value] of Object.entries(defaults)) {
       this.db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
+    }
+  }
+
+  migrateChatToAiConfigs(defaultProjectId) {
+    const projects = this.all('SELECT id FROM projects');
+    for (const project of projects) {
+      const existing = this.get('SELECT id FROM ai_configs WHERE project_id = ?', [project.id]);
+      if (existing) continue;
+
+      const provider = this.getSetting('chat.provider') || 'openai';
+      const baseUrl = this.getSetting('chat.baseUrl') || '';
+      const apiKey = this.getSetting('chat.apiKey') || '';
+      const model = this.getSetting('chat.model') || '';
+      const temperature = this.getSetting('chat.temperature') || '0.3';
+
+      const now = nowIso();
+      this.db.run(
+        `INSERT INTO ai_configs (project_id, name, provider, base_url, api_key, model, temperature, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [project.id, '默认配置', provider, baseUrl, apiKey, model, temperature, now, now],
+      );
+    }
+  }
+
+  migrateChatMessagesToConversation(defaultProjectId) {
+    const projects = this.all('SELECT id FROM projects');
+    for (const project of projects) {
+      const messageCount = this.get(
+        'SELECT COUNT(*) AS cnt FROM chat_messages WHERE project_id = ? AND conversation_id IS NULL',
+        [project.id],
+      );
+      if (!messageCount || messageCount.cnt === 0) continue;
+
+      let conversation = this.get(
+        'SELECT id FROM conversations WHERE project_id = ? AND title = ?',
+        [project.id, '默认对话'],
+      );
+
+      if (!conversation) {
+        const now = nowIso();
+        const convId = this.insert(
+          'INSERT INTO conversations (project_id, title, created_at, updated_at) VALUES (?, ?, ?, ?)',
+          [project.id, '默认对话', now, now],
+        );
+        conversation = { id: convId };
+      }
+
+      this.db.run(
+        'UPDATE chat_messages SET conversation_id = ? WHERE project_id = ? AND conversation_id IS NULL',
+        [conversation.id, project.id],
+      );
     }
   }
 

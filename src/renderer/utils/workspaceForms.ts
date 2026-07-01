@@ -7,6 +7,7 @@ import {
 import type {
   AgentCliOption,
   AgentCliProvider,
+  ChatConfig,
   CodexReasoningEffort,
   CreateScriptInput,
   EnvVarEntry,
@@ -417,6 +418,127 @@ export function useMcpConfigForm(mcp: McpStatus | null | undefined, projectId: n
   }, [applyForm]);
 
   return { mcpForm, mcpAuthTokenTouched, setMcpForm, resetMcpForm };
+}
+
+/* ===================== Chat 配置 draft 表单（设置 AI 面板） ===================== */
+
+export type ChatConfigFormState = {
+  provider: string;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  temperature: string;
+  /** 思考深度（需求 #28）：'' | 'low' | 'medium' | 'high' */
+  thinkingDepth: string;
+  /** Anthropic 思考 token 预算（需求 #28），字符串数字，空串表示未设置 */
+  thinkingBudgetTokens: string;
+};
+
+/**
+ * 从 ChatConfig 快照初始化表单：
+ * - provider/baseUrl/model/temperature 取快照值（缺省回退）
+ * - apiKey 永远不预填明文，初始为空字符串
+ */
+export function createDefaultChatConfigForm(config?: ChatConfig | null): ChatConfigFormState {
+  if (!config) {
+    return {
+      provider: 'openai',
+      baseUrl: 'https://api.openai.com',
+      apiKey: '',
+      model: 'gpt-4o',
+      temperature: '0.3',
+      thinkingDepth: '',
+      thinkingBudgetTokens: '',
+    };
+  }
+  return {
+    provider: config.provider || 'openai',
+    baseUrl: config.baseUrl || 'https://api.openai.com',
+    apiKey: '',
+    model: config.model || 'gpt-4o',
+    temperature: config.temperature || '0.3',
+    thinkingDepth: config.thinkingDepth || '',
+    thinkingBudgetTokens: config.thinkingBudgetTokens != null ? String(config.thinkingBudgetTokens) : '',
+  };
+}
+
+/**
+ * 比较两个 ChatConfigFormState。
+ * apiKey 始终以空串初始化；非空 → 用户已修改需保存；
+ * 为空且 hasExistingApiKey 为 true → 用户清除了密钥需保存。
+ * @param hasExistingApiKey 原始配置是否已有 apiKey（来自 chatGetConfig 的 hasApiKey）
+ */
+export function chatConfigFormsEqual(
+  a: ChatConfigFormState,
+  b: ChatConfigFormState,
+  hasExistingApiKey?: boolean,
+): boolean {
+  if (
+    a.provider !== b.provider ||
+    a.baseUrl !== b.baseUrl ||
+    a.model !== b.model ||
+    a.temperature !== b.temperature ||
+    a.apiKey !== b.apiKey ||
+    a.thinkingDepth !== b.thinkingDepth ||
+    a.thinkingBudgetTokens !== b.thinkingBudgetTokens
+  ) {
+    return false;
+  }
+  // apiKey 为空但原配置有密钥 → 视为「清除」，表单不相等
+  if (!a.apiKey && hasExistingApiKey) return false;
+  return true;
+}
+
+/**
+ * API Key 脱敏：非空显示 ···· + 末 4 位，空返回 ''，过短完全遮蔽。
+ * 与 maskAuthToken（snapshots.js）同逻辑。
+ */
+export function maskApiKeyUtil(key: string): string {
+  const token = String(key || '').trim();
+  if (!token) return '';
+  if (token.length <= 4) return '····';
+  return `····${token.slice(-4)}`;
+}
+
+/* ===================== AI 配置多配置管理（需求 #28） ===================== */
+
+/** AI Provider 选项：OpenAI 兼容 / DeepSeek / Anthropic */
+export const aiProviderOptions: Array<SettingsChoiceOption<string>> = [
+  { value: 'openai', label: 'OpenAI 兼容', description: 'OpenAI / 其他兼容端点' },
+  { value: 'deepseek', label: 'DeepSeek', description: 'DeepSeek API 端点' },
+  { value: 'anthropic', label: 'Anthropic', description: 'Claude 系列模型' },
+];
+
+/** 思考深度选项（OpenAI o-series / DeepSeek 推理模型）*/
+export const thinkingDepthOptions: Array<{ value: string; label: string; description: string }> = [
+  { value: '', label: '关闭', description: '不使用思考深度' },
+  { value: 'low', label: '低', description: '快速响应' },
+  { value: 'medium', label: '中', description: '默认平衡' },
+  { value: 'high', label: '高', description: '深入推理' },
+];
+
+/** 根据 provider 返回默认 Base URL 占位符 */
+export function defaultBaseUrlForProvider(provider: string): string {
+  if (provider === 'deepseek') return 'https://api.deepseek.com';
+  if (provider === 'anthropic') return 'https://api.anthropic.com';
+  return 'https://api.openai.com';
+}
+
+/** 根据 provider 返回默认模型占位符 */
+export function defaultModelForProvider(provider: string): string {
+  if (provider === 'deepseek') return 'deepseek-chat';
+  if (provider === 'anthropic') return 'claude-sonnet-4-6';
+  return 'gpt-4o';
+}
+
+/** 判断 provider 是否需要显示思考深度选择器（OpenAI 兼容 / DeepSeek）*/
+export function providerSupportsThinkingDepth(provider: string): boolean {
+  return provider === 'openai' || provider === 'deepseek';
+}
+
+/** 判断 provider 是否需要显示思考 token 预算输入（Anthropic）*/
+export function providerSupportsThinkingBudget(provider: string): boolean {
+  return provider === 'anthropic';
 }
 
 /* ===================== 脚本 draft 表单（新建/编辑共用弹窗） ===================== */

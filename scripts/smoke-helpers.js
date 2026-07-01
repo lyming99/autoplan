@@ -16,7 +16,7 @@ function loadMainIpcHandlers(db, loop, options = {}) {
   const mainPath = path.join(__dirname, '..', 'src', 'main.js');
   const handlers = new Map();
   const module = { exports: {} };
-  const source = `${fs.readFileSync(mainPath, 'utf8')}\nmodule.exports.__setSmokeState = (state) => { db = state.db; loop = state.loop; };\nmodule.exports.__smokeIpcHandlers = __smokeIpcHandlers;\n`;
+  const source = `${fs.readFileSync(mainPath, 'utf8')}\nmodule.exports.__setSmokeState = (state) => { db = state.db; loop = state.loop; if (typeof state.updateChecker !== 'undefined') updateChecker = state.updateChecker; };\nmodule.exports.__smokeIpcHandlers = __smokeIpcHandlers;\n`;
   const fakeChildProcess = {
     spawn: options.spawn || (() => createSpawnOnlyChild()),
   };
@@ -65,7 +65,7 @@ function loadMainIpcHandlers(db, loop, options = {}) {
     },
     { filename: mainPath },
   );
-  module.exports.__setSmokeState({ db, loop });
+  module.exports.__setSmokeState({ db, loop, updateChecker: options.updateChecker });
   return handlers;
 }
 

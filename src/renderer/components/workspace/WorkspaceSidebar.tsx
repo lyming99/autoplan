@@ -18,6 +18,7 @@ const WORKSPACE_NAV: NavItem[] = [
   { id: 'feedback', label: '反馈', icon: 'feedback' },
   // 「验收」排在「反馈」之下：人工对已完成计划/任务逐项验收（与循环自动验收阶段正交）。
   { id: 'acceptance', label: '验收', icon: 'acceptance' },
+  { id: 'chat', label: '对话', icon: 'chat' },
 ];
 
 const EXEC_NAV: NavItem[] = [

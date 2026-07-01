@@ -16,8 +16,10 @@ import { EventList, PlanList, TaskList } from '../components/PlanLists';
 import { SearchResults } from '../components/SearchResults';
 import { Icon } from '../components/icons';
 import { PlanReaderModal } from '../components/plans/PlanReaderModal';
+import { UpdateNotice } from '../components/UpdateNotice';
 import { AcceptanceView } from '../components/workspace/AcceptanceView';
 import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
+import { ChatView } from '../components/workspace/ChatView';
 import { WorkspaceScriptsView } from '../components/workspace/WorkspaceScriptsView';
 import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
 import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
@@ -28,6 +30,7 @@ export function WorkspacePage() {
     acceptItem,
     acceptItems,
     acceptanceGroups,
+    acceptedGroups,
     activeTab,
     addPendingFiles,
     appendIntakeTask,
@@ -284,6 +287,8 @@ export function WorkspacePage() {
           </div>
         </header>
 
+        <UpdateNotice />
+
         {searchLocateNotice ? (
           <div className="search-locate-notice" role="status">
             <span>{searchLocateNotice}</span>
@@ -363,6 +368,7 @@ export function WorkspacePage() {
             <AcceptanceView
               projectId={projectId}
               groups={acceptanceGroups}
+              acceptedGroups={acceptedGroups}
               recentAccepted={recentAccepted}
               onAccept={acceptItem}
               onUnaccept={unacceptItem}
@@ -483,6 +489,12 @@ export function WorkspacePage() {
           ) : null}
         </section>
 
+        <section className={`view ${activeTab === 'chat' ? 'active' : ''}`}>
+          {activeTab === 'chat' ? (
+            <ChatView projectId={projectId} snapshot={snapshot} />
+          ) : null}
+        </section>
+
         <PlanReaderModal
           latestPlan={latestReadingPlan}
           onClose={closePlanReader}
@@ -559,7 +571,7 @@ function formatSearchLocateFallback(result: WorkspaceSearchResult) {
 
 
 function tabTitle(tab: WorkspaceTab) {
-  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', acceptance: '验收模块', tasks: '计划与任务', scripts: '脚本模块', events: '事件流', settings: '设置' }[tab];
+  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', acceptance: '验收模块', tasks: '计划与任务', scripts: '脚本模块', events: '事件流', settings: '设置', chat: 'AI 对话' }[tab];
 }
 
 function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
@@ -572,6 +584,7 @@ function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
     scripts: '自定义脚本，手动运行或挂到循环各阶段自动触发',
     events: '循环运行日志与任务执行记录',
     settings: '工作区路径、循环间隔、验收命令、CLI 后端与 MCP 接入',
+    chat: '与 AI 对话，自配 LLM 接口，AI 可读取文件、创建需求与脚本',
   }[tab];
   return project ? `${base} · ${project.name}` : base;
 }

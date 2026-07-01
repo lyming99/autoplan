@@ -330,8 +330,9 @@ function sortAcceptedByTimeDesc(left: AcceptedRecord, right: AcceptedRecord) {
 
 /**
  * 「已验收（最近）」取数：把已验收的计划与任务合并为按 accepted_at 降序的扁平列表，供视图折叠区展示。
+ * 默认不再截断为 50 条，返回全部已验收记录（完整历史）；保留 limit 参数供显式限量调用。
  */
-export function buildRecentAccepted(plans: Plan[], tasks: PlanTask[], limit = 50): AcceptedRecord[] {
+export function buildRecentAccepted(plans: Plan[], tasks: PlanTask[], limit: number = Infinity): AcceptedRecord[] {
   const acceptedPlans = plans
     .filter((plan) => Boolean(plan.accepted_at))
     .map((plan) => ({ targetType: 'plan' as const, plan, acceptedAt: String(plan.accepted_at) }));
@@ -339,4 +340,93 @@ export function buildRecentAccepted(plans: Plan[], tasks: PlanTask[], limit = 50
     .filter((task) => Boolean(task.accepted_at))
     .map((task) => ({ targetType: 'task' as const, task, acceptedAt: String(task.accepted_at) }));
   return [...acceptedPlans, ...acceptedTasks].sort(sortAcceptedByTimeDesc).slice(0, limit);
+}
+
+/** 「已完成验收」分组：结构对齐 AcceptanceGroup；plan 为 null 表示孤立已验收任务的「未分组」。 */
+export interface AcceptedGroup {
+  plan: Plan | null;
+  tasks: PlanTask[];
+}
+
+/** 分组排序的「计划维度时间」：已验收计划取 accepted_at，否则回退到组内任务最新时间。 */
+function acceptedGroupSortTime(plan: Plan | null, tasks: PlanTask[]): number | null {
+  if (plan) {
+    const acceptedAt = readTaskTime(plan.accepted_at);
+    if (acceptedAt !== null) return acceptedAt;
+  }
+  return latestTaskTime(tasks);
+}
+
+/**
+ * 按计划分组的「已完成验收」结构：每个已验收（accepted_at 非空）计划挂其下已验收任务。
+ * 孤立已验收任务（所属计划未验收/不存在）按其关联计划聚合，找不到关联计划的归入 plan=null 的「未分组」，
+ * 不丢失任何已验收项。组内任务排序与分组排序复用 buildAcceptanceGroups 的时间降序语义。
+ */
+export function buildAcceptedGroups(plans: Plan[], tasks: PlanTask[]): AcceptedGroup[] {
+  const acceptedTasks = tasks.filter((task) => Boolean(task.accepted_at));
+  const drafts = new Map<
+    string,
+    { plan: Plan | null; planIndex: number; firstTaskIndex: number; tasks: PlanTask[] }
+  >();
+  const order: string[] = [];
+  const UNGROUPED_KEY = 'ungrouped-accepted';
+
+  // 1) 先按输入顺序播种所有「已验收计划」分组（即便其下无已验收任务也要作为已验收项展示）。
+  plans.forEach((plan, planIndex) => {
+    if (!plan.accepted_at) return;
+    const key = `plan:${plan.id}`;
+    if (!drafts.has(key)) {
+      drafts.set(key, { plan, planIndex, firstTaskIndex: Number.POSITIVE_INFINITY, tasks: [] });
+      order.push(key);
+    }
+  });
+
+  // 2) 归集已验收任务：有关联计划的并入对应计划（无论该计划是否已验收），否则进「未分组」。
+  acceptedTasks.forEach((task, taskIndex) => {
+    const associatedPlanIndex = plans.findIndex((plan) => isTaskAssociatedWithPlan(task, plan));
+    const associatedPlan = associatedPlanIndex >= 0 ? plans[associatedPlanIndex] : null;
+    const key = associatedPlan ? `plan:${associatedPlan.id}` : UNGROUPED_KEY;
+    let draft = drafts.get(key);
+    if (!draft) {
+      draft = {
+        plan: associatedPlan,
+        planIndex: associatedPlan ? associatedPlanIndex : Number.POSITIVE_INFINITY,
+        firstTaskIndex: taskIndex,
+        tasks: [],
+      };
+      drafts.set(key, draft);
+      order.push(key);
+    }
+    if (taskIndex < draft.firstTaskIndex) draft.firstTaskIndex = taskIndex;
+    draft.tasks.push(task);
+  });
+
+  // 3) 组内任务按 finished_at → started_at → updated_at 降序，分组按计划维度时间降序。
+  return order
+    .map((key) => {
+      const draft = drafts.get(key)!;
+      const sortedTasks = draft.tasks
+        .map((task, index) => ({ task, index }))
+        .sort((left, right) =>
+          compareTasksBySortTime(left.task, right.task, left.index, right.index),
+        )
+        .map(({ task }) => task);
+      return {
+        plan: draft.plan,
+        planIndex: draft.planIndex,
+        firstTaskIndex: draft.firstTaskIndex,
+        sortTime: acceptedGroupSortTime(draft.plan, sortedTasks),
+        tasks: sortedTasks,
+      };
+    })
+    .sort((left, right) => {
+      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
+        return right.sortTime - left.sortTime;
+      }
+      if (left.sortTime !== null && right.sortTime === null) return -1;
+      if (left.sortTime === null && right.sortTime !== null) return 1;
+      if (left.planIndex !== right.planIndex) return left.planIndex - right.planIndex;
+      return left.firstTaskIndex - right.firstTaskIndex;
+    })
+    .map(({ plan, tasks }) => ({ plan, tasks }));
 }

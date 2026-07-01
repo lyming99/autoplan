@@ -363,6 +363,15 @@ const sunIcon = (
 // 月亮图标：深色主题
 const moonIcon = <path d="M20.5 13.2A8.5 8.5 0 1 1 10.8 3a7 7 0 0 0 9.7 10.2z" />;
 
+// 对话图标：需求 #26 Chat 模块
+const chatIcon = (
+  <>
+    <path d="M5 5.5h14a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5h-3l-4 3.5v-3.5H5a1.5 1.5 0 0 1-1.5-1.5V7A1.5 1.5 0 0 1 5 5.5z" />
+    <path d="M8 9.5h8" />
+    <path d="M8 12.5h5" />
+  </>
+);
+
 const ICONS = {
   overview: overviewIcon,
   requirement: requirementIcon,
@@ -420,6 +429,7 @@ const ICONS = {
   'eye-off': eyeOffIcon,
   key: keyIcon,
   acceptance: acceptanceIcon,
+  chat: chatIcon,
   'check-double': checkDoubleIcon,
   'chevron-down': chevronDownIcon,
   undo: undoIcon,

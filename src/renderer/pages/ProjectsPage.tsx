@@ -5,6 +5,7 @@ import type { CreateProjectInput, Project } from '../types';
 import { useSnapshot } from '../hooks/useSnapshot';
 import { agentCliProviderLabel } from '../components/shared';
 import { formatChinaDateTime } from '../utils/time';
+import { UpdateNotice } from '../components/UpdateNotice';
 
 type Draft = CreateProjectInput & { id?: number };
 
@@ -153,6 +154,7 @@ export function ProjectsPage() {
       </header>
 
       <main className="projects-main">
+        <UpdateNotice />
         {error ? <div className="error-banner">{error}</div> : null}
 
         <div className="projects-hero">

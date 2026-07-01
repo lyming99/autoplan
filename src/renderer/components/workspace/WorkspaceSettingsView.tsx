@@ -1,13 +1,25 @@
-import { useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
-import type { McpStatus } from '../../types';
+import { useCallback, useEffect, useState, type Dispatch, type FormEvent, type SetStateAction } from 'react';
+import { AUTOPLAN_RELEASES_URL, type AiConfig, type McpStatus } from '../../types';
 import { useTheme, type ThemeMode } from '../../hooks/useTheme';
+import { useUpdateStatus } from '../../hooks/useUpdateStatus';
+import { formatChinaDateTime } from '../../utils/time';
 import {
   agentCliDefaultCommand,
   agentCliOptionDetails,
+  chatConfigFormsEqual,
   codexReasoningOptionDetails,
+  createDefaultChatConfigForm,
   isCodexAgentCliProvider,
+  maskApiKeyUtil,
   normalizeCodexReasoningEffort,
   scopeFileOpenModeOptions,
+  aiProviderOptions,
+  thinkingDepthOptions,
+  defaultBaseUrlForProvider,
+  defaultModelForProvider,
+  providerSupportsThinkingDepth,
+  providerSupportsThinkingBudget,
+  type ChatConfigFormState,
   type LoopFormState,
   type McpConfigFormState,
   type ScopeFileOpenMode,
@@ -15,7 +27,7 @@ import {
 } from '../../utils/workspaceForms';
 import { McpControlPanel, mcpStatusText, mcpStatusTone } from './McpControlPanel';
 
-type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'mcp' | 'env';
+type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'mcp' | 'ai' | 'env' | 'about';
 
 const SETTINGS_NAV: Array<{ id: SettingsPane; label: string; hint: string; icon: string }> = [
   { id: 'loop', label: '循环控制', hint: '路径、间隔、验收命令', icon: 'loop' },
@@ -23,7 +35,9 @@ const SETTINGS_NAV: Array<{ id: SettingsPane; label: string; hint: string; icon:
   { id: 'appearance', label: '外观', hint: '浅色 / 深色 / 跟随系统', icon: 'theme' },
   { id: 'scope', label: 'scope 文件', hint: '打开方式与编辑器命令', icon: 'scope' },
   { id: 'mcp', label: 'MCP 接入', hint: '服务状态与工具清单', icon: 'mcp' },
+  { id: 'ai', label: 'AI 对话', hint: 'LLM 接口与模型配置', icon: 'ai' },
   { id: 'env', label: '环境变量', hint: '注入到脚本与 CLI 执行环境', icon: 'env' },
+  { id: 'about', label: '关于/更新', hint: '版本与正式版更新检查', icon: 'about' },
 ];
 
 function scopeModeLabel(mode: ScopeFileOpenMode) {
@@ -60,6 +74,7 @@ export function WorkspaceSettingsView({
   onSubmit,
   onToggleRun,
   running,
+  projectId,
 }: {
   loopForm: LoopFormState;
   mcpForm: McpConfigFormState;
@@ -74,6 +89,7 @@ export function WorkspaceSettingsView({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleRun: () => void;
   running: boolean;
+  projectId?: number;
 }) {
   const [activePane, setActivePane] = useState<SettingsPane>('loop');
   const isCodexProvider = isCodexAgentCliProvider(loopForm.agentCliProvider);
@@ -82,13 +98,149 @@ export function WorkspaceSettingsView({
 
   const themeModeLabel = theme === 'light' ? '浅色' : theme === 'dark' ? '深色' : '跟随系统';
 
+  // Chat 配置表单（需求 #26）- 保留向后兼容
+  const [chatConfigForm, setChatConfigForm] = useState<ChatConfigFormState>(() => createDefaultChatConfigForm());
+  const [chatConfigSaved, setChatConfigSaved] = useState<ChatConfigFormState>(() => createDefaultChatConfigForm());
+  const [hasExistingApiKey, setHasExistingApiKey] = useState(false);
+  const [chatConfigSaving, setChatConfigSaving] = useState(false);
+
+  // AI 配置多配置管理（需求 #28）
+  const [aiConfigs, setAiConfigs] = useState<AiConfig[]>([]);
+  const [editingConfigId, setEditingConfigId] = useState<number | null>(null);
+  const [aiConfigForm, setAiConfigForm] = useState<ChatConfigFormState>(() => createDefaultChatConfigForm());
+  const [aiConfigName, setAiConfigName] = useState('');
+  const [aiConfigSaving, setAiConfigSaving] = useState(false);
+
+  const loadAiConfigs = useCallback(() => {
+    if (!projectId) return;
+    window.autoplan
+      .aiConfigList({ projectId })
+      .then((list) => setAiConfigs(list))
+      .catch(() => { /* 加载失败忽略 */ });
+  }, [projectId]);
+
+  useEffect(() => {
+    window.autoplan
+      .chatGetConfig()
+      .then((cfg) => {
+        const form = createDefaultChatConfigForm(cfg);
+        setChatConfigForm(form);
+        setChatConfigSaved(form);
+        setHasExistingApiKey(cfg.hasApiKey);
+      })
+      .catch(() => {
+        /* 取配置失败保持默认值 */
+      });
+  }, []);
+
+  useEffect(() => {
+    loadAiConfigs();
+  }, [loadAiConfigs]);
+
+  const chatConfigDirty = !chatConfigFormsEqual(chatConfigForm, chatConfigSaved, hasExistingApiKey);
+
+  const saveChatConfig = useCallback(async () => {
+    setChatConfigSaving(true);
+    try {
+      await window.autoplan.chatSaveConfig({
+        provider: chatConfigForm.provider,
+        baseUrl: chatConfigForm.baseUrl,
+        apiKey: chatConfigForm.apiKey,
+        model: chatConfigForm.model,
+        temperature: chatConfigForm.temperature,
+      });
+      const cfg = await window.autoplan.chatGetConfig();
+      const form = createDefaultChatConfigForm(cfg);
+      setChatConfigForm(form);
+      setChatConfigSaved(form);
+      setHasExistingApiKey(cfg.hasApiKey);
+    } catch {
+      /* 保存失败保留草稿 */
+    } finally {
+      setChatConfigSaving(false);
+    }
+  }, [chatConfigForm]);
+
+  const startNewAiConfig = useCallback(() => {
+    setEditingConfigId(0);
+    setAiConfigName('');
+    setAiConfigForm(createDefaultChatConfigForm());
+  }, []);
+
+  const startEditAiConfig = useCallback((cfg: AiConfig) => {
+    setEditingConfigId(cfg.id);
+    setAiConfigName(cfg.name);
+    setAiConfigForm({
+      provider: cfg.provider,
+      baseUrl: cfg.baseUrl,
+      apiKey: '',
+      model: cfg.model,
+      temperature: cfg.temperature,
+      thinkingDepth: cfg.thinkingDepth || '',
+      thinkingBudgetTokens: cfg.thinkingBudgetTokens != null ? String(cfg.thinkingBudgetTokens) : '',
+    });
+  }, []);
+
+  const cancelEditAiConfig = useCallback(() => {
+    setEditingConfigId(null);
+    setAiConfigName('');
+    setAiConfigForm(createDefaultChatConfigForm());
+  }, []);
+
+  const saveAiConfig = useCallback(async () => {
+    if (!projectId) return;
+    const name = aiConfigName.trim();
+    if (!name) return;
+    setAiConfigSaving(true);
+    try {
+      const payload = {
+        projectId,
+        name,
+        provider: aiConfigForm.provider,
+        baseUrl: aiConfigForm.baseUrl,
+        apiKey: aiConfigForm.apiKey || undefined,
+        model: aiConfigForm.model,
+        temperature: aiConfigForm.temperature,
+        thinkingDepth: aiConfigForm.thinkingDepth || null,
+        thinkingBudgetTokens: aiConfigForm.thinkingBudgetTokens
+          ? Number(aiConfigForm.thinkingBudgetTokens)
+          : null,
+      };
+      if (editingConfigId && editingConfigId > 0) {
+        await window.autoplan.aiConfigUpdate({ configId: editingConfigId, ...payload });
+      } else {
+        await window.autoplan.aiConfigCreate(payload);
+      }
+      cancelEditAiConfig();
+      loadAiConfigs();
+    } catch {
+      /* 保存失败保留草稿 */
+    } finally {
+      setAiConfigSaving(false);
+    }
+  }, [projectId, aiConfigName, aiConfigForm, editingConfigId, cancelEditAiConfig, loadAiConfigs]);
+
+  const deleteAiConfig = useCallback(async (id: number) => {
+    try {
+      await window.autoplan.aiConfigDelete({ configId: id });
+      if (editingConfigId != null && editingConfigId === id) cancelEditAiConfig();
+      loadAiConfigs();
+    } catch {
+      /* 删除失败忽略 */
+    }
+  }, [editingConfigId, cancelEditAiConfig, loadAiConfigs]);
+
+  const isAiConfigEditing = editingConfigId !== null;
+
   const navMeta: Record<SettingsPane, { label: string; tone?: string }> = {
     loop: { label: running ? '运行中' : '已停止', tone: running ? 'ok' : '' },
     cli: { label: agentCliNavLabel(loopForm.agentCliProvider), tone: isCodexProvider ? 'ok' : '' },
     appearance: { label: themeModeLabel },
     scope: { label: scopeModeLabel(scopeFileOpenSettings.mode) },
     mcp: { label: mcpStatus, tone: mcpStatusTone(mcp) },
+    ai: { label: hasExistingApiKey ? '已配置' : '未配置', tone: hasExistingApiKey ? 'ok' : '' },
     env: { label: loopForm.envVars.length ? `${loopForm.envVars.length} 个` : '未配置' },
+    about: { label: '关于' },
   };
 
   return (
@@ -378,6 +530,252 @@ export function WorkspaceSettingsView({
             />
           ) : null}
 
+          {activePane === 'ai' ? (
+            <section className="settings-pane active" aria-labelledby="settings-ai-title">
+              <div className="pane-head">
+                <h2 id="settings-ai-title"><span className="pane-ico" aria-hidden="true" />AI 对话</h2>
+                <p>管理多个 AI 配置，对话可绑定不同配置。支持 OpenAI 兼容、DeepSeek 和 Anthropic。</p>
+              </div>
+
+              {/* AI 配置列表 */}
+              <div className="set-card">
+                <div className="set-card-head">
+                  <h3>AI 配置列表</h3>
+                  <div className="set-card-hint">每个项目可创建多个命名 AI 配置，对话可绑定不同配置</div>
+                </div>
+                <div className="set-card-body">
+                  {aiConfigs.length === 0 && !isAiConfigEditing ? (
+                    <div className="empty-hint">暂无 AI 配置，点击「新建配置」添加。</div>
+                  ) : (
+                    <div className="ai-config-list">
+                      {aiConfigs.map((cfg) => (
+                        <div
+                          key={cfg.id}
+                          className={`ai-config-item${editingConfigId === cfg.id ? ' editing' : ''}`}
+                        >
+                          <div className="ai-config-info">
+                            <span className="ai-config-name">{cfg.name}</span>
+                            <span className="ai-config-meta">
+                              {cfg.provider === 'anthropic' ? 'Anthropic' : cfg.provider === 'deepseek' ? 'DeepSeek' : 'OpenAI 兼容'}
+                              {' · '}
+                              {cfg.model || '未设置模型'}
+                              {cfg.hasApiKey ? ' · 已设置密钥' : ' · 未设置密钥'}
+                            </span>
+                          </div>
+                          <div className="ai-config-actions">
+                            <button
+                              type="button"
+                              className="btn btn-xs"
+                              onClick={() => startEditAiConfig(cfg)}
+                            >
+                              编辑
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-xs btn-danger"
+                              onClick={() => { void deleteAiConfig(cfg.id); }}
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!isAiConfigEditing ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      style={{ marginTop: 12 }}
+                      onClick={startNewAiConfig}
+                      disabled={!projectId}
+                    >
+                      新建配置
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              {/* 编辑/新建表单 */}
+              {isAiConfigEditing ? (
+                <div className="set-card" style={{ marginTop: 16 }}>
+                  <div className="set-card-head">
+                    <h3>{editingConfigId && editingConfigId > 0 ? '编辑配置' : '新建配置'}</h3>
+                    <div className="set-card-hint">名称、Provider、端点、模型与思考深度</div>
+                  </div>
+                  <div className="set-card-body">
+                    <label className="field">
+                      <span className="field-label">配置名称 <span className="req">*</span></span>
+                      <input
+                        className="field-input"
+                        value={aiConfigName}
+                        onChange={(e) => setAiConfigName(e.target.value)}
+                        placeholder="如 GPT-4o 正式、DeepSeek 测试"
+                      />
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label">Provider</span>
+                      <div className="segmented" role="radiogroup" aria-label="AI Provider">
+                        {aiProviderOptions.map((option) => {
+                          const active = aiConfigForm.provider === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              className={`seg-opt${active ? ' active' : ''}`}
+                              aria-pressed={active}
+                              onClick={() =>
+                                setAiConfigForm((c) => ({
+                                  ...c,
+                                  provider: option.value,
+                                  baseUrl: c.baseUrl || defaultBaseUrlForProvider(option.value),
+                                  model: c.model || defaultModelForProvider(option.value),
+                                }))
+                              }
+                            >
+                              <span>{option.label}</span>
+                              <span className="seg-note">{option.description}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label">Base URL</span>
+                      <input
+                        className="field-input mono"
+                        value={aiConfigForm.baseUrl}
+                        onChange={(e) => setAiConfigForm((c) => ({ ...c, baseUrl: e.target.value }))}
+                        placeholder={defaultBaseUrlForProvider(aiConfigForm.provider)}
+                      />
+                      <span className="field-hint">API 端点地址，无需包含 /chat/completions 或 /messages 后缀。</span>
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label">API Key</span>
+                      <input
+                        className="field-input mono"
+                        type="password"
+                        value={aiConfigForm.apiKey}
+                        onChange={(e) => setAiConfigForm((c) => ({ ...c, apiKey: e.target.value }))}
+                        placeholder={
+                          editingConfigId && editingConfigId > 0
+                            ? '留空保持原密钥'
+                            : 'sk-…'
+                        }
+                      />
+                      <span className="field-hint">
+                        {editingConfigId && editingConfigId > 0
+                          ? '留空则保持原密钥不变。'
+                          : '支持 OpenAI / DeepSeek / Anthropic 等服务的 API Key。'}
+                      </span>
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label">模型</span>
+                      <input
+                        className="field-input mono"
+                        value={aiConfigForm.model}
+                        onChange={(e) => setAiConfigForm((c) => ({ ...c, model: e.target.value }))}
+                        placeholder={defaultModelForProvider(aiConfigForm.provider)}
+                      />
+                      <span className="field-hint">LLM 模型名称，按 provider 文档填写。</span>
+                    </label>
+
+                    <label className="field">
+                      <span className="field-label">温度 (Temperature)</span>
+                      <input
+                        className="field-input"
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="2"
+                        value={aiConfigForm.temperature}
+                        onChange={(e) => setAiConfigForm((c) => ({ ...c, temperature: e.target.value }))}
+                      />
+                      <span className="field-hint">0–2，越高越随机。建议 0.3（精确）到 0.7（创意）。</span>
+                    </label>
+
+                    {providerSupportsThinkingDepth(aiConfigForm.provider) ? (
+                      <div className="field">
+                        <span className="field-label">思考深度</span>
+                        <div className="segmented" role="radiogroup" aria-label="思考深度">
+                          {thinkingDepthOptions.map((option) => {
+                            const active = aiConfigForm.thinkingDepth === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                type="button"
+                                className={`seg-opt${active ? ' active' : ''}`}
+                                aria-pressed={active}
+                                onClick={() =>
+                                  setAiConfigForm((c) => ({ ...c, thinkingDepth: option.value }))
+                                }
+                              >
+                                <span>{option.label}</span>
+                                <span className="seg-note">{option.description}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <span className="field-hint">
+                          {aiConfigForm.provider === 'deepseek'
+                            ? 'DeepSeek 推理模型思考深度（如 deepseek-reasoner）。'
+                            : 'OpenAI o 系列推理模型思考深度（如 o3-mini）。'}
+                        </span>
+                      </div>
+                    ) : null}
+
+                    {providerSupportsThinkingBudget(aiConfigForm.provider) ? (
+                      <label className="field">
+                        <span className="field-label">思考 Token 预算</span>
+                        <input
+                          className="field-input"
+                          type="number"
+                          min="0"
+                          step="100"
+                          value={aiConfigForm.thinkingBudgetTokens}
+                          onChange={(e) =>
+                            setAiConfigForm((c) => ({ ...c, thinkingBudgetTokens: e.target.value }))
+                          }
+                          placeholder="如 4000，留空则不启用扩展思考"
+                        />
+                        <span className="field-hint">
+                          Anthropic 扩展思考的 token 预算，启用后会自动调整 max_tokens。
+                        </span>
+                      </label>
+                    ) : null}
+                  </div>
+
+                  <div className="settings-footer settings-actions">
+                    <span className="dirty-note">
+                      {aiConfigSaving ? '保存中…' : '填写完成后点击保存。'}
+                    </span>
+                    <div className="spacer">
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={cancelEditAiConfig}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={!aiConfigName.trim() || aiConfigSaving}
+                        onClick={() => { void saveAiConfig(); }}
+                      >
+                        {aiConfigSaving ? '保存中…' : '保存'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           {activePane === 'env' ? (
             <section className="settings-pane active" aria-labelledby="settings-env-title">
               <div className="pane-head">
@@ -462,9 +860,90 @@ export function WorkspaceSettingsView({
               <SettingsActions running={running} onToggleRun={onToggleRun} />
             </section>
           ) : null}
+
+          {activePane === 'about' ? <AboutPane /> : null}
         </form>
       </div>
     </div>
+  );
+}
+
+function AboutPane() {
+  const { status, check, checking } = useUpdateStatus();
+  const latestLabel = status.latestVersion ? `v${status.latestVersion}` : '';
+  const lastCheckedLabel = status.lastCheckedAt ? formatChinaDateTime(status.lastCheckedAt) : '尚未检查';
+  const latestDisplay = status.stableUpdate
+    ? latestLabel || '有新版本可用'
+    : latestLabel
+      ? `${latestLabel}（已是最新）`
+      : '暂无正式版信息';
+
+  return (
+    <section className="settings-pane active" aria-labelledby="settings-about-title">
+      <div className="pane-head">
+        <h2 id="settings-about-title"><span className="pane-ico" aria-hidden="true" />关于 / 更新</h2>
+        <p>查看当前版本与最新正式版本。仅检查与提醒，<b>不会自动下载安装</b>（避免与三端签名/公证冲突）。</p>
+      </div>
+
+      <div className="set-card">
+        <div className="set-card-head">
+          <h3>版本信息</h3>
+          <div className="set-card-hint">来源：GitHub releases/latest（仅正式版，不含 beta）</div>
+        </div>
+        <div className="set-card-body">
+          <div className="field readonly-field">
+            <span className="field-label">当前版本</span>
+            <span>v{status.currentVersion || '—'}</span>
+          </div>
+          <div className="field readonly-field">
+            <span className="field-label">最新正式版</span>
+            <span>{latestDisplay}</span>
+          </div>
+          <div className="field readonly-field">
+            <span className="field-label">上次检查时间</span>
+            <span>{lastCheckedLabel}</span>
+          </div>
+          <label className="field">
+            <span className="field-label">自动检查</span>
+            <button
+              type="button"
+              className={`btn btn-sm${status.autoCheck ? ' btn-primary' : ''}`}
+              aria-pressed={status.autoCheck}
+              onClick={() => {
+                void window.autoplan.setAutoUpdateCheck(!status.autoCheck);
+              }}
+            >
+              {status.autoCheck ? '已开启' : '已关闭'}
+            </button>
+            <span className="field-hint">默认每 {status.intervalMinutes || 360} 分钟检查一次，可在下方手动触发。</span>
+          </label>
+          <div className="settings-footer settings-actions">
+            <span className="dirty-note">手动检查或前往 GitHub Releases 下载。</span>
+            <div className="spacer">
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={checking}
+                onClick={() => {
+                  void check();
+                }}
+              >
+                {checking ? '检查中…' : '立即检查'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                onClick={() => {
+                  void window.autoplan.openExternal(AUTOPLAN_RELEASES_URL);
+                }}
+              >
+                打开 GitHub Releases
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 

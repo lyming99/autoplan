@@ -53,6 +53,7 @@ import {
 } from '../utils/workspaceSearch';
 import {
   buildAcceptanceGroups,
+  buildAcceptedGroups,
   buildRecentAccepted,
 } from '../utils/planTasks';
 
@@ -121,6 +122,13 @@ export function useWorkspaceController() {
   );
   const recentAccepted = useMemo(
     () => buildRecentAccepted(
+      (snapshot?.plans || []).filter((plan) => Number(plan.project_id) === projectId),
+      snapshot?.tasks || [],
+    ),
+    [snapshot?.plans, snapshot?.tasks, projectId],
+  );
+  const acceptedGroups = useMemo(
+    () => buildAcceptedGroups(
       (snapshot?.plans || []).filter((plan) => Number(plan.project_id) === projectId),
       snapshot?.tasks || [],
     ),
@@ -579,6 +587,7 @@ export function useWorkspaceController() {
   return {
     activeTab,
     acceptanceGroups,
+    acceptedGroups,
     acceptItem,
     acceptItems,
     addPendingFiles,

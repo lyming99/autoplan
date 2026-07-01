@@ -60,6 +60,10 @@ const {
   waitForChild,
 } = require('./loop/runtime');
 const planGeneration = require('./loop/planGeneration');
+const {
+  AUTOPLAN_OPENCODE_PLAN_AGENT,
+  ensureOpenCodePlanAgent,
+} = require('./loop/opencodeAgent');
 const planParser = require('./loop/planParser');
 const planTaskSync = require('./loop/planTaskSync');
 const snapshots = require('./loop/snapshots');
@@ -114,6 +118,19 @@ const {
   agentCliResultSessionContextFields,
   CLAUDE_SESSION_INPUT_KEYS,
 } = agentCliRunner;
+
+// 判定 runCodex 的本次调用是否为「OpenCode 计划生成」操作（区别于任务执行/修复）。
+// 仅在计划生成阶段注入 AutoPlan 专用受限 agent（P002），任务执行/修复复用既有 session 行为不变。
+// 判据与 src/loop/planGeneration.js 的调用方一致：label 为 generate-plan（issue-scan 走查计划）、
+// 或以 gen-requirement- / gen-feedback- 开头（需求/反馈计划），或 operation 携带 intakeType。
+function isOpenCodePlanGenerationOperation(label, operation = {}) {
+  if (operation && operation.intakeType) return true;
+  const text = typeof label === 'string' ? label : '';
+  if (!text) return false;
+  if (text === 'generate-plan') return true;
+  if (text.startsWith('gen-requirement-') || text.startsWith('gen-feedback-')) return true;
+  return false;
+}
 
 class LoopService extends EventEmitter {
   constructor(db) {
@@ -991,6 +1008,9 @@ class LoopService extends EventEmitter {
     const isCodexProvider = agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
     const isClaudeProvider = agentCliProvider === 'claude';
     const isOpenCodeProvider = agentCliProvider === 'opencode';
+    const isOpenCodePlanGeneration = isOpenCodeProvider && isOpenCodePlanGenerationOperation(label, operation);
+    // 计划生成阶段（provider 为 opencode）才赋值为 AutoPlan 专用受限 agent 名；spawn 前落盘并注入。
+    let opencodeAgentName = '';
     const opencodePlanId = isOpenCodeProvider && operation.planId ? operation.planId : null;
     const requestedClaudeSessionId = isClaudeProvider ? requestedAgentCliSessionId(operation) : '';
     const hasClaudeSessionOption = isClaudeProvider && hasAnyOwnProperty(operation, CLAUDE_SESSION_INPUT_KEYS);
@@ -1210,6 +1230,7 @@ class LoopService extends EventEmitter {
         agentCliOptions = {
           sessionId: mode === 'resume' ? capturedOpenCodeSessionId || requestedOpenCodeSessionId : '',
           title: opencodeSessionTitle,
+          ...(opencodeAgentName ? { agent: opencodeAgentName } : {}),
         };
       }
       return runAgentCliAttempt({
@@ -1242,6 +1263,18 @@ class LoopService extends EventEmitter {
         },
       });
     };
+    // 计划生成阶段（且 provider 为 opencode）：spawn 前确保 AutoPlan 专用受限 agent 已落盘
+    // （<workspace>/.opencode/agents/autoplan-plan.md，见 P001），并在 agentCliOptions 中带上 agent 名，
+    // 由 opencodeCliArgs 注入 `--agent autoplan-plan`。任务执行/修复不注入，沿用既有 session 复用。
+    // 写盘失败时不阻断：记录日志并回退默认 agent，使计划生成仍可进行（仅失去工具限制）。
+    if (isOpenCodePlanGeneration) {
+      try {
+        ensureOpenCodePlanAgent(workspace);
+        opencodeAgentName = AUTOPLAN_OPENCODE_PLAN_AGENT;
+      } catch (error) {
+        appendInternalLog(`OpenCode 计划生成专用 agent 文件写入失败（${error?.message || error}），本次回退默认 agent，不注入 --agent`);
+      }
+    }
     const tailTimer = setInterval(() => {
       if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
     }, 1500);
