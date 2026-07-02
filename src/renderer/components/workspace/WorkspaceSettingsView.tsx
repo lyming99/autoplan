@@ -5,10 +5,13 @@ import { useUpdateStatus } from '../../hooks/useUpdateStatus';
 import { formatChinaDateTime } from '../../utils/time';
 import {
   agentCliDefaultCommand,
+  aiConfigFormForProviderChange,
+  aiConfigInputFromForm,
   agentCliOptionDetails,
   chatConfigFormsEqual,
   codexReasoningOptionDetails,
   createDefaultChatConfigForm,
+  getErrorMessage,
   isCodexAgentCliProvider,
   maskApiKeyUtil,
   normalizeCodexReasoningEffort,
@@ -25,6 +28,8 @@ import {
   type ScopeFileOpenMode,
   type ScopeFileOpenSettings,
 } from '../../utils/workspaceForms';
+import { Icon } from '../icons';
+import { Modal } from '../Modal';
 import { McpControlPanel, mcpStatusText, mcpStatusTone } from './McpControlPanel';
 
 type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'mcp' | 'ai' | 'env' | 'about';
@@ -32,7 +37,7 @@ type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'mcp' | 'ai' | 'en
 const SETTINGS_NAV: Array<{ id: SettingsPane; label: string; hint: string; icon: string }> = [
   { id: 'loop', label: '循环控制', hint: '路径、间隔、验收命令', icon: 'loop' },
   { id: 'cli', label: 'CLI 后端', hint: 'Provider 与 Codex 深度', icon: 'cli' },
-  { id: 'appearance', label: '外观', hint: '浅色 / 深色 / 跟随系统', icon: 'theme' },
+  { id: 'appearance', label: '外观', hint: '浅色 / 深色', icon: 'theme' },
   { id: 'scope', label: 'scope 文件', hint: '打开方式与编辑器命令', icon: 'scope' },
   { id: 'mcp', label: 'MCP 接入', hint: '服务状态与工具清单', icon: 'mcp' },
   { id: 'ai', label: 'AI 对话', hint: 'LLM 接口与模型配置', icon: 'ai' },
@@ -60,6 +65,26 @@ function agentCliNonCodexHint(provider: string) {
   return 'Claude CLI 不使用该配置';
 }
 
+function aiProviderLabel(provider: string) {
+  if (provider === 'anthropic') return 'Anthropic';
+  if (provider === 'deepseek') return 'DeepSeek';
+  return 'OpenAI 兼容';
+}
+
+function aiProviderTone(provider: string) {
+  if (provider === 'anthropic') return 'anthropic';
+  if (provider === 'deepseek') return 'deepseek';
+  return 'openai';
+}
+
+function aiThinkingLabel(config: AiConfig) {
+  if (config.thinkingBudgetTokens != null) return `思考 ${config.thinkingBudgetTokens} tokens`;
+  if (config.thinkingDepth === 'low') return '低思考';
+  if (config.thinkingDepth === 'medium') return '中思考';
+  if (config.thinkingDepth === 'high') return '高思考';
+  return null;
+}
+
 export function WorkspaceSettingsView({
   loopForm,
   mcpForm,
@@ -74,7 +99,6 @@ export function WorkspaceSettingsView({
   onSubmit,
   onToggleRun,
   running,
-  projectId,
 }: {
   loopForm: LoopFormState;
   mcpForm: McpConfigFormState;
@@ -89,14 +113,14 @@ export function WorkspaceSettingsView({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onToggleRun: () => void;
   running: boolean;
-  projectId?: number;
+  projectId: number;
 }) {
   const [activePane, setActivePane] = useState<SettingsPane>('loop');
   const isCodexProvider = isCodexAgentCliProvider(loopForm.agentCliProvider);
   const mcpStatus = mcpStatusText(mcp);
   const { theme, setTheme } = useTheme();
 
-  const themeModeLabel = theme === 'light' ? '浅色' : theme === 'dark' ? '深色' : '跟随系统';
+  const themeModeLabel = theme === 'light' ? '浅色' : '深色';
 
   // Chat 配置表单（需求 #26）- 保留向后兼容
   const [chatConfigForm, setChatConfigForm] = useState<ChatConfigFormState>(() => createDefaultChatConfigForm());
@@ -110,32 +134,32 @@ export function WorkspaceSettingsView({
   const [aiConfigForm, setAiConfigForm] = useState<ChatConfigFormState>(() => createDefaultChatConfigForm());
   const [aiConfigName, setAiConfigName] = useState('');
   const [aiConfigSaving, setAiConfigSaving] = useState(false);
+  const [aiConfigError, setAiConfigError] = useState<string | null>(null);
+  const loadChatConfig = useCallback(async () => {
+    try {
+      const cfg = await window.autoplan.chatGetConfig();
+      const form = createDefaultChatConfigForm(cfg);
+      setChatConfigForm(form);
+      setChatConfigSaved(form);
+      setHasExistingApiKey(cfg.hasApiKey);
+    } catch {
+      /* 取配置失败保持默认值 */
+    }
+  }, []);
 
-  const loadAiConfigs = useCallback(() => {
-    if (!projectId) return;
-    window.autoplan
-      .aiConfigList({ projectId })
-      .then((list) => setAiConfigs(list))
-      .catch(() => { /* 加载失败忽略 */ });
-  }, [projectId]);
-
-  useEffect(() => {
-    window.autoplan
-      .chatGetConfig()
-      .then((cfg) => {
-        const form = createDefaultChatConfigForm(cfg);
-        setChatConfigForm(form);
-        setChatConfigSaved(form);
-        setHasExistingApiKey(cfg.hasApiKey);
-      })
-      .catch(() => {
-        /* 取配置失败保持默认值 */
-      });
+  const loadAiConfigs = useCallback(async () => {
+    try {
+      const list = await window.autoplan.aiConfigList();
+      setAiConfigs(list);
+    } catch {
+      /* 加载失败忽略 */
+    }
   }, []);
 
   useEffect(() => {
-    loadAiConfigs();
-  }, [loadAiConfigs]);
+    void loadChatConfig();
+    void loadAiConfigs();
+  }, [loadAiConfigs, loadChatConfig]);
 
   const chatConfigDirty = !chatConfigFormsEqual(chatConfigForm, chatConfigSaved, hasExistingApiKey);
 
@@ -154,17 +178,19 @@ export function WorkspaceSettingsView({
       setChatConfigForm(form);
       setChatConfigSaved(form);
       setHasExistingApiKey(cfg.hasApiKey);
+      await loadAiConfigs();
     } catch {
       /* 保存失败保留草稿 */
     } finally {
       setChatConfigSaving(false);
     }
-  }, [chatConfigForm]);
+  }, [chatConfigForm, loadAiConfigs]);
 
   const startNewAiConfig = useCallback(() => {
     setEditingConfigId(0);
     setAiConfigName('');
     setAiConfigForm(createDefaultChatConfigForm());
+    setAiConfigError(null);
   }, []);
 
   const startEditAiConfig = useCallback((cfg: AiConfig) => {
@@ -179,57 +205,67 @@ export function WorkspaceSettingsView({
       thinkingDepth: cfg.thinkingDepth || '',
       thinkingBudgetTokens: cfg.thinkingBudgetTokens != null ? String(cfg.thinkingBudgetTokens) : '',
     });
+    setAiConfigError(null);
   }, []);
 
   const cancelEditAiConfig = useCallback(() => {
     setEditingConfigId(null);
     setAiConfigName('');
     setAiConfigForm(createDefaultChatConfigForm());
+    setAiConfigError(null);
+  }, []);
+
+  const updateAiConfigForm = useCallback((patch: Partial<ChatConfigFormState>) => {
+    setAiConfigError(null);
+    setAiConfigForm((current) => ({ ...current, ...patch }));
   }, []);
 
   const saveAiConfig = useCallback(async () => {
-    if (!projectId) return;
     const name = aiConfigName.trim();
-    if (!name) return;
+    if (!name) {
+      setAiConfigError('配置名称不能为空');
+      return;
+    }
     setAiConfigSaving(true);
+    setAiConfigError(null);
     try {
-      const payload = {
-        projectId,
-        name,
-        provider: aiConfigForm.provider,
-        baseUrl: aiConfigForm.baseUrl,
-        apiKey: aiConfigForm.apiKey || undefined,
-        model: aiConfigForm.model,
-        temperature: aiConfigForm.temperature,
-        thinkingDepth: (aiConfigForm.thinkingDepth || null) as 'low' | 'medium' | 'high' | null,
-        thinkingBudgetTokens: aiConfigForm.thinkingBudgetTokens
-          ? Number(aiConfigForm.thinkingBudgetTokens)
-          : null,
-      };
+      const preserveEmptyApiKey = Boolean(editingConfigId && editingConfigId > 0);
+      const payload = aiConfigInputFromForm(name, aiConfigForm, { preserveEmptyApiKey });
       if (editingConfigId && editingConfigId > 0) {
-        const { projectId: _, ...updatePayload } = payload;
-        await window.autoplan.aiConfigUpdate({ configId: editingConfigId, ...updatePayload });
+        await window.autoplan.aiConfigUpdate({
+          configId: editingConfigId,
+          name: payload.name,
+          provider: payload.provider,
+          baseUrl: payload.baseUrl,
+          model: payload.model,
+          temperature: payload.temperature,
+          thinkingDepth: payload.thinkingDepth,
+          thinkingBudgetTokens: payload.thinkingBudgetTokens,
+          ...(payload.apiKey !== undefined ? { apiKey: payload.apiKey } : {}),
+        });
       } else {
         await window.autoplan.aiConfigCreate(payload);
       }
       cancelEditAiConfig();
-      loadAiConfigs();
-    } catch {
-      /* 保存失败保留草稿 */
+      await loadAiConfigs();
+      await loadChatConfig();
+    } catch (error) {
+      setAiConfigError(getErrorMessage(error, 'AI 配置保存失败'));
     } finally {
       setAiConfigSaving(false);
     }
-  }, [projectId, aiConfigName, aiConfigForm, editingConfigId, cancelEditAiConfig, loadAiConfigs]);
+  }, [aiConfigName, aiConfigForm, editingConfigId, cancelEditAiConfig, loadAiConfigs, loadChatConfig]);
 
   const deleteAiConfig = useCallback(async (id: number) => {
     try {
       await window.autoplan.aiConfigDelete({ configId: id });
       if (editingConfigId != null && editingConfigId === id) cancelEditAiConfig();
-      loadAiConfigs();
+      await loadAiConfigs();
+      await loadChatConfig();
     } catch {
       /* 删除失败忽略 */
     }
-  }, [editingConfigId, cancelEditAiConfig, loadAiConfigs]);
+  }, [editingConfigId, cancelEditAiConfig, loadAiConfigs, loadChatConfig]);
 
   const isAiConfigEditing = editingConfigId !== null;
 
@@ -426,7 +462,7 @@ export function WorkspaceSettingsView({
               <div className="set-card">
                 <div className="set-card-head">
                   <h3>主题模式</h3>
-                  <div className="set-card-hint">浅色、深色或跟随操作系统设置</div>
+                  <div className="set-card-hint">浅色与深色界面切换</div>
                 </div>
                 <div className="set-card-body">
                   <label className="field">
@@ -435,7 +471,6 @@ export function WorkspaceSettingsView({
                       {([
                         { value: 'light' as ThemeMode, label: '浅色', desc: '始终使用浅色界面' },
                         { value: 'dark' as ThemeMode, label: '深色', desc: '始终使用深色界面' },
-                        { value: 'auto' as ThemeMode, label: '跟随系统', desc: '根据操作系统设置自动切换' },
                       ] as const).map((option) => {
                         const active = theme === option.value;
                         return (
@@ -535,82 +570,149 @@ export function WorkspaceSettingsView({
             <section className="settings-pane active" aria-labelledby="settings-ai-title">
               <div className="pane-head">
                 <h2 id="settings-ai-title"><span className="pane-ico" aria-hidden="true" />AI 对话</h2>
-                <p>管理多个 AI 配置，对话可绑定不同配置。支持 OpenAI 兼容、DeepSeek 和 Anthropic。</p>
+                <p>管理所有项目共用的 AI 配置，对话可绑定不同配置。支持 OpenAI 兼容、DeepSeek 和 Anthropic。</p>
               </div>
 
               {/* AI 配置列表 */}
-              <div className="set-card">
-                <div className="set-card-head">
-                  <h3>AI 配置列表</h3>
-                  <div className="set-card-hint">每个项目可创建多个命名 AI 配置，对话可绑定不同配置</div>
-                </div>
-                <div className="set-card-body">
-                  {aiConfigs.length === 0 && !isAiConfigEditing ? (
-                    <div className="empty-hint">暂无 AI 配置，点击「新建配置」添加。</div>
-                  ) : (
-                    <div className="ai-config-list">
-                      {aiConfigs.map((cfg) => (
-                        <div
-                          key={cfg.id}
-                          className={`ai-config-item${editingConfigId === cfg.id ? ' editing' : ''}`}
-                        >
-                          <div className="ai-config-info">
-                            <span className="ai-config-name">{cfg.name}</span>
-                            <span className="ai-config-meta">
-                              {cfg.provider === 'anthropic' ? 'Anthropic' : cfg.provider === 'deepseek' ? 'DeepSeek' : 'OpenAI 兼容'}
-                              {' · '}
-                              {cfg.model || '未设置模型'}
-                              {cfg.hasApiKey ? ' · 已设置密钥' : ' · 未设置密钥'}
-                            </span>
-                          </div>
-                          <div className="ai-config-actions">
-                            <button
-                              type="button"
-                              className="btn btn-xs"
-                              onClick={() => startEditAiConfig(cfg)}
-                            >
-                              编辑
-                            </button>
-                            <button
-                              type="button"
-                              className="btn btn-xs btn-danger"
-                              onClick={() => { void deleteAiConfig(cfg.id); }}
-                            >
-                              删除
-                            </button>
-                          </div>
-                        </div>
-                      ))}
+              <div className="set-card ai-config-card">
+                <div className="set-card-head ai-config-card-head">
+                  <div className="ai-config-card-title">
+                    <h3>AI 配置列表</h3>
+                    <div className="set-card-hint">
+                      全局配置由所有项目共用，对话可绑定不同配置
                     </div>
-                  )}
+                  </div>
                   {!isAiConfigEditing ? (
                     <button
                       type="button"
-                      className="btn btn-sm btn-primary"
-                      style={{ marginTop: 12 }}
+                      className="btn btn-sm btn-primary ai-config-new-btn"
                       onClick={startNewAiConfig}
-                      disabled={!projectId}
                     >
+                      <Icon name="plus" size={14} aria-hidden="true" />
                       新建配置
                     </button>
                   ) : null}
                 </div>
+                <div className="set-card-body ai-config-card-body">
+                  {aiConfigs.length === 0 && !isAiConfigEditing ? (
+                    <div className="ai-config-empty">
+                      <span className="ai-config-empty-icon" aria-hidden="true">
+                        <Icon name="chat" size={22} />
+                      </span>
+                      <span>暂无 AI 配置，点击「新建配置」添加。</span>
+                    </div>
+                  ) : (
+                    <div className="ai-config-list">
+                      {aiConfigs.map((cfg) => {
+                        const providerTone = aiProviderTone(cfg.provider);
+                        const thinkingLabel = aiThinkingLabel(cfg);
+                        return (
+                          <div
+                            key={cfg.id}
+                            className={`ai-config-item${editingConfigId === cfg.id ? ' editing' : ''}`}
+                          >
+                            <span className={`ai-config-provider-mark ${providerTone}`} aria-hidden="true">
+                              <Icon name={cfg.provider === 'deepseek' ? 'bolt' : cfg.provider === 'anthropic' ? 'thinking' : 'chat'} size={18} />
+                            </span>
+                            <div className="ai-config-info">
+                              <div className="ai-config-title-row">
+                                <span className="ai-config-name" title={cfg.name}>{cfg.name}</span>
+                                <span className={`ai-config-provider ${providerTone}`}>
+                                  {aiProviderLabel(cfg.provider)}
+                                </span>
+                              </div>
+                              <div className="ai-config-meta">
+                                <span className="ai-config-model mono" title={cfg.model || undefined}>
+                                  {cfg.model || '未设置模型'}
+                                </span>
+                                {thinkingLabel ? (
+                                  <>
+                                    <span className="meta-dot" aria-hidden="true" />
+                                    <span>{thinkingLabel}</span>
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
+                            <span className={`ai-config-key ${cfg.hasApiKey ? 'ready' : 'missing'}`}>
+                              <Icon name="key" size={14} aria-hidden="true" />
+                              {cfg.hasApiKey ? '已设置密钥' : '未设置密钥'}
+                            </span>
+                            <div className="ai-config-actions">
+                              <button
+                                type="button"
+                                className="icon-btn"
+                                title="编辑配置"
+                                aria-label={`编辑配置 ${cfg.name}`}
+                                onClick={() => startEditAiConfig(cfg)}
+                              >
+                                <Icon name="edit" size={16} aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                className="icon-btn danger"
+                                title="删除配置"
+                                aria-label={`删除配置 ${cfg.name}`}
+                                onClick={() => { void deleteAiConfig(cfg.id); }}
+                              >
+                                <Icon name="trash" size={16} aria-hidden="true" />
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* 编辑/新建表单 */}
-              {isAiConfigEditing ? (
-                <div className="set-card" style={{ marginTop: 16 }}>
-                  <div className="set-card-head">
-                    <h3>{editingConfigId && editingConfigId > 0 ? '编辑配置' : '新建配置'}</h3>
-                    <div className="set-card-hint">名称、Provider、端点、模型与思考深度</div>
-                  </div>
-                  <div className="set-card-body">
+              <Modal
+                open={isAiConfigEditing}
+                onClose={cancelEditAiConfig}
+                title={editingConfigId && editingConfigId > 0 ? '编辑配置' : '新建配置'}
+                size="wide"
+                className="ai-config-modal"
+                bodyClassName="ai-config-modal-body"
+                footer={(
+                  <>
+                    <span className="dirty-note">
+                      {aiConfigSaving ? '保存中…' : '填写完成后点击保存。'}
+                    </span>
+                    <div className="spacer">
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={cancelEditAiConfig}
+                      >
+                        取消
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={!aiConfigName.trim() || aiConfigSaving}
+                        onClick={() => { void saveAiConfig(); }}
+                      >
+                        <Icon name="save" size={14} aria-hidden="true" />
+                        {aiConfigSaving ? '保存中…' : '保存'}
+                      </button>
+                    </div>
+                  </>
+                )}
+              >
+                    {aiConfigError ? (
+                      <div className="ai-config-error" role="alert">
+                        {aiConfigError}
+                      </div>
+                    ) : null}
                     <label className="field">
                       <span className="field-label">配置名称 <span className="req">*</span></span>
                       <input
                         className="field-input"
                         value={aiConfigName}
-                        onChange={(e) => setAiConfigName(e.target.value)}
+                        onChange={(e) => {
+                          setAiConfigError(null);
+                          setAiConfigName(e.target.value);
+                        }}
                         placeholder="如 GPT-4o 正式、DeepSeek 测试"
                       />
                     </label>
@@ -626,14 +728,10 @@ export function WorkspaceSettingsView({
                               type="button"
                               className={`seg-opt${active ? ' active' : ''}`}
                               aria-pressed={active}
-                              onClick={() =>
-                                setAiConfigForm((c) => ({
-                                  ...c,
-                                  provider: option.value,
-                                  baseUrl: c.baseUrl || defaultBaseUrlForProvider(option.value),
-                                  model: c.model || defaultModelForProvider(option.value),
-                                }))
-                              }
+                              onClick={() => {
+                                setAiConfigError(null);
+                                setAiConfigForm((current) => aiConfigFormForProviderChange(current, option.value));
+                              }}
                             >
                               <span>{option.label}</span>
                               <span className="seg-note">{option.description}</span>
@@ -648,7 +746,7 @@ export function WorkspaceSettingsView({
                       <input
                         className="field-input mono"
                         value={aiConfigForm.baseUrl}
-                        onChange={(e) => setAiConfigForm((c) => ({ ...c, baseUrl: e.target.value }))}
+                        onChange={(e) => updateAiConfigForm({ baseUrl: e.target.value })}
                         placeholder={defaultBaseUrlForProvider(aiConfigForm.provider)}
                       />
                       <span className="field-hint">API 端点地址，无需包含 /chat/completions 或 /messages 后缀。</span>
@@ -660,7 +758,7 @@ export function WorkspaceSettingsView({
                         className="field-input mono"
                         type="password"
                         value={aiConfigForm.apiKey}
-                        onChange={(e) => setAiConfigForm((c) => ({ ...c, apiKey: e.target.value }))}
+                        onChange={(e) => updateAiConfigForm({ apiKey: e.target.value })}
                         placeholder={
                           editingConfigId && editingConfigId > 0
                             ? '留空保持原密钥'
@@ -679,7 +777,7 @@ export function WorkspaceSettingsView({
                       <input
                         className="field-input mono"
                         value={aiConfigForm.model}
-                        onChange={(e) => setAiConfigForm((c) => ({ ...c, model: e.target.value }))}
+                        onChange={(e) => updateAiConfigForm({ model: e.target.value })}
                         placeholder={defaultModelForProvider(aiConfigForm.provider)}
                       />
                       <span className="field-hint">LLM 模型名称，按 provider 文档填写。</span>
@@ -694,7 +792,7 @@ export function WorkspaceSettingsView({
                         min="0"
                         max="2"
                         value={aiConfigForm.temperature}
-                        onChange={(e) => setAiConfigForm((c) => ({ ...c, temperature: e.target.value }))}
+                        onChange={(e) => updateAiConfigForm({ temperature: e.target.value })}
                       />
                       <span className="field-hint">0–2，越高越随机。建议 0.3（精确）到 0.7（创意）。</span>
                     </label>
@@ -712,7 +810,7 @@ export function WorkspaceSettingsView({
                                 className={`seg-opt${active ? ' active' : ''}`}
                                 aria-pressed={active}
                                 onClick={() =>
-                                  setAiConfigForm((c) => ({ ...c, thinkingDepth: option.value }))
+                                  updateAiConfigForm({ thinkingDepth: option.value })
                                 }
                               >
                                 <span>{option.label}</span>
@@ -739,7 +837,7 @@ export function WorkspaceSettingsView({
                           step="100"
                           value={aiConfigForm.thinkingBudgetTokens}
                           onChange={(e) =>
-                            setAiConfigForm((c) => ({ ...c, thinkingBudgetTokens: e.target.value }))
+                            updateAiConfigForm({ thinkingBudgetTokens: e.target.value })
                           }
                           placeholder="如 4000，留空则不启用扩展思考"
                         />
@@ -748,32 +846,7 @@ export function WorkspaceSettingsView({
                         </span>
                       </label>
                     ) : null}
-                  </div>
-
-                  <div className="settings-footer settings-actions">
-                    <span className="dirty-note">
-                      {aiConfigSaving ? '保存中…' : '填写完成后点击保存。'}
-                    </span>
-                    <div className="spacer">
-                      <button
-                        type="button"
-                        className="btn btn-sm"
-                        onClick={cancelEditAiConfig}
-                      >
-                        取消
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn-sm btn-primary"
-                        disabled={!aiConfigName.trim() || aiConfigSaving}
-                        onClick={() => { void saveAiConfig(); }}
-                      >
-                        {aiConfigSaving ? '保存中…' : '保存'}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : null}
+              </Modal>
             </section>
           ) : null}
 

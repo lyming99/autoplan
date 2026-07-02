@@ -192,10 +192,10 @@
   z-index: 30;
   display: flex;
   align-items: center;
-  flex: 1 1 420px;
+  flex: 1 1 360px;
   max-width: 580px;
-  min-width: 280px;
-  margin-left: auto;
+  min-width: 240px;
+  margin-left: 0;
 }
 
 .workspace-search-popover-anchor .workspace-search {
@@ -209,10 +209,13 @@
 }
 
 .search-results-popup {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: 80;
+  /* Portal 渲染到 document.body：改为 fixed 脱离 .workspace-main 的裁剪与左侧导航的层叠区域。
+     top/right/width 仅为兜底基值，实际坐标由 SearchResults 的内联 style（基于锚点 getBoundingClientRect）覆盖。 */
+  position: fixed;
+  top: 80px;
+  right: 24px;
+  /* 高于侧边栏 / topbar 锚点(z-index:30)，低于 .modal-mask(z-index:100)，确保模态仍位于搜索弹层之上。 */
+  z-index: 90;
   width: min(760px, calc(100vw - 48px));
   max-height: min(620px, calc(100vh - 116px));
   margin: 0;
@@ -225,7 +228,7 @@
 }
 
 .search-results-popup .search-result-groups {
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
 }
 
 [data-search-anchor="true"] {
@@ -258,10 +261,10 @@
   100% { box-shadow: 0 0 0 3px var(--brand-50), 0 16px 36px rgba(77, 110, 255, 0.18); }
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1180px) {
   .workspace-search-popover-anchor {
     order: 3;
-    flex-basis: 100%;
+    flex: 1 0 100%;
     max-width: none;
     min-width: 0;
     margin-left: 0;

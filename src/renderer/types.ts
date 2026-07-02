@@ -1004,7 +1004,7 @@ export interface UpdateCheckResult extends UpdateStatus {
 /** AI 配置（需求 #28）*/
 export interface AiConfig {
   id: number;
-  projectId: number;
+  projectId: number | null;
   name: string;
   provider: 'openai' | 'deepseek' | 'anthropic' | string;
   baseUrl: string;
@@ -1026,6 +1026,9 @@ export interface Conversation {
   title: string;
   ai_config_id: number | null;
   aiConfigId: number | null;
+  pinned_at: string | null;
+  pinnedAt: string | null;
+  pinned: boolean;
   created_at: string;
   createdAt: string;
   updated_at: string;
@@ -1034,7 +1037,11 @@ export interface Conversation {
 
 /** Chat 对话配置（扩展：需求 #28 增加思考深度字段） */
 export interface ChatConfig {
-  provider: 'openai' | 'anthropic' | string;
+  source?: string;
+  compatibilityOnly?: boolean;
+  aiConfigId?: number | null;
+  name?: string;
+  provider: 'openai' | 'deepseek' | 'anthropic' | string;
   baseUrl: string;
   hasApiKey: boolean;
   maskedKey: string;
@@ -1066,6 +1073,32 @@ export interface ChatToolCall {
   args: Record<string, unknown>;
 }
 
+export type ChatStreamPhase = 'idle' | 'thinking' | 'replying';
+
+export interface WorkspaceChatState {
+  messages: ChatMessage[];
+  isStreaming: boolean;
+  streamingContent: string;
+  streamingToolCall: ChatToolCall | null;
+  config: ChatConfig;
+  sendMessage: (message: string) => Promise<void>;
+  stopGeneration: () => Promise<void>;
+  clearSession: () => Promise<void>;
+  loadHistory: (conversationId: number) => Promise<void>;
+  conversations: Conversation[];
+  aiConfigs: AiConfig[];
+  activeConversationId: number | null;
+  switchConversation: (conversationId: number) => Promise<void>;
+  createConversation: () => Promise<void>;
+  deleteConversation: (conversationId: number) => Promise<void>;
+  renameConversation: (conversationId: number, title: string) => Promise<void>;
+  getAiConfigName: (configId: number | null) => string;
+  formatRelativeTime: (iso: string) => string;
+  isThinking: boolean;
+  thinkingContent: string;
+  streamPhase: ChatStreamPhase;
+}
+
 export type ChatChunkEvent =
   | { type: 'thinking_start' }
   | { type: 'thinking_delta'; content: string }
@@ -1081,6 +1114,14 @@ export type ChatDoneStatus = 'done' | 'aborted' | 'error' | 'max_rounds';
 export interface ChatDoneEvent {
   status: ChatDoneStatus;
   error?: string;
+  conversationId?: number;
+  title?: string;
+}
+
+export interface AiConfigChangedEvent {
+  source: string;
+  configId: number | null;
+  configs: AiConfig[];
 }
 
 export interface ChatSendPayload {
@@ -1090,29 +1131,35 @@ export interface ChatSendPayload {
 }
 
 export interface ChatClearPayload {
-  projectId?: number;
+  projectId: number;
   conversationId: number;
 }
 
 export interface ChatStopPayload {
+  projectId: number;
   conversationId: number;
 }
 
 export interface ChatHistoryPayload {
+  projectId: number;
   conversationId: number;
 }
 
 export interface ChatSaveConfigInput {
-  provider: string;
-  baseUrl: string;
-  apiKey: string;
-  model: string;
-  temperature: string;
+  name?: string;
+  provider?: string;
+  baseUrl?: string;
+  apiKey?: string;
+  model?: string;
+  temperature?: string;
+  thinkingDepth?: 'low' | 'medium' | 'high' | null;
+  thinkingBudgetTokens?: number | null;
 }
 
 /** AI 配置 CRUD 载荷（需求 #28）*/
+export type AiConfigListInput = void;
+
 export interface AiConfigCreateInput {
-  projectId: number;
   name: string;
   provider?: string;
   baseUrl?: string;
@@ -1151,12 +1198,16 @@ export interface ConversationCreateInput {
 }
 
 export interface ConversationUpdateInput {
+  projectId: number;
   conversationId: number;
   title?: string;
   aiConfigId?: number | null;
+  pinned?: boolean;
+  pinnedAt?: string | null;
 }
 
 export interface ConversationDeleteInput {
+  projectId: number;
   conversationId: number;
 }
 
@@ -1222,11 +1273,12 @@ export interface AutoplanApi {
   onChatChunk: (handler: (event: { type: string; data: Record<string, unknown> }) => void) => () => void;
   onChatDone: (handler: (event: ChatDoneEvent) => void) => () => void;
   // AI 配置（需求 #28）
-  aiConfigList: (payload: ConversationListInput) => Promise<AiConfig[]>;
+  aiConfigList: () => Promise<AiConfig[]>;
   aiConfigCreate: (payload: AiConfigCreateInput) => Promise<AiConfig>;
   aiConfigUpdate: (payload: AiConfigUpdateInput) => Promise<AiConfig>;
   aiConfigDelete: (payload: AiConfigDeleteInput) => Promise<{ deleted: boolean }>;
-  aiConfigGet: (payload: AiConfigGetInput) => Promise<AiConfig | null>;
+  aiConfigGet: (payload: AiConfigGetInput) => Promise<AiConfig>;
+  onAiConfigChanged: (handler: (event: AiConfigChangedEvent) => void) => () => void;
   // 对话管理（需求 #28）
   conversationList: (payload: ConversationListInput) => Promise<Conversation[]>;
   conversationCreate: (payload: ConversationCreateInput) => Promise<Conversation>;

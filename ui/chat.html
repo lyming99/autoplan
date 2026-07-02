@@ -1,0 +1,1079 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoPlan · 对话</title>
+    <style>
+      /* ============================================================
+         设计系统 · Design Tokens（与 workspace.html / acceptance.html 一致）
+         ============================================================ */
+      :root {
+        color-scheme: light;
+        --font-sans: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+        --font-mono: "Cascadia Code", Consolas, "Courier New", monospace;
+
+        --brand-50: #eef4ff;
+        --brand-100: #dbe7ff;
+        --brand-400: #5580f0;
+        --brand-500: #3b6ef5;
+        --brand-600: #255fbd;
+        --brand-700: #1d4a94;
+        --brand-border: #cdd8ea;
+        --brand-grad: linear-gradient(135deg, #4f7bff 0%, #6d5dfc 100%);
+
+        --bg-app: #f4f6fb;
+        --bg-elevated: #ffffff;
+        --bg-soft: #f8fafd;
+        --bg-hover: #eef2f9;
+        --line: #e2e8f1;
+        --line-soft: #eef2f8;
+
+        --text-1: #172033;
+        --text-2: #475067;
+        --text-3: #7c879b;
+        --text-4: #a4adc0;
+
+        --success: #18a957;
+        --success-bg: #e7f7ee;
+        --success-border: #bce8cd;
+        --warning: #e08600;
+        --warning-bg: #fdf3e3;
+        --warning-border: #f4ddae;
+        --danger: #e5484d;
+        --danger-bg: #fdecec;
+        --danger-border: #f3c2c4;
+        --info: #2563eb;
+        --info-bg: #e8f0ff;
+        --info-border: #c7d7fe;
+
+        --r-sm: 6px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px;
+        --shadow-sm: 0 1px 2px rgba(23, 32, 51, 0.06);
+        --shadow-md: 0 6px 18px rgba(23, 32, 51, 0.08);
+        --shadow-lg: 0 18px 48px rgba(37, 62, 120, 0.14);
+        --focus-ring: 0 0 0 3px var(--brand-50);
+
+        font-family: var(--font-sans);
+        background: var(--bg-app);
+        color: var(--text-1);
+      }
+      * { box-sizing: border-box; }
+      html, body { height: 100%; margin: 0; }
+      body { overflow: hidden; font-size: 14px; -webkit-font-smoothing: antialiased; }
+      h1, h2, h3, h4, p { margin: 0; }
+      button { font: inherit; cursor: pointer; }
+      a { color: var(--brand-600); text-decoration: none; }
+      code { font-family: var(--font-mono); }
+
+      ::-webkit-scrollbar { width: 9px; height: 9px; }
+      ::-webkit-scrollbar-thumb { background: #cdd5e3; border-radius: 999px; border: 2px solid transparent; background-clip: content-box; }
+      ::-webkit-scrollbar-thumb:hover { background: #b3bccf; background-clip: content-box; }
+      ::-webkit-scrollbar-track { background: transparent; }
+
+      .icon-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+      .icon {
+        width: 1em; height: 1em; flex: 0 0 auto;
+        display: inline-block; vertical-align: -0.15em;
+        fill: none; stroke: currentColor; stroke-width: 2;
+        stroke-linecap: round; stroke-linejoin: round;
+      }
+
+      /* ---------- 应用骨架 ---------- */
+      .workspace-shell {
+        display: grid;
+        grid-template-columns: 248px 1fr;
+        height: 100vh;
+      }
+
+      /* ---------- 左侧主导航 ---------- */
+      .sidebar {
+        display: flex; flex-direction: column; gap: 6px;
+        padding: 22px 14px 18px;
+        background: var(--bg-elevated); border-right: 1px solid var(--line);
+        height: 100vh; overflow-y: auto;
+      }
+      .brand { display: flex; align-items: center; gap: 12px; padding: 4px 10px 18px; }
+      .brand-mark {
+        display: grid; place-items: center; width: 36px; height: 36px;
+        border-radius: 10px; background: var(--brand-grad); color: #fff;
+        font-weight: 800; font-size: 16px;
+      }
+      .brand-name { font-size: 17px; font-weight: 700; }
+      .brand-sub { font-size: 11px; color: var(--text-3); margin-top: 2px; }
+
+      .back-link {
+        display: flex; align-items: center; gap: 8px; margin: 0 4px 10px;
+        padding: 8px 10px; border: 0; border-radius: var(--r-sm);
+        background: transparent; color: var(--text-2); font-size: 12.5px; font-weight: 600;
+        width: calc(100% - 8px);
+      }
+      .back-link:hover { background: var(--bg-hover); color: var(--text-1); }
+
+      .project-switcher {
+        margin: 0 4px 10px; padding: 10px;
+        border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-soft);
+      }
+      .project-label {
+        font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase;
+        font-weight: 700; color: var(--text-4); margin-bottom: 8px;
+      }
+      .project-name { font-size: 13.5px; font-weight: 700; color: var(--text-1); }
+      .project-path {
+        margin-top: 4px; font-size: 11px; color: var(--text-3);
+        font-family: var(--font-mono); word-break: break-all;
+      }
+
+      /* 底部 footer：主题切换 + 循环状态 */
+      .sidebar-footer {
+        margin-top: auto; padding: 12px;
+        border-radius: var(--r-md); background: var(--bg-soft);
+        border: 1px solid var(--line-soft);
+      }
+      .theme-toggle {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        padding: 7px 10px; border: 0; border-radius: var(--r-sm);
+        background: transparent; color: var(--text-2); font: inherit;
+        cursor: pointer; transition: background 0.14s, color 0.14s;
+        margin-bottom: 8px;
+      }
+      .theme-toggle:hover { background: var(--bg-hover); color: var(--text-1); }
+      .theme-toggle svg { flex: 0 0 auto; }
+      .theme-toggle span { font-size: 11.5px; font-weight: 600; line-height: 1; }
+      .loop-mini { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-2); }
+      .loop-mini b { color: var(--text-1); }
+      .loop-config { font-size: 11px; color: var(--text-3); margin-top: 6px; }
+      .led { width: 9px; height: 9px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 4px var(--success-bg); }
+      .led.stopped { background: var(--text-4); box-shadow: 0 0 0 4px var(--line); }
+
+      .nav-group-label {
+        padding: 12px 12px 6px; font-size: 10.5px; letter-spacing: 0.12em;
+        text-transform: uppercase; color: var(--text-4); font-weight: 700;
+      }
+      .nav-item {
+        display: flex; align-items: center; gap: 12px; width: 100%;
+        padding: 10px 12px; border: 0; border-radius: var(--r-md);
+        background: transparent; color: var(--text-2); text-align: left;
+        font-size: 13.5px; font-weight: 500;
+        transition: background 0.14s, color 0.14s;
+      }
+      .nav-item:hover { background: var(--bg-hover); color: var(--text-1); }
+      .nav-item.active { background: var(--brand-50); color: var(--brand-700); font-weight: 600; }
+      .nav-ico { width: 20px; height: 20px; flex: 0 0 auto; color: var(--text-3); display: grid; place-items: center; }
+      .nav-item.active .nav-ico { color: var(--brand-600); }
+
+      /* 导航角标 */
+      .nav-badge {
+        margin-left: auto; flex: 0 0 auto;
+        min-width: 20px; height: 18px; padding: 0 6px;
+        display: grid; place-items: center;
+        background: var(--brand-100); color: var(--brand-700);
+        font-size: 11px; font-weight: 700; border-radius: 999px;
+      }
+
+      /* 「对话」项右侧的新建按钮 */
+      .nav-add-btn {
+        margin-left: auto; flex: 0 0 auto;
+        width: 22px; height: 22px;
+        display: grid; place-items: center;
+        border-radius: var(--r-sm); color: var(--brand-600);
+        transition: background 0.14s, color 0.14s;
+      }
+      .nav-add-btn:hover { background: var(--brand-100); color: var(--brand-700); }
+
+      /* ---------- 对话折叠子列表（嵌套在「对话」导航项下）---------- */
+      .nav-subgroup { padding: 2px 0 4px; display: flex; flex-direction: column; gap: 1px; }
+      .nav-sub-item {
+        position: relative;
+        display: flex; align-items: center; gap: 6px;
+        padding: 6px 8px; border: 0; border-radius: var(--r-sm);
+        background: transparent; cursor: pointer; transition: background 0.14s;
+      }
+      .nav-sub-item:hover { background: var(--bg-hover); }
+      .nav-sub-item.active { background: var(--brand-50); }
+      .nav-sub-item__main {
+        flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 6px;
+        background: transparent; border: 0; padding: 0;
+        cursor: pointer; text-align: left;
+      }
+      .nav-sub-item__pin {
+        flex: 0 0 auto; width: 22px; height: 22px;
+        display: grid; place-items: center;
+        border: 0; border-radius: var(--r-sm); background: transparent;
+        color: var(--text-4); cursor: pointer; line-height: 0;
+        opacity: 0; transition: opacity 0.14s, background 0.14s, color 0.14s;
+      }
+      .nav-sub-item:hover .nav-sub-item__pin { opacity: 1; }
+      .nav-sub-item__pin:hover { background: var(--bg-elevated); color: var(--text-1); }
+      /* 已置顶：常显 + 品牌色 */
+      .nav-sub-item__pin.pinned { opacity: 1; color: var(--brand-600); }
+      .nav-sub-item__pin.pinned:hover { color: var(--brand-700); }
+      .nav-sub-item__title {
+        font-size: 12.5px; font-weight: 500; color: var(--text-2);
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 auto; min-width: 0;
+      }
+      .nav-sub-item.active .nav-sub-item__title { color: var(--brand-700); font-weight: 600; }
+      .nav-sub-item__meta {
+        font-size: 10.5px; color: var(--text-4); white-space: nowrap; flex: 0 0 auto;
+      }
+      .nav-sub-item__actions {
+        position: relative;
+        display: flex; align-items: center; flex: 0 0 auto;
+        opacity: 0; pointer-events: none; transition: opacity 0.14s;
+      }
+      .nav-sub-item:hover .nav-sub-item__actions,
+      .nav-sub-item.active .nav-sub-item__actions { opacity: 1; pointer-events: auto; }
+      .nav-sub-item__menu-trigger {
+        width: 22px; height: 22px; display: grid; place-items: center;
+        border: 0; border-radius: var(--r-sm); background: transparent;
+        font-size: 14px; letter-spacing: 1px; color: var(--text-4); cursor: pointer;
+        transition: background 0.14s, color 0.14s; line-height: 0;
+      }
+      .nav-sub-item__menu-trigger:hover { background: var(--bg-elevated); color: var(--text-1); }
+      .nav-sub-item__menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 50; min-width: 120px; padding: 4px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--bg-elevated); box-shadow: var(--shadow-md); display: none; }
+      .nav-sub-item__menu.open { display: block; }
+      .nav-sub-item__menu-item {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        padding: 7px 10px; border: 0; border-radius: var(--r-sm);
+        background: transparent; color: var(--text-2); font: inherit;
+        font-size: 12.5px; font-weight: 500; text-align: left; cursor: pointer;
+        transition: background 0.14s, color 0.14s;
+      }
+      .nav-sub-item__menu-item:hover { background: var(--bg-hover); color: var(--text-1); }
+      .nav-sub-item__menu-item--danger { color: var(--danger); }
+      .nav-sub-item__menu-item--danger:hover { background: var(--danger-bg); color: var(--danger); }
+      .nav-sub-more {
+        margin-top: 2px; padding: 6px 8px 6px 36px; border: 0; border-radius: var(--r-sm);
+        background: transparent; color: var(--text-3);
+        font-size: 11.5px; font-weight: 600; cursor: pointer; text-align: left;
+        transition: background 0.14s, color 0.14s;
+      }
+      .nav-sub-more:hover { background: var(--bg-hover); color: var(--brand-600); }
+
+      /* ============================================================
+         对话视图主体
+         ============================================================ */
+      .workspace-main { display: flex; flex-direction: column; min-width: 0; height: 100vh; overflow: hidden; }
+      .topbar {
+        display: flex; align-items: center; gap: 16px;
+        padding: 14px 24px; background: var(--bg-elevated);
+        border-bottom: 1px solid var(--line); flex: 0 0 auto;
+      }
+      .topbar-title { min-width: 0; }
+      .topbar-title h1 { font-size: 18px; font-weight: 700; }
+      .topbar-title p { font-size: 12px; color: var(--text-3); margin-top: 2px; }
+      .topbar-actions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+      .pill {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+        background: var(--bg-soft); border: 1px solid var(--line); color: var(--text-2);
+      }
+      .led { width: 7px; height: 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px var(--success-bg); }
+
+      /* 对话容器：侧栏 + 主区域 */
+      .chat-container { display: flex; flex-direction: row; flex: 1; min-height: 0; }
+
+      /* ---------- 对话主区域 ---------- */
+      .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+
+      /* AI 配置指示器 */
+      .chat-config-indicator {
+        display: flex; align-items: center; gap: 6px;
+        padding: 6px 24px; background: var(--bg-soft);
+        border-bottom: 1px solid var(--line-soft); font-size: 11.5px;
+      }
+      .chat-config-indicator__label { color: var(--text-4); font-weight: 600; }
+      .chat-config-indicator__value { color: var(--text-2); font-weight: 500; }
+
+      /* 消息滚动区 */
+      .chat-messages {
+        flex: 1; overflow-y: auto; padding: 20px 24px;
+        display: flex; flex-direction: column; gap: 12px;
+      }
+      .chat-messages > .chat-messages__inner {
+        width: 100%; max-width: 880px; margin: 0 auto;
+        display: flex; flex-direction: column; gap: 12px;
+      }
+
+      /* 消息气泡基类 */
+      .chat-message { display: flex; max-width: 82%; animation: chat-fade-in 0.18s ease; }
+      .chat-message--user { align-self: flex-end; justify-content: flex-end; flex-direction: row; }
+      .chat-message--assistant { align-self: flex-start; flex-direction: row; }
+      .chat-message--system { align-self: center; max-width: 100%; }
+      @keyframes chat-fade-in {
+        from { opacity: 0; transform: translateY(6px); }
+        to   { opacity: 1; transform: translateY(0); }
+      }
+
+      /* 气泡本体 */
+      .chat-message__bubble {
+        padding: 10px 14px; border-radius: var(--r-md);
+        font-size: 13.5px; line-height: 1.6; word-break: break-word; min-width: 0;
+      }
+      .chat-message__bubble p { margin: 0 0 8px; }
+      .chat-message__bubble p:last-child { margin-bottom: 0; }
+      .chat-message__bubble pre {
+        background: rgba(0,0,0,0.06); border-radius: var(--r-sm);
+        padding: 10px 12px; overflow-x: auto; font-size: 12px; line-height: 1.5;
+        margin: 6px 0;
+      }
+      .chat-message__bubble code { font-family: var(--font-mono); font-size: 0.9em; }
+      .chat-message__bubble pre code { font-size: 12px; background: none; padding: 0; }
+      .chat-message__bubble ul, .chat-message__bubble ol { margin: 6px 0; padding-left: 22px; }
+      .chat-message__bubble li { margin: 2px 0; }
+      .chat-message__bubble a { font-weight: 600; }
+
+      /* 用户气泡：蓝底白字 */
+      .chat-message--user .chat-message__bubble { background: var(--brand-600); color: #fff; }
+      .chat-message--user .chat-message__bubble pre { background: rgba(255,255,255,0.15); }
+      .chat-message--user .chat-message__bubble a { color: #fff; text-decoration: underline; }
+
+      /* AI 气泡：灰底 */
+      .chat-message--assistant .chat-message__bubble {
+        background: var(--bg-soft); color: var(--text-1);
+        border: 1px solid var(--line-soft);
+      }
+
+      /* 系统消息：居中灰字 */
+      .chat-message--system {
+        padding: 4px 12px; font-size: 11.5px; color: var(--text-4);
+        text-align: center; border: 0; background: none;
+      }
+
+      /* 流式光标 */
+      .chat-message__cursor {
+        color: var(--brand-600); font-size: 16px;
+        animation: chat-blink 0.8s infinite; align-self: center; margin-left: 4px;
+      }
+      @keyframes chat-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.2; } }
+
+      /* ---- 工具卡片 ---- */
+      .chat-message--tool {
+        align-self: flex-start; max-width: 88%;
+        background: var(--bg-elevated); border: 1px solid var(--line);
+        border-left: 3px solid var(--brand-400); border-radius: var(--r-md);
+        overflow: hidden;
+      }
+      .chat-tool-card { width: 100%; }
+      .chat-tool-card__header {
+        display: flex; align-items: center; gap: 8px; padding: 8px 12px; width: 100%;
+        border: 0; background: none; font: inherit; font-size: 12.5px;
+        color: var(--text-2); cursor: pointer; text-align: left; transition: background 0.14s;
+      }
+      .chat-tool-card__header:hover { background: var(--bg-hover); }
+      .chat-tool-card__icon { font-size: 13px; flex-shrink: 0; }
+      .chat-tool-card__name { font-weight: 700; color: var(--text-1); flex-shrink: 0; }
+      .chat-tool-card__args {
+        color: var(--text-4); font-size: 11px; font-family: var(--font-mono);
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .chat-tool-card__toggle { margin-left: auto; font-size: 12px; color: var(--text-4); flex-shrink: 0; }
+      .chat-tool-card__body {
+        padding: 10px 14px; border-top: 1px solid var(--line-soft);
+        background: var(--bg-soft); font-size: 12px; line-height: 1.5;
+        max-height: 260px; overflow-y: auto;
+      }
+      .chat-tool-card__body pre {
+        margin: 0; font-family: var(--font-mono); font-size: 11.5px;
+        white-space: pre-wrap; word-break: break-all;
+      }
+
+      /* ---- 思考中指示器 ---- */
+      .chat-thinking-indicator {
+        display: flex; align-items: center; gap: 6px;
+        padding: 4px 0; font-size: 13px; color: var(--text-2);
+      }
+      .chat-thinking-indicator__icon { font-size: 16px; }
+      .chat-thinking-indicator__text { font-weight: 600; }
+      .chat-thinking-dots { display: inline-flex; align-items: center; gap: 3px; margin-left: 2px; }
+      .chat-thinking-dots__dot {
+        width: 5px; height: 5px; border-radius: 50%; background: var(--text-3);
+        animation: chat-dot-bounce 1.2s ease-in-out infinite;
+      }
+      .chat-thinking-dots__dot:nth-child(1) { animation-delay: 0s; }
+      .chat-thinking-dots__dot:nth-child(2) { animation-delay: 0.2s; }
+      .chat-thinking-dots__dot:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes chat-dot-bounce {
+        0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+        30% { transform: translateY(-4px); opacity: 1; }
+      }
+
+      /* ---- 推理内容可折叠区 ---- */
+      .chat-reasoning-collapsible {
+        border: 1px solid var(--line-soft); border-radius: var(--r-sm);
+        overflow: hidden; margin-bottom: 6px; background: var(--bg-soft);
+      }
+      .chat-reasoning-header {
+        display: flex; align-items: center; gap: 6px; width: 100%;
+        padding: 6px 10px; border: 0; background: transparent;
+        font: inherit; font-size: 12px; color: var(--text-2);
+        cursor: pointer; transition: background 0.14s;
+      }
+      .chat-reasoning-header:hover { background: var(--bg-hover); }
+      .chat-reasoning-header__icon { font-size: 13px; }
+      .chat-reasoning-header__label { font-weight: 600; flex: 1; text-align: left; }
+      .chat-reasoning-header__toggle { font-size: 10px; color: var(--text-4); }
+      .chat-reasoning-body {
+        padding: 8px 12px; border-top: 1px solid var(--line-soft);
+        font-size: 12px; color: var(--text-2); max-height: 200px;
+        overflow-y: auto; line-height: 1.5;
+      }
+      .chat-reasoning-body p { margin: 0 0 4px; }
+
+      /* ---- 空状态 ---- */
+      .chat-empty {
+        flex: 1; display: flex; flex-direction: column;
+        align-items: center; justify-content: center; gap: 8px;
+        color: var(--text-3); padding: 40px 20px; text-align: center;
+      }
+      .chat-empty__icon {
+        width: 56px; height: 56px; border-radius: 15px; display: grid; place-items: center;
+        background: var(--brand-50); color: var(--brand-600); margin-bottom: 4px;
+      }
+      .chat-empty__title { font-size: 15px; font-weight: 700; color: var(--text-2); margin: 0; }
+      .chat-empty__hint { font-size: 12.5px; color: var(--text-4); margin: 0; max-width: 380px; line-height: 1.6; white-space: pre-line; }
+
+      /* ---- 输入区：composer 圆角悬浮（与需求 / 反馈界面一致）---- */
+      .chat-composer-zone {
+        flex-shrink: 0; padding: 10px 24px 18px;
+        background: linear-gradient(to top, var(--bg-app) 64%, transparent);
+      }
+      .chat-composer {
+        max-width: 880px; margin: 0 auto;
+        display: flex; flex-direction: column; gap: 8px;
+        background: var(--bg-elevated); border: 1px solid var(--line);
+        border-radius: var(--r-xl); padding: 12px 14px 10px;
+        box-shadow: var(--shadow-lg);
+        transition: border-color 0.16s, box-shadow 0.16s;
+      }
+      .chat-composer:focus-within {
+        border-color: var(--brand-500);
+        box-shadow: 0 18px 48px rgba(37, 62, 120, 0.2);
+      }
+      .chat-composer__textarea {
+        width: 100%; border: 0; outline: none; resize: none;
+        background: transparent; font: inherit; font-size: 14.5px;
+        line-height: 1.5; color: var(--text-1);
+        min-height: 44px; max-height: 180px; padding: 6px 8px; overflow: auto;
+      }
+      .chat-composer__textarea::placeholder { color: var(--text-4); }
+      .chat-composer__textarea:disabled { color: var(--text-4); cursor: not-allowed; }
+
+      /* 底部工具行 */
+      .chat-composer__bar {
+        display: flex; align-items: center; gap: 12px; min-width: 0;
+      }
+      .chat-composer__tools {
+        display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+        flex: 1 1 auto; min-width: 0;
+      }
+      .chat-composer__actions {
+        display: flex; align-items: center; justify-content: flex-end; gap: 10px;
+        flex: 0 0 auto; margin-left: auto;
+      }
+      .chat-composer__hint { color: var(--text-3); font-size: 12px; white-space: nowrap; }
+
+      /* 模型配置 · 药丸下拉（复用需求界面 composer-icon-select 语言）*/
+      .chat-model-select {
+        position: relative; display: inline-flex; align-items: center;
+        justify-content: center; gap: 6px; height: 34px;
+        padding: 0 24px 0 10px;
+        border: 1px solid transparent; border-radius: 18px;
+        background: transparent; color: var(--text-3);
+        cursor: pointer; font-size: 12px; font-weight: 700; line-height: 1;
+        transition: background 0.14s, border-color 0.14s, color 0.14s;
+      }
+      .chat-model-select:hover { background: var(--bg-hover); color: var(--text-1); }
+      .chat-model-select:focus-within {
+        border-color: var(--brand-500); box-shadow: var(--focus-ring); color: var(--brand-600);
+      }
+      .chat-model-select::after {
+        content: ""; position: absolute; right: 10px; top: 50%;
+        width: 5px; height: 5px;
+        border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor;
+        opacity: 0.72; transform: translateY(-65%) rotate(45deg); pointer-events: none;
+      }
+      .chat-model-select select {
+        position: absolute; inset: 0; width: 100%; height: 100%;
+        min-width: 0; padding: 0; border: 0; opacity: 0; cursor: pointer;
+      }
+      .chat-model-select svg { flex: 0 0 auto; }
+      .chat-model-select__label {
+        min-width: 0; max-width: 130px; overflow: hidden;
+        text-overflow: ellipsis; white-space: nowrap;
+      }
+      /* 供应商强调品牌色 */
+      .chat-model-select--provider {
+        background: var(--brand-50); color: var(--brand-700); border-color: transparent;
+      }
+      .chat-model-select--provider:hover { background: var(--brand-100); color: var(--brand-700); }
+
+      /* 清空 · 圆形图标按钮 */
+      .chat-icon-btn {
+        display: grid; place-items: center; width: 34px; height: 34px;
+        flex: 0 0 auto; padding: 0; border: 0; border-radius: 50%;
+        background: transparent; color: var(--text-3); cursor: pointer;
+        transition: background 0.14s, color 0.14s;
+      }
+      .chat-icon-btn:hover:not(:disabled) { background: var(--bg-hover); color: var(--danger); }
+      .chat-icon-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+      /* 发送按钮（品牌渐变圆形，与需求界面 send-button 一致）*/
+      .send-button {
+        display: grid; place-items: center; width: 40px; height: 40px;
+        flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0;
+        background: var(--brand-grad); color: #fff; font-size: 20px; line-height: 1;
+        box-shadow: 0 6px 14px rgba(77, 110, 255, 0.4); cursor: pointer;
+        transition: filter 0.14s;
+      }
+      .send-button:hover { filter: brightness(1.05); }
+      .send-button:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+      /* 停止按钮（生成中态）*/
+      .stop-button {
+        display: grid; place-items: center; width: 40px; height: 40px;
+        flex: 0 0 auto; border: 0; border-radius: 50%; padding: 0;
+        background: var(--danger); color: #fff; font-size: 16px; line-height: 1;
+        box-shadow: 0 6px 14px rgba(229, 72, 77, 0.4); cursor: pointer;
+        transition: filter 0.14s;
+      }
+      .stop-button:hover { filter: brightness(1.05); }
+
+      /* ---------- 标注 ---------- */
+      .annotation {
+        max-width: 1180px; margin: 0 auto; padding: 32px;
+      }
+      .annotation h2 { font-size: 16px; margin-bottom: 6px; }
+      .annotation .lead { color: var(--text-3); font-size: 13px; margin-bottom: 24px; }
+      .anno-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+      .anno-card {
+        padding: 14px 16px; background: var(--bg-elevated);
+        border: 1px solid var(--line); border-radius: var(--r-md);
+      }
+      .anno-card h3 { font-size: 13px; font-weight: 700; color: var(--text-1); display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+      .anno-card .num {
+        display: grid; place-items: center; width: 22px; height: 22px;
+        border-radius: 6px; background: var(--brand-50); color: var(--brand-700);
+        font-size: 11px; font-weight: 800;
+      }
+      .anno-card p { font-size: 12.5px; color: var(--text-3); line-height: 1.6; }
+    </style>
+  </head>
+  <body>
+    <!-- SVG 图标精灵 -->
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="i-back" viewBox="0 0 24 24">
+        <path d="M15 18l-6-6 6-6" />
+      </symbol>
+      <symbol id="i-overview" viewBox="0 0 24 24">
+        <rect x="3.5" y="4" width="7" height="7" rx="1.6" /><rect x="13.5" y="4" width="7" height="7" rx="1.6" />
+        <rect x="3.5" y="14" width="7" height="6" rx="1.6" /><path d="M14 17h6" /><path d="M17 14v6" />
+      </symbol>
+      <symbol id="i-requirement" viewBox="0 0 24 24">
+        <path d="M6.5 3.5h7.8L18 7.2v13.3H6.5z" /><path d="M14 3.8v3.7h3.7" />
+        <path d="M9 11h6" /><path d="M9 15h6" />
+      </symbol>
+      <symbol id="i-feedback" viewBox="0 0 24 24">
+        <path d="M5 5.5h14v9.2H9.7L6.2 18v-3.3H5z" /><path d="M8.5 9.2h7" /><path d="M8.5 12h4.8" />
+      </symbol>
+      <symbol id="i-tasks" viewBox="0 0 24 24">
+        <path d="M8 6h12" /><path d="M8 12h12" /><path d="M8 18h12" />
+        <path d="m3.8 6 1.1 1.1L7 4.9" /><path d="m3.8 12 1.1 1.1L7 10.9" /><path d="m3.8 18 1.1 1.1L7 16.9" />
+      </symbol>
+      <symbol id="i-scripts" viewBox="0 0 24 24">
+        <path d="M8 4.5l-2 2 2 2" /><path d="M4 11.5h8" /><path d="M14 4.5l2 2-2 2" />
+        <rect x="3.5" y="3" width="17" height="18" rx="2" />
+      </symbol>
+      <symbol id="i-acceptance" viewBox="0 0 24 24">
+        <path d="M5 3.5h9l5 5v12H5z" /><path d="M14 3.5v5h5" /><path d="m8.5 14 2 2 4-4.5" />
+      </symbol>
+      <symbol id="i-chevron" viewBox="0 0 24 24">
+        <path d="M9 6l6 6-6 6" />
+      </symbol>
+      <symbol id="i-pin" viewBox="0 0 24 24">
+        <path d="M9 4h6l-1 6 4 3v2H6v-2l4-3-1-6Z" />
+        <path d="M12 15v5" />
+      </symbol>
+      <symbol id="i-chat" viewBox="0 0 24 24">
+        <path d="M21 12a8 8 0 0 1-11.5 7.2L4 20.5l1.3-4.5A8 8 0 1 1 21 12z" />
+        <path d="M8.5 11.5h7" /><path d="M8.5 8.5h4" />
+      </symbol>
+      <symbol id="i-settings" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
+      </symbol>
+      <symbol id="i-send" viewBox="0 0 24 24">
+        <path d="M22 2L11 13" /><path d="M22 2l-7 20-4-9-9-4 20-7z" />
+      </symbol>
+      <symbol id="i-stop" viewBox="0 0 24 24">
+        <rect x="6" y="6" width="12" height="12" rx="2" />
+      </symbol>
+      <symbol id="i-trash" viewBox="0 0 24 24">
+        <path d="M3 6h18" /><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+        <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" /><path d="M10 11v6" /><path d="M14 11v6" />
+      </symbol>
+      <symbol id="i-key" viewBox="0 0 24 24">
+        <circle cx="8" cy="15" r="4" /><path d="M10.8 12.2 21 2" /><path d="M16 7l3 3" /><path d="M18 5l3 3" />
+      </symbol>
+      <symbol id="i-plus" viewBox="0 0 24 24">
+        <path d="M12 5v14" /><path d="M5 12h14" />
+      </symbol>
+      <symbol id="i-bolt" viewBox="0 0 24 24">
+        <path d="M13 2L4 14h7l-1 8 9-12h-7l1-8z" />
+      </symbol>
+      <symbol id="i-thinking" viewBox="0 0 24 24">
+        <path d="M9 18h6" /><path d="M10 21h4" />
+        <path d="M12 3a6 6 0 0 0-4 10.5c.6.6 1 1.4 1 2.5h6c0-1.1.4-1.9 1-2.5A6 6 0 0 0 12 3z" />
+      </symbol>
+      <symbol id="i-sun" viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2" /><path d="M12 20v2" /><path d="M4.9 4.9l1.4 1.4" /><path d="M17.7 17.7l1.4 1.4" />
+        <path d="M2 12h2" /><path d="M20 12h2" /><path d="M4.9 19.1l1.4-1.4" /><path d="M17.7 6.3l1.4-1.4" />
+      </symbol>
+      <symbol id="i-events" viewBox="0 0 24 24">
+        <path d="M9 7h11" /><path d="M9 12h11" /><path d="M9 17h11" />
+        <circle cx="4.5" cy="7" r="1" fill="currentColor" stroke="none" />
+        <circle cx="4.5" cy="12" r="1" fill="currentColor" stroke="none" />
+        <circle cx="4.5" cy="17" r="1" fill="currentColor" stroke="none" />
+      </symbol>
+    </svg>
+
+    <div class="workspace-shell">
+      <!-- ============================ 左侧主导航 ============================ -->
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">A</div>
+          <div>
+            <div class="brand-name">AutoPlan</div>
+            <div class="brand-sub">需求 · 计划 · 执行 · 验收</div>
+          </div>
+        </div>
+
+        <button class="back-link">
+          <svg class="icon"><use href="#i-back" /></svg>
+          返回项目列表
+        </button>
+
+        <div class="project-switcher">
+          <div class="project-label">当前项目</div>
+          <div class="project-name">autoplan</div>
+          <div class="project-path">D:\project\GitHub\autoplan</div>
+        </div>
+
+        <div class="nav-group-label">工作区</div>
+        <button class="nav-item">
+          <span class="nav-ico"><svg class="icon"><use href="#i-overview" /></svg></span>
+          概览
+        </button>
+        <button class="nav-item">
+          <span class="nav-ico"><svg class="icon"><use href="#i-requirement" /></svg></span>
+          需求
+          <span class="nav-badge">4</span>
+        </button>
+        <button class="nav-item">
+          <span class="nav-ico"><svg class="icon"><use href="#i-feedback" /></svg></span>
+          反馈
+          <span class="nav-badge">2</span>
+        </button>
+        <button class="nav-item">
+          <span class="nav-ico"><svg class="icon"><use href="#i-acceptance" /></svg></span>
+          验收
+        </button>
+        <button class="nav-item active expanded nav-item--collapsible">
+          <span class="nav-ico"><svg class="icon"><use href="#i-chat" /></svg></span>
+          <span>对话</span>
+          <span class="nav-add-btn" id="newConversationBtn" title="新建对话" role="button" tabindex="0">
+            <svg class="icon" width="14" height="14"><use href="#i-plus" /></svg>
+          </span>
+        </button>
+        <!-- 对话子列表（默认展示最近 5 个，底部可加载更多） -->
+        <div class="nav-subgroup">
+          <div class="nav-sub-item active">
+            <button class="nav-sub-item__pin pinned" title="取消置顶" aria-label="取消置顶">
+              <svg class="icon" width="14" height="14"><use href="#i-pin" /></svg>
+            </button>
+            <button class="nav-sub-item__main">
+              <span class="nav-sub-item__title">搜索数据库连接逻辑</span>
+              <span class="nav-sub-item__meta">2 分钟前</span>
+            </button>
+            <div class="nav-sub-item__actions">
+              <button class="nav-sub-item__menu-trigger" title="更多操作">···</button>
+              <div class="nav-sub-item__menu">
+                <button class="nav-sub-item__menu-item" title="重命名">重命名</button>
+                <button class="nav-sub-item__menu-item nav-sub-item__menu-item--danger" title="删除">删除对话</button>
+              </div>
+            </div>
+          </div>
+          <div class="nav-sub-item">
+            <button class="nav-sub-item__pin" title="置顶" aria-label="置顶">
+              <svg class="icon" width="14" height="14"><use href="#i-pin" /></svg>
+            </button>
+            <button class="nav-sub-item__main">
+              <span class="nav-sub-item__title">添加用户偏好设置</span>
+              <span class="nav-sub-item__meta">1 小时前</span>
+            </button>
+            <div class="nav-sub-item__actions">
+              <button class="nav-sub-item__menu-trigger" title="更多操作">···</button>
+              <div class="nav-sub-item__menu">
+                <button class="nav-sub-item__menu-item" title="重命名">重命名</button>
+                <button class="nav-sub-item__menu-item nav-sub-item__menu-item--danger" title="删除">删除对话</button>
+              </div>
+            </div>
+          </div>
+          <div class="nav-sub-item">
+            <button class="nav-sub-item__pin" title="置顶" aria-label="置顶">
+              <svg class="icon" width="14" height="14"><use href="#i-pin" /></svg>
+            </button>
+            <button class="nav-sub-item__main">
+              <span class="nav-sub-item__title">修复 MCP 启动失败问题</span>
+              <span class="nav-sub-item__meta">昨天</span>
+            </button>
+            <div class="nav-sub-item__actions">
+              <button class="nav-sub-item__menu-trigger" title="更多操作">···</button>
+              <div class="nav-sub-item__menu">
+                <button class="nav-sub-item__menu-item" title="重命名">重命名</button>
+                <button class="nav-sub-item__menu-item nav-sub-item__menu-item--danger" title="删除">删除对话</button>
+              </div>
+            </div>
+          </div>
+          <div class="nav-sub-item">
+            <button class="nav-sub-item__pin" title="置顶" aria-label="置顶">
+              <svg class="icon" width="14" height="14"><use href="#i-pin" /></svg>
+            </button>
+            <button class="nav-sub-item__main">
+              <span class="nav-sub-item__title">生成验收测试脚本</span>
+              <span class="nav-sub-item__meta">2 天前</span>
+            </button>
+            <div class="nav-sub-item__actions">
+              <button class="nav-sub-item__menu-trigger" title="更多操作">···</button>
+              <div class="nav-sub-item__menu">
+                <button class="nav-sub-item__menu-item" title="重命名">重命名</button>
+                <button class="nav-sub-item__menu-item nav-sub-item__menu-item--danger" title="删除">删除对话</button>
+              </div>
+            </div>
+          </div>
+          <div class="nav-sub-item">
+            <button class="nav-sub-item__pin" title="置顶" aria-label="置顶">
+              <svg class="icon" width="14" height="14"><use href="#i-pin" /></svg>
+            </button>
+            <button class="nav-sub-item__main">
+              <span class="nav-sub-item__title">数据库 schema 设计讨论</span>
+              <span class="nav-sub-item__meta">3 天前</span>
+            </button>
+            <div class="nav-sub-item__actions">
+              <button class="nav-sub-item__menu-trigger" title="更多操作">···</button>
+              <div class="nav-sub-item__menu">
+                <button class="nav-sub-item__menu-item" title="重命名">重命名</button>
+                <button class="nav-sub-item__menu-item nav-sub-item__menu-item--danger" title="删除">删除对话</button>
+              </div>
+            </div>
+          </div>
+          <button class="nav-sub-more">加载更多对话 ↓</button>
+        </div>
+
+        <div class="nav-group-label">执行</div>
+        <button class="nav-item">
+          <span class="nav-ico"><svg class="icon"><use href="#i-tasks" /></svg></span>
+          计划与任务
+          <span class="nav-badge">1</span>
+        </button>
+        <button class="nav-item">
+          <span class="nav-ico"><svg class="icon"><use href="#i-scripts" /></svg></span>
+          脚本
+          <span class="nav-badge">6</span>
+        </button>
+        <button class="nav-item">
+          <span class="nav-ico"><svg class="icon"><use href="#i-events" /></svg></span>
+          事件流
+        </button>
+        <button class="nav-item">
+          <span class="nav-ico"><svg class="icon"><use href="#i-settings" /></svg></span>
+          设置
+        </button>
+
+        <!-- 底部 footer -->
+        <div class="sidebar-footer">
+          <button class="theme-toggle" title="主题：浅色模式 — 点击循环切换">
+            <svg class="icon" width="16" height="16"><use href="#i-sun" /></svg>
+            <span>浅色模式</span>
+          </button>
+          <div class="loop-mini">
+            <span class="led stopped"></span>
+            <span>循环 <b>已停止</b></span>
+          </div>
+          <div class="loop-config mono">Codex · 思考中 · 间隔 5s · 无验收命令</div>
+        </div>
+      </aside>
+
+      <!-- ============================ 主区域 ============================ -->
+      <div class="workspace-main">
+        <!-- 顶栏 -->
+        <header class="topbar">
+          <div class="topbar-title">
+            <h1>对话</h1>
+            <p>与 AI 协作完成需求拆解、代码搜索与脚本编写</p>
+          </div>
+        </header>
+
+        <!-- 对话容器 -->
+        <div class="chat-container">
+          <!-- ---- 对话主区域 ---- -->
+          <div class="chat-main">
+            <!-- 消息列表 -->
+            <div class="chat-messages">
+              <div class="chat-messages__inner">
+              <!-- 用户消息 -->
+              <div class="chat-message chat-message--user">
+                <div class="chat-message__bubble">
+                  帮我看一下 src/database.js 里的数据库连接是怎么初始化的，有没有用连接池？
+                </div>
+              </div>
+
+              <!-- 工具调用卡片（已展开态示例：折叠态见下一条） -->
+              <div class="chat-message chat-message--tool">
+                <div class="chat-tool-card">
+                  <button class="chat-tool-card__header">
+                    <span class="chat-tool-card__icon">✓</span>
+                    <span class="chat-tool-card__name">read_file</span>
+                    <span class="chat-tool-card__args">path=src/database.js</span>
+                    <span class="chat-tool-card__toggle">▸</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- AI 回复（含思考折叠 + Markdown 正文） -->
+              <div class="chat-message chat-message--assistant">
+                <div class="chat-message__bubble">
+                  <!-- 推理折叠区（已完成） -->
+                  <div class="chat-reasoning-collapsible">
+                    <button class="chat-reasoning-header">
+                      <span class="chat-reasoning-header__icon">✅</span>
+                      <span class="chat-reasoning-header__label">思考完成</span>
+                      <span class="chat-reasoning-header__toggle">▸</span>
+                    </button>
+                  </div>
+
+                  <p>已经看了 <code>src/database.js</code>，连接初始化和连接池情况如下：</p>
+                  <ul>
+                    <li>使用 <strong>better-sqlite3</strong> 同步驱动，单例模式初始化。</li>
+                    <li><strong>未使用连接池</strong>——better-sqlite3 本身是单连接同步执行，原生不支持池化。</li>
+                    <li>通过 <code>DatabaseSingleton</code> 保证全局唯一实例，重复调用 <code>getDatabase()</code> 返回同一句柄。</li>
+                  </ul>
+                  <pre><code>const db = new Database(dbPath);
+db.pragma('journal_mode = WAL');
+db.pragma('foreign_keys = ON');</code></pre>
+                  <p>关键点：开启了 <code>WAL</code> 模式提升并发读性能，并启用了外键约束。如果后续需要更高并发，可以考虑迁移到异步驱动。</p>
+                </div>
+              </div>
+
+              <!-- 用户追问 -->
+              <div class="chat-message chat-message--user">
+                <div class="chat-message__bubble">
+                  那帮我给项目加个脚本，定期备份这个数据库文件。
+                </div>
+              </div>
+
+              <!-- 工具调用（执行中态） -->
+              <div class="chat-message chat-message--tool">
+                <div class="chat-tool-card">
+                  <button class="chat-tool-card__header">
+                    <span class="chat-tool-card__icon">⚙</span>
+                    <span class="chat-tool-card__name">write_file</span>
+                    <span class="chat-tool-card__args">path=scripts/backup-db.js</span>
+                    <span class="chat-tool-card__toggle">▸</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- AI 流式回复（思考中指示器 + 光标） -->
+              <div class="chat-message chat-message--assistant">
+                <div class="chat-message__bubble">
+                  <!-- 思考中指示器 -->
+                  <span class="chat-thinking-indicator">
+                    <span class="chat-thinking-indicator__icon">🤔</span>
+                    <span class="chat-thinking-indicator__text">思考中</span>
+                    <span class="chat-thinking-dots">
+                      <span class="chat-thinking-dots__dot"></span>
+                      <span class="chat-thinking-dots__dot"></span>
+                      <span class="chat-thinking-dots__dot"></span>
+                    </span>
+                  </span>
+                </div>
+                <span class="chat-message__cursor">▊</span>
+              </div>
+
+              <!-- 系统消息 -->
+              <div class="chat-message chat-message--system">
+                <span>对话已切换 · 2026-07-02 14:32</span>
+              </div>
+              </div>
+            </div>
+
+            <!-- 输入区：composer 圆角悬浮（与需求界面一致）+ 模型配置下拉 -->
+            <div class="chat-composer-zone">
+              <form class="chat-composer">
+                <textarea
+                  class="chat-composer__textarea"
+                  placeholder="输入消息…（Enter 发送，Shift+Enter 换行）"
+                  rows="1"
+                ></textarea>
+
+                <div class="chat-composer__bar">
+                  <!-- 左侧：模型配置下拉组 -->
+                  <div class="chat-composer__tools">
+                    <!-- 供应商 -->
+                    <label class="chat-model-select chat-model-select--provider" title="模型供应商">
+                      <svg class="icon" width="16" height="16"><use href="#i-bolt" /></svg>
+                      <span class="chat-model-select__label">智谱 GLM</span>
+                      <select aria-label="选择模型供应商">
+                        <option>智谱 GLM</option>
+                        <option>OpenAI GPT</option>
+                        <option>Anthropic Claude</option>
+                        <option>Google Gemini</option>
+                        <option>DeepSeek</option>
+                      </select>
+                    </label>
+                    <!-- 模型 / 模式 -->
+                    <label class="chat-model-select" title="模型模式">
+                      <svg class="icon" width="16" height="16"><use href="#i-chat" /></svg>
+                      <span class="chat-model-select__label">GLM-4.6</span>
+                      <select aria-label="选择模型模式">
+                        <option>GLM-4.6</option>
+                        <option>GLM-4.6 Air</option>
+                        <option>GLM-4.5</option>
+                        <option>GLM-4-Plus</option>
+                      </select>
+                    </label>
+                    <!-- 思考深度 -->
+                    <label class="chat-model-select" title="思考深度">
+                      <svg class="icon" width="16" height="16"><use href="#i-thinking" /></svg>
+                      <span class="chat-model-select__label">思考 · 中</span>
+                      <select aria-label="选择思考深度">
+                        <option>思考 · 关闭</option>
+                        <option>思考 · 低</option>
+                        <option>思考 · 中</option>
+                        <option>思考 · 高</option>
+                      </select>
+                    </label>
+                  </div>
+
+                  <!-- 右侧：发送 -->
+                  <div class="chat-composer__actions">
+                    <span class="chat-composer__hint">Enter 发送</span>
+                    <button class="send-button" aria-label="发送消息" type="submit">
+                      <svg class="icon" width="20" height="20"><use href="#i-send" /></svg>
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============================================================
+         设计说明 · 组件标注
+         ============================================================ -->
+    <section class="annotation" style="background: var(--bg-elevated); border-top: 1px solid var(--line); overflow: auto;">
+      <h2>对话界面 · 设计说明</h2>
+      <p class="lead">对应 <code>ChatView.tsx</code> 的全部交互态。输入区采用与需求 / 反馈界面一致的圆角悬浮 composer，模型配置下沉为药丸下拉。所有样式 token 与 <code>workspace.css</code> 保持一致。</p>
+      <div class="anno-grid">
+        <div class="anno-card">
+          <h3><span class="num">1</span> 对话列表（嵌套导航）</h3>
+          <p>折叠在左侧主导航「对话」项下方，缩进展示。默认显示最近 5 个对话，每项含标题 + 模型 + 相对时间，hover 出现重命名 / 删除。当前激活项品牌色高亮 + 左侧圆点。底部「加载更多对话 ↓」展开历史记录。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">2</span> 用户气泡</h3>
+          <p>右对齐，蓝底（<code>--brand-600</code>）白字，气泡内部文字保持自然左对齐。支持 Markdown、内联代码与代码块（代码块为半透明白底）。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">3</span> AI 气泡</h3>
+          <p>左对齐，灰底（<code>--bg-soft</code>）配 <code>--text-1</code> 文字，头像显示「AI」。正文支持完整 Markdown 渲染（列表、代码块、链接、表格）。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">4</span> 思考折叠区</h3>
+          <p>AI 气泡内嵌的推理过程折叠卡。流式输出时显示「🤔 思考中…」+ 三点跳动动画；完成后变为「✅ 思考完成」，点击展开查看推理细节。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">5</span> 工具调用卡片</h3>
+          <p>左侧带品牌色竖条（<code>--brand-400</code>）的卡片。显示工具名 + 参数摘要；<code>⚙</code> 表示执行中、<code>✓</code> 表示完成。点击展开查看完整返回结果（JSON）。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">6</span> 流式光标</h3>
+          <p>AI 流式输出时，气泡右侧显示闪烁的 <code>▊</code> 块状光标，<code>chat-blink</code> 动画 0.8s 循环，提示正在生成。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">7</span> 系统消息</h3>
+          <p>居中显示的灰色细字（<code>--text-4</code>），无气泡边框。用于「对话已切换」「已中止生成」等系统级提示。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">8</span> 输入区 · Composer</h3>
+          <p>圆角悬浮（<code>--r-xl</code> + <code>--shadow-lg</code>），与需求界面 <code>.composer</code> 同款。无边框 textarea，聚焦时整卡变品牌色边框 + 辉光阴影。底部工具行分左右两组。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">9</span> 模型配置下拉</h3>
+          <p>Composer 左侧药丸按钮组（<code>.chat-model-select</code>），三个下拉：<strong>供应商</strong>（品牌色强调，智谱/OpenAI/Claude…）、<strong>模型模式</strong>（GLM-4.6 / Air…）、<strong>思考深度</strong>（关闭/低/中/高）。点击展开原生 select，选中即生效。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">10</span> 发送 / 停止按钮</h3>
+          <p>Composer 右侧圆形品牌渐变发送按钮（与需求界面 <code>.send-button</code> 一致）。生成中时变为红色停止按钮（<code>.stop-button</code>），点击中止流式输出。</p>
+        </div>
+        <div class="anno-card">
+          <h3><span class="num">11</span> 空状态</h3>
+          <p>无消息时居中展示引导。已配置 Key 时提示「开始对话」并说明快捷键；未配置时显示钥匙图标引导前往设置。</p>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      // 对话导航项 · 折叠 / 展开子列表
+      document.querySelectorAll('.nav-item.nav-item--collapsible').forEach((navItem) => {
+        const subgroup = navItem.nextElementSibling;
+        if (!subgroup || !subgroup.classList.contains('nav-subgroup')) return;
+        navItem.addEventListener('click', (e) => {
+          // 点击「+」新建按钮不触发折叠
+          if (e.target.closest('.nav-add-btn')) return;
+          const isExpanded = navItem.classList.toggle('expanded');
+          subgroup.style.display = isExpanded ? '' : 'none';
+        });
+      });
+
+      // 「+」新建对话按钮（演示：展开子列表 + 高亮提示）
+      const newBtn = document.getElementById('newConversationBtn');
+      if (newBtn) {
+        const handler = (e) => {
+          e.stopPropagation();
+          alert('新建对话（演示）');
+        };
+        newBtn.addEventListener('click', handler);
+        newBtn.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(e); }
+        });
+      }
+
+      // 置顶按钮：点击切换置顶状态
+      document.querySelectorAll('.nav-sub-item__pin').forEach((pin) => {
+        const toggle = (e) => {
+          e.stopPropagation();
+          const isPinned = pin.classList.toggle('pinned');
+          pin.title = isPinned ? '取消置顶' : '置顶';
+          pin.setAttribute('aria-label', isPinned ? '取消置顶' : '置顶');
+        };
+        pin.addEventListener('click', toggle);
+      });
+
+      // 「···」操作菜单：点击切换、外部点击关闭
+      document.querySelectorAll('.nav-sub-item__menu-trigger').forEach((trigger) => {
+        trigger.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const menu = trigger.nextElementSibling;
+          const isOpen = menu.classList.contains('open');
+          document.querySelectorAll('.nav-sub-item__menu.open').forEach((m) => m.classList.remove('open'));
+          if (!isOpen) menu.classList.add('open');
+        });
+      });
+      document.addEventListener('click', () => {
+        document.querySelectorAll('.nav-sub-item__menu.open').forEach((m) => m.classList.remove('open'));
+      });
+    </script>
+  </body>
+</html>

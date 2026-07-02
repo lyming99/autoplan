@@ -2,7 +2,26 @@
 
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
-const { createChatController } = require('./chatController');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const initSqlJs = require('sql.js');
+const { AppDatabase } = require('../database');
+const {
+  createChatController: createRealChatController,
+  createConversation,
+  deleteConversation,
+  ensureDefaultConversation,
+  listConversations,
+  updateConversation,
+} = require('./chatController');
+
+function createChatController(options = {}) {
+  return createRealChatController({
+    ...options,
+    conversationId: options.conversationId ?? options.projectId ?? 1,
+  });
+}
 
 /* ------------------------------------------------------------------ 测试辅助 ------------------------------------------------------------------ */
 
@@ -18,11 +37,33 @@ function chatSettings(overrides = {}) {
   return { ...defaults, ...overrides };
 }
 
+function aiConfigFromSettings(settings, overrides = {}) {
+  return {
+    id: overrides.id ?? 1,
+    project_id: Object.prototype.hasOwnProperty.call(overrides, 'project_id') ? overrides.project_id : null,
+    name: overrides.name ?? '默认配置',
+    provider: overrides.provider ?? settings['chat.provider'] ?? 'openai',
+    base_url: overrides.base_url ?? settings['chat.baseUrl'] ?? 'https://api.openai.com',
+    api_key: overrides.api_key ?? settings['chat.apiKey'] ?? '',
+    model: overrides.model ?? settings['chat.model'] ?? 'gpt-4o',
+    temperature: overrides.temperature ?? settings['chat.temperature'] ?? '0.3',
+    thinking_depth: overrides.thinking_depth ?? null,
+    thinking_budget_tokens: overrides.thinking_budget_tokens ?? null,
+  };
+}
+
 /** 内存 DB 替身：完整模拟 chatController 所需的 SQL 操作 */
-function createMemoryDb(settings = chatSettings()) {
+function createMemoryDb(settings = chatSettings(), options = {}) {
   const store = {
     chat_messages: [],
     settings: new Map(Object.entries(settings)),
+    conversations: options.conversations || [
+      { id: 1, project_id: 1, title: 'Project 1', ai_config_id: null },
+      { id: 2, project_id: 2, title: 'Project 2', ai_config_id: null },
+    ],
+    ai_configs: options.aiConfigs || [
+      aiConfigFromSettings(settings, { id: 1, name: 'Global default' }),
+    ],
   };
   let nextId = 1;
 
@@ -31,7 +72,14 @@ function createMemoryDb(settings = chatSettings()) {
       db._calls.all += 1;
       if (sql.includes('chat_messages')) {
         let rows = [...store.chat_messages];
-        if (sql.includes('project_id = ?')) {
+        if (sql.includes('conversation_id = ?')) {
+          const cid = params[0];
+          rows = rows.filter((r) => r.conversation_id === cid);
+          if (sql.includes('project_id = ?')) {
+            const pid = params[1];
+            rows = rows.filter((r) => r.project_id === pid);
+          }
+        } else if (sql.includes('project_id = ?')) {
           const pid = params[0];
           rows = rows.filter((r) => r.project_id === pid);
         }
@@ -49,11 +97,66 @@ function createMemoryDb(settings = chatSettings()) {
 
     get(sql, params = []) {
       db._calls.get += 1;
+      if (sql.includes('conversations') && sql.includes('WHERE id = ? AND project_id = ?')) {
+        const [id, projectId] = params;
+        return store.conversations.find((r) => r.id === id && r.project_id === projectId) || null;
+      }
+      if (sql.includes('conversations') && sql.includes('project_id = ?') && sql.includes('ORDER BY id ASC LIMIT 1')) {
+        const projectId = params[0];
+        return store.conversations
+          .filter((r) => r.project_id === projectId)
+          .sort((a, b) => a.id - b.id)[0] || null;
+      }
+      if (sql.includes('conversations') && sql.includes('WHERE id = ?')) {
+        const id = params[0];
+        return store.conversations.find((r) => r.id === id) || null;
+      }
+      if (sql.includes('ai_configs')) {
+        if (sql.includes('WHERE id = ? AND project_id IS NULL')) {
+          const id = params[0];
+          return store.ai_configs.find((r) => r.id === id && r.project_id === null) || null;
+        }
+        if (sql.includes('WHERE id = ? AND project_id = ?')) {
+          const [id, projectId] = params;
+          return store.ai_configs.find((r) => r.id === id && r.project_id === projectId) || null;
+        }
+        if (sql.includes('WHERE id = ?')) {
+          const id = params[0];
+          return store.ai_configs.find((r) => r.id === id) || null;
+        }
+        if (sql.includes('project_id IS NULL')) {
+          return store.ai_configs
+            .filter((r) => r.project_id === null)
+            .sort((a, b) => a.id - b.id)[0] || null;
+        }
+        if (sql.includes('project_id = ?')) {
+          const projectId = params[0];
+          return store.ai_configs
+            .filter((r) => r.project_id === projectId)
+            .sort((a, b) => a.id - b.id)[0] || null;
+        }
+      }
       if (sql.includes('chat_messages') && sql.includes('ORDER BY id DESC LIMIT 1')) {
-        const pid = params[0];
+        const [cid, projectId] = params;
         const rows = store.chat_messages
-          .filter((r) => r.project_id === pid && r.role === 'assistant' && r.status === 'done')
+          .filter((r) => (
+            r.conversation_id === cid &&
+            (!sql.includes('project_id = ?') || r.project_id === projectId) &&
+            r.role === 'assistant' &&
+            r.status === 'done'
+          ))
           .sort((a, b) => b.id - a.id);
+        return rows[0] || null;
+      }
+      if (sql.includes('chat_messages') && sql.includes("role = 'user'") && sql.includes('ORDER BY id ASC LIMIT 1')) {
+        const [cid, projectId] = params;
+        const rows = store.chat_messages
+          .filter((r) => (
+            r.conversation_id === cid &&
+            (!sql.includes('project_id = ?') || r.project_id === projectId) &&
+            r.role === 'user'
+          ))
+          .sort((a, b) => a.id - b.id);
         return rows[0] || null;
       }
       return null;
@@ -64,12 +167,47 @@ function createMemoryDb(settings = chatSettings()) {
       db._runs.push({ sql, params });
 
       if (sql.includes('INSERT INTO chat_messages')) {
-        const [pid, role, content, tool_calls, tool_result, status, created_at] = params;
-        const row = { id: nextId++, project_id: pid, role, content, tool_calls, tool_result, status, created_at };
+        const [pid, cid, role, content, tool_calls, tool_result, status, created_at] = params;
+        const row = {
+          id: nextId++,
+          project_id: pid,
+          conversation_id: cid,
+          role,
+          content,
+          tool_calls,
+          tool_result,
+          status,
+          created_at,
+        };
         store.chat_messages.push(row);
+      } else if (sql.includes('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ? AND project_id = ?')) {
+        const [title, updatedAt, id, projectId] = params;
+        const row = store.conversations.find((item) => item.id === id && item.project_id === projectId);
+        if (row) {
+          row.title = title;
+          row.updated_at = updatedAt;
+        }
+      } else if (sql.includes('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?')) {
+        const [title, updatedAt, id] = params;
+        const row = store.conversations.find((item) => item.id === id);
+        if (row) {
+          row.title = title;
+          row.updated_at = updatedAt;
+        }
+      } else if (sql.includes('UPDATE conversations SET updated_at = ? WHERE id = ? AND project_id = ?')) {
+        const [updatedAt, id, projectId] = params;
+        const row = store.conversations.find((item) => item.id === id && item.project_id === projectId);
+        if (row) row.updated_at = updatedAt;
+      } else if (sql.includes('UPDATE conversations SET updated_at = ? WHERE id = ?')) {
+        const [updatedAt, id] = params;
+        const row = store.conversations.find((item) => item.id === id);
+        if (row) row.updated_at = updatedAt;
+      } else if (sql.includes('DELETE FROM chat_messages') && sql.includes('project_id = ?')) {
+        const [cid, projectId] = params;
+        store.chat_messages = store.chat_messages.filter((r) => r.conversation_id !== cid || r.project_id !== projectId);
       } else if (sql.includes('DELETE FROM chat_messages')) {
-        const pid = params[0];
-        store.chat_messages = store.chat_messages.filter((r) => r.project_id !== pid);
+        const cid = params[0];
+        store.chat_messages = store.chat_messages.filter((r) => r.conversation_id !== cid);
       } else if (sql.includes('UPDATE chat_messages SET status')) {
         const [status, id] = params;
         const msg = store.chat_messages.find((r) => r.id === id);
@@ -91,6 +229,138 @@ function createMemoryDb(settings = chatSettings()) {
     _store: store,
   };
   return db;
+}
+
+function createConversationCrudDb(options = {}) {
+  const store = {
+    conversations: (options.conversations || []).map((row) => ({ ...row })),
+    chat_messages: (options.chatMessages || []).map((row) => ({ ...row })),
+    ai_configs: options.aiConfigs || [
+      aiConfigFromSettings(chatSettings(), { id: 1, name: 'Default 1' }),
+      aiConfigFromSettings(chatSettings(), { id: 2, name: 'Default 2' }),
+    ],
+  };
+  let nextId = store.conversations.reduce((max, row) => Math.max(max, Number(row.id) || 0), 0) + 1;
+
+  const db = {
+    all(sql, params = []) {
+      db._calls.all += 1;
+      db._alls.push({ sql, params });
+      if (sql.includes('FROM conversations') && sql.includes('project_id = ?')) {
+        const projectId = params[0];
+        return store.conversations
+          .filter((row) => row.project_id === projectId)
+          .sort(compareConversationRows)
+          .map((row) => ({ ...row }));
+      }
+      return [];
+    },
+
+    get(sql, params = []) {
+      db._calls.get += 1;
+      if (sql.includes('FROM conversations') && sql.includes('WHERE id = ? AND project_id = ?')) {
+        const [id, projectId] = params;
+        const row = store.conversations.find((item) => item.id === id && item.project_id === projectId);
+        return row ? { ...row } : null;
+      }
+      if (sql.includes('FROM conversations') && sql.includes('project_id = ?') && sql.includes('ORDER BY id ASC LIMIT 1')) {
+        const projectId = params[0];
+        const row = store.conversations
+          .filter((item) => item.project_id === projectId)
+          .sort((a, b) => a.id - b.id)[0];
+        return row ? { ...row } : null;
+      }
+      if (sql.includes('FROM conversations') && sql.includes('WHERE id = ?')) {
+        const id = params[0];
+        const row = store.conversations.find((item) => item.id === id);
+        return row ? { ...row } : null;
+      }
+      if (sql.includes('FROM ai_configs') && sql.includes('WHERE id = ? AND project_id IS NULL')) {
+        const id = params[0];
+        return store.ai_configs.find((row) => row.id === id && row.project_id === null) || null;
+      }
+      if (sql.includes('FROM ai_configs') && sql.includes('WHERE id = ? AND project_id = ?')) {
+        const [id, projectId] = params;
+        return store.ai_configs.find((row) => row.id === id && row.project_id === projectId) || null;
+      }
+      return null;
+    },
+
+    run(sql, params = []) {
+      db._calls.run += 1;
+      db._runs.push({ sql, params });
+      if (sql.includes('UPDATE conversations SET title = ?, ai_config_id = ?, pinned_at = ?, updated_at = ? WHERE id = ? AND project_id = ?')) {
+        const [title, aiConfigId, pinnedAt, updatedAt, id, projectId] = params;
+        const row = store.conversations.find((item) => item.id === id && item.project_id === projectId);
+        if (row) {
+          row.title = title;
+          row.ai_config_id = aiConfigId;
+          row.pinned_at = pinnedAt;
+          row.updated_at = updatedAt;
+        }
+      } else if (sql.includes('UPDATE conversations SET title = ?, ai_config_id = ?, pinned_at = ?, updated_at = ? WHERE id = ?')) {
+        const [title, aiConfigId, pinnedAt, updatedAt, id] = params;
+        const row = store.conversations.find((item) => item.id === id);
+        if (row) {
+          row.title = title;
+          row.ai_config_id = aiConfigId;
+          row.pinned_at = pinnedAt;
+          row.updated_at = updatedAt;
+        }
+      } else if (sql.includes('DELETE FROM chat_messages') && sql.includes('project_id = ?')) {
+        const [conversationId, projectId] = params;
+        store.chat_messages = store.chat_messages.filter(
+          (item) => item.conversation_id !== conversationId || item.project_id !== projectId,
+        );
+      } else if (sql.includes('DELETE FROM chat_messages')) {
+        const [conversationId] = params;
+        store.chat_messages = store.chat_messages.filter((item) => item.conversation_id !== conversationId);
+      } else if (sql.includes('DELETE FROM conversations') && sql.includes('project_id = ?')) {
+        const [id, projectId] = params;
+        store.conversations = store.conversations.filter((item) => item.id !== id || item.project_id !== projectId);
+      } else if (sql.includes('DELETE FROM conversations')) {
+        const [id] = params;
+        store.conversations = store.conversations.filter((item) => item.id !== id);
+      }
+    },
+
+    insert(sql, params = []) {
+      db._calls.insert += 1;
+      if (sql.includes('INSERT INTO conversations')) {
+        const [projectId, title, aiConfigId, pinnedAt, createdAt, updatedAt] = params;
+        const id = nextId++;
+        store.conversations.push({
+          id,
+          project_id: projectId,
+          title,
+          ai_config_id: aiConfigId,
+          pinned_at: pinnedAt,
+          created_at: createdAt,
+          updated_at: updatedAt,
+        });
+        return id;
+      }
+      throw new Error(`unsupported insert: ${sql}`);
+    },
+
+    _calls: { all: 0, get: 0, run: 0, insert: 0 },
+    _alls: [],
+    _runs: [],
+    _store: store,
+  };
+
+  return db;
+}
+
+function compareConversationRows(a, b) {
+  const aPinned = a.pinned_at ? 0 : 1;
+  const bPinned = b.pinned_at ? 0 : 1;
+  if (aPinned !== bPinned) return aPinned - bPinned;
+  const aUpdated = String(a.updated_at || '');
+  const bUpdated = String(b.updated_at || '');
+  if (aUpdated < bUpdated) return 1;
+  if (aUpdated > bUpdated) return -1;
+  return Number(b.id || 0) - Number(a.id || 0);
 }
 
 /** 收集 onEvent / onDone 回调 */
@@ -146,6 +416,24 @@ function textResponseStub(text = 'Hello!') {
   return fn;
 }
 
+function textThenTitleStub({ reply = 'Hello!', title = '自动标题', failTitle = false } = {}) {
+  const fn = async function* ({ config }) {
+    fn.calls += 1;
+    fn.configs.push(config);
+    fn.lastConfig = config;
+    const isTitleCall = config.temperature === 0.2 && config.tools === undefined;
+    if (isTitleCall && failTitle) {
+      throw new Error('title generation failed');
+    }
+    yield { type: 'text_delta', content: isTitleCall ? title : reply };
+    yield { type: 'done' };
+  };
+  fn.calls = 0;
+  fn.configs = [];
+  fn.lastConfig = null;
+  return fn;
+}
+
 /** tool_call → text 的两轮 llmClient stub */
 function toolThenTextStub() {
   let round = 0;
@@ -162,6 +450,28 @@ function toolThenTextStub() {
     }
   };
   fn.calls = 0;
+  fn.lastConfig = null;
+  return fn;
+}
+
+function toolThenTextAndTitleStub({ reply = 'File content looks good.', title = '文件阅读' } = {}) {
+  let round = 0;
+  const fn = async function* ({ config }) {
+    round += 1;
+    fn.calls = round;
+    fn.configs.push(config);
+    fn.lastConfig = config;
+    const isTitleCall = config.temperature === 0.2 && config.tools === undefined;
+    if (round === 1) {
+      yield { type: 'tool_call', id: 'call_001', name: 'read_file', arguments: '{"filePath":"src/index.js"}' };
+      yield { type: 'done' };
+    } else {
+      yield { type: 'text_delta', content: isTitleCall ? title : reply };
+      yield { type: 'done' };
+    }
+  };
+  fn.calls = 0;
+  fn.configs = [];
   fn.lastConfig = null;
   return fn;
 }
@@ -270,6 +580,100 @@ describe('单轮纯文本对话', () => {
     const chunks = col.events.filter((e) => e.type === 'chunk');
     assert.equal(chunks.length, 1);
     assert.equal(chunks[0].data.content, 'Hello, World!');
+  });
+
+  it('占位标题对话成功完成后自动生成标题并通过 onDone 返回', async () => {
+    const db = createMemoryDb(chatSettings(), {
+      conversations: [
+        { id: 1, project_id: 1, title: '新对话', ai_config_id: null },
+      ],
+    });
+    const llm = textThenTitleStub({ reply: '已收到需求。', title: '需求规划' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: llm,
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/test',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+    });
+
+    ctrl.send('请帮我规划这个需求');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'done');
+    assert.equal(done.conversationId, 1);
+    assert.equal(done.title, '需求规划');
+    assert.equal(llm.calls, 2, '主回复与标题生成应分别调用 LLM');
+    assert.equal(db._store.conversations[0].title, '需求规划');
+    assert.ok(db._runs.some((run) => run.sql.includes('UPDATE conversations SET title = ?, updated_at = ? WHERE id = ?')));
+
+    const titleConfig = llm.configs[1];
+    assert.equal(titleConfig.temperature, 0.2);
+    assert.equal(titleConfig.tools, undefined);
+    assert.equal(titleConfig.messages[1].content, '请帮我规划这个需求');
+  });
+
+  it('已有非占位标题不会被自动标题覆盖', async () => {
+    const db = createMemoryDb(chatSettings(), {
+      conversations: [
+        { id: 1, project_id: 1, title: '用户手动标题', ai_config_id: null },
+      ],
+    });
+    const llm = textThenTitleStub({ reply: '主回复完成。', title: '不应写入' });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: llm,
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/test',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+    });
+
+    ctrl.send('继续聊');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'done');
+    assert.equal(done.conversationId, 1);
+    assert.equal(done.title, undefined);
+    assert.equal(llm.calls, 1, '非占位标题不应触发标题生成 LLM 调用');
+    assert.equal(db._store.conversations[0].title, '用户手动标题');
+  });
+
+  it('标题生成失败不影响主聊天完成事件', async () => {
+    const db = createMemoryDb(chatSettings(), {
+      conversations: [
+        { id: 1, project_id: 1, title: '默认对话', ai_config_id: null },
+      ],
+    });
+    const llm = textThenTitleStub({ reply: '主回复成功。', failTitle: true });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: llm,
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp/test',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+    });
+
+    ctrl.send('标题生成失败也不能影响回复');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'done');
+    assert.equal(done.conversationId, 1);
+    assert.equal(done.title, undefined);
+    assert.equal(llm.calls, 2, '应尝试标题生成但静默吞掉失败');
+    assert.equal(db._store.conversations[0].title, '默认对话');
+
+    const messages = ctrl.getHistory(1);
+    assert.equal(messages.at(-1).role, 'assistant');
+    assert.equal(messages.at(-1).content, '主回复成功。');
   });
 
   it('send 空消息被忽略', () => {
@@ -396,6 +800,35 @@ describe('工具调用多轮', () => {
     assert.ok(eventTypes.includes('tool_start'), '应有 tool_start 事件');
     assert.ok(eventTypes.includes('tool_result'), '应有 tool_result 事件');
     assert.ok(eventTypes.includes('chunk'), '应有 chunk 事件');
+  });
+
+  it('工具循环最终文本回复完成后也会为占位标题生成标题', async () => {
+    const db = createMemoryDb(chatSettings(), {
+      conversations: [
+        { id: 1, project_id: 1, title: '', ai_config_id: null },
+      ],
+    });
+    const llm = toolThenTextAndTitleStub({
+      reply: 'File content looks good.',
+      title: '文件检查',
+    });
+    const col = createCollector();
+    const ctrl = createChatController({
+      db, llmClient: llm, chatTools: testTools, projectId: 1, workspacePath: '/tmp',
+      onEvent: col.onEvent, onDone: col.onDone,
+    });
+
+    ctrl.send('read src/index.js');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'done');
+    assert.equal(done.conversationId, 1);
+    assert.equal(done.title, '文件检查');
+    assert.equal(llm.calls, 3, 'tool_call、最终文本回复、标题生成应各调用一次 LLM');
+    assert.equal(db._store.conversations[0].title, '文件检查');
+
+    const messages = ctrl.getHistory(1);
+    assert.deepEqual(messages.map((m) => m.role), ['user', 'assistant', 'tool', 'assistant']);
   });
 
   it('未知工具返回错误但不中断对话', async () => {
@@ -660,12 +1093,190 @@ describe('getHistory / clearHistory', () => {
     assert.equal(ctrl1.getHistory(1).length, 0);
     assert.equal(ctrl2.getHistory(2).length, 2, '清空项目 1 不应影响项目 2');
   });
+
+  it('getHistory and clearHistory require both conversationId and projectId matches', () => {
+    const db = createMemoryDb();
+    db._store.chat_messages.push(
+      {
+        id: 101,
+        project_id: 1,
+        conversation_id: 1,
+        role: 'user',
+        content: 'project 1 visible',
+        status: 'done',
+        created_at: '2026-01-01T00:00:00.000Z',
+      },
+      {
+        id: 102,
+        project_id: 2,
+        conversation_id: 1,
+        role: 'user',
+        content: 'project 2 hidden',
+        status: 'done',
+        created_at: '2026-01-01T00:00:01.000Z',
+      },
+    );
+    const ctrl = createChatController({
+      db,
+      llmClient: textResponseStub(),
+      chatTools: testTools,
+      projectId: 1,
+      conversationId: 1,
+      workspacePath: '/tmp/p1',
+    });
+
+    const before = ctrl.getHistory();
+    assert.deepEqual(before.map((message) => message.content), ['project 1 visible']);
+
+    ctrl.clearHistory();
+    assert.deepEqual(ctrl.getHistory(), []);
+    assert.deepEqual(db._store.chat_messages.map((message) => message.content), ['project 2 hidden']);
+  });
+});
+
+describe('conversation project boundaries', () => {
+  it('createChatController rejects a conversation from another project', () => {
+    const db = createMemoryDb();
+
+    assert.throws(
+      () => createChatController({
+        db,
+        llmClient: textResponseStub(),
+        chatTools: testTools,
+        projectId: 1,
+        conversationId: 2,
+        workspacePath: '/tmp/p1',
+      }),
+    );
+  });
+
+  it('updateConversation scopes mutations by projectId and rejects wrong-project ids', () => {
+    const db = createConversationCrudDb({
+      conversations: [
+        {
+          id: 1,
+          project_id: 1,
+          title: 'project one',
+          ai_config_id: null,
+          pinned_at: null,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    assert.throws(
+      () => updateConversation(db, 1, { projectId: 2, title: 'wrong project' }),
+    );
+
+    const updated = updateConversation(db, 1, { projectId: 1, title: 'renamed in project' });
+    const scopedRun = db._runs.at(-1);
+
+    assert.equal(updated.title, 'renamed in project');
+    assert.match(scopedRun.sql, /WHERE id = \? AND project_id = \?/);
+    assert.deepEqual(scopedRun.params.slice(-2), [1, 1]);
+  });
+
+  it('deleteConversation removes only rows in the requested project scope', () => {
+    const db = createConversationCrudDb({
+      conversations: [
+        {
+          id: 1,
+          project_id: 1,
+          title: 'project one',
+          ai_config_id: null,
+          pinned_at: null,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 2,
+          project_id: 2,
+          title: 'project two',
+          ai_config_id: null,
+          pinned_at: null,
+          created_at: '2026-01-02T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        },
+      ],
+      chatMessages: [
+        { id: 1, project_id: 1, conversation_id: 1, role: 'user', content: 'p1' },
+        { id: 2, project_id: 2, conversation_id: 2, role: 'user', content: 'p2' },
+      ],
+    });
+
+    assert.throws(() => deleteConversation(db, 1, { projectId: 2 }));
+    assert.deepEqual(deleteConversation(db, 1, { projectId: 1 }), { deleted: true, id: 1 });
+
+    assert.deepEqual(db._store.conversations.map((row) => row.id), [2]);
+    assert.deepEqual(db._store.chat_messages.map((row) => row.content), ['p2']);
+    assert.ok(db._runs.some((run) => run.sql.includes('DELETE FROM conversations WHERE id = ? AND project_id = ?')));
+  });
+
+  it('ensureDefaultConversation returns and creates defaults inside one project only', () => {
+    const db = createConversationCrudDb({
+      conversations: [
+        {
+          id: 10,
+          project_id: 1,
+          title: 'project one default',
+          ai_config_id: null,
+          pinned_at: null,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+        {
+          id: 20,
+          project_id: 2,
+          title: 'project two default',
+          ai_config_id: null,
+          pinned_at: null,
+          created_at: '2026-01-02T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        },
+      ],
+    });
+
+    assert.equal(ensureDefaultConversation(db, 2), 20);
+
+    const createdId = ensureDefaultConversation(db, 3);
+    const created = db._store.conversations.find((row) => row.id === createdId);
+    assert.equal(created.project_id, 3);
+    assert.equal(created.ai_config_id, null);
+    assert.ok(!db._store.conversations.some((row) => row.project_id === 1 && row.id === createdId));
+  });
+
+  it('conversation AI config binding only accepts global configs', () => {
+    const db = createConversationCrudDb({
+      conversations: [
+        {
+          id: 1,
+          project_id: 1,
+          title: 'project one',
+          ai_config_id: null,
+          pinned_at: null,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      aiConfigs: [
+        aiConfigFromSettings(chatSettings(), { id: 1, project_id: null, name: 'Global' }),
+        aiConfigFromSettings(chatSettings(), { id: 99, project_id: 1, name: 'Legacy project scoped' }),
+      ],
+    });
+
+    const rejected = updateConversation(db, 1, { projectId: 1, aiConfigId: 99 });
+    assert.equal(rejected.aiConfigId, null);
+
+    const accepted = updateConversation(db, 1, { projectId: 1, aiConfigId: 1 });
+    assert.equal(accepted.aiConfigId, 1);
+  });
 });
 
 /* ================================================================== getConfig / isActive ================================================================== */
 
 describe('getConfig / isActive', () => {
-  it('getConfig 返回 chat.* 设置', () => {
+  it('getConfig 返回当前对话解析出的全局 AI 配置', () => {
     const db = createMemoryDb(chatSettings({
       'chat.provider': 'anthropic',
       'chat.model': 'claude-sonnet-4-6',
@@ -679,6 +1290,53 @@ describe('getConfig / isActive', () => {
     assert.equal(cfg.model, 'claude-sonnet-4-6');
     assert.equal(cfg.baseUrl, 'https://api.openai.com/v1');
     assert.equal(cfg.temperature, '0.3');
+  });
+
+  it('旧 chat.apiKey 为空但全局 ai_configs 有密钥时仍可发送', async () => {
+    const settings = chatSettings({
+      'chat.apiKey': '',
+      'chat.provider': 'openai',
+      'chat.model': 'gpt-4o',
+    });
+    const db = createMemoryDb(settings, {
+      aiConfigs: [
+        aiConfigFromSettings(settings, {
+          id: 10,
+          project_id: null,
+          name: 'Global Primary',
+          provider: 'deepseek',
+          base_url: 'https://api.deepseek.com',
+          api_key: 'sk-global-ai-config-1234',
+          model: 'deepseek-chat',
+          temperature: '0.2',
+        }),
+      ],
+    });
+    const llm = textResponseStub('global config works');
+    const col = createCollector();
+    const ctrl = createChatController({
+      db,
+      llmClient: llm,
+      chatTools: testTools,
+      projectId: 1,
+      workspacePath: '/tmp',
+      onEvent: col.onEvent,
+      onDone: col.onDone,
+    });
+
+    const cfg = ctrl.getConfig();
+    assert.equal(cfg.provider, 'deepseek');
+    assert.equal(cfg.apiKey, 'sk-global-ai-config-1234');
+    assert.equal(cfg.model, 'deepseek-chat');
+
+    ctrl.send('hello with global config');
+    const done = await col.waitForDone();
+
+    assert.equal(done.status, 'done');
+    assert.equal(llm.calls, 1);
+    assert.equal(llm.lastConfig.provider, 'deepseek');
+    assert.equal(llm.lastConfig.apiKey, 'sk-global-ai-config-1234');
+    assert.equal(llm.lastConfig.model, 'deepseek-chat');
   });
 
   it('isActive 反映当前生成状态', async () => {
@@ -710,3 +1368,203 @@ describe('getConfig / isActive', () => {
     assert.equal(cfg.temperature, '0.3');
   });
 });
+
+/* ================================================================== 对话置顶与排序 ================================================================== */
+
+describe('对话置顶与排序', () => {
+  it('旧 conversations 表迁移时补齐 pinned_at 字段并保留已有会话', async () => {
+    const fixture = await createConversationMigrationFixture();
+    try {
+      const columns = fixture.db.all('PRAGMA table_info(conversations)').map((column) => column.name);
+      assert.ok(columns.includes('pinned_at'), '旧 conversations 表应补齐 pinned_at 列');
+
+      const migrated = fixture.db.get(
+        'SELECT title, pinned_at FROM conversations WHERE title = ?',
+        ['legacy conversation'],
+      );
+      assert.equal(migrated.title, 'legacy conversation');
+      assert.equal(migrated.pinned_at, null);
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('listConversations 返回置顶优先，组内按 updated_at DESC, id DESC 排序', () => {
+    const db = createConversationCrudDb({
+      conversations: [
+        {
+          id: 1,
+          project_id: 1,
+          title: 'old normal',
+          ai_config_id: null,
+          pinned_at: null,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-03T00:00:00.000Z',
+        },
+        {
+          id: 2,
+          project_id: 1,
+          title: 'older pinned',
+          ai_config_id: null,
+          pinned_at: '2026-01-02T00:00:00.000Z',
+          created_at: '2026-01-02T00:00:00.000Z',
+          updated_at: '2026-01-02T00:00:00.000Z',
+        },
+        {
+          id: 3,
+          project_id: 1,
+          title: 'newer pinned',
+          ai_config_id: null,
+          pinned_at: '2026-01-01T00:00:00.000Z',
+          created_at: '2026-01-03T00:00:00.000Z',
+          updated_at: '2026-01-05T00:00:00.000Z',
+        },
+        {
+          id: 4,
+          project_id: 1,
+          title: 'new normal',
+          ai_config_id: null,
+          pinned_at: null,
+          created_at: '2026-01-04T00:00:00.000Z',
+          updated_at: '2026-01-06T00:00:00.000Z',
+        },
+        {
+          id: 5,
+          project_id: 2,
+          title: 'other project',
+          ai_config_id: null,
+          pinned_at: '2026-01-07T00:00:00.000Z',
+          created_at: '2026-01-07T00:00:00.000Z',
+          updated_at: '2026-01-07T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const conversations = listConversations(db, 1);
+    const listSql = db._alls[0].sql;
+
+    assert.match(listSql, /CASE WHEN pinned_at IS NULL OR pinned_at = '' THEN 1 ELSE 0 END ASC/);
+    assert.match(listSql, /updated_at DESC/);
+    assert.match(listSql, /id DESC/);
+    assert.deepEqual(conversations.map((item) => item.id), [3, 2, 4, 1]);
+    assert.equal(conversations[0].pinned, true);
+    assert.equal(conversations[0].pinnedAt, '2026-01-01T00:00:00.000Z');
+    assert.equal(conversations[0].pinned_at, '2026-01-01T00:00:00.000Z');
+    assert.equal(conversations[2].pinned, false);
+    assert.equal(conversations[2].pinnedAt, null);
+  });
+
+  it('updateConversation 支持 title、aiConfigId 与置顶字段一起更新', () => {
+    const db = createConversationCrudDb({
+      conversations: [
+        {
+          id: 1,
+          project_id: 1,
+          title: 'before',
+          ai_config_id: 1,
+          pinned_at: null,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const updated = updateConversation(db, 1, {
+      title: 'after',
+      aiConfigId: 2,
+      pinned: true,
+    });
+
+    assert.equal(updated.title, 'after');
+    assert.equal(updated.aiConfigId, 2);
+    assert.equal(updated.ai_config_id, 2);
+    assert.equal(updated.pinned, true);
+    assert.ok(updated.pinnedAt);
+    assert.equal(updated.pinnedAt, updated.pinned_at);
+  });
+
+  it('updateConversation 支持取消置顶且不破坏旧客户端未传字段的兼容路径', () => {
+    const pinnedAt = '2026-01-08T00:00:00.000Z';
+    const db = createConversationCrudDb({
+      conversations: [
+        {
+          id: 1,
+          project_id: 1,
+          title: 'pinned',
+          ai_config_id: 1,
+          pinned_at: pinnedAt,
+          created_at: '2026-01-01T00:00:00.000Z',
+          updated_at: '2026-01-08T00:00:00.000Z',
+        },
+      ],
+    });
+
+    const renamedOnly = updateConversation(db, 1, { title: 'renamed' });
+    assert.equal(renamedOnly.title, 'renamed');
+    assert.equal(renamedOnly.pinnedAt, pinnedAt);
+    assert.equal(renamedOnly.pinned, true);
+
+    const unpinned = updateConversation(db, 1, { pinned: false });
+    assert.equal(unpinned.title, 'renamed');
+    assert.equal(unpinned.aiConfigId, 1);
+    assert.equal(unpinned.pinnedAt, null);
+    assert.equal(unpinned.pinned_at, null);
+    assert.equal(unpinned.pinned, false);
+  });
+
+  it('createConversation 默认未置顶并序列化 pinned 状态', () => {
+    const db = createConversationCrudDb();
+
+    const conversation = createConversation(db, { projectId: 1, title: 'new conversation' });
+
+    assert.equal(conversation.title, 'new conversation');
+    assert.equal(conversation.pinned_at, null);
+    assert.equal(conversation.pinnedAt, null);
+    assert.equal(conversation.pinned, false);
+  });
+});
+
+async function createConversationMigrationFixture() {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-conversation-migration-test-'));
+  const dbPath = path.join(tempRoot, 'data', 'autoplan.sqlite');
+  await writeLegacyConversationDatabase(dbPath);
+
+  const db = new AppDatabase(dbPath);
+  await db.init();
+  return {
+    db,
+    cleanup() {
+      try {
+        db.db?.close?.();
+      } catch {
+        // sql.js close is best-effort in tests.
+      }
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    },
+  };
+}
+
+async function writeLegacyConversationDatabase(dbPath) {
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
+  const SQL = await initSqlJs({
+    locateFile: (file) => path.join(__dirname, '..', '..', 'node_modules', 'sql.js', 'dist', file),
+  });
+  const db = new SQL.Database();
+  db.run(`
+    CREATE TABLE conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER,
+      title TEXT NOT NULL DEFAULT '',
+      ai_config_id INTEGER,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  db.run(
+    `INSERT INTO conversations (project_id, title, ai_config_id, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?)`,
+    [1, 'legacy conversation', null, '2026-01-01T00:00:00.000Z', '2026-01-02T00:00:00.000Z'],
+  );
+  fs.writeFileSync(dbPath, Buffer.from(db.export()));
+  db.close();
+}

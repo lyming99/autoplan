@@ -1,4 +1,5 @@
-import type { KeyboardEvent } from 'react';
+import type { CSSProperties, KeyboardEvent } from 'react';
+import { createPortal } from 'react-dom';
 import type {
   WorkspaceSearchGroup,
   WorkspaceSearchResult,
@@ -27,7 +28,32 @@ const searchTargetLabels: Record<WorkspaceSearchSourceType, string> = {
   event: '事件',
 };
 
+/** 弹层紧贴搜索框下方的间距（沿用原 `calc(100% + 10px)`）。 */
+const SEARCH_POPUP_GAP = 10;
+/** 弹层最大宽度（沿用原 `width: min(760px, ...)`）。 */
+const SEARCH_POPUP_MAX_WIDTH = 760;
+/** 视口两侧留白，用于约束 fixed 弹层不水平溢出（沿用原 `calc(100vw - 48px)` 的 24px×2）。 */
+const SEARCH_POPUP_SIDE_MARGIN = 24;
+/** 窄屏断点，与 `styles.css` 中 `@media (max-width: 760px)` 对齐。 */
+const SEARCH_POPUP_NARROW_BREAKPOINT = 760;
+
+/**
+ * 搜索弹层锚点（`.workspace-search-popover-anchor`）的视口坐标。
+ * 由 WorkspacePage 读取其 `getBoundingClientRect()` 后随 props 传入，
+ * 用于在 Portal(`position: fixed`) 定位下让弹层紧贴搜索框正下方、与搜索框右对齐。
+ */
+export interface SearchResultsAnchorRect {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 interface SearchResultsProps {
+  /** 锚点坐标；缺省时回退到 CSS 兜底定位（P002 起由 WorkspacePage 传入）。 */
+  anchorRect?: SearchResultsAnchorRect | null;
   onClear: () => void;
   onClose: () => void;
   onSelectGroup: (targetTab: WorkspaceTab) => void;
@@ -36,10 +62,53 @@ interface SearchResultsProps {
   searchState: WorkspaceSearchState;
 }
 
-export function SearchResults({ onClear, onClose, onSelectGroup, onSelectResult, open, searchState }: SearchResultsProps) {
+/**
+ * 依据锚点视口坐标构造 fixed 弹层的内联定位样式。
+ *
+ * - 宽屏：`right` 对齐搜索框右边缘、`width` 封顶 760px 且左边缘至少留 `SEARCH_POPUP_SIDE_MARGIN`，与改造前视觉一致；
+ * - 窄屏（≤760px）：改为左对齐、宽度受限于视口，避免 fixed 定位下水平溢出。
+ * - 无锚点坐标时返回 `undefined`，回退到 `styles.css` 的兜底定位。
+ */
+function buildSearchPopupStyle(anchorRect: SearchResultsAnchorRect | null | undefined): CSSProperties | undefined {
+  if (!anchorRect || typeof window === 'undefined') return undefined;
+  const viewportWidth = window.innerWidth;
+  const top = anchorRect.bottom + SEARCH_POPUP_GAP;
+
+  if (viewportWidth <= SEARCH_POPUP_NARROW_BREAKPOINT) {
+    return {
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${SEARCH_POPUP_SIDE_MARGIN}px`,
+      right: 'auto',
+      width: `${Math.max(0, viewportWidth - SEARCH_POPUP_SIDE_MARGIN * 2)}px`,
+    };
+  }
+
+  const width = Math.min(SEARCH_POPUP_MAX_WIDTH, Math.max(0, anchorRect.right - SEARCH_POPUP_SIDE_MARGIN));
+  return {
+    position: 'fixed',
+    top: `${top}px`,
+    right: `${Math.max(0, viewportWidth - anchorRect.right)}px`,
+    width: `${width}px`,
+  };
+}
+
+export function SearchResults({
+  anchorRect,
+  onClear,
+  onClose,
+  onSelectGroup,
+  onSelectResult,
+  open,
+  searchState,
+}: SearchResultsProps) {
   if (searchState.query.isEmpty || !open) return null;
 
   const queryLabel = searchState.query.raw.trim().replace(/\s+/g, ' ') || searchState.query.normalized;
+  // Portal 到 document.body 后用 fixed 定位脱离 .workspace-main 的裁剪/层叠上下文；
+  // 坐标由锚点 getBoundingClientRect 推导，无锚点时回退到 CSS 兜底定位。
+  const popupStyle = buildSearchPopupStyle(anchorRect);
+  const mountNode = typeof document !== 'undefined' ? document.body : null;
 
   function handleClear() {
     onClear();
@@ -62,9 +131,10 @@ export function SearchResults({ onClear, onClose, onSelectGroup, onSelectResult,
     onClose();
   }
 
-  return (
+  const popup = (
     <section
       className="search-results search-results-popup card"
+      style={popupStyle}
       aria-label="统一搜索结果"
       aria-live="polite"
       onKeyDown={handleKeyDown}
@@ -121,6 +191,9 @@ export function SearchResults({ onClear, onClose, onSelectGroup, onSelectResult,
       )}
     </section>
   );
+
+  // 渲染到 document.body，彻底脱离 .workspace-main { overflow: hidden } 的裁剪与左侧导航的网格/层叠区域。
+  return mountNode ? createPortal(popup, mountNode) : popup;
 }
 
 function SearchResultGroup({

@@ -1,15 +1,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 
-export type ThemeMode = 'light' | 'dark' | 'auto';
+export type ThemeMode = 'light' | 'dark';
 
 const STORAGE_KEY = 'autoplan-theme';
 const MEDIA_QUERY = '(prefers-color-scheme: dark)';
 
-function resolveTheme(mode: ThemeMode): 'light' | 'dark' {
-  if (mode === 'auto') {
-    return window.matchMedia(MEDIA_QUERY).matches ? 'dark' : 'light';
-  }
-  return mode;
+function readSystemTheme(): ThemeMode {
+  return window.matchMedia(MEDIA_QUERY).matches ? 'dark' : 'light';
 }
 
 function applyTheme(resolved: 'light' | 'dark') {
@@ -19,9 +16,9 @@ function applyTheme(resolved: 'light' | 'dark') {
 function loadSavedTheme(): ThemeMode {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (stored === 'light' || stored === 'dark' || stored === 'auto') return stored;
+    if (stored === 'light' || stored === 'dark') return stored;
   } catch { /* localStorage unavailable */ }
-  return 'auto';
+  return readSystemTheme();
 }
 
 function persistTheme(mode: ThemeMode) {
@@ -40,36 +37,19 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeMode>(loadSavedTheme);
-  // resolved is explicit state so that system-preference changes trigger re-renders
-  // even when the user-selected theme ('auto') hasn't changed.
-  const [resolved, setResolved] = useState<'light' | 'dark'>(() => resolveTheme(theme));
+  const [resolved, setResolved] = useState<'light' | 'dark'>(theme);
 
   const setTheme = useCallback((mode: ThemeMode) => {
     setThemeState(mode);
-    const nextResolved = resolveTheme(mode);
-    setResolved(nextResolved);
-    applyTheme(nextResolved);
+    setResolved(mode);
+    applyTheme(mode);
     persistTheme(mode);
   }, []);
 
   // Sync resolved when theme changes externally (e.g. initial load, unlikely)
   useEffect(() => {
-    const next = resolveTheme(theme);
-    setResolved(next);
-    applyTheme(next);
-  }, [theme]);
-
-  // Listen for system preference changes — only relevant in auto mode
-  useEffect(() => {
-    if (theme !== 'auto') return;
-    const mql = window.matchMedia(MEDIA_QUERY);
-    const onChange = () => {
-      const next = resolveTheme('auto');
-      setResolved(next);
-      applyTheme(next);
-    };
-    mql.addEventListener('change', onChange);
-    return () => mql.removeEventListener('change', onChange);
+    setResolved(theme);
+    applyTheme(theme);
   }, [theme]);
 
   const value = useMemo<ThemeContextValue>(

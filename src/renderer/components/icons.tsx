@@ -291,6 +291,21 @@ const copyIcon = (
   </>
 );
 
+const moreHorizontalIcon = (
+  <>
+    <circle cx="6" cy="12" r="1.4" />
+    <circle cx="12" cy="12" r="1.4" />
+    <circle cx="18" cy="12" r="1.4" />
+  </>
+);
+
+const pinIcon = (
+  <>
+    <path d="m15.2 3.8 5 5" />
+    <path d="M14.4 4.6 9.6 9.4 5.8 9l-.8.8 4.1 4.1-5 5 1.9 1.9 5-5 4.1 4.1.8-.8-.4-3.8 4.8-4.8z" />
+  </>
+);
+
 const eyeIcon = (
   <>
     <path d="M2.5 12S6 6.5 12 6.5s9.5 5.5 9.5 5.5-3.5 5.5-9.5 5.5S2.5 12 2.5 12Z" />
@@ -425,6 +440,9 @@ const ICONS = {
   inject: injectIcon,
   clock: clockIcon,
   copy: copyIcon,
+  more: moreHorizontalIcon,
+  'more-horizontal': moreHorizontalIcon,
+  pin: pinIcon,
   eye: eyeIcon,
   'eye-off': eyeOffIcon,
   key: keyIcon,

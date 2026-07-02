@@ -30,6 +30,83 @@ function fallbackPathToFileUrl(filePath) {
   return `file://${encodedPath}`;
 }
 
+function aiConfigCreatePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    name: source.name,
+    provider: source.provider,
+    baseUrl: source.baseUrl,
+    apiKey: source.apiKey,
+    model: source.model,
+    temperature: source.temperature,
+    thinkingDepth: source.thinkingDepth,
+    thinkingBudgetTokens: source.thinkingBudgetTokens,
+  };
+}
+
+function aiConfigUpdatePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const next = {
+    configId: source.configId ?? source.id,
+  };
+  for (const key of [
+    'name',
+    'provider',
+    'baseUrl',
+    'apiKey',
+    'model',
+    'temperature',
+    'thinkingDepth',
+    'thinkingBudgetTokens',
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) next[key] = source[key];
+  }
+  return next;
+}
+
+function aiConfigIdPayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return { configId: source.configId ?? source.id };
+}
+
+function chatSendPayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    projectId: source.projectId,
+    conversationId: source.conversationId,
+    message: source.message,
+  };
+}
+
+function chatConversationPayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    projectId: source.projectId,
+    conversationId: source.conversationId ?? source.id,
+  };
+}
+
+function conversationCreatePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    projectId: source.projectId,
+    title: source.title,
+    aiConfigId: source.aiConfigId ?? source.ai_config_id,
+  };
+}
+
+function conversationUpdatePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  const next = {
+    projectId: source.projectId,
+    conversationId: source.conversationId ?? source.id,
+  };
+  for (const key of ['title', 'aiConfigId', 'ai_config_id', 'pinned', 'isPinned', 'pinnedAt', 'pinned_at']) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) next[key] = source[key];
+  }
+  return next;
+}
+
 contextBridge.exposeInMainWorld('autoplan', {
   mcpToolNames: [
     'list_projects',
@@ -103,10 +180,10 @@ contextBridge.exposeInMainWorld('autoplan', {
     return () => ipcRenderer.removeListener('updates:status', listener);
   },
   // Chat 对话模块（需求 #26 / #28）
-  chatSend: (payload) => ipcRenderer.invoke('chat:send', payload),
-  chatStop: (payload) => ipcRenderer.invoke('chat:stop', payload),
-  chatClear: (payload) => ipcRenderer.invoke('chat:clear', payload),
-  chatHistory: (payload) => ipcRenderer.invoke('chat:history', payload),
+  chatSend: (payload) => ipcRenderer.invoke('chat:send', chatSendPayload(payload)),
+  chatStop: (payload) => ipcRenderer.invoke('chat:stop', chatConversationPayload(payload)),
+  chatClear: (payload) => ipcRenderer.invoke('chat:clear', chatConversationPayload(payload)),
+  chatHistory: (payload) => ipcRenderer.invoke('chat:history', chatConversationPayload(payload)),
   chatSaveConfig: (config) => ipcRenderer.invoke('chat:saveConfig', config),
   chatGetConfig: () => ipcRenderer.invoke('chat:getConfig'),
   onChatChunk: (handler) => {
@@ -120,14 +197,19 @@ contextBridge.exposeInMainWorld('autoplan', {
     return () => ipcRenderer.removeListener('chat:done', listener);
   },
   // AI 配置（需求 #28）
-  aiConfigList: (payload) => ipcRenderer.invoke('ai-config:list', payload),
-  aiConfigCreate: (payload) => ipcRenderer.invoke('ai-config:create', payload),
-  aiConfigUpdate: (payload) => ipcRenderer.invoke('ai-config:update', payload),
-  aiConfigDelete: (payload) => ipcRenderer.invoke('ai-config:delete', payload),
-  aiConfigGet: (payload) => ipcRenderer.invoke('ai-config:get', payload),
+  aiConfigList: () => ipcRenderer.invoke('ai-config:list'),
+  aiConfigCreate: (payload) => ipcRenderer.invoke('ai-config:create', aiConfigCreatePayload(payload)),
+  aiConfigUpdate: (payload) => ipcRenderer.invoke('ai-config:update', aiConfigUpdatePayload(payload)),
+  aiConfigDelete: (payload) => ipcRenderer.invoke('ai-config:delete', aiConfigIdPayload(payload)),
+  aiConfigGet: (payload) => ipcRenderer.invoke('ai-config:get', aiConfigIdPayload(payload)),
+  onAiConfigChanged: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('ai-config:changed', listener);
+    return () => ipcRenderer.removeListener('ai-config:changed', listener);
+  },
   // 对话管理（需求 #28）
-  conversationList: (payload) => ipcRenderer.invoke('conversation:list', payload),
-  conversationCreate: (payload) => ipcRenderer.invoke('conversation:create', payload),
-  conversationUpdate: (payload) => ipcRenderer.invoke('conversation:update', payload),
-  conversationDelete: (payload) => ipcRenderer.invoke('conversation:delete', payload),
+  conversationList: (payload) => ipcRenderer.invoke('conversation:list', { projectId: payload?.projectId }),
+  conversationCreate: (payload) => ipcRenderer.invoke('conversation:create', conversationCreatePayload(payload)),
+  conversationUpdate: (payload) => ipcRenderer.invoke('conversation:update', conversationUpdatePayload(payload)),
+  conversationDelete: (payload) => ipcRenderer.invoke('conversation:delete', chatConversationPayload(payload)),
 });

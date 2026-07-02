@@ -7,6 +7,7 @@ import {
 import type {
   AgentCliOption,
   AgentCliProvider,
+  AiConfigCreateInput,
   ChatConfig,
   CodexReasoningEffort,
   CreateScriptInput,
@@ -308,7 +309,7 @@ export function mcpConfigFormFromSnapshot(mcp: McpStatus | null | undefined): Mc
   if (!mcp) return { enabled: true, transport: 'http', host: '', port: '', path: '', authToken: '' };
   return {
     enabled: Boolean(mcp.enabled),
-    transport: mcp.transport === 'stdio' ? 'stdio' : 'http',
+    transport: 'http',
     host: mcp.host ?? '',
     port: mcp.port ?? '',
     path: mcp.path ?? '',
@@ -334,7 +335,6 @@ export function parseMcpPort(value: number | string): number | null {
 
 /** 返回校验错误文案；通过校验返回 null（仅 http 传输校验地址/端口/路径） */
 export function validateMcpConfigForm(form: McpConfigFormState): string | null {
-  if (form.transport !== 'http') return null;
   if (!form.host.trim()) return 'MCP 监听地址不能为空';
   if (parseMcpPort(form.port) === null) return 'MCP 端口需为 1–65535 的整数';
   if (!form.path.trim().startsWith('/')) return 'MCP 路径需以 / 开头';
@@ -353,7 +353,7 @@ export function mcpConfigFormToPayload(
   const payload: McpConfigInput = {
     projectId,
     enabled: form.enabled,
-    transport: form.transport,
+    transport: 'http',
     host: form.host.trim(),
     port: form.port,
     path: form.path.trim(),
@@ -517,6 +517,28 @@ export const thinkingDepthOptions: Array<{ value: string; label: string; descrip
   { value: 'high', label: '高', description: '深入推理' },
 ];
 
+export type AiThinkingDepthValue = '' | 'low' | 'medium' | 'high';
+
+export function aiProviderLabel(provider?: string | null): string {
+  const normalized = String(provider || '').trim();
+  if (!normalized) return '未选择供应商';
+  const option = aiProviderOptions.find((item) => item.value === normalized);
+  if (option) return option.label;
+  return normalized;
+}
+
+export function normalizeAiThinkingDepthInput(value?: string | null): AiThinkingDepthValue {
+  const depth = String(value || '').trim();
+  if (depth === 'low' || depth === 'medium' || depth === 'high') return depth;
+  return '';
+}
+
+export function aiThinkingDepthLabel(value?: string | null): string {
+  const depth = normalizeAiThinkingDepthInput(value);
+  const option = thinkingDepthOptions.find((item) => item.value === depth);
+  return `思考 · ${option?.label || '关闭'}`;
+}
+
 /** 根据 provider 返回默认 Base URL 占位符 */
 export function defaultBaseUrlForProvider(provider: string): string {
   if (provider === 'deepseek') return 'https://api.deepseek.com';
@@ -539,6 +561,69 @@ export function providerSupportsThinkingDepth(provider: string): boolean {
 /** 判断 provider 是否需要显示思考 token 预算输入（Anthropic）*/
 export function providerSupportsThinkingBudget(provider: string): boolean {
   return provider === 'anthropic';
+}
+
+export function aiConfigFormForProviderChange(
+  form: ChatConfigFormState,
+  provider: string,
+): ChatConfigFormState {
+  const currentProvider = form.provider || 'openai';
+  const baseUrl = shouldUseProviderDefault(form.baseUrl, defaultBaseUrlForProvider(currentProvider))
+    ? defaultBaseUrlForProvider(provider)
+    : form.baseUrl;
+  const model = shouldUseProviderDefault(form.model, defaultModelForProvider(currentProvider))
+    ? defaultModelForProvider(provider)
+    : form.model;
+  return {
+    ...form,
+    provider,
+    baseUrl,
+    model,
+    thinkingDepth: providerSupportsThinkingDepth(provider) ? form.thinkingDepth : '',
+    thinkingBudgetTokens: providerSupportsThinkingBudget(provider) ? form.thinkingBudgetTokens : '',
+  };
+}
+
+export function aiConfigInputFromForm(
+  name: string,
+  form: ChatConfigFormState,
+  options: { preserveEmptyApiKey?: boolean } = {},
+): AiConfigCreateInput {
+  const provider = form.provider || 'openai';
+  const apiKey = form.apiKey.trim();
+  const payload: AiConfigCreateInput = {
+    name: name.trim(),
+    provider,
+    baseUrl: form.baseUrl.trim(),
+    model: form.model.trim(),
+    temperature: form.temperature.trim() || '0.3',
+    thinkingDepth: providerSupportsThinkingDepth(provider) ? normalizeAiThinkingDepth(form.thinkingDepth) : null,
+    thinkingBudgetTokens: providerSupportsThinkingBudget(provider)
+      ? normalizeAiThinkingBudgetTokens(form.thinkingBudgetTokens)
+      : null,
+  };
+  if (!options.preserveEmptyApiKey || apiKey) {
+    payload.apiKey = apiKey;
+  }
+  return payload;
+}
+
+function shouldUseProviderDefault(value: string, providerDefault: string) {
+  const normalized = String(value || '').trim();
+  return !normalized || normalized === providerDefault;
+}
+
+function normalizeAiThinkingDepth(value: string): 'low' | 'medium' | 'high' | null {
+  const depth = String(value || '').trim();
+  return depth === 'low' || depth === 'medium' || depth === 'high' ? depth : null;
+}
+
+function normalizeAiThinkingBudgetTokens(value: string): number | null {
+  const trimmed = String(value || '').trim();
+  if (!trimmed) return null;
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
 }
 
 /* ===================== 脚本 draft 表单（新建/编辑共用弹窗） ===================== */

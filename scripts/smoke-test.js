@@ -77,6 +77,7 @@ async function main() {
     await assertMcpToolsSmoke(db, loop, tempRoot);
     await assertIntakeLinkedPlanPreviewSmoke(db, loop, tempRoot);
     await assertIntakeCascadeDeletionSmoke(db, loop, tempRoot);
+    assertAiConfigIpcSmoke(db, loop, projectId);
 
     loop.configure(projectId, {
       workspacePath: workspace,
@@ -366,7 +367,7 @@ async function main() {
 
     await assertUpdateCheckerIpcSmoke(db, loop);
 
-    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, scope concurrency, scope file open, project folder pick/open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, oh-my-pi backend, multi-loop, scripts module, script file source, mcp control, acceptance module, batch acceptance, update checker');
+    console.log('smoke ok: projects, scoped snapshots, attachments, attachment prompts, plan reader, markdown reader, config persistence, ai config ipc, scope concurrency, scope file open, project folder pick/open, search, frontend interactions, task acceptance, task events, scan, validation, duration stats, codex session reuse, claude session context, multi-backend, oh-my-pi backend, multi-loop, scripts module, script file source, mcp control, acceptance module, batch acceptance, update checker');
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -471,7 +472,7 @@ async function assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId) {
     [
       '# Final acceptance smoke',
       '',
-      '## 任务计划',
+      '## 任务拆解',
       '- [x] P001: 完成开发修改 <!-- scope: smoke/dev.js -->',
       '- [ ] P002: 完整验收 <!-- scope: validation -->',
       '',
@@ -575,6 +576,8 @@ function assertFrontendInteractionSourceSmoke() {
   assert.match(searchResultsSource, /onClose\(\)/, '搜索结果选择或清空后应关闭 popup');
   assert.match(overviewSource, /startsWith\('scan\.'\)[\s\S]*<EventList events=\{recentEvents\}/, '概览近期事件应使用过滤后的事件列表');
   assert.match(mainSource, /await loadRenderer\(mainWindow\);\s+scheduleMcpServerStart\(\);[\s\S]*function scheduleMcpServerStart\(\) \{ setTimeout\(\(\) => startMcpServer\(\)\.catch\(\(error\) => recordMcpStartupError\(error\)\), 0\); \}/, 'MCP 应在 renderer 加载后后台启动，失败只记录错误');
+  assert.match(mainSource, /onDone: \(\{ status, error, conversationId: doneConversationId, title \} = \{\}\) => \{/, 'chat:done 转发前不应丢弃自动标题字段');
+  assert.match(mainSource, /mainWindow\.webContents\.send\('chat:done', \{[\s\S]*status,[\s\S]*error,[\s\S]*conversationId: doneConversationId,[\s\S]*title,[\s\S]*\}\);/, 'chat:done IPC 应完整转发 status/error/conversationId/title');
   assert.match(mcpAuthSource, /Authorization Bearer[\s\S]*WWW-Authenticate[\s\S]*Bearer realm="AutoPlan MCP"[\s\S]*'mcp\.authToken': generateSecretToken\(\)/, 'MCP HTTP 应使用标准 Bearer 校验并自动生成默认密钥');
 }
 
@@ -795,7 +798,8 @@ function assertMcpControlSourceSmoke() {
   assert.match(controlPanelSource, /runWithBusy\('start', startMcp\)/, 'MCP 面板应提供启动按钮');
   assert.match(controlPanelSource, /runWithBusy\('stop', stopMcp\)/, 'MCP 面板应提供停止按钮');
   assert.match(controlPanelSource, /busy === 'start' \? '启动中…' : '启动'/, '启动按钮应给 loading/禁用反馈');
-  assert.match(controlPanelSource, /mcpForm\.transport === option\.value/, '配置表单应提供传输方式选择');
+  assert.match(controlPanelSource, /<InfoRow label="传输方式">HTTP Streamable<\/InfoRow>/, 'MCP 面板应固定展示 HTTP Streamable 传输');
+  assert.doesNotMatch(controlPanelSource, /stdio/, 'MCP 配置面板不应再提供 stdio 模式');
   assert.match(controlPanelSource, /value=\{mcpForm\.host\}/, '配置表单应提供监听地址输入');
   assert.match(controlPanelSource, /value=\{mcpForm\.port\}/, '配置表单应提供端口输入');
   assert.match(controlPanelSource, /value=\{mcpForm\.path\}/, '配置表单应提供路径输入');
@@ -897,7 +901,7 @@ function assertAcceptanceModuleSourceSmoke() {
   assert.match(acceptanceViewSource, /role="checkbox"/, '验收视图应提供逐项复选框');
   assert.match(acceptanceViewSource, /全部验收/, '验收视图应提供全部验收操作');
   assert.match(acceptanceViewSource, /暂无待验收项/, '验收视图应提供空态');
-  assert.match(acceptanceViewSource, /已验收（最近）/, '验收视图应提供已验收折叠区');
+  assert.match(acceptanceViewSource, /已完成验收/, '验收视图应提供已验收折叠区');
   assert.match(acceptanceViewSource, /取消验收/, '已验收区应提供取消验收操作');
 
   // 批量验收后端：acceptItems / unacceptItems / writeAcceptance
@@ -1535,7 +1539,7 @@ function writeSmokePlan(db, loop, workspace, projectId) {
     [
       '# Smoke 开发计划',
       '',
-      '## 任务计划',
+      '## 任务拆解',
       '- [ ] P001: 明确范围与影响面 <!-- scope: unknown -->',
       '- [ ] P002: 完成核心实现 <!-- scope: unknown -->',
       '- [ ] P003: 完成交互与异常状态 <!-- scope: unknown -->',
@@ -1981,7 +1985,7 @@ async function assertGeneratedPlanPromptReadsAttachment(loop, options) {
       fs.mkdirSync(path.dirname(planFile), { recursive: true });
       fs.writeFileSync(
         planFile,
-        ['# 附件计划 smoke', '', '## 任务计划', '- [ ] P001: 使用附件上下文 <!-- scope: unknown -->', ''].join('\n'),
+        ['# 附件计划 smoke', '', '## 任务拆解', '- [ ] P001: 使用附件上下文 <!-- scope: unknown -->', ''].join('\n'),
         'utf8',
       );
       const logFile = path.join(options.workspace, 'docs', 'progress', 'logs', `${label}.log`);
@@ -3330,13 +3334,14 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
           if (!planMatch) return;
           const generatedPlanFile = planMatch[1].trim();
           const isClaude = commandName(command, args) === 'claude';
-          const taskKey = isClaude ? 'F010' : 'R010';
+          const taskKey = isClaude ? 'P011' : 'P010';
           fs.mkdirSync(path.dirname(generatedPlanFile), { recursive: true });
           fs.writeFileSync(
             generatedPlanFile,
             [
               isClaude ? '# Feedback Claude override smoke' : '# Requirement Codex high smoke',
               '',
+              '## 任务拆解',
               `- [ ] ${taskKey}: 单条配置生成计划 <!-- scope: smoke/${taskKey.toLowerCase()}.js -->`,
               '',
             ].join('\n'),
@@ -3557,6 +3562,103 @@ function hasTaskDurationShape(task) {
 function assertTaskDurationShape(task, label) {
   assert.ok(task, `${label} 应存在`);
   assert.ok(hasTaskDurationShape(task), `${label} 应包含符合前端类型预期的耗时字段`);
+}
+
+function assertAiConfigIpcSmoke(db, loop, projectId) {
+  assertChatAndAiConfigBoundarySourceSmoke();
+
+  const handlers = loadMainIpcHandlers(db, loop);
+  const createConfig = handlers.get('ai-config:create');
+  const listConfigs = handlers.get('ai-config:list');
+  assert.equal(typeof createConfig, 'function', '主进程应注册 ai-config:create IPC handler');
+  assert.equal(typeof listConfigs, 'function', '主进程应注册 ai-config:list IPC handler');
+
+  const created = createConfig(null, {
+    name: 'Smoke DeepSeek',
+    provider: 'deepseek',
+    baseUrl: 'https://api.deepseek.com',
+    apiKey: 'sk-smoke-ai-123456',
+    model: 'deepseek-reasoner',
+    temperature: '0.4',
+    thinkingDepth: 'high',
+    thinkingBudgetTokens: 4000,
+    ignoredField: 'should-not-cross-ipc-boundary',
+  });
+
+  assert.ok(created.id, 'AI 配置 IPC 创建应返回新配置 ID');
+  assert.equal(created.projectId, null, 'AI 配置 IPC 创建应保存为全局配置');
+  assert.equal(created.provider, 'deepseek', 'AI 配置 IPC 创建应保留合法 provider');
+  assert.equal(created.thinkingDepth, 'high', 'AI 配置 IPC 创建应保存 OpenAI 兼容思考深度');
+  assert.equal(created.thinkingBudgetTokens, null, 'DeepSeek 配置不应保存 Anthropic token 预算');
+  assert.equal(created.hasApiKey, true, 'AI 配置 IPC 创建应返回脱敏密钥状态');
+  assert.equal(created.maskedKey, '····3456', 'AI 配置 IPC 创建应返回脱敏密钥');
+  assert.equal(Object.prototype.hasOwnProperty.call(created, 'apiKey'), false, 'AI 配置 IPC 创建不应返回原始 apiKey');
+  assert.equal(Object.prototype.hasOwnProperty.call(created, 'api_key'), false, 'AI 配置 IPC 创建不应返回原始 api_key');
+  const raw = db.get('SELECT api_key, project_id FROM ai_configs WHERE id = ?', [created.id]);
+  assert.equal(raw.api_key, 'sk-smoke-ai-123456', 'AI 配置 IPC 创建应把原始密钥仅保存到数据库');
+  assert.equal(raw.project_id, null, 'AI 配置 IPC 创建不应写入 project_id');
+
+  const listed = listConfigs();
+  const found = listed.find((item) => item.id === created.id);
+  assert.ok(found, 'AI 配置 IPC 创建后应能被 ai-config:list 查询到');
+  assert.equal(found.name, 'Smoke DeepSeek', 'AI 配置列表应返回创建的配置名称');
+  assert.equal(found.maskedKey, '····3456', 'AI 配置列表应保持 API Key 脱敏');
+
+  const ignoredScopedList = listConfigs(null, { projectId });
+  assert.ok(
+    ignoredScopedList.some((item) => item.id === created.id),
+    'AI 配置列表 IPC 应忽略旧 projectId 入参并返回全局配置',
+  );
+}
+
+function assertChatAndAiConfigBoundarySourceSmoke() {
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+
+  assert.match(
+    mainSource,
+    /ipcMain\.handle\('chat:send'[\s\S]*const projectId = requiredProjectId\(input\);[\s\S]*ensureDefaultConversation\(db, projectId\)[\s\S]*conversationInProject\(conversationId, projectId\)/,
+    'chat:send IPC 应要求 projectId 并校验 conversation 属于当前项目',
+  );
+  assert.match(
+    mainSource,
+    /ipcMain\.handle\('chat:stop'[\s\S]*const projectId = requiredProjectId\(input\);[\s\S]*conversationInProject\(conversationId, projectId\)/,
+    'chat:stop IPC 应要求 projectId 并校验 conversation 属于当前项目',
+  );
+  assert.match(
+    mainSource,
+    /ipcMain\.handle\('chat:clear'[\s\S]*const projectId = requiredProjectId\(input\);[\s\S]*conversationInProject\(conversationId, projectId\)[\s\S]*DELETE FROM chat_messages WHERE conversation_id = \? AND project_id = \?/,
+    'chat:clear IPC 应按 conversationId 和 projectId 清理消息',
+  );
+  assert.match(
+    mainSource,
+    /ipcMain\.handle\('chat:history'[\s\S]*const projectId = requiredProjectId\(input\);[\s\S]*conversationInProject\(conversationId, projectId\)[\s\S]*WHERE conversation_id = \? AND project_id = \?/,
+    'chat:history IPC 应按 conversationId 和 projectId 查询消息',
+  );
+  assert.match(
+    mainSource,
+    /ipcMain\.handle\('conversation:update'[\s\S]*const projectId = requiredProjectId\(input\);[\s\S]*requireConversationInProject\(id, projectId\)[\s\S]*conversationUpdateInput\(input, projectId\)/,
+    'conversation:update IPC 应要求 projectId 并传递项目范围',
+  );
+  assert.match(
+    mainSource,
+    /ipcMain\.handle\('conversation:delete'[\s\S]*const projectId = requiredProjectId\(input\);[\s\S]*requireConversationInProject\(id, projectId\)[\s\S]*deleteConversation\(db, id, \{ projectId \}\)/,
+    'conversation:delete IPC 应要求 projectId 并按项目范围删除',
+  );
+  assert.match(
+    mainSource,
+    /ipcMain\.handle\('ai-config:list', \(\) => listAiConfigs\(db\)\);/,
+    'ai-config:list IPC 应保持全局列表且不读取 projectId',
+  );
+  assert.match(
+    mainSource,
+    /ipcMain\.handle\('ai-config:create'[\s\S]*createAiConfig\(db, aiConfigCreateInput\(input\)\)/,
+    'ai-config:create IPC 应只使用 AI 配置输入清洗结果',
+  );
+  assert.doesNotMatch(
+    mainSource.slice(mainSource.indexOf('function aiConfigCreateInput'), mainSource.indexOf('function aiConfigUpdateInput')),
+    /projectId|project_id/,
+    'aiConfigCreateInput 不应透传 projectId',
+  );
 }
 
 function assertIsoString(value, message) {

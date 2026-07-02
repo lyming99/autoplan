@@ -27,7 +27,7 @@ const {
   deleteAiConfig,
   listAiConfigs,
   getAiConfig,
-  maskApiKey,
+  getLegacyChatConfig,
 } = require('./chat/aiConfigService');
 
 if (protocol?.registerSchemesAsPrivileged) {
@@ -558,71 +558,67 @@ ipcMain.handle('chat:send', (_event, input = {}) => {
   if (!conversationId) {
     // 向后兼容：未传 conversationId 时自动使用/创建项目的默认对话
     conversationId = ensureDefaultConversation(db, projectId);
+  } else if (!conversationInProject(conversationId, projectId)) {
+    return { accepted: false, error: '对话不存在或不属于当前项目' };
   }
 
-  const controller = getOrCreateChatController(conversationId);
+  const controller = getOrCreateChatController(conversationId, projectId);
   controller.send(message);
   return { accepted: true, conversationId };
 });
 
 ipcMain.handle('chat:stop', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
   const conversationId = Number(input.conversationId || 0);
   if (!conversationId) return { stopped: false, error: 'conversationId 不能为空' };
+  if (!conversationInProject(conversationId, projectId)) {
+    return { stopped: false, error: '对话不存在或不属于当前项目' };
+  }
   const controller = chatControllers?.get(conversationId);
   if (controller) controller.stop();
   return { stopped: true };
 });
 
 ipcMain.handle('chat:clear', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
   const conversationId = Number(input.conversationId || 0);
   if (!conversationId) return { cleared: false, error: 'conversationId 不能为空' };
+  if (!conversationInProject(conversationId, projectId)) {
+    return { cleared: false, error: '对话不存在或不属于当前项目' };
+  }
   const controller = chatControllers?.get(conversationId);
   if (controller) controller.clearHistory();
   // 即使当前无活跃 controller 也清理 DB
-  db.run('DELETE FROM chat_messages WHERE conversation_id = ?', [conversationId]);
+  db.run('DELETE FROM chat_messages WHERE conversation_id = ? AND project_id = ?', [conversationId, projectId]);
   return { cleared: true };
 });
 
 ipcMain.handle('chat:history', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
   const conversationId = Number(input.conversationId || 0);
   if (!conversationId) return [];
+  if (!conversationInProject(conversationId, projectId)) return [];
   const controller = chatControllers?.get(conversationId);
   if (controller) return controller.getHistory();
   return db.all(
-    'SELECT * FROM chat_messages WHERE conversation_id = ? ORDER BY created_at ASC, id ASC',
-    [conversationId],
+    `SELECT * FROM chat_messages
+     WHERE conversation_id = ? AND project_id = ?
+     ORDER BY created_at ASC, id ASC`,
+    [conversationId, projectId],
   );
 });
 
 ipcMain.handle('chat:saveConfig', (_event, config = {}) => {
-  const keys = ['provider', 'baseUrl', 'apiKey', 'model', 'temperature'];
-  for (const key of keys) {
-    if (config[key] !== undefined) {
-      db.setSetting(`chat.${key}`, String(config[key]));
-    }
-  }
+  const savedConfig = saveChatConfigAsGlobalDefault(config);
+  broadcastAiConfigChanged('chat:saveConfig', savedConfig?.id ?? null);
   return { saved: true };
 });
 
-ipcMain.handle('chat:getConfig', () => {
-  const settings = db.getSettings('chat.');
-  const apiKey = settings['chat.apiKey'] || '';
-  return {
-    provider: settings['chat.provider'] || 'openai',
-    baseUrl: settings['chat.baseUrl'] || 'https://api.openai.com',
-    hasApiKey: Boolean(apiKey),
-    maskedKey: maskApiKey(apiKey),
-    model: settings['chat.model'] || 'gpt-4o',
-    temperature: settings['chat.temperature'] || '0.3',
-  };
-});
+ipcMain.handle('chat:getConfig', () => getGlobalDefaultChatConfig());
 
 // ------------------------------------------------------- ai-config:* IPC（需求 #28）------------------------------------------------
 
-ipcMain.handle('ai-config:list', (_event, input = {}) => {
-  const projectId = requiredProjectId(input);
-  return listAiConfigs(db, projectId);
-});
+ipcMain.handle('ai-config:list', () => listAiConfigs(db));
 
 ipcMain.handle('ai-config:get', (_event, input = {}) => {
   const id = requiredRecordId(input, 'configId');
@@ -632,18 +628,23 @@ ipcMain.handle('ai-config:get', (_event, input = {}) => {
 });
 
 ipcMain.handle('ai-config:create', (_event, input = {}) => {
-  const projectId = requiredProjectId(input);
-  return createAiConfig(db, { ...input, projectId });
+  const config = createAiConfig(db, aiConfigCreateInput(input));
+  broadcastAiConfigChanged('ai-config:create', config.id);
+  return config;
 });
 
 ipcMain.handle('ai-config:update', (_event, input = {}) => {
   const id = requiredRecordId(input, 'configId');
-  return updateAiConfig(db, id, input);
+  const config = updateAiConfig(db, id, aiConfigUpdateInput(input));
+  broadcastAiConfigChanged('ai-config:update', id);
+  return config;
 });
 
 ipcMain.handle('ai-config:delete', (_event, input = {}) => {
   const id = requiredRecordId(input, 'configId');
-  return deleteAiConfig(db, id);
+  const result = deleteAiConfig(db, id);
+  broadcastAiConfigChanged('ai-config:delete', id);
+  return result;
 });
 
 // ------------------------------------------------------- conversation:* IPC（需求 #28）-----------------------------------------
@@ -655,36 +656,37 @@ ipcMain.handle('conversation:list', (_event, input = {}) => {
 
 ipcMain.handle('conversation:create', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  return createConversation(db, { ...input, projectId });
+  return createConversation(db, conversationCreateInput(input, projectId));
 });
 
 ipcMain.handle('conversation:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
   const id = requiredRecordId(input, 'conversationId');
-  return updateConversation(db, id, input);
+  requireConversationInProject(id, projectId);
+  return updateConversation(db, id, conversationUpdateInput(input, projectId));
 });
 
 ipcMain.handle('conversation:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
   const id = requiredRecordId(input, 'conversationId');
+  requireConversationInProject(id, projectId);
   // 如果该对话正在运行中，先停止
   const controller = chatControllers?.get(id);
   if (controller) controller.stop();
   chatControllers.delete(id);
-  return deleteConversation(db, id);
+  return deleteConversation(db, id, { projectId });
 });
 
 // ------------------------------------------------------- chat:* (continued) -------------------------------------------------------
 
-function getOrCreateChatController(conversationId) {
+function getOrCreateChatController(conversationId, projectId) {
+  requireConversationInProject(conversationId, projectId);
   const existing = chatControllers.get(conversationId);
   if (existing && existing.isActive()) return existing;
 
   // 清理已结束的 controller（非活跃实例）
   chatControllers.delete(conversationId);
 
-  const conversation = db.get('SELECT * FROM conversations WHERE id = ?', [conversationId]);
-  if (!conversation) throw new Error('对话不存在');
-
-  const projectId = conversation.project_id;
   const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
   if (!project) throw new Error('项目不存在');
 
@@ -710,16 +712,115 @@ function getOrCreateChatController(conversationId) {
         mainWindow.webContents.send('chat:chunk', { type, data });
       }
     },
-    onDone: ({ status, error }) => {
+    onDone: ({ status, error, conversationId: doneConversationId, title } = {}) => {
       chatControllers.delete(conversationId);
       if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('chat:done', { status, error });
+        mainWindow.webContents.send('chat:done', {
+          status,
+          error,
+          conversationId: doneConversationId,
+          title,
+        });
       }
     },
   });
 
   chatControllers.set(conversationId, controller);
   return controller;
+}
+
+function saveChatConfigAsGlobalDefault(config = {}) {
+  persistLegacyChatSettings(config);
+
+  const existing = db.get('SELECT id FROM ai_configs WHERE project_id IS NULL ORDER BY id ASC LIMIT 1');
+  const fields = chatConfigToAiConfigFields(config);
+  if (existing) {
+    return updateAiConfig(db, existing.id, fields);
+  }
+
+  return createAiConfig(db, {
+    name: normalizeOptionalText(config?.name) || '默认配置',
+    provider: fields.provider,
+    baseUrl: fields.baseUrl,
+    apiKey: fields.apiKey,
+    model: fields.model,
+    temperature: fields.temperature,
+    thinkingDepth: fields.thinkingDepth,
+    thinkingBudgetTokens: fields.thinkingBudgetTokens,
+  });
+}
+
+function persistLegacyChatSettings(config = {}) {
+  const source = config && typeof config === 'object' ? config : {};
+  for (const key of ['provider', 'baseUrl', 'apiKey', 'model', 'temperature']) {
+    if (Object.prototype.hasOwnProperty.call(source, key) && source[key] !== undefined) {
+      db.setSetting(`chat.${key}`, String(source[key] ?? ''));
+    }
+  }
+}
+
+function chatConfigToAiConfigFields(config = {}) {
+  const source = config && typeof config === 'object' ? config : {};
+  const fields = {};
+  for (const key of [
+    'name',
+    'provider',
+    'baseUrl',
+    'apiKey',
+    'model',
+    'temperature',
+    'thinkingDepth',
+    'thinkingBudgetTokens',
+  ]) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) fields[key] = source[key];
+  }
+  return fields;
+}
+
+function getGlobalDefaultChatConfig() {
+  const config = listAiConfigs(db)[0];
+  if (!config) return getLegacyChatConfig(db);
+
+  return {
+    source: 'ai-config',
+    aiConfigId: config.id,
+    name: config.name,
+    provider: config.provider,
+    baseUrl: config.baseUrl,
+    hasApiKey: config.hasApiKey,
+    maskedKey: config.maskedKey,
+    model: config.model,
+    temperature: config.temperature,
+    thinkingDepth: config.thinkingDepth,
+    thinkingBudgetTokens: config.thinkingBudgetTokens,
+  };
+}
+
+function broadcastAiConfigChanged(source, configId = null) {
+  invalidateChatConfigCaches();
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('ai-config:changed', {
+      source,
+      configId,
+      configs: listAiConfigs(db),
+    });
+  }
+}
+
+function invalidateChatConfigCaches() {
+  if (!chatControllers) return;
+  for (const [conversationId, controller] of chatControllers.entries()) {
+    if (controller?.isActive?.()) {
+      controller.invalidateConfig?.();
+    } else {
+      chatControllers.delete(conversationId);
+    }
+  }
+}
+
+function normalizeOptionalText(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim();
 }
 
 function attachmentsRoot() {
@@ -801,6 +902,74 @@ function requiredProjectId(input = {}) {
   const projectId = Number(input.projectId || input.id || 0);
   if (!projectId || !loop.project(projectId)) throw new Error('项目不存在');
   return projectId;
+}
+
+function aiConfigCreateInput(input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    name: source.name,
+    provider: source.provider,
+    baseUrl: source.baseUrl,
+    apiKey: source.apiKey,
+    model: source.model,
+    temperature: source.temperature,
+    thinkingDepth: source.thinkingDepth,
+    thinkingBudgetTokens: source.thinkingBudgetTokens,
+  };
+}
+
+function aiConfigUpdateInput(input = {}) {
+  return chatConfigToAiConfigFields(input);
+}
+
+function conversationCreateInput(input = {}, projectId) {
+  const source = input && typeof input === 'object' ? input : {};
+  return {
+    projectId,
+    title: source.title,
+    aiConfigId: source.aiConfigId ?? source.ai_config_id ?? null,
+  };
+}
+
+function conversationUpdateInput(input = {}, projectId) {
+  const source = input && typeof input === 'object' ? input : {};
+  const fields = { projectId };
+  if (Object.prototype.hasOwnProperty.call(source, 'title')) fields.title = source.title;
+  if (
+    Object.prototype.hasOwnProperty.call(source, 'aiConfigId') ||
+    Object.prototype.hasOwnProperty.call(source, 'ai_config_id')
+  ) {
+    fields.aiConfigId = source.aiConfigId ?? source.ai_config_id ?? null;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(source, 'pinnedAt') ||
+    Object.prototype.hasOwnProperty.call(source, 'pinned_at')
+  ) {
+    fields.pinnedAt = source.pinnedAt ?? source.pinned_at ?? null;
+  }
+  if (
+    Object.prototype.hasOwnProperty.call(source, 'pinned') ||
+    Object.prototype.hasOwnProperty.call(source, 'isPinned')
+  ) {
+    fields.pinned = source.pinned ?? source.isPinned;
+  }
+  return fields;
+}
+
+function conversationInProject(conversationId, projectId) {
+  return Boolean(db.get('SELECT id FROM conversations WHERE id = ? AND project_id = ?', [
+    Number(conversationId || 0),
+    Number(projectId || 0),
+  ]));
+}
+
+function requireConversationInProject(conversationId, projectId) {
+  const conversation = db.get('SELECT * FROM conversations WHERE id = ? AND project_id = ?', [
+    Number(conversationId || 0),
+    Number(projectId || 0),
+  ]);
+  if (!conversation) throw new Error('对话不存在或不属于当前项目');
+  return conversation;
 }
 
 /**

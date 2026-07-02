@@ -11,17 +11,6 @@ type Draft = CreateProjectInput & { id?: number };
 
 const emptyDraft: Draft = { name: '', workspacePath: '', description: '', agentCliProvider: 'codex' };
 
-// 工作区路径渲染为按钮（可聚焦、回车触发、原生 disabled）。
-// 复用 .project-path 的字体与省略号样式，内联重置按钮默认外观，避免改动 CSS。
-const pathLinkStyle = {
-  background: 'none',
-  border: 'none',
-  padding: 0,
-  textAlign: 'left',
-  display: 'block',
-  maxWidth: '100%',
-} as const;
-
 export function ProjectsPage() {
   const navigate = useNavigate();
   const { snapshot, setSnapshot, error, setError } = useSnapshot(null);
@@ -193,8 +182,7 @@ export function ProjectsPage() {
                     <div className="project-name">{project.name}</div>
                     <button
                       type="button"
-                      className="project-path"
-                      style={pathLinkStyle}
+                      className="project-path project-path-link mono"
                       disabled={!project.workspace_path}
                       onClick={(event) => {
                         // 阻止冒泡到卡片，避免触发“进入工作区”导航

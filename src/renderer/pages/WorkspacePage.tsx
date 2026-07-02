@@ -1,19 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import type { ComponentProps, ComponentType } from 'react';
 import { isTaskAssociatedWithPlan, readPlanTaskAssociationFilePath } from '../types';
 import type {
   AppSnapshot,
   Plan,
   Project,
   Script,
+  WorkspaceChatState,
   WorkspacePlanSelectionState,
   WorkspaceSearchResult,
   WorkspaceTab,
 } from '../types';
+import { useChat } from '../hooks/useChat';
+import { useSidebarResize } from '../hooks/useSidebarResize';
 import { useWorkspaceController } from '../hooks/useWorkspaceController';
 import { ComposerCliSelectionProvider, type ComposerSubmitPayload } from '../components/Composer';
 import { IntakePanel } from '../components/IntakePanel';
 import { EventList, PlanList, TaskList } from '../components/PlanLists';
-import { SearchResults } from '../components/SearchResults';
+import { SearchResults, type SearchResultsAnchorRect } from '../components/SearchResults';
 import { Icon } from '../components/icons';
 import { PlanReaderModal } from '../components/plans/PlanReaderModal';
 import { UpdateNotice } from '../components/UpdateNotice';
@@ -24,6 +28,12 @@ import { WorkspaceScriptsView } from '../components/workspace/WorkspaceScriptsVi
 import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
 import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
 import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+
+type WorkspaceSidebarWithChatProps = ComponentProps<typeof WorkspaceSidebar> & {
+  chatState: WorkspaceChatState;
+};
+
+const WorkspaceSidebarWithChat = WorkspaceSidebar as ComponentType<WorkspaceSidebarWithChatProps>;
 
 export function WorkspacePage() {
   const {
@@ -86,11 +96,15 @@ export function WorkspacePage() {
     updateRequirement,
     workspaceSearch,
   } = useWorkspaceController();
+  const chatState = useChat(projectId);
+  const sidebarResize = useSidebarResize();
   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
   const [searchLocateNotice, setSearchLocateNotice] = useState('');
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const searchPopupRef = useRef<HTMLDivElement>(null);
+  // 锚点视口坐标，供 SearchResults 的 Portal(fixed) 弹层定位使用。
+  const [searchPopupRect, setSearchPopupRect] = useState<SearchResultsAnchorRect | null>(null);
   const hasSearchQuery = !workspaceSearch.query.isEmpty;
   const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
 
@@ -111,6 +125,9 @@ export function WorkspacePage() {
         totalTaskCount: selectedPlanAllTasks.length,
       }
     : null;
+  const workspaceShellStyle = {
+    '--workspace-sidebar-width': `${sidebarResize.width}px`,
+  } as CSSProperties;
 
   useEffect(() => {
     setSearchPopupOpen(hasSearchQuery);
@@ -124,12 +141,44 @@ export function WorkspacePage() {
     });
   }, [projectId, snapshot]);
 
+  // Portal 弹层定位：弹层打开时读取锚点（.workspace-search-popover-anchor）视口坐标，
+  // 并在滚动 / 缩放时刷新，保证 fixed 弹层始终紧贴搜索框定位。
+  useEffect(() => {
+    if (!searchPopupOpen) return undefined;
+    function updatePopupRect() {
+      const node = searchPopupRef.current;
+      if (!node) return;
+      const rect = node.getBoundingClientRect();
+      setSearchPopupRect({
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height,
+      });
+    }
+    updatePopupRect();
+    // capture=true 以捕获 .workspace-main 等嵌套滚动容器的 scroll 事件。
+    window.addEventListener('scroll', updatePopupRect, true);
+    window.addEventListener('resize', updatePopupRect);
+    return () => {
+      window.removeEventListener('scroll', updatePopupRect, true);
+      window.removeEventListener('resize', updatePopupRect);
+    };
+  }, [searchPopupOpen]);
+
   useEffect(() => {
     if (!searchPopupOpen) return undefined;
 
     function handlePointerDown(event: MouseEvent) {
-      if (!searchPopupRef.current || !(event.target instanceof Node)) return;
-      if (!searchPopupRef.current.contains(event.target)) {
+      if (!(event.target instanceof Node)) return;
+      const anchor = searchPopupRef.current;
+      const insideAnchor = anchor ? anchor.contains(event.target) : false;
+      // Portal 化后弹层已脱离锚点子树，点击弹层内部需额外排除，避免被误判为外部点击而提前关闭。
+      const insidePopup =
+        event.target instanceof Element && event.target.closest('.search-results-popup') !== null;
+      if (!insideAnchor && !insidePopup) {
         setSearchPopupOpen(false);
       }
     }
@@ -185,8 +234,11 @@ export function WorkspacePage() {
     createFeedback(payload as unknown as string);
   if (!snapshot) {
     return (
-      <div className="workspace-shell">
-        <WorkspaceSidebar
+      <div
+        className={`workspace-shell${sidebarResize.resizing ? ' is-sidebar-resizing' : ''}`}
+        style={workspaceShellStyle}
+      >
+        <WorkspaceSidebarWithChat
           activeTab={activeTab}
           onTab={selectTab}
           onBack={() => navigate('/projects')}
@@ -196,6 +248,10 @@ export function WorkspacePage() {
           state={null}
           scriptCount={0}
           onSwitchProject={switchProject}
+          chatState={chatState}
+          resizing={sidebarResize.resizing}
+          onResizePointerDown={sidebarResize.onPointerDown}
+          onResizeReset={sidebarResize.onReset}
         />
         <div className="workspace-main">
           <div className="empty">加载中...</div>
@@ -232,8 +288,11 @@ export function WorkspacePage() {
   };
 
   return (
-    <div className="workspace-shell">
-      <WorkspaceSidebar
+    <div
+      className={`workspace-shell${sidebarResize.resizing ? ' is-sidebar-resizing' : ''}`}
+      style={workspaceShellStyle}
+    >
+      <WorkspaceSidebarWithChat
         activeTab={activeTab}
         onTab={selectTab}
         onBack={() => navigate('/projects')}
@@ -243,6 +302,10 @@ export function WorkspacePage() {
         state={state}
         scriptCount={snapshot.scripts.length}
         onSwitchProject={switchProject}
+        chatState={chatState}
+        resizing={sidebarResize.resizing}
+        onResizePointerDown={sidebarResize.onPointerDown}
+        onResizeReset={sidebarResize.onReset}
       />
       <div className="workspace-main">
         <header className="topbar">
@@ -257,6 +320,7 @@ export function WorkspacePage() {
               query={searchQuery}
             />
             <SearchResults
+              anchorRect={searchPopupRect}
               onClear={() => handleSearchQueryChange('')}
               onClose={() => setSearchPopupOpen(false)}
               onSelectGroup={selectTab}
@@ -442,6 +506,7 @@ export function WorkspacePage() {
         <section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>
           {activeTab === 'settings' ? (
             <WorkspaceSettingsView
+              projectId={projectId}
               loopForm={loopForm}
               mcpForm={mcpForm}
               scopeFileOpenSettings={scopeFileOpenSettings}
@@ -491,7 +556,7 @@ export function WorkspacePage() {
 
         <section className={`view ${activeTab === 'chat' ? 'active' : ''}`}>
           {activeTab === 'chat' ? (
-            <ChatView projectId={projectId} snapshot={snapshot} />
+            <ChatView chatState={chatState} />
           ) : null}
         </section>
 

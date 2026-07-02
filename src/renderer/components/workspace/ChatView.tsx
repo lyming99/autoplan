@@ -1,59 +1,151 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { AppSnapshot, ChatMessage } from '../../types';
-import { useChat } from '../../hooks/useChat';
+import type { ChatMessage, WorkspaceChatState } from '../../types';
+import type { ChatThinkingDepth, WorkspaceChatComposerActions } from '../../hooks/useChat';
+import {
+  aiProviderLabel,
+  aiThinkingDepthLabel,
+  normalizeAiThinkingDepthInput,
+  providerSupportsThinkingDepth,
+  thinkingDepthOptions,
+} from '../../utils/workspaceForms';
+import { Modal } from '../Modal';
 import { Icon } from '../icons';
 
 /* ------------------------------------------------------------------ 子组件 ------------------------------------------------------------------ */
 
-/** 工具调用可折叠卡片 */
+/** 工具调用摘要与详情弹窗 */
 function ChatToolCard({ message }: { message: ChatMessage }) {
-  const [expanded, setExpanded] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
   const result = (message.toolResult || {}) as Record<string, unknown>;
   const name = String(result.name || '工具');
-  const args = (result.args || {}) as Record<string, unknown>;
+  const args = result.args;
   const isLoading = result.loading === true;
+  const isError = message.status === 'error' || message.status === 'aborted';
   const toolResult = result.result;
-
-  const argsSummary = Object.entries(args)
-    .slice(0, 2)
-    .map(([k, v]) => `${k}=${typeof v === 'string' ? v.slice(0, 40) : JSON.stringify(v).slice(0, 40)}`)
-    .join(', ');
+  const hasToolResult = Object.prototype.hasOwnProperty.call(result, 'result');
+  const hasArgs = hasDisplayableToolValue(args);
+  const hasVisibleToolResult = hasDisplayableToolValue(toolResult);
+  const statusKind = isLoading ? 'loading' : isError ? 'error' : 'success';
+  const statusLabel = isLoading ? '执行中' : isError ? '执行失败' : '已完成';
+  const statusIcon = isLoading ? 'settings' : isError ? 'alert' : 'check';
+  const summary = formatToolSummary(args, toolResult, hasToolResult, isLoading);
 
   return (
-    <div className="chat-message chat-message--tool">
+    <div className={`chat-message chat-message--tool chat-message--tool-${statusKind}`}>
       <div className="chat-tool-card">
         <button
+          type="button"
           className="chat-tool-card__header"
-          onClick={() => setExpanded((v) => !v)}
-          aria-expanded={expanded}
+          onClick={() => setDetailOpen(true)}
+          aria-haspopup="dialog"
+          aria-label={`查看工具调用详情：${name}，${statusLabel}`}
         >
-          <span className="chat-tool-card__icon">{isLoading ? '⚙' : '✓'}</span>
-          <span className="chat-tool-card__name">{name}</span>
-          {isLoading && <span className="chat-tool-card__loading">执行中…</span>}
-          {argsSummary && !isLoading && (
-            <span className="chat-tool-card__args">{argsSummary}</span>
-          )}
-          <span className="chat-tool-card__toggle">{expanded ? '▾' : '▸'}</span>
+          <span className={`chat-tool-card__icon chat-tool-card__icon--${statusKind}`} aria-hidden>
+            <Icon name={statusIcon} size={14} />
+          </span>
+          <span className="chat-tool-card__meta">
+            <span className="chat-tool-card__title-row">
+              <span className="chat-tool-card__name">{name}</span>
+              <span className={`chat-tool-card__status chat-tool-card__status--${statusKind}`}>{statusLabel}</span>
+            </span>
+            {summary ? (
+              <span className="chat-tool-card__args" title={summary}>{summary}</span>
+            ) : null}
+          </span>
+          <span className="chat-tool-card__open" aria-hidden>
+            <Icon name="eye" size={14} />
+          </span>
         </button>
-        {expanded && toolResult !== undefined && (
-          <div className="chat-tool-card__body">
-            <pre><code>{formatToolResult(toolResult)}</code></pre>
+        <Modal
+          open={detailOpen}
+          onClose={() => setDetailOpen(false)}
+          title="工具调用详情"
+          size="wide"
+          maxWidth={760}
+          className="chat-tool-modal"
+          bodyClassName="chat-tool-modal__body"
+        >
+          <div className="chat-tool-modal__summary">
+            <div className="chat-tool-modal__field">
+              <span className="chat-tool-modal__label">工具名称</span>
+              <strong className="chat-tool-modal__value">{name}</strong>
+            </div>
+            <div className="chat-tool-modal__field">
+              <span className="chat-tool-modal__label">执行状态</span>
+              <span className={`chat-tool-modal__status chat-tool-modal__status--${statusKind}`}>
+                <Icon name={statusIcon} size={14} aria-hidden />
+                {statusLabel}
+              </span>
+            </div>
           </div>
-        )}
-        {expanded && toolResult === undefined && isLoading && (
-          <div className="chat-tool-card__body chat-tool-card__body--pending">等待结果…</div>
-        )}
+
+          <div className="chat-tool-modal__section">
+            <div className="chat-tool-modal__section-title">参数</div>
+            {hasArgs ? (
+              <pre className="chat-tool-modal__code"><code>{formatToolResult(args)}</code></pre>
+            ) : (
+              <div className="chat-tool-modal__empty">无参数</div>
+            )}
+          </div>
+
+          <div className="chat-tool-modal__section">
+            <div className="chat-tool-modal__section-title">结果</div>
+            {hasVisibleToolResult ? (
+              <pre className="chat-tool-modal__code"><code>{formatToolResult(toolResult)}</code></pre>
+            ) : isLoading || (hasToolResult && result.loading === true) ? (
+              <div className="chat-tool-modal__empty">等待结果...</div>
+            ) : (
+              <div className="chat-tool-modal__empty">无返回内容</div>
+            )}
+          </div>
+        </Modal>
       </div>
     </div>
   );
 }
 
+function hasDisplayableToolValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
+  return true;
+}
+
+function formatToolArgsSummary(value: unknown): string {
+  if (!hasDisplayableToolValue(value)) return '';
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const entries = Object.entries(value as Record<string, unknown>);
+    const summary = entries
+      .slice(0, 2)
+      .map(([key, val]) => `${key}=${compactToolText(formatToolResult(val), 32)}`)
+      .join(', ');
+    return compactToolText(entries.length > 2 ? `${summary}, ...` : summary, 92);
+  }
+  return compactToolText(formatToolResult(value), 92);
+}
+
+function formatToolSummary(args: unknown, toolResult: unknown, hasToolResult: boolean, isLoading: boolean): string {
+  const argsSummary = formatToolArgsSummary(args);
+  if (argsSummary) return `参数 ${argsSummary}`;
+  if (isLoading) return '等待结果';
+  if (!hasToolResult || !hasDisplayableToolValue(toolResult)) return '无返回内容';
+  return '结果已返回';
+}
+
+function compactToolText(value: string, maxLength: number): string {
+  const text = value.replace(/\s+/g, ' ').trim();
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
 function formatToolResult(value: unknown): string {
   if (typeof value === 'string') return value;
   try {
-    return JSON.stringify(value, null, 2);
+    const serialized = JSON.stringify(value, null, 2);
+    return serialized === undefined ? String(value) : serialized;
   } catch {
     return String(value);
   }
@@ -66,34 +158,36 @@ function ReasoningSection({ content, isThinking }: { content: string; isThinking
   if (!content && !isThinking) return null;
 
   return (
-    <div className="chat-reasoning-collapsible">
+    <div className={`chat-reasoning-collapsible${isThinking ? ' is-thinking' : ''}${expanded ? ' is-expanded' : ''}`}>
       <button
         className="chat-reasoning-header"
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
-        <span className="chat-reasoning-header__icon">
-          {isThinking ? '🤔' : '✅'}
+        <span className="chat-reasoning-header__icon" aria-hidden>
+          <Icon name={isThinking ? 'thinking' : 'check'} size={14} />
         </span>
         <span className="chat-reasoning-header__label">
-          {isThinking ? '思考中…' : '思考完成'}
+          {isThinking ? '思考中...' : '思考完成'}
         </span>
-        <span className="chat-reasoning-header__toggle">
-          {expanded ? '▾' : '▸'}
+        <span className="chat-reasoning-header__toggle" aria-hidden>
+          <Icon name="chevron-down" size={14} />
         </span>
       </button>
       {expanded && content ? (
         <div className="chat-reasoning-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-            {content}
-          </ReactMarkdown>
+          <div className="chat-markdown chat-markdown--reasoning">
+            <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+              {content}
+            </ReactMarkdown>
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
 
-/** 单条消息气泡 */
+/** 单条消息 */
 function ChatMessageBubble({
   message,
   isThinking = false,
@@ -107,8 +201,11 @@ function ChatMessageBubble({
     case 'user':
       return (
         <div className="chat-message chat-message--user">
-          <div className="chat-message__avatar" aria-label="用户">U</div>
-          <div className="chat-message__bubble">{message.content}</div>
+          <div className="chat-message__content">
+            <div className="chat-message__bubble chat-message__bubble--plain">
+              <div className="chat-message__text">{message.content}</div>
+            </div>
+          </div>
         </div>
       );
 
@@ -120,46 +217,49 @@ function ChatMessageBubble({
 
       return (
         <div className={`chat-message chat-message--assistant${isStreaming ? ' chat-message--streaming' : ''}`}>
-          <div className="chat-message__avatar" aria-label="AI">AI</div>
-          <div className="chat-message__bubble">
-            {/* 错误消息 */}
-            {isError ? (
-              <span className="chat-message__error">
-                {message.status === 'aborted' ? '已中止生成' : message.content || '生成失败'}
-              </span>
-            ) : null}
-
-            {/* 思考中指示器（streaming + thinking + no reply yet） */}
-            {!isError && isStreaming && isThinking && !hasReplyContent ? (
-              <span className="chat-thinking-indicator">
-                <span className="chat-thinking-indicator__icon">🤔</span>
-                <span className="chat-thinking-indicator__text">思考中</span>
-                <span className="chat-thinking-dots">
-                  <span className="chat-thinking-dots__dot" />
-                  <span className="chat-thinking-dots__dot" />
-                  <span className="chat-thinking-dots__dot" />
+          <div className="chat-message__content">
+            <div className="chat-message__body chat-message__body--markdown">
+              {/* 错误消息 */}
+              {isError ? (
+                <span className="chat-message__error">
+                  {message.status === 'aborted' ? '已中止生成' : message.content || '生成失败'}
                 </span>
-              </span>
-            ) : null}
+              ) : null}
 
-            {/* 推理内容可折叠区域 */}
-            {!isError && hasThinkingContent ? (
-              <ReasoningSection content={thinkingContent} isThinking={isThinking} />
-            ) : null}
+              {/* 思考中指示器（streaming + thinking + no reply yet） */}
+              {!isError && isStreaming && isThinking && !hasReplyContent ? (
+                <span className="chat-thinking-indicator">
+                  <span className="chat-thinking-indicator__icon" aria-hidden><Icon name="thinking" size={16} /></span>
+                  <span className="chat-thinking-indicator__text">思考中</span>
+                  <span className="chat-thinking-dots">
+                    <span className="chat-thinking-dots__dot" />
+                    <span className="chat-thinking-dots__dot" />
+                    <span className="chat-thinking-dots__dot" />
+                  </span>
+                </span>
+              ) : null}
 
-            {/* 旧 provider 兼容：无 thinking 事件时的占位 */}
-            {!isError && !isThinking && !hasThinkingContent && isStreaming && !hasReplyContent ? (
-              <span className="chat-message__pending">思考中…</span>
-            ) : null}
+              {/* 推理内容可折叠区域 */}
+              {!isError && hasThinkingContent ? (
+                <ReasoningSection content={thinkingContent} isThinking={isThinking} />
+              ) : null}
 
-            {/* 正式回复内容 */}
-            {!isError && hasReplyContent ? (
-              <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-                {message.content}
-              </ReactMarkdown>
-            ) : null}
+              {/* 旧 provider 兼容：无 thinking 事件时的占位 */}
+              {!isError && !isThinking && !hasThinkingContent && isStreaming && !hasReplyContent ? (
+                <span className="chat-message__pending">思考中...</span>
+              ) : null}
+
+              {/* 正式回复内容 */}
+              {!isError && hasReplyContent ? (
+                <div className="chat-markdown">
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+                    {message.content}
+                  </ReactMarkdown>
+                </div>
+              ) : null}
+            </div>
+            {isStreaming && <span className="chat-message__cursor" aria-hidden />}
           </div>
-          {isStreaming && <span className="chat-message__cursor" aria-hidden>▊</span>}
         </div>
       );
     }
@@ -170,7 +270,7 @@ function ChatMessageBubble({
     case 'system':
       return (
         <div className="chat-message chat-message--system">
-          <span>{message.content}</span>
+          <div className="chat-system-message">{message.content}</div>
         </div>
       );
 
@@ -179,169 +279,52 @@ function ChatMessageBubble({
   }
 }
 
-/* ------------------------------------------------------------------ 对话侧栏 ------------------------------------------------------------------ */
+type ChatEmptyStateKind = 'missing-key' | 'no-conversation' | 'empty-conversation';
 
-function ConversationSidebar({
-  conversations,
-  aiConfigs,
-  activeConversationId,
-  sidebarOpen,
-  onToggleSidebar,
-  onSelect,
-  onCreate,
-  onDelete,
-  onRename,
-  getAiConfigName,
-  formatRelativeTime,
+function ChatEmptyState({
+  kind,
+  onCreateConversation,
 }: {
-  conversations: Array<{
-    id: number;
-    title: string;
-    ai_config_id: number | null;
-    aiConfigId: number | null;
-    updated_at: string;
-    updatedAt: string;
-  }>;
-  aiConfigs: Array<{ id: number; name: string }>;
-  activeConversationId: number | null;
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
-  onSelect: (id: number) => void;
-  onCreate: () => void;
-  onDelete: (id: number) => void;
-  onRename: (id: number, title: string) => void;
-  getAiConfigName: (configId: number | null) => string;
-  formatRelativeTime: (iso: string) => string;
+  kind: ChatEmptyStateKind;
+  onCreateConversation: () => void;
 }) {
-  const [renamingId, setRenamingId] = useState<number | null>(null);
-  const [renameValue, setRenameValue] = useState('');
-  const renameInputRef = useRef<HTMLInputElement>(null);
-
-  const startRename = (id: number, currentTitle: string) => {
-    setRenamingId(id);
-    setRenameValue(currentTitle);
-    setTimeout(() => renameInputRef.current?.focus(), 0);
-  };
-
-  const commitRename = (id: number) => {
-    const trimmed = renameValue.trim();
-    if (trimmed) onRename(id, trimmed);
-    setRenamingId(null);
-    setRenameValue('');
-  };
-
-  if (!sidebarOpen) {
-    return (
-      <button
-        className="chat-sidebar-toggle chat-sidebar-toggle--closed"
-        onClick={onToggleSidebar}
-        aria-label="展开对话列表"
-        title="展开对话列表"
-      >
-        <Icon name="chat" />
-      </button>
-    );
-  }
+  const content = {
+    'missing-key': {
+      icon: 'key' as const,
+      title: '尚未配置 AI 接口',
+      hint: '在设置的 AI 对话面板中配置全局 API Key 后即可发送消息。',
+      action: false,
+    },
+    'no-conversation': {
+      icon: 'chat' as const,
+      title: '选择或创建对话',
+      hint: '从左侧对话列表选择已有会话，或新建对话开始一次独立上下文。',
+      action: true,
+    },
+    'empty-conversation': {
+      icon: 'send' as const,
+      title: '开始对话',
+      hint: '输入消息后按 Enter 发送，Shift + Enter 换行。AI 可读取项目文件并协助推进需求。',
+      action: false,
+    },
+  }[kind];
 
   return (
-    <div className="chat-sidebar">
-      <div className="chat-sidebar__head">
-        <span className="chat-sidebar__title">对话列表</span>
+    <div className={`chat-empty chat-empty--${kind}`}>
+      <span className="chat-empty__icon" aria-hidden><Icon name={content.icon} /></span>
+      <p className="chat-empty__title">{content.title}</p>
+      <p className="chat-empty__hint">{content.hint}</p>
+      {content.action ? (
         <button
-          className="chat-sidebar__collapse"
-          onClick={onToggleSidebar}
-          aria-label="收起对话列表"
-          title="收起"
+          type="button"
+          className="btn btn-sm btn-primary"
+          onClick={onCreateConversation}
+          aria-label="新建对话"
         >
-          ✕
+          <Icon name="chat" size={14} aria-hidden />
+          新建对话
         </button>
-      </div>
-
-      <button
-        className="chat-sidebar__new-btn"
-        onClick={onCreate}
-        aria-label="新建对话"
-      >
-        + 新建对话
-      </button>
-
-      <div className="chat-sidebar__list">
-        {conversations.length === 0 ? (
-          <div className="chat-sidebar__empty">暂无对话</div>
-        ) : (
-          conversations.map((conv) => {
-            const cid = conv.id;
-            const isActive = cid === activeConversationId;
-            const updatedAt = conv.updated_at || conv.updatedAt || '';
-
-            return (
-              <div
-                key={cid}
-                className={`chat-sidebar__item${isActive ? ' chat-sidebar__item--active' : ''}`}
-              >
-                {renamingId === cid ? (
-                  <input
-                    ref={renameInputRef}
-                    className="chat-sidebar__rename-input"
-                    value={renameValue}
-                    onChange={(e) => setRenameValue(e.target.value)}
-                    onBlur={() => commitRename(cid)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitRename(cid);
-                      if (e.key === 'Escape') {
-                        setRenamingId(null);
-                        setRenameValue('');
-                      }
-                    }}
-                  />
-                ) : (
-                  <button
-                    className="chat-sidebar__item-main"
-                    onClick={() => onSelect(cid)}
-                    aria-current={isActive ? 'true' : undefined}
-                  >
-                    <span className="chat-sidebar__item-title">
-                      {conv.title || '新对话'}
-                    </span>
-                    <span className="chat-sidebar__item-meta">
-                      {getAiConfigName(conv.ai_config_id ?? conv.aiConfigId)}
-                      {updatedAt ? ` · ${formatRelativeTime(updatedAt)}` : ''}
-                    </span>
-                  </button>
-                )}
-                {renamingId !== cid && (
-                  <div className="chat-sidebar__item-actions">
-                    <button
-                      className="chat-sidebar__action-btn"
-                      title="重命名"
-                      aria-label="重命名对话"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        startRename(cid, conv.title);
-                      }}
-                    >
-                      ✎
-                    </button>
-                    <button
-                      className="chat-sidebar__action-btn chat-sidebar__action-btn--danger"
-                      title="删除对话"
-                      aria-label="删除对话"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (window.confirm('确认删除该对话？关联的消息将被清空。')) {
-                          onDelete(cid);
-                        }
-                      }}
-                    >
-                      ✕
-                    </button>
-                  </div>
-                )}
-              </div>
-            );
-          })
-        )}
-      </div>
+      ) : null}
     </div>
   );
 }
@@ -352,10 +335,9 @@ function ConversationSidebar({
  * Chat 对话视图（需求 #26 / #28）。
  *
  * Props：
- * - projectId: 当前项目 ID
- * - snapshot: 项目快照（用于读取 hasApiKey 等配置信息）
+ * - chatState: 工作区层共享的聊天状态容器
  */
-export function ChatView({ projectId }: { projectId: number; snapshot: AppSnapshot }) {
+export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
   const {
     messages,
     isStreaming,
@@ -364,24 +346,76 @@ export function ChatView({ projectId }: { projectId: number; snapshot: AppSnapsh
     stopGeneration,
     clearSession,
     conversations,
+    aiConfigs,
     activeConversationId,
-    switchConversation,
     createConversation,
-    deleteConversation,
-    renameConversation,
     getAiConfigName,
-    formatRelativeTime,
     isThinking,
     thinkingContent,
     streamPhase,
-  } = useChat(projectId);
+  } = chatState;
+  const composerActions = chatState as WorkspaceChatState & Partial<WorkspaceChatComposerActions>;
+  const { updateConversationAiConfig, updateActiveAiConfigThinkingDepth } = composerActions;
 
   const [input, setInput] = useState('');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [isComposerConfigSaving, setIsComposerConfigSaving] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  /* ---- 当前模型配置 ---- */
+  const activeConv = conversations.find((c) => c.id === activeConversationId);
+  const activeAiConfigId = config?.aiConfigId ?? (activeConv
+    ? activeConv.ai_config_id ?? activeConv.aiConfigId
+    : null);
+  const currentAiConfig = useMemo(
+    () => aiConfigs.find((item) => item.id === activeAiConfigId) ?? null,
+    [activeAiConfigId, aiConfigs],
+  );
+  const activeConfigName = currentAiConfig?.name || config?.name || (activeConv
+    ? getAiConfigName(activeConv.ai_config_id ?? activeConv.aiConfigId)
+    : '');
+  const hasAiApiKey = currentAiConfig?.hasApiKey ?? (config?.hasApiKey === true);
+  const selectedProvider = currentAiConfig?.provider || config?.provider || 'openai';
+  const providerOptions = useMemo(() => {
+    const providers = new Map<string, { value: string; label: string }>();
+    for (const item of aiConfigs) {
+      const provider = item.provider || 'openai';
+      if (!providers.has(provider)) {
+        providers.set(provider, { value: provider, label: aiProviderLabel(provider) });
+      }
+    }
+    if (!providers.has(selectedProvider)) {
+      providers.set(selectedProvider, { value: selectedProvider, label: aiProviderLabel(selectedProvider) });
+    }
+    return Array.from(providers.values());
+  }, [aiConfigs, selectedProvider]);
+  const providerConfigs = useMemo(
+    () => aiConfigs.filter((item) => (item.provider || 'openai') === selectedProvider),
+    [aiConfigs, selectedProvider],
+  );
+  const configSelectOptions = providerConfigs.length > 0
+    ? providerConfigs
+    : currentAiConfig
+      ? [currentAiConfig]
+      : [];
+  const selectedConfigId = currentAiConfig?.id ?? config?.aiConfigId ?? configSelectOptions[0]?.id ?? null;
+  const selectedThinkingDepth = normalizeAiThinkingDepthInput(
+    currentAiConfig?.thinkingDepth ?? config?.thinkingDepth,
+  );
+  const supportsThinkingDepth = providerSupportsThinkingDepth(selectedProvider);
+  const activeModelLabel = currentAiConfig
+    ? `${currentAiConfig.name} · ${currentAiConfig.model || '未设置模型'}`
+    : activeConfigName || '无可用配置';
+  const configControlsDisabled =
+    !activeConversationId || isStreaming || isComposerConfigSaving || aiConfigs.length === 0;
+  const thinkingDepthDisabled =
+    configControlsDisabled ||
+    !supportsThinkingDepth ||
+    selectedConfigId == null ||
+    !updateActiveAiConfigThinkingDepth;
+  const inputDisabled = isStreaming || !activeConversationId || !hasAiApiKey;
+  const sendDisabled = !input.trim() || inputDisabled;
   /* ---- 新消息自动滚到底部 ---- */
   useEffect(() => {
     const el = messagesEndRef.current;
@@ -389,13 +423,24 @@ export function ChatView({ projectId }: { projectId: number; snapshot: AppSnapsh
     el.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
 
+  const resizeTextarea = useCallback(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 180)}px`;
+  }, []);
+
+  useEffect(() => {
+    resizeTextarea();
+  }, [input, resizeTextarea]);
+
   /* ---- 发送 ---- */
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if (!text || isStreaming) return;
-    sendMessage(text);
+    if (!text || isStreaming || !activeConversationId || !hasAiApiKey) return;
+    void sendMessage(text);
     setInput('');
-  }, [input, isStreaming, sendMessage]);
+  }, [activeConversationId, hasAiApiKey, input, isStreaming, sendMessage]);
 
   /* ---- 键盘 ---- */
   const handleKeyDown = useCallback(
@@ -408,139 +453,264 @@ export function ChatView({ projectId }: { projectId: number; snapshot: AppSnapsh
     [handleSend],
   );
 
+  const handleComposerSubmit = useCallback(
+    (e: React.FormEvent<HTMLFormElement>) => {
+      e.preventDefault();
+      handleSend();
+    },
+    [handleSend],
+  );
+
   /* ---- 清空 ---- */
   const handleClear = useCallback(() => {
     if (!window.confirm('确认清空当前对话？此操作不可撤销。')) return;
-    clearSession();
+    void clearSession();
   }, [clearSession]);
 
-  /* ---- 当前 AI 配置信息 ---- */
-  const activeConv = conversations.find((c) => c.id === activeConversationId);
-  const activeConfigName = activeConv
-    ? getAiConfigName(activeConv.ai_config_id ?? activeConv.aiConfigId)
-    : '';
+  const handleCreateConversation = useCallback(() => {
+    void createConversation();
+  }, [createConversation]);
 
-  /* ---- 未配置 API Key ---- */
-  if (config && !config.hasApiKey) {
-    return (
-      <div className="chat-container">
-        <div className="chat-empty">
-          <span className="chat-empty__icon"><Icon name="key" /></span>
-          <p className="chat-empty__title">尚未配置 AI 接口</p>
-          <p className="chat-empty__hint">
-            请在「设置 → AI 对话」面板中配置 LLM 接口的 API Key、模型等参数后开始对话。
-          </p>
-        </div>
-      </div>
-    );
-  }
+  const commitComposerConfigUpdate = useCallback(
+    (action: () => Promise<void>) => {
+      if (isComposerConfigSaving) return;
+      setIsComposerConfigSaving(true);
+      void action()
+        .catch(() => {})
+        .finally(() => {
+          setIsComposerConfigSaving(false);
+        });
+    },
+    [isComposerConfigSaving],
+  );
+
+  const handleProviderChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const nextProvider = e.target.value;
+      if (!activeConversationId || isStreaming || !updateConversationAiConfig) return;
+      const matches = aiConfigs.filter((item) => (item.provider || 'openai') === nextProvider);
+      const nextConfig = matches.find((item) => item.hasApiKey) ?? matches[0];
+      if (!nextConfig || nextConfig.id === selectedConfigId) return;
+      commitComposerConfigUpdate(() => updateConversationAiConfig(nextConfig.id));
+    },
+    [
+      activeConversationId,
+      aiConfigs,
+      commitComposerConfigUpdate,
+      isStreaming,
+      selectedConfigId,
+      updateConversationAiConfig,
+    ],
+  );
+
+  const handleConfigChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      const nextConfigId = Number(e.target.value);
+      if (
+        !Number.isInteger(nextConfigId) ||
+        nextConfigId <= 0 ||
+        nextConfigId === selectedConfigId ||
+        !activeConversationId ||
+        isStreaming ||
+        !updateConversationAiConfig
+      ) {
+        return;
+      }
+      commitComposerConfigUpdate(() => updateConversationAiConfig(nextConfigId));
+    },
+    [
+      activeConversationId,
+      commitComposerConfigUpdate,
+      isStreaming,
+      selectedConfigId,
+      updateConversationAiConfig,
+    ],
+  );
+
+  const handleThinkingDepthChange = useCallback(
+    (e: React.ChangeEvent<HTMLSelectElement>) => {
+      if (!supportsThinkingDepth || thinkingDepthDisabled) return;
+      const normalized = normalizeAiThinkingDepthInput(e.target.value);
+      const nextDepth: ChatThinkingDepth = normalized ? normalized : null;
+      const currentDepth: ChatThinkingDepth = selectedThinkingDepth ? selectedThinkingDepth : null;
+      if (nextDepth === currentDepth || !updateActiveAiConfigThinkingDepth) return;
+      commitComposerConfigUpdate(() => updateActiveAiConfigThinkingDepth(nextDepth));
+    },
+    [
+      commitComposerConfigUpdate,
+      selectedThinkingDepth,
+      supportsThinkingDepth,
+      thinkingDepthDisabled,
+      updateActiveAiConfigThinkingDepth,
+    ],
+  );
+
+  const emptyStateKind: ChatEmptyStateKind = !hasAiApiKey
+    ? 'missing-key'
+    : activeConversationId
+      ? 'empty-conversation'
+      : 'no-conversation';
 
   return (
     <div className="chat-container">
-      {/* 对话侧栏 */}
-      <ConversationSidebar
-        conversations={conversations}
-        aiConfigs={[]}
-        activeConversationId={activeConversationId}
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={() => setSidebarOpen((v) => !v)}
-        onSelect={(id) => { void switchConversation(id); }}
-        onCreate={() => { void createConversation(); }}
-        onDelete={(id) => { void deleteConversation(id); }}
-        onRename={(id, title) => { void renameConversation(id, title); }}
-        getAiConfigName={getAiConfigName}
-        formatRelativeTime={formatRelativeTime}
-      />
-
-      {/* 主区域 */}
       <div className="chat-main">
-        {/* 当前 AI 配置指示器 */}
-        {activeConversationId && activeConfigName ? (
-          <div className="chat-config-indicator">
-            <span className="chat-config-indicator__label">AI 配置：</span>
-            <span className="chat-config-indicator__value">{activeConfigName}</span>
-          </div>
-        ) : null}
-
         <div className="chat-messages" ref={messagesContainerRef}>
-          {messages.length === 0 && !isStreaming && (
-            <div className="chat-empty">
-              <span className="chat-empty__icon"><Icon name="send" /></span>
-              <p className="chat-empty__title">
-                {activeConversationId ? '开始对话' : '选择或创建对话'}
-              </p>
-              <p className="chat-empty__hint">
-                {activeConversationId
-                  ? 'AI 可读取项目文件、搜索代码、创建需求/反馈/脚本。\n输入消息后按 Enter 发送，Shift + Enter 换行。'
-                  : '点击左侧「新建对话」创建第一个对话。'}
-              </p>
-            </div>
-          )}
-
-          {messages.map((msg, i) => {
-            const isLast = i === messages.length - 1;
-            const isLastStreaming = isLast && msg.role === 'assistant' && msg.status === 'streaming';
-            return (
-              <ChatMessageBubble
-                key={msg.id}
-                message={msg}
-                isThinking={isLastStreaming ? isThinking : false}
-                thinkingContent={isLastStreaming ? thinkingContent : ''}
+          <div className="chat-messages__inner">
+            {messages.length === 0 && !isStreaming ? (
+              <ChatEmptyState
+                kind={emptyStateKind}
+                onCreateConversation={handleCreateConversation}
               />
-            );
-          })}
+            ) : null}
 
-          <div ref={messagesEndRef} />
+            {messages.map((msg, i) => {
+              const isLast = i === messages.length - 1;
+              const isLastStreaming = isLast && msg.role === 'assistant' && msg.status === 'streaming';
+              return (
+                <ChatMessageBubble
+                  key={msg.id}
+                  message={msg}
+                  isThinking={isLastStreaming ? isThinking : false}
+                  thinkingContent={isLastStreaming ? thinkingContent : ''}
+                />
+              );
+            })}
+
+            <div ref={messagesEndRef} />
+          </div>
         </div>
 
-        <div className="chat-input-bar">
-          <textarea
-            ref={textareaRef}
-            className="chat-input"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={
-              streamPhase === 'thinking'
-                ? 'AI 正在思考…'
-                : streamPhase === 'replying'
-                  ? 'AI 正在回复…'
-                  : activeConversationId
-                    ? '输入消息…（Enter 发送，Shift+Enter 换行）'
-                    : '请先选择或创建对话'
-            }
-            rows={2}
-            disabled={isStreaming || !activeConversationId}
-            aria-label="消息输入框"
-          />
-          <div className="chat-input-actions">
-            {isStreaming ? (
-              <button
-                className="chat-stop-btn"
-                onClick={() => stopGeneration()}
-                aria-label="停止生成"
-              >
-                <Icon name="stop" /> 停止
-              </button>
-            ) : (
-              <button
-                className="chat-send-btn"
-                onClick={handleSend}
-                disabled={!input.trim() || !activeConversationId}
-                aria-label="发送消息"
-              >
-                <Icon name="send" /> 发送
-              </button>
-            )}
-            <button
-              className="chat-clear-btn"
-              onClick={handleClear}
-              disabled={(isStreaming && messages.length === 0) || !activeConversationId}
-              aria-label="清空对话"
-            >
-              <Icon name="trash" />
-            </button>
-          </div>
+        <div className="chat-composer-zone">
+          <form className="chat-composer" onSubmit={handleComposerSubmit}>
+            <textarea
+              ref={textareaRef}
+              className="chat-composer__textarea"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={
+                streamPhase === 'thinking'
+                  ? 'AI 正在思考…'
+                  : streamPhase === 'replying'
+                    ? 'AI 正在回复…'
+                    : !hasAiApiKey
+                      ? '请先在设置中配置全局 AI 接口'
+                      : activeConversationId
+                        ? '输入消息…（Enter 发送，Shift+Enter 换行）'
+                        : '请先选择或创建对话'
+              }
+              rows={1}
+              disabled={inputDisabled}
+              aria-label="消息输入框"
+            />
+
+            <div className="chat-composer__bar">
+              <div className="chat-composer__tools" aria-label="AI 模型配置">
+                <label
+                  className="chat-model-select chat-model-select--provider"
+                  title="选择模型供应商"
+                >
+                  <Icon name="bolt" size={16} aria-hidden />
+                  <span className="chat-model-select__label">{aiProviderLabel(selectedProvider)}</span>
+                  <select
+                    value={selectedProvider}
+                    onChange={handleProviderChange}
+                    disabled={configControlsDisabled}
+                    aria-label="选择模型供应商"
+                  >
+                    {providerOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="chat-model-select" title="选择模型配置">
+                  <Icon name="chat" size={16} aria-hidden />
+                  <span className="chat-model-select__label">{activeModelLabel}</span>
+                  <select
+                    value={selectedConfigId != null ? String(selectedConfigId) : ''}
+                    onChange={handleConfigChange}
+                    disabled={configControlsDisabled}
+                    aria-label="选择模型配置"
+                  >
+                    {configSelectOptions.length > 0 ? (
+                      configSelectOptions.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name} · {item.model || '未设置模型'}
+                          {item.hasApiKey ? '' : ' · 未配置 Key'}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">无可用配置</option>
+                    )}
+                  </select>
+                </label>
+
+                <label
+                  className={`chat-model-select${thinkingDepthDisabled ? ' is-disabled' : ''}`}
+                  title={supportsThinkingDepth ? '选择思考深度' : '当前供应商不支持思考深度'}
+                >
+                  <Icon name="thinking" size={16} aria-hidden />
+                  <span className="chat-model-select__label">
+                    {supportsThinkingDepth ? aiThinkingDepthLabel(selectedThinkingDepth) : '思考 · 不支持'}
+                  </span>
+                  <select
+                    value={selectedThinkingDepth}
+                    onChange={handleThinkingDepthChange}
+                    disabled={thinkingDepthDisabled}
+                    aria-label="选择思考深度"
+                  >
+                    {supportsThinkingDepth ? (
+                      thinkingDepthOptions.map((option) => (
+                        <option key={option.value || 'off'} value={option.value}>
+                          思考 · {option.label}
+                        </option>
+                      ))
+                    ) : (
+                      <option value="">思考 · 不支持</option>
+                    )}
+                  </select>
+                </label>
+              </div>
+
+              <div className="chat-composer__actions">
+                <button
+                  type="button"
+                  className="chat-icon-btn"
+                  onClick={handleClear}
+                  disabled={isStreaming || messages.length === 0 || !activeConversationId}
+                  aria-label="清空当前对话"
+                  title="清空当前对话"
+                >
+                  <Icon name="trash" size={16} aria-hidden />
+                </button>
+                <span className="chat-composer__hint">
+                  {isStreaming ? '生成中' : 'Enter 发送'}
+                </span>
+                {isStreaming ? (
+                  <button
+                    type="button"
+                    className="stop-button"
+                    onClick={() => { void stopGeneration(); }}
+                    aria-label="停止生成"
+                  >
+                    <Icon name="stop" size={18} aria-hidden />
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    className="send-button"
+                    disabled={sendDisabled}
+                    aria-label="发送消息"
+                  >
+                    <Icon name="send" size={20} aria-hidden />
+                  </button>
+                )}
+              </div>
+            </div>
+          </form>
         </div>
       </div>
     </div>

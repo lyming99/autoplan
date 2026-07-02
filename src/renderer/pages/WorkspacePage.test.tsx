@@ -30,6 +30,30 @@ function expectCountAtLeast(sourceText: string, snippet: string, minimum: number
   expect(count >= minimum, message);
 }
 
+function expectCountExactly(sourceText: string, snippet: string, expected: number, message: string) {
+  const count = sourceText.split(snippet).length - 1;
+  expect(count === expected, `${message} (expected ${expected}, got ${count})`);
+}
+
+function cssRuleBody(sourceText: string, selector: string) {
+  const selectorStart = sourceText.indexOf(`${selector} {`);
+  expect(selectorStart >= 0, `应能定位到 ${selector} CSS 规则`);
+  const blockStart = sourceText.indexOf('{', selectorStart);
+  expect(blockStart >= 0, `应能定位到 ${selector} CSS 规则起始花括号`);
+
+  let depth = 0;
+  for (let index = blockStart; index < sourceText.length; index += 1) {
+    const char = sourceText[index];
+    if (char === '{') depth += 1;
+    if (char === '}') {
+      depth -= 1;
+      if (depth === 0) return sourceText.slice(blockStart + 1, index);
+    }
+  }
+
+  throw new Error(`未能解析 ${selector} CSS 规则体`);
+}
+
 describe('Theme provider build chain regression', () => {
   it('keeps the JSX ThemeProvider in a TSX module imported by the renderer entry', () => {
     const themeProvider = source('src', 'renderer', 'hooks', 'useTheme.tsx');
@@ -196,10 +220,10 @@ describe('Workspace intake cascade delete wiring', () => {
 });
 
 describe('Workspace settings page structure', () => {
-  it('defines four settings panes with navigation metadata', () => {
+  it('defines settings panes with navigation metadata', () => {
     const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
 
-    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'scope' | 'mcp';", 'settings panes should match the four required groups');
+    expectIncludes(settingsView, "type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'mcp' | 'ai' | 'env' | 'about';", 'settings panes should include the current settings groups');
     expectIncludes(settingsView, 'className="settings-nav"', 'settings view should render the left navigation');
     expectIncludes(settingsView, 'settings-nav-item', 'settings navigation should render selectable items');
     expectIncludes(settingsView, 'className="settings-content"', 'settings view should render independently scrolling content');
@@ -230,6 +254,238 @@ describe('Workspace settings page structure', () => {
     expectIncludes(mcpPanel, '<InfoRow label="连接地址"><span className="mono">{connectionAddress}</span></InfoRow>', 'MCP pane should render the resolved connection address');
     expectIncludes(snapshots, '默认端口 ${configuredPort} 被占用，已自动使用可用端口 ${port}。', 'MCP snapshot should describe fallback port usage as a non-error note');
     expectIncludes(snapshots, 'eventMcp && latestEvent?.type === \'mcp.started\' ? eventMcp.url : null', 'MCP snapshot should recover the real URL from started event metadata');
+  });
+});
+
+describe('Workspace AI config creation regression', () => {
+  it('surfaces save failures in the AI settings panel and refreshes the list after successful creation', () => {
+    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+
+    expectIncludes(settingsView, 'const [aiConfigError, setAiConfigError] = useState<string | null>(null);', 'AI config form should keep a visible error state');
+    expectIncludes(settingsView, '<div className="ai-config-error" role="alert">', 'AI config save errors should render inside the settings panel');
+    expectIncludes(settingsView, "setAiConfigError(getErrorMessage(error, 'AI 配置保存失败'));", 'AI config save failures should preserve and display Error.message');
+    expectIncludes(settingsView, 'await window.autoplan.aiConfigCreate(payload);', 'new AI configs should call the create IPC bridge');
+    expectIncludes(settingsView, 'cancelEditAiConfig();\n      await loadAiConfigs();', 'successful saves should close the form and refresh the config list');
+    expectIncludes(settingsView, "setAiConfigError('配置名称不能为空');", 'empty AI config names should fail with a readable inline message');
+  });
+
+  it('keeps provider-specific draft fields and empty edit API keys out of dirty payloads', () => {
+    const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+    const forms = source('src', 'renderer', 'utils', 'workspaceForms.ts');
+    const aiConfigInputBody = forms.slice(
+      forms.indexOf('export function aiConfigInputFromForm'),
+      forms.indexOf('function shouldUseProviderDefault'),
+    );
+
+    expectIncludes(settingsView, 'aiConfigFormForProviderChange(current, option.value)', 'provider switching should use the shared field cleanup helper');
+    expectIncludes(settingsView, 'const list = await window.autoplan.aiConfigList();', 'AI config list should load global configs without a projectId payload');
+    expectIncludes(settingsView, 'const payload = aiConfigInputFromForm(name, aiConfigForm, { preserveEmptyApiKey });', 'AI config saves should serialize through the shared global payload helper');
+    expectIncludes(settingsView, '...(payload.apiKey !== undefined ? { apiKey: payload.apiKey } : {})', 'editing with an empty API key should omit apiKey and keep the saved secret');
+    expectIncludes(settingsView, 'await window.autoplan.aiConfigDelete({ configId: id });', 'AI config delete should only require the global config id');
+    expect(aiConfigInputBody.length > 0, 'should locate aiConfigInputFromForm');
+    expect(!aiConfigInputBody.includes('projectId'), 'aiConfigInputFromForm should not include a projectId in global AI config payloads');
+    expectIncludes(forms, 'thinkingDepth: providerSupportsThinkingDepth(provider) ? form.thinkingDepth : \'\',', 'provider switching should clear unsupported thinking depth values');
+    expectIncludes(forms, 'thinkingBudgetTokens: providerSupportsThinkingBudget(provider) ? form.thinkingBudgetTokens : \'\',', 'provider switching should clear unsupported Anthropic token budgets');
+    expectIncludes(forms, 'if (!options.preserveEmptyApiKey || apiKey) {\n    payload.apiKey = apiKey;\n  }', 'create mode should save empty API keys while edit mode omits untouched blanks');
+  });
+});
+
+describe('Workspace chat AI config state regression', () => {
+  it('creates chat state once in the workspace and passes it to sidebar and chat view', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+
+    expectIncludes(page, 'const chatState = useChat(projectId);', 'WorkspacePage should own the shared chat state');
+    expect(page.split('useChat(projectId)').length - 1 === 1, 'WorkspacePage should create chat state exactly once');
+    expectCountAtLeast(page, 'chatState={chatState}', 2, 'WorkspacePage should pass chat state into sidebar and ChatView render paths');
+    expectIncludes(page, '<ChatView chatState={chatState} />', 'ChatView should consume the shared workspace chat state');
+    expectIncludes(page, 'type WorkspaceSidebarWithChatProps = ComponentProps<typeof WorkspaceSidebar> & {', 'WorkspaceSidebar should be typed to receive chat state');
+  });
+
+  it('derives useChat config availability from global aiConfigList and config change events', () => {
+    const hook = source('src', 'renderer', 'hooks', 'useChat.ts');
+
+    expectIncludes(hook, 'window.autoplan.aiConfigList().catch(() => [] as AiConfig[])', 'useChat should load global AI configs without a projectId payload');
+    expectIncludes(
+      hook,
+      'resolveCurrentAiConfig(aiConfigs, conversations, activeConversationId)',
+      'useChat should derive current config from conversations and global AI configs',
+    );
+    expectIncludes(hook, 'configs.find((c) => c.hasApiKey) ?? configs[0] ?? null', 'global configs with API keys should be preferred');
+    expectIncludes(hook, 'return window.autoplan.onAiConfigChanged((event) => {', 'useChat should subscribe to global AI config change events');
+    expectIncludes(hook, 'void refreshAiConfigState(Array.isArray(event.configs) ? event.configs : undefined);', 'AI config changes should refresh chat config state');
+    expect(!hook.includes('aiConfigList({ projectId })'), 'useChat should not request project-scoped AI configs');
+    expect(!hook.includes('.chatGetConfig('), 'useChat should not read legacy chatGetConfig as chat availability state');
+  });
+
+  it('keeps chat and conversation IPC payloads project-scoped while AI config calls stay global', () => {
+    const hook = source('src', 'renderer', 'hooks', 'useChat.ts');
+    const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
+
+    expectIncludes(hook, 'window.autoplan.conversationList({ projectId })', 'conversation list should load by project');
+    expectIncludes(hook, 'window.autoplan.aiConfigList().catch(() => [] as AiConfig[])', 'conversation load should read global AI configs without projectId');
+    expectIncludes(hook, 'const history = await window.autoplan.chatHistory({ projectId: loadingProjectId, conversationId: cid });', 'history load should include the active projectId');
+    expectIncludes(hook, '.chatHistory({ projectId: historyProjectId, conversationId: cid })', 'chat:done history refresh should retain the originating projectId');
+    expectIncludes(hook, 'await window.autoplan.chatSend({\n          projectId,\n          conversationId: cid,', 'chat send should include projectId and conversationId');
+    expectIncludes(hook, 'await window.autoplan.chatStop({ projectId: pid, conversationId: cid });', 'manual stop should include projectId');
+    expectIncludes(hook, 'await window.autoplan.chatClear({ projectId: pid, conversationId: cid });', 'clear should include projectId');
+    expectIncludes(hook, 'await window.autoplan.conversationDelete({ projectId, conversationId: cid });', 'delete should include projectId');
+    expectIncludes(hook, 'await window.autoplan.conversationUpdate({ projectId, conversationId: cid, title });', 'rename should include projectId');
+    expectIncludes(hook, 'const updated = await window.autoplan.conversationUpdate({\n      projectId,\n      conversationId: cid,\n      aiConfigId: configId,', 'AI config binding should update the project-scoped conversation');
+    expectIncludes(sidebar, 'await window.autoplan.conversationUpdate({\n        projectId,\n        conversationId: conversation.id,\n        pinned: nextPinned,', 'sidebar pinning should update the project-scoped conversation');
+    expectIncludes(sidebar, 'readConversationProjectId(conversation) === projectId', 'sidebar should filter conversation rows by current project');
+    expect(!hook.includes('aiConfigList({ projectId'), 'useChat should not pass projectId to global AI config list');
+  });
+
+  it('moves conversation navigation into WorkspaceSidebar and keeps it wired for actions', () => {
+    const chatView = source('src', 'renderer', 'components', 'workspace', 'ChatView.tsx');
+    const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
+    const hook = source('src', 'renderer', 'hooks', 'useChat.ts');
+    const chatViewBody = chatView.slice(
+      chatView.indexOf('export function ChatView'),
+      chatView.indexOf('export default ChatView'),
+    );
+
+    expect(!chatViewBody.includes('<ConversationSidebar'), 'ChatView should not render the old secondary ConversationSidebar');
+    expect(!chatViewBody.includes('chat-sidebar'), 'ChatView should not keep old chat-sidebar class hooks');
+    expect(!chatViewBody.includes('chat-input-bar'), 'ChatView should not keep the old input bar class hook');
+    expectIncludes(sidebar, 'className="nav-chat-block"', 'WorkspaceSidebar should own the nested chat navigation block');
+    expectIncludes(sidebar, 'className="nav-subgroup" aria-label="对话列表"', 'WorkspaceSidebar should render the conversation subgroup');
+    expectIncludes(sidebar, 'className={`nav-sub-item ${isActive ? \'active\' : \'\'}`}', 'conversation rows should keep selected-state styling');
+    expectIncludes(sidebar, 'className="nav-add-btn"', 'WorkspaceSidebar should keep a new-conversation button');
+    expectIncludes(sidebar, 'createConversation();', 'new-conversation button should call the sidebar action');
+    expectIncludes(sidebar, 'createConversation({ activate: false });', 'sidebar new-conversation action should create list data without activating the chat view');
+    expectIncludes(sidebar, 'void chatState?.switchConversation(conversationId);', 'conversation rows should switch the active conversation');
+    expectIncludes(hook, 'export type CreateConversationOptions = {', 'useChat should expose explicit create-conversation activation options');
+    expectIncludes(hook, 'if (options.activate !== false) {\n        resetActiveConversation(conv.id);\n      }', 'useChat should only activate newly created conversations when callers do not opt out');
+    expectIncludes(sidebar, 'await chatState?.renameConversation(conversation.id, title);', 'conversation rows should support rename');
+    expectIncludes(sidebar, 'void chatState?.deleteConversation(conversation.id);', 'conversation rows should support delete');
+    expectIncludes(sidebar, 'window.autoplan.conversationUpdate({', 'pinning should use the conversation update API');
+    expectIncludes(sidebar, 'pinned: nextPinned,', 'pinning should pass the next pinned state');
+  });
+
+  it('syncs auto-generated chat titles from chat:done without refreshing the wrong conversation', () => {
+    const types = source('src', 'renderer', 'types.ts');
+    const hook = source('src', 'renderer', 'hooks', 'useChat.ts');
+    const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
+
+    expectIncludes(
+      types,
+      'export interface ChatDoneEvent {\n  status: ChatDoneStatus;\n  error?: string;\n  conversationId?: number;\n  title?: string;\n}',
+      'ChatDoneEvent should expose optional conversationId/title fields while keeping status/error',
+    );
+    expectIncludes(hook, 'function normalizeDoneConversationId(value: unknown): number | null', 'useChat should normalize the done event conversation ID');
+    expectIncludes(hook, 'function shouldApplyAutoTitle(currentTitle: string | null | undefined): boolean', 'useChat should only allow placeholder titles to be replaced');
+    expectIncludes(hook, 'const syncDoneConversationTitle = useCallback((conversationId: number | null, title: string | null | undefined) => {', 'useChat should centralize done-title state sync');
+    expectIncludes(hook, 'syncDoneConversationTitle(doneConversationId ?? cid, event.title);', 'chat:done should sync the generated title from the event payload');
+    expectIncludes(hook, 'if (doneConversationId !== null && doneConversationId !== cid) {\n        return;\n      }', 'chat:done from another conversation should not refresh the active message history');
+    expectIncludes(hook, '.chatHistory({ projectId: historyProjectId, conversationId: cid })', 'matching chat:done events should still refresh the active project history');
+    expectIncludes(sidebar, 'mergeSidebarConversations(current, chatState?.conversations ?? [])', 'sidebar should merge chatState conversation updates into the visible list');
+    expectIncludes(sidebar, '<span className="nav-sub-item__title">{conversation.title || \'新对话\'}</span>', 'sidebar should render the updated conversation title without a page reload');
+  });
+
+  it('keeps the chat group header as a pure collapse control', () => {
+    const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
+    const headerStart = sidebar.indexOf('className={`nav-item nav-item--chat nav-item--collapsible');
+    const headerEnd = sidebar.indexOf('aria-expanded={chatExpanded}', headerStart);
+    const headerButton = sidebar.slice(headerStart, headerEnd);
+
+    expect(headerStart >= 0 && headerEnd > headerStart, 'should locate the chat group header button block');
+    expectIncludes(headerButton, 'onClick={() => setChatExpanded((value) => !value)}', 'chat group header should only toggle chatExpanded');
+    expect(!headerButton.includes("activeTab === tab.id"), 'chat group header should not derive active styling from the current tab');
+    expect(!headerButton.includes("? 'active' : ''"), 'chat group header should not append the nav active class');
+    expect(!headerButton.includes('onTab(tab.id)'), 'chat group header should not route through the generic tab handler');
+    expect(!headerButton.includes("onTab('chat')"), 'chat group header should not open the chat tab directly');
+    expectIncludes(sidebar, 'aria-expanded={chatExpanded}', 'chat group header should keep aria-expanded bound to chatExpanded');
+    expectIncludes(sidebar, '${chatExpanded ? \'expanded\' : \'\'}', 'chat group header should expose expanded state through the existing class hook');
+  });
+
+  it('scopes conversation row active state and aria-current to the chat tab', () => {
+    const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
+    const rowStart = sidebar.indexOf('visibleChatConversations.map((conversation) => {');
+    const isActiveStart = sidebar.indexOf('const isActive =', rowStart);
+    const isActiveEnd = sidebar.indexOf('const pinned =', isActiveStart);
+    const isActiveDeclaration = sidebar.slice(isActiveStart, isActiveEnd);
+    const ariaCurrentStart = sidebar.indexOf('aria-current=', isActiveStart);
+    const ariaCurrentEnd = sidebar.indexOf('title={metaText}', ariaCurrentStart);
+    const ariaCurrentBinding = sidebar.slice(ariaCurrentStart, ariaCurrentEnd);
+
+    expect(rowStart >= 0 && isActiveStart > rowStart && isActiveEnd > isActiveStart, 'should locate the conversation row active-state declaration');
+    expectIncludes(
+      isActiveDeclaration,
+      "const isActive = activeTab === 'chat' && conversation.id === chatState?.activeConversationId;",
+      'conversation rows should only be active when ChatView is open and the conversation matches',
+    );
+    expect(!isActiveDeclaration.includes('const isActive = conversation.id === chatState?.activeConversationId;'), 'conversation rows should not stay active on non-chat tabs');
+    expectIncludes(sidebar, 'className={`nav-sub-item ${isActive ? \'active\' : \'\'}`}', 'conversation row visual highlighting should use isActive');
+    expect(ariaCurrentStart > isActiveStart && ariaCurrentEnd > ariaCurrentStart, 'should locate the conversation row aria-current binding');
+    expectIncludes(ariaCurrentBinding, "aria-current={isActive ? 'page' : undefined}", 'aria-current should use the same isActive condition as visual highlighting');
+  });
+
+  it('keeps only the concrete conversation item responsible for opening ChatView', () => {
+    const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
+    const selectStart = sidebar.indexOf('const selectConversation = useCallback(');
+    const selectEnd = sidebar.indexOf('const createConversation = useCallback', selectStart);
+    const selectConversationBody = sidebar.slice(selectStart, selectEnd);
+    const createStart = sidebar.indexOf('const createConversation = useCallback');
+    const createEnd = sidebar.indexOf('const deleteConversation = useCallback', createStart);
+    const createConversationBody = sidebar.slice(createStart, createEnd);
+
+    expect(selectStart >= 0 && selectEnd > selectStart, 'should locate selectConversation');
+    expectIncludes(selectConversationBody, 'setOpenMenuId(null);', 'selectConversation should close any open menu before navigating');
+    expectIncludes(selectConversationBody, "onTab('chat');", 'selectConversation should remain the sidebar route into ChatView');
+    expectIncludes(selectConversationBody, 'void chatState?.switchConversation(conversationId);', 'selectConversation should load the requested conversation');
+    expectCountExactly(sidebar, "onTab('chat')", 1, 'only selectConversation should call onTab(chat) in the sidebar');
+    expectCountExactly(sidebar, 'selectConversation(conversation.id)', 1, 'only the concrete conversation main button should call selectConversation');
+    expectIncludes(sidebar, 'className="nav-sub-item__main"\n                                    onClick={() => selectConversation(conversation.id)}', 'conversation main button should be the concrete opening entry');
+
+    expect(createStart >= 0 && createEnd > createStart, 'should locate createConversation');
+    expectIncludes(createConversationBody, 'createConversation({ activate: false });', 'sidebar new-conversation action should opt out of activating the new conversation');
+    expect(!createConversationBody.includes("onTab('chat')"), 'sidebar new-conversation action should not open ChatView');
+    expect(!createConversationBody.includes('switchConversation'), 'sidebar new-conversation action should not switch conversations');
+
+    expectIncludes(sidebar, 'event.stopPropagation();\n                                      void togglePinnedConversation(conversation);', 'pin button should stay a list-management action');
+    expectIncludes(sidebar, 'className="nav-sub-item__actions"\n                                    onClick={(event) => event.stopPropagation()}', 'conversation action menu should not bubble into conversation opening');
+    expectIncludes(sidebar, 'onClick={() => beginRenameConversation(conversation)}', 'rename menu item should only enter rename mode');
+    expectIncludes(sidebar, 'onClick={() => deleteConversation(conversation)}', 'delete menu item should only delete the conversation');
+    expectIncludes(sidebar, 'onClick={() => setVisibleConversationCount((count) => count + 5)}', 'load-more should only expand the visible list');
+  });
+
+  it('keeps missing API key state inside ChatView without hiding sidebar navigation', () => {
+    const chatView = source('src', 'renderer', 'components', 'workspace', 'ChatView.tsx');
+    const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
+    const chatViewBody = chatView.slice(
+      chatView.indexOf('export function ChatView'),
+      chatView.indexOf('export default ChatView'),
+    );
+
+    expectIncludes(chatViewBody, 'const hasAiApiKey = currentAiConfig?.hasApiKey ?? (config?.hasApiKey === true);', 'ChatView should use global config availability');
+    expectIncludes(chatViewBody, 'const emptyStateKind: ChatEmptyStateKind = !hasAiApiKey', 'missing API key should select a scoped empty state');
+    expectIncludes(chatViewBody, 'kind={emptyStateKind}', 'ChatView should render the missing-key state inside the message area');
+    expectIncludes(chatViewBody, '请先在设置中配置全局 AI 接口', 'composer should show a global missing-key placeholder');
+    expectIncludes(chatView, '在设置的 AI 对话面板中配置全局 API Key 后即可发送消息。', 'missing-key empty state should mention the global API key');
+    expectIncludes(sidebar, 'className="nav-add-btn"', 'missing-key UI should not remove the sidebar new-conversation entry');
+    expectIncludes(sidebar, 'aria-label="新建对话"', 'sidebar new-conversation entry should remain accessible');
+    expect(!chatViewBody.includes('if (config && !config.hasApiKey)'), 'ChatView should not early-return on missing legacy config');
+  });
+
+  it('keeps the floating composer, model controls, and send or stop actions wired', () => {
+    const chatView = source('src', 'renderer', 'components', 'workspace', 'ChatView.tsx');
+
+    expectIncludes(chatView, 'className="chat-composer-zone"', 'ChatView should render the floating composer zone');
+    expectIncludes(chatView, '<form className="chat-composer" onSubmit={handleComposerSubmit}>', 'composer should submit through the send handler');
+    expectIncludes(chatView, 'className="chat-composer__textarea"', 'composer should keep the textarea surface');
+    expectIncludes(chatView, 'className="chat-model-select chat-model-select--provider"', 'composer should expose the provider dropdown');
+    expectIncludes(chatView, '<label className="chat-model-select" title="选择模型配置">', 'composer should expose the global AI config dropdown');
+    expectIncludes(chatView, "className={`chat-model-select${thinkingDepthDisabled ? ' is-disabled' : ''}`}", 'composer should expose thinking depth controls with disabled state');
+    expectIncludes(chatView, 'updateConversationAiConfig(nextConfig.id)', 'provider changes should update the active conversation binding');
+    expectIncludes(chatView, 'updateConversationAiConfig(nextConfigId)', 'config changes should update the active conversation binding');
+    expectIncludes(chatView, 'updateActiveAiConfigThinkingDepth(nextDepth)', 'thinking depth changes should persist through the shared chat action');
+    expectIncludes(chatView, 'className="chat-icon-btn"', 'composer should keep the secondary clear icon action');
+    expectIncludes(chatView, 'className="stop-button"', 'streaming state should show the stop action');
+    expectIncludes(chatView, 'className="send-button"', 'idle state should show the send action');
+    expectIncludes(chatView, 'disabled={sendDisabled}', 'send action should keep disabled state wiring');
+    expectIncludes(chatView, 'aria-label="停止生成"', 'stop action should remain accessible');
+    expectIncludes(chatView, 'aria-label="发送消息"', 'send action should remain accessible');
   });
 });
 
@@ -380,14 +636,32 @@ describe('Feedback #27 source-level regression', () => {
 
   it('styles the workspace folder path as a link while keeping the open-folder behavior', () => {
     const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
-    const css = source('src', 'renderer', 'styles', 'workspace.css');
+    const layoutCss = source('src', 'renderer', 'styles', 'layout.css');
+    const workspaceCss = source('src', 'renderer', 'styles', 'workspace.css');
 
     // 场景四：路径链接——工作区路径控件带链接样式钩子，点击仍走 openProjectFolder 打开系统文件夹。
     expectIncludes(sidebar, 'project-path project-path-link', '工作区路径控件应带链接样式钩子类');
     expectIncludes(sidebar, 'window.autoplan.openProjectFolder({ projectId })', '路径控件仍应绑定打开系统文件夹的行为');
-    expectIncludes(css, '.project-path-link', '样式表应定义路径链接样式');
-    expectIncludes(css, 'color: var(--brand-600)', '路径链接应使用主题色文字');
-    expectIncludes(css, 'cursor: pointer', '路径链接应为指针光标');
+    expectIncludes(workspaceCss, '.project-switcher .project-path { margin-top: 8px; font-size: 11px; }', 'workspace 侧栏应保留自己的路径间距和字号');
+    expectIncludes(layoutCss, '.project-path-link { display: block;', '共享样式表应定义路径链接样式');
+    expectIncludes(layoutCss, 'color: var(--brand-600)', '路径链接应使用主题色文字');
+    expectIncludes(layoutCss, 'cursor: pointer', '路径链接应为指针光标');
+    expectIncludes(layoutCss, '.project-path-link:focus-visible', '路径链接应保留键盘焦点样式');
+    expectIncludes(layoutCss, '.project-path-link:disabled', '路径链接禁用态应置灰');
+  });
+
+  it('styles the project-card folder path as a shared link without changing its open-folder behavior', () => {
+    const projectsPage = source('src', 'renderer', 'pages', 'ProjectsPage.tsx');
+    const layoutCss = source('src', 'renderer', 'styles', 'layout.css');
+
+    // 需求 #32：首页项目卡片路径复用 workspace 路径链接钩子，行为仍只打开文件夹，不冒泡进入工作区。
+    expectIncludes(projectsPage, 'className="project-path project-path-link mono"', '首页项目路径控件应带共享链接样式钩子和等宽字体类');
+    expectIncludes(projectsPage, 'disabled={!project.workspace_path}', '未设置工作区路径时首页路径控件应保持禁用');
+    expectIncludes(projectsPage, 'event.stopPropagation();', '首页路径点击应阻止冒泡到项目卡片导航');
+    expectIncludes(projectsPage, 'if (project.workspace_path) void openFolder(project);', '首页路径点击仍应通过 openFolder 打开系统文件夹');
+    expectIncludes(projectsPage, 'window.autoplan.openProjectFolder({ projectId: project.id })', '首页 openFolder 应调用打开项目文件夹 IPC');
+    expect(!projectsPage.includes('pathLinkStyle'), '首页路径按钮不应再依赖 pathLinkStyle 内联样式');
+    expectIncludes(layoutCss, '.project-path-link { display: block;', '共享样式表应提供首页和 workspace 可复用的路径链接规则');
   });
 
   it('keeps script navigation stable so the just-selected tab is not reset to the default', () => {
@@ -399,6 +673,145 @@ describe('Feedback #27 source-level regression', () => {
       'setActiveTab((current) => (current === tabParam ? current : resolveWorkspaceTab(tabParam)))',
       'URL→activeTab 同步应保留用户刚选标签，仅在两者不一致时回填，避免点击「脚本」被回退为 requirement',
     );
+  });
+});
+
+// 反馈 #21 回归测试：聊天窗口用户气泡需要稳定右对齐，AI/工具左对齐、系统居中语义不被破坏。
+describe('Feedback #21 chat bubble alignment regression', () => {
+  it('keeps user chat bubbles right aligned without row-reverse inversion', () => {
+    const workspaceCss = source('src', 'renderer', 'styles', 'workspace.css');
+
+    const baseMessageRule = cssRuleBody(workspaceCss, '.chat-message');
+    const userMessageRule = cssRuleBody(workspaceCss, '.chat-message--user');
+    const userContentRule = cssRuleBody(workspaceCss, '.chat-message--user .chat-message__content');
+    const userBubbleRule = cssRuleBody(workspaceCss, '.chat-message--user .chat-message__bubble');
+
+    // 场景一：消息行保持整行宽度，用户消息用正常 row 方向 + flex-end 右对齐，避免 row-reverse 翻转视觉落点。
+    expectIncludes(baseMessageRule, 'width: 100%;', '消息行应占满 .chat-messages__inner 宽度，用户气泡才能稳定贴右');
+    expectIncludes(userMessageRule, 'justify-content: flex-end;', '用户消息行应通过 flex-end 锚定到右侧');
+    expectIncludes(userMessageRule, 'flex-direction: row;', '用户消息行应使用正常 row 方向，避免 row-reverse 与 flex-end 组合反向');
+    expect(!userMessageRule.includes('row-reverse'), '用户消息行不应再使用 row-reverse');
+    expect(
+      !(userMessageRule.includes('justify-content: flex-end') && userMessageRule.includes('flex-direction: row-reverse')),
+      '用户消息行不应重新引入 flex-end + row-reverse 的偏左组合',
+    );
+
+    // 场景二：内容容器继续作为右侧锚点，气泡内部文字不被强制右对齐，长文本保持自然阅读方向。
+    expectIncludes(userContentRule, 'margin-left: auto;', '用户消息内容容器应通过 margin-left:auto 贴近消息列右侧');
+    expectIncludes(userContentRule, 'justify-content: flex-end;', '用户消息内容容器应把气泡锚定到自身右侧');
+    expect(!userContentRule.includes('text-align: right'), '用户消息内容不应强制右对齐文本');
+    expect(!userBubbleRule.includes('text-align'), '用户气泡本体不应覆盖文本自然对齐');
+  });
+
+  it('keeps assistant, tool, system, and streaming cursor alignment semantics intact', () => {
+    const workspaceCss = source('src', 'renderer', 'styles', 'workspace.css');
+
+    const assistantRule = cssRuleBody(workspaceCss, '.chat-message--assistant');
+    const toolRule = cssRuleBody(workspaceCss, '.chat-message--tool');
+    const systemRule = cssRuleBody(workspaceCss, '.chat-message--system');
+    const cursorRule = cssRuleBody(workspaceCss, '.chat-message__cursor');
+
+    expectIncludes(assistantRule, 'justify-content: flex-start;', 'AI 消息应继续左对齐');
+    expectIncludes(assistantRule, 'flex-direction: row;', 'AI 消息应保持正常行方向');
+    expectIncludes(toolRule, 'justify-content: flex-start;', '工具调用卡片应继续左对齐');
+    expectIncludes(systemRule, 'justify-content: center;', '系统消息应继续居中');
+    expectIncludes(cursorRule, 'align-self: flex-end;', '流式光标应继续贴随 AI 气泡底部显示');
+  });
+});
+
+// 反馈 #24 回归测试：聊天窗口 AI 回复与工具调用去卡片化，工具详情只能通过 dialog 查看。
+describe('Feedback #24 chat message simplification regression', () => {
+  it('keeps tool call details in the shared dialog instead of inline message-flow expansion', () => {
+    const chatView = source('src', 'renderer', 'components', 'workspace', 'ChatView.tsx');
+    const modal = source('src', 'renderer', 'components', 'Modal.tsx');
+    const toolCardStart = chatView.indexOf('/** 工具调用摘要与详情弹窗 */');
+    const toolCardEnd = chatView.indexOf('function hasDisplayableToolValue', toolCardStart);
+    const toolCard = chatView.slice(toolCardStart, toolCardEnd);
+
+    expect(toolCardStart >= 0 && toolCardEnd > toolCardStart, '应能定位到 ChatToolCard 源码块');
+    expectIncludes(chatView, "import { Modal } from '../Modal';", '工具调用详情应复用共享 Modal 组件');
+    expectIncludes(toolCard, 'const [detailOpen, setDetailOpen] = useState(false);', '工具调用摘要点击应只控制详情 dialog 开关');
+    expectIncludes(toolCard, "const statusKind = isLoading ? 'loading' : isError ? 'error' : 'success';", '工具调用应区分加载中、失败、成功三类状态');
+    expectIncludes(toolCard, "const statusLabel = isLoading ? '执行中' : isError ? '执行失败' : '已完成';", '工具调用应保留加载中、失败、成功状态文案');
+    expectIncludes(toolCard, "const statusIcon = isLoading ? 'settings' : isError ? 'alert' : 'check';", '工具调用应保留加载中、失败、成功状态图标');
+    expectIncludes(toolCard, 'onClick={() => setDetailOpen(true)}', '点击工具调用摘要应打开详情 dialog');
+    expectIncludes(toolCard, 'aria-haspopup="dialog"', '工具调用摘要应声明会打开 dialog');
+    expectIncludes(toolCard, 'aria-label={`查看工具调用详情：${name}，${statusLabel}`}', '工具调用摘要按钮应有可访问名称');
+    expectIncludes(toolCard, '<Modal', '工具调用详情应通过 Modal 渲染');
+    expectIncludes(toolCard, 'className="chat-tool-modal"', '工具调用详情 dialog 应带专用外壳样式钩子');
+    expectIncludes(toolCard, 'bodyClassName="chat-tool-modal__body"', '工具调用详情 dialog 主体应带可滚动样式钩子');
+    expectIncludes(toolCard, '<span className="chat-tool-modal__label">工具名称</span>', 'dialog 应完整展示工具名称');
+    expectIncludes(toolCard, '<span className="chat-tool-modal__label">执行状态</span>', 'dialog 应完整展示执行状态');
+    expectIncludes(toolCard, '<div className="chat-tool-modal__section-title">参数</div>', 'dialog 应完整展示参数区');
+    expectIncludes(toolCard, '<div className="chat-tool-modal__section-title">结果</div>', 'dialog 应完整展示结果区');
+    expectIncludes(toolCard, '<div className="chat-tool-modal__empty">等待结果...</div>', 'dialog 应展示加载中状态');
+    expectIncludes(toolCard, '<div className="chat-tool-modal__empty">无返回内容</div>', 'dialog 应展示无返回内容状态');
+    expectIncludes(modal, 'role="dialog"', '共享 Modal 应保留 dialog 角色');
+    expectIncludes(modal, 'aria-modal="true"', '共享 Modal 应声明模态语义');
+    expectIncludes(modal, 'aria-labelledby={titleId}', '共享 Modal 标题应作为可访问名称');
+    expectIncludes(modal, 'className="modal-close"', '共享 Modal 应保留关闭按钮');
+    expectIncludes(modal, 'aria-label={closeAriaLabel}', '共享 Modal 关闭按钮应保留可访问名称');
+    expect(!toolCard.includes('chat-tool-card__body'), '工具调用详情不应再以内联 body 展开在消息流中');
+    expect(!toolCard.includes('chat-tool-card__section'), '工具调用参数/结果不应继续使用旧内联 section 结构');
+    expect(!toolCard.includes('chat-tool-card__toggle'), '工具调用摘要不应继续暴露展开/折叠 toggle');
+    expect(!toolCard.includes('aria-expanded'), '工具调用摘要不应再声明内联展开态');
+  });
+
+  it('keeps tool call summaries visually minimal and leaves long details to the dialog body', () => {
+    const workspaceCss = source('src', 'renderer', 'styles', 'workspace.css');
+    const toolStyles = workspaceCss.slice(
+      workspaceCss.indexOf('/* ---- 工具调用摘要与详情 ---- */'),
+      workspaceCss.indexOf('/* ---- 空状态 ---- */'),
+    );
+
+    const toolCardRule = cssRuleBody(workspaceCss, '.chat-tool-card');
+    const toolHeaderRule = cssRuleBody(workspaceCss, '.chat-tool-card__header');
+    const toolModalBodyRule = cssRuleBody(workspaceCss, '.chat-tool-modal__body');
+    const toolModalCodeRule = cssRuleBody(workspaceCss, '.chat-tool-modal__code');
+
+    expect(toolStyles.length > 0, '应能定位到工具调用样式区');
+    expectIncludes(toolCardRule, 'width: 100%;', '工具摘要应占满聊天列内可用宽度');
+    expectIncludes(toolCardRule, 'max-width: 100%;', '工具摘要不应再受旧 760px 卡片宽度限制');
+    expect(!toolCardRule.includes('border'), '工具摘要外壳不应带卡片边框');
+    expect(!toolCardRule.includes('background'), '工具摘要外壳不应带大面积底色');
+    expect(!toolStyles.includes('border-left'), '工具摘要不应保留左侧强调边框');
+    expect(!toolStyles.includes('chat-tool-card__body'), '工具样式不应保留旧内联详情 body 钩子');
+    expect(!toolStyles.includes('chat-tool-card__toggle'), '工具样式不应保留旧展开 toggle 钩子');
+    expectIncludes(toolHeaderRule, 'border: 0;', '工具摘要按钮自身应保持无边框');
+    expectIncludes(toolHeaderRule, 'background: transparent;', '工具摘要按钮默认应无卡片底色');
+    expectIncludes(toolHeaderRule, 'box-shadow 0.14s', '工具摘要应保留键盘焦点过渡');
+    expectIncludes(toolStyles, '.chat-tool-card__status--loading', '工具摘要应保留加载中状态样式');
+    expectIncludes(toolStyles, '.chat-tool-card__status--error', '工具摘要应保留失败状态样式');
+    expectIncludes(toolStyles, '.chat-tool-card__status--success', '工具摘要应保留成功状态样式');
+    expectIncludes(toolModalBodyRule, 'overflow: auto;', '工具详情 dialog 主体应可滚动');
+    expectIncludes(toolModalCodeRule, 'overflow: auto;', '工具详情长 JSON 应在自身区域滚动');
+    expectIncludes(toolModalCodeRule, 'overflow-wrap: anywhere;', '工具详情长 JSON 不应撑破布局');
+    expectIncludes(toolModalCodeRule, 'word-break: break-word;', '工具详情长 JSON 应允许断词换行');
+  });
+
+  it('keeps assistant messages full-width and borderless while preserving the user bubble', () => {
+    const chatView = source('src', 'renderer', 'components', 'workspace', 'ChatView.tsx');
+    const workspaceCss = source('src', 'renderer', 'styles', 'workspace.css');
+
+    const contentRule = cssRuleBody(workspaceCss, '.chat-message__content');
+    const assistantContentRule = cssRuleBody(workspaceCss, '.chat-message--assistant .chat-message__content');
+    const assistantBodyRule = cssRuleBody(workspaceCss, '.chat-message--assistant .chat-message__body');
+    const userContentRule = cssRuleBody(workspaceCss, '.chat-message--user .chat-message__content');
+    const userBubbleRule = cssRuleBody(workspaceCss, '.chat-message--user .chat-message__bubble');
+
+    expectIncludes(chatView, 'className="chat-message__body chat-message__body--markdown"', 'AI 回复应使用无气泡正文容器');
+    expect(!chatView.includes('chat-message__bubble chat-message__bubble--markdown'), 'AI 回复不应继续使用 markdown 气泡容器');
+    expectIncludes(chatView, 'className="chat-message__bubble chat-message__bubble--plain"', '用户消息应继续使用明确气泡容器');
+    expectIncludes(contentRule, 'width: 100%;', '默认消息内容列应占满聊天列宽度');
+    expectIncludes(assistantContentRule, 'width: 100%;', 'AI 消息内容容器应占满聊天列宽度');
+    expectIncludes(assistantContentRule, 'justify-content: flex-start;', 'AI 消息内容应左对齐');
+    expectIncludes(assistantBodyRule, 'width: 100%;', 'AI 正文容器应占满可用宽度');
+    expectIncludes(assistantBodyRule, 'text-align: left;', 'AI 正文应保持左对齐阅读方向');
+    expect(!workspaceCss.includes('.chat-message--assistant .chat-message__bubble'), 'AI 消息不应重新引入灰底边框气泡样式');
+    expectIncludes(userContentRule, 'max-width: min(680px, 76%);', '用户消息应继续限制气泡宽度');
+    expectIncludes(userContentRule, 'margin-left: auto;', '用户消息应继续贴右');
+    expectIncludes(userBubbleRule, 'background: var(--brand-600);', '用户气泡应保留明确背景色');
+    expectIncludes(userBubbleRule, 'color: #fff;', '用户气泡应保留反白文字');
   });
 });
 
@@ -457,5 +870,48 @@ describe('Feedback #31 task group sort regression', () => {
     );
     expect(comparePlanOrderBody.length > 0, '应能定位到 comparePlanOrder 函数体');
     expect(!comparePlanOrderBody.includes('sort_order'), 'comparePlanOrder 不应仍以 sort_order 升序作为主键');
+  });
+});
+
+// 反馈 #26 回归测试：搜索结果弹层 Portal 化后，WorkspacePage 需向 SearchResults 传入锚点坐标、
+// 修复 Portal 后外部点击关闭判定，并在滚动 / 缩放时刷新坐标。
+describe('Feedback #26 search popup Portal wiring', () => {
+  it('computes anchor rect coordinates and passes them as anchorRect to SearchResults', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+
+    // 场景一：导入锚点坐标类型并持有坐标状态，弹层打开时基于锚点 ref 读取 getBoundingClientRect。
+    expectIncludes(page, "import { SearchResults, type SearchResultsAnchorRect } from '../components/SearchResults';", 'WorkspacePage 应导入 SearchResults 的锚点坐标类型');
+    expectIncludes(page, 'const [searchPopupRect, setSearchPopupRect] = useState<SearchResultsAnchorRect | null>(null);', 'WorkspacePage 应持有锚点视口坐标状态');
+    expectIncludes(page, 'anchorRect={searchPopupRect}', 'WorkspacePage 应将锚点坐标作为 anchorRect 传入 SearchResults');
+    expectIncludes(page, 'const rect = node.getBoundingClientRect();', '应基于锚点 ref 读取 getBoundingClientRect');
+    expectIncludes(page, 'top: rect.top,', '坐标状态应携带锚点 top');
+    expectIncludes(page, 'right: rect.right,', '坐标状态应携带锚点 right');
+    expectIncludes(page, 'bottom: rect.bottom,', '坐标状态应携带锚点 bottom');
+    expectIncludes(page, 'left: rect.left,', '坐标状态应携带锚点 left');
+    expectIncludes(page, 'width: rect.width,', '坐标状态应携带锚点 width');
+    expectIncludes(page, 'height: rect.height,', '坐标状态应携带锚点 height');
+  });
+
+  it('refreshes anchor coordinates on window scroll and resize while the popup is open', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+
+    // 场景五：弹层打开时立即测量，并在 scroll（capture，覆盖嵌套滚动容器）/ resize 时刷新坐标，卸载时移除监听。
+    expectIncludes(page, 'updatePopupRect();', '弹层打开时应立即测量一次锚点坐标');
+    expectIncludes(page, "window.addEventListener('scroll', updatePopupRect, true);", '应在 capture 阶段监听 scroll 以捕获 .workspace-main 等嵌套滚动容器');
+    expectIncludes(page, "window.addEventListener('resize', updatePopupRect);", '应监听 resize 以在窗口缩放时刷新坐标');
+    expectIncludes(page, "window.removeEventListener('scroll', updatePopupRect, true);", '卸载时应移除 scroll 监听，避免泄漏');
+    expectIncludes(page, "window.removeEventListener('resize', updatePopupRect);", '卸载时应移除 resize 监听，避免泄漏');
+  });
+
+  it('keeps clicks inside the portaled popup from being treated as outside clicks and preserves Esc close', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+
+    // 场景三：Portal 后弹层脱离锚点子树，外部点击判定需同时排除弹层自身（稳定 class），点击弹层内部不应被提前关闭。
+    expectIncludes(page, 'const insideAnchor = anchor ? anchor.contains(event.target) : false;', '应保留对锚点子树的内部点击判定');
+    expectIncludes(page, "event.target instanceof Element && event.target.closest('.search-results-popup') !== null", '应通过稳定 class 排除 Portal 弹层自身的点击');
+    expectIncludes(page, 'if (!insideAnchor && !insidePopup) {', '点击锚点或弹层内部不应被判定为外部点击而提前关闭');
+
+    // 场景四：点击左侧导航 / 主区空白会关闭；Esc 仍会关闭。
+    expectIncludes(page, 'if (event.key === \'Escape\') {', '应保留 Esc 关闭逻辑');
   });
 });

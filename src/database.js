@@ -251,6 +251,7 @@ class AppDatabase {
         project_id INTEGER,
         title TEXT NOT NULL DEFAULT '',
         ai_config_id INTEGER,
+        pinned_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -316,10 +317,21 @@ class AppDatabase {
     this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('project_states', 'env_vars', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('chat_messages', 'project_id', 'INTEGER');
     this.ensureColumn('chat_messages', 'conversation_id', 'INTEGER');
+    this.ensureColumn('ai_configs', 'project_id', 'INTEGER');
+    this.ensureColumn('ai_configs', 'thinking_depth', 'TEXT');
+    this.ensureColumn('ai_configs', 'thinking_budget_tokens', 'INTEGER');
+    this.ensureColumn('conversations', 'project_id', 'INTEGER');
+    this.ensureColumn('conversations', 'ai_config_id', 'INTEGER');
+    this.ensureColumn('conversations', 'pinned_at', 'TEXT');
     this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_chat_messages_conversation
       ON chat_messages (conversation_id, created_at)
+    `);
+    this.db.run(`
+      CREATE INDEX IF NOT EXISTS idx_conversations_project_pinned_updated
+      ON conversations (project_id, pinned_at, updated_at, id)
     `);
 
     const defaultProjectId = this.ensureDefaultProject();
@@ -328,6 +340,7 @@ class AppDatabase {
     this.assignLegacyRows(defaultProjectId);
     this.backfillPlanSortOrders();
     this.ensureProjectState(defaultProjectId);
+    this.migrateAiConfigsToGlobal();
     this.migrateChatToAiConfigs(defaultProjectId);
     this.migrateChatMessagesToConversation(defaultProjectId);
   }
@@ -402,28 +415,111 @@ class AppDatabase {
     }
   }
 
-  migrateChatToAiConfigs(defaultProjectId) {
-    const projects = this.all('SELECT id FROM projects');
-    for (const project of projects) {
-      const existing = this.get('SELECT id FROM ai_configs WHERE project_id = ?', [project.id]);
-      if (existing) continue;
+  migrateAiConfigsToGlobal() {
+    // 将所有项目级 ai_configs 提升为全局（project_id = NULL）。
+    this.db.run('UPDATE ai_configs SET project_id = NULL WHERE project_id IS NOT NULL');
 
-      const provider = this.getSetting('chat.provider') || 'openai';
-      const baseUrl = this.getSetting('chat.baseUrl') || '';
-      const apiKey = this.getSetting('chat.apiKey') || '';
-      const model = this.getSetting('chat.model') || '';
-      const temperature = this.getSetting('chat.temperature') || '0.3';
+    // 按完整配置身份去重：每组保留最小 id，将其余行的 conversations.ai_config_id
+    // 重映射到保留行并刷新 updated_at，最后删除重复行。
+    const rows = this.all(
+      `SELECT id, name, provider, base_url, api_key, model, temperature,
+              thinking_depth, thinking_budget_tokens
+         FROM ai_configs`,
+    );
 
-      const now = nowIso();
+    const groups = new Map();
+    for (const row of rows) {
+      const key = JSON.stringify([
+        row.name ?? '',
+        row.provider ?? '',
+        row.base_url ?? '',
+        row.api_key ?? '',
+        row.model ?? '',
+        row.temperature ?? '',
+        row.thinking_depth ?? '',
+        row.thinking_budget_tokens ?? '',
+      ]);
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(row);
+    }
+
+    const now = nowIso();
+    const duplicateIds = [];
+    for (const groupRows of groups.values()) {
+      if (groupRows.length <= 1) continue;
+      groupRows.sort((a, b) => Number(a.id) - Number(b.id));
+      const keepId = groupRows[0].id;
+      const removeIds = groupRows.slice(1).map((row) => Number(row.id));
+      const placeholders = removeIds.map(() => '?').join(', ');
       this.db.run(
-        `INSERT INTO ai_configs (project_id, name, provider, base_url, api_key, model, temperature, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [project.id, '默认配置', provider, baseUrl, apiKey, model, temperature, now, now],
+        `UPDATE conversations
+           SET ai_config_id = ?, updated_at = ?
+         WHERE ai_config_id IN (${placeholders})`,
+        [keepId, now, ...removeIds],
       );
+      duplicateIds.push(...removeIds);
+    }
+
+    if (duplicateIds.length > 0) {
+      const placeholders = duplicateIds.map(() => '?').join(', ');
+      this.db.run(`DELETE FROM ai_configs WHERE id IN (${placeholders})`, duplicateIds);
     }
   }
 
+  migrateChatToAiConfigs(/* defaultProjectId */) {
+    // AI 配置已提升为全局：当全局（project_id IS NULL）已存在任意配置时跳过；
+    // 否则只创建一条全局「默认配置」，不再按项目循环创建。
+    const existing = this.get('SELECT id FROM ai_configs WHERE project_id IS NULL LIMIT 1');
+    if (existing) return;
+
+    const provider = this.getSetting('chat.provider') || 'openai';
+    const baseUrl = this.getSetting('chat.baseUrl') || '';
+    const apiKey = this.getSetting('chat.apiKey') || '';
+    const model = this.getSetting('chat.model') || '';
+    const temperature = this.getSetting('chat.temperature') || '0.3';
+
+    const now = nowIso();
+    this.db.run(
+      `INSERT INTO ai_configs (project_id, name, provider, base_url, api_key, model, temperature, created_at, updated_at)
+       VALUES (NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ['默认配置', provider, baseUrl, apiKey, model, temperature, now, now],
+    );
+  }
+
   migrateChatMessagesToConversation(defaultProjectId) {
+    const fallbackProjectId = Number(defaultProjectId || 1);
+    this.db.run('UPDATE conversations SET project_id = ? WHERE project_id IS NULL', [fallbackProjectId]);
+    this.db.run(
+      `UPDATE chat_messages
+          SET project_id = COALESCE(
+            (SELECT conversations.project_id
+               FROM conversations
+              WHERE conversations.id = chat_messages.conversation_id),
+            ?
+          )
+        WHERE project_id IS NULL`,
+      [fallbackProjectId],
+    );
+    this.db.run(
+      `UPDATE chat_messages
+          SET project_id = (
+            SELECT conversations.project_id
+              FROM conversations
+             WHERE conversations.id = chat_messages.conversation_id
+          )
+        WHERE conversation_id IS NOT NULL
+          AND EXISTS (
+            SELECT 1
+              FROM conversations
+             WHERE conversations.id = chat_messages.conversation_id
+          )
+          AND project_id != (
+            SELECT conversations.project_id
+              FROM conversations
+             WHERE conversations.id = chat_messages.conversation_id
+          )`,
+    );
+
     const projects = this.all('SELECT id FROM projects');
     for (const project of projects) {
       const messageCount = this.get(
