@@ -201,7 +201,7 @@ export function WorkspaceSettingsView({
         apiKey: aiConfigForm.apiKey || undefined,
         model: aiConfigForm.model,
         temperature: aiConfigForm.temperature,
-        thinkingDepth: aiConfigForm.thinkingDepth || null,
+        thinkingDepth: (aiConfigForm.thinkingDepth || null) as 'low' | 'medium' | 'high' | null,
         thinkingBudgetTokens: aiConfigForm.thinkingBudgetTokens
           ? Number(aiConfigForm.thinkingBudgetTokens)
           : null,

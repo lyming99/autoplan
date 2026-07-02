@@ -1,5 +1,7 @@
 export {};
 
+import { PLAN_STATUS, type PlanStatus } from '../types';
+
 type TestRegistrar = (name: string, fn: () => void) => void;
 
 declare function require(id: string): unknown;
@@ -10,7 +12,7 @@ function expect(condition: unknown, message: string) {
   if (!condition) throw new Error(message);
 }
 
-function expectEqual(actual: unknown, expected: unknown) {
+function expectEqual(actual: unknown, expected: unknown, _message?: string) {
   if (actual !== expected) {
     const a = typeof actual === 'string' ? JSON.stringify(actual) : String(actual);
     const e = typeof expected === 'string' ? JSON.stringify(expected) : String(expected);
@@ -53,7 +55,7 @@ function makePlan(overrides: Record<string, unknown> = {}) {
     file_path: (overrides.file_path as string) ?? `/plans/plan-${id}.md`,
     title: (overrides.title as string | undefined) ?? `Plan ${id}`,
     hash: `sha-${id}`,
-    status: (overrides.status as string) ?? 'completed',
+    status: (overrides.status as PlanStatus) ?? PLAN_STATUS.COMPLETED,
     sort_order: (overrides.sort_order as number) ?? id,
     is_draft: false,
     total_tasks: (overrides.total_tasks as number) ?? 3,
@@ -179,7 +181,7 @@ describe('P001 – buildAcceptedGroups grouped construction', () => {
     const groups = buildAcceptedGroups([], [t1]);
 
     expectAtLeast(groups, 1, 'orphan task should appear in a group');
-    const ungrouped = groups.find((g: { plan: unknown }) => g.plan === null);
+    const ungrouped = groups.find((g: { plan: unknown }) => g.plan === null)!;
     expectDefined(ungrouped, 'ungrouped bucket (plan=null) should exist for orphan tasks');
     expectLength(ungrouped.tasks, 1, 'orphan task should be in ungrouped bucket');
     expectEqual(ungrouped.tasks[0].id, 99);

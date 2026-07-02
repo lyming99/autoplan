@@ -181,7 +181,7 @@ export function useChat(projectId: number) {
             cur.isStreaming = true;
             setIsStreaming(true);
             const placeholder = newMessage(projectId, 'assistant', {
-              id: makeTempId(tempIdRef),
+              id: makeTempId(tempIdRef.current),
               content: text,
               status: 'streaming',
             });
@@ -211,7 +211,7 @@ export function useChat(projectId: number) {
           setStreamingToolCall(tc);
 
           const toolMsg = newMessage(projectId, 'tool', {
-            id: makeTempId(tempIdRef),
+            id: makeTempId(tempIdRef.current),
             toolResult: { name: tc.name, args: tc.args, loading: true },
             status: 'streaming',
           });
@@ -264,7 +264,7 @@ export function useChat(projectId: number) {
         /* -------- error -------- */
         case 'error': {
           const errMsg = newMessage(projectId, 'system', {
-            id: makeTempId(tempIdRef),
+            id: makeTempId(tempIdRef.current),
             content: String(event.data?.message || '发生未知错误'),
             status: 'error',
           });
@@ -351,7 +351,7 @@ export function useChat(projectId: number) {
       if (!text || stateRef.current.isStreaming || !cid || !projectId) return;
 
       const userMsg = newMessage(projectId, 'user', {
-        id: makeTempId(tempIdRef),
+        id: makeTempId(tempIdRef.current),
         content: text,
       });
       const next = [...stateRef.current.messages, userMsg];
