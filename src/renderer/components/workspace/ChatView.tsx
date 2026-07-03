@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import type { ChatMessage, WorkspaceChatState } from '../../types';
+import type { ChatMessage, OpenIntakeHandler, WorkspaceChatState } from '../../types';
 import type { ChatThinkingDepth, WorkspaceChatComposerActions } from '../../hooks/useChat';
 import {
   aiProviderLabel,
@@ -10,146 +10,12 @@ import {
   providerSupportsThinkingDepth,
   thinkingDepthOptions,
 } from '../../utils/workspaceForms';
-import { Modal } from '../Modal';
+import { parseOpenIntakeIntent } from '../../utils/chatIntents';
 import { Icon } from '../icons';
+import { ChatToolCard } from './ChatToolCard';
+import { ChatQueueView } from './ChatQueueView';
 
 /* ------------------------------------------------------------------ 子组件 ------------------------------------------------------------------ */
-
-/** 工具调用摘要与详情弹窗 */
-function ChatToolCard({ message }: { message: ChatMessage }) {
-  const [detailOpen, setDetailOpen] = useState(false);
-  const result = (message.toolResult || {}) as Record<string, unknown>;
-  const name = String(result.name || '工具');
-  const args = result.args;
-  const isLoading = result.loading === true;
-  const isError = message.status === 'error' || message.status === 'aborted';
-  const toolResult = result.result;
-  const hasToolResult = Object.prototype.hasOwnProperty.call(result, 'result');
-  const hasArgs = hasDisplayableToolValue(args);
-  const hasVisibleToolResult = hasDisplayableToolValue(toolResult);
-  const statusKind = isLoading ? 'loading' : isError ? 'error' : 'success';
-  const statusLabel = isLoading ? '执行中' : isError ? '执行失败' : '已完成';
-  const statusIcon = isLoading ? 'settings' : isError ? 'alert' : 'check';
-  const summary = formatToolSummary(args, toolResult, hasToolResult, isLoading);
-
-  return (
-    <div className={`chat-message chat-message--tool chat-message--tool-${statusKind}`}>
-      <div className="chat-tool-card">
-        <button
-          type="button"
-          className="chat-tool-card__header"
-          onClick={() => setDetailOpen(true)}
-          aria-haspopup="dialog"
-          aria-label={`查看工具调用详情：${name}，${statusLabel}`}
-        >
-          <span className={`chat-tool-card__icon chat-tool-card__icon--${statusKind}`} aria-hidden>
-            <Icon name={statusIcon} size={14} />
-          </span>
-          <span className="chat-tool-card__meta">
-            <span className="chat-tool-card__title-row">
-              <span className="chat-tool-card__name">{name}</span>
-              <span className={`chat-tool-card__status chat-tool-card__status--${statusKind}`}>{statusLabel}</span>
-            </span>
-            {summary ? (
-              <span className="chat-tool-card__args" title={summary}>{summary}</span>
-            ) : null}
-          </span>
-          <span className="chat-tool-card__open" aria-hidden>
-            <Icon name="eye" size={14} />
-          </span>
-        </button>
-        <Modal
-          open={detailOpen}
-          onClose={() => setDetailOpen(false)}
-          title="工具调用详情"
-          size="wide"
-          maxWidth={760}
-          className="chat-tool-modal"
-          bodyClassName="chat-tool-modal__body"
-        >
-          <div className="chat-tool-modal__summary">
-            <div className="chat-tool-modal__field">
-              <span className="chat-tool-modal__label">工具名称</span>
-              <strong className="chat-tool-modal__value">{name}</strong>
-            </div>
-            <div className="chat-tool-modal__field">
-              <span className="chat-tool-modal__label">执行状态</span>
-              <span className={`chat-tool-modal__status chat-tool-modal__status--${statusKind}`}>
-                <Icon name={statusIcon} size={14} aria-hidden />
-                {statusLabel}
-              </span>
-            </div>
-          </div>
-
-          <div className="chat-tool-modal__section">
-            <div className="chat-tool-modal__section-title">参数</div>
-            {hasArgs ? (
-              <pre className="chat-tool-modal__code"><code>{formatToolResult(args)}</code></pre>
-            ) : (
-              <div className="chat-tool-modal__empty">无参数</div>
-            )}
-          </div>
-
-          <div className="chat-tool-modal__section">
-            <div className="chat-tool-modal__section-title">结果</div>
-            {hasVisibleToolResult ? (
-              <pre className="chat-tool-modal__code"><code>{formatToolResult(toolResult)}</code></pre>
-            ) : isLoading || (hasToolResult && result.loading === true) ? (
-              <div className="chat-tool-modal__empty">等待结果...</div>
-            ) : (
-              <div className="chat-tool-modal__empty">无返回内容</div>
-            )}
-          </div>
-        </Modal>
-      </div>
-    </div>
-  );
-}
-
-function hasDisplayableToolValue(value: unknown): boolean {
-  if (value === undefined || value === null) return false;
-  if (typeof value === 'string') return value.trim().length > 0;
-  if (Array.isArray(value)) return value.length > 0;
-  if (typeof value === 'object') return Object.keys(value as Record<string, unknown>).length > 0;
-  return true;
-}
-
-function formatToolArgsSummary(value: unknown): string {
-  if (!hasDisplayableToolValue(value)) return '';
-  if (value && typeof value === 'object' && !Array.isArray(value)) {
-    const entries = Object.entries(value as Record<string, unknown>);
-    const summary = entries
-      .slice(0, 2)
-      .map(([key, val]) => `${key}=${compactToolText(formatToolResult(val), 32)}`)
-      .join(', ');
-    return compactToolText(entries.length > 2 ? `${summary}, ...` : summary, 92);
-  }
-  return compactToolText(formatToolResult(value), 92);
-}
-
-function formatToolSummary(args: unknown, toolResult: unknown, hasToolResult: boolean, isLoading: boolean): string {
-  const argsSummary = formatToolArgsSummary(args);
-  if (argsSummary) return `参数 ${argsSummary}`;
-  if (isLoading) return '等待结果';
-  if (!hasToolResult || !hasDisplayableToolValue(toolResult)) return '无返回内容';
-  return '结果已返回';
-}
-
-function compactToolText(value: string, maxLength: number): string {
-  const text = value.replace(/\s+/g, ' ').trim();
-  if (text.length <= maxLength) return text;
-  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
-}
-
-function formatToolResult(value: unknown): string {
-  if (typeof value === 'string') return value;
-  try {
-    const serialized = JSON.stringify(value, null, 2);
-    return serialized === undefined ? String(value) : serialized;
-  } catch {
-    return String(value);
-  }
-}
 
 /** 推理内容可折叠区域 */
 function ReasoningSection({ content, isThinking }: { content: string; isThinking: boolean }) {
@@ -192,10 +58,12 @@ function ChatMessageBubble({
   message,
   isThinking = false,
   thinkingContent = '',
+  onOpenIntake,
 }: {
   message: ChatMessage;
   isThinking?: boolean;
   thinkingContent?: string;
+  onOpenIntake?: OpenIntakeHandler;
 }) {
   switch (message.role) {
     case 'user':
@@ -265,7 +133,7 @@ function ChatMessageBubble({
     }
 
     case 'tool':
-      return <ChatToolCard message={message} />;
+      return <ChatToolCard message={message} onOpenIntake={onOpenIntake} />;
 
     case 'system':
       return (
@@ -337,7 +205,7 @@ function ChatEmptyState({
  * Props：
  * - chatState: 工作区层共享的聊天状态容器
  */
-export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
+export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChatState; onOpenIntake?: OpenIntakeHandler }) {
   const {
     messages,
     isStreaming,
@@ -353,7 +221,10 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
     isThinking,
     thinkingContent,
     streamPhase,
+    queue,
+    queueCount,
   } = chatState;
+  const { cancelQueueItem, editQueueItem, clearQueue } = chatState;
   const composerActions = chatState as WorkspaceChatState & Partial<WorkspaceChatComposerActions>;
   const { updateConversationAiConfig, updateActiveAiConfigThinkingDepth } = composerActions;
 
@@ -365,6 +236,10 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
 
   /* ---- 当前模型配置 ---- */
   const activeConv = conversations.find((c) => c.id === activeConversationId);
+  // 当前项目 id：意图直达「打开需求/反馈 #N」需用其定位（活动会话所属项目，回退到最近一条消息）
+  const currentProjectId = activeConv?.project_id
+    ?? (messages.length > 0 ? messages[messages.length - 1].projectId : null)
+    ?? null;
   const activeAiConfigId = config?.aiConfigId ?? (activeConv
     ? activeConv.ai_config_id ?? activeConv.aiConfigId
     : null);
@@ -414,7 +289,7 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
     !supportsThinkingDepth ||
     selectedConfigId == null ||
     !updateActiveAiConfigThinkingDepth;
-  const inputDisabled = isStreaming || !activeConversationId || !hasAiApiKey;
+  const inputDisabled = !activeConversationId || !hasAiApiKey; // 流式中输入框保持可用（需求 #37）
   const sendDisabled = !input.trim() || inputDisabled;
   /* ---- 新消息自动滚到底部 ---- */
   useEffect(() => {
@@ -437,10 +312,16 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
   /* ---- 发送 ---- */
   const handleSend = useCallback(() => {
     const text = input.trim();
-    if (!text || isStreaming || !activeConversationId || !hasAiApiKey) return;
+    // 移除流式中发送守卫：回复中也可继续输入并入队（需求 #37）
+    if (!text || !activeConversationId || !hasAiApiKey) return;
+    // 意图直达：识别「打开/查看 需求/反馈 #N」并立即触发；无论是否命中均继续正常发送（保留 AI 补充说明）
+    if (onOpenIntake && currentProjectId) {
+      const intent = parseOpenIntakeIntent(text);
+      if (intent) onOpenIntake({ type: intent.type, projectId: currentProjectId, id: intent.id });
+    }
     void sendMessage(text);
     setInput('');
-  }, [activeConversationId, hasAiApiKey, input, isStreaming, sendMessage]);
+  }, [activeConversationId, currentProjectId, hasAiApiKey, input, onOpenIntake, sendMessage]);
 
   /* ---- 键盘 ---- */
   const handleKeyDown = useCallback(
@@ -564,6 +445,7 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
             ) : null}
 
             {messages.map((msg, i) => {
+              if (msg.status === 'queued') return null; // 排队态消息由队列视图渲染，避免重复（需求 #37）
               const isLast = i === messages.length - 1;
               const isLastStreaming = isLast && msg.role === 'assistant' && msg.status === 'streaming';
               return (
@@ -572,9 +454,17 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
                   message={msg}
                   isThinking={isLastStreaming ? isThinking : false}
                   thinkingContent={isLastStreaming ? thinkingContent : ''}
+                  onOpenIntake={onOpenIntake}
                 />
               );
             })}
+
+            <ChatQueueView
+              queue={queue}
+              cancelQueueItem={cancelQueueItem}
+              editQueueItem={editQueueItem}
+              clearQueue={clearQueue}
+            />
 
             <div ref={messagesEndRef} />
           </div>
@@ -676,6 +566,9 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
               </div>
 
               <div className="chat-composer__actions">
+                {queueCount && queueCount > 0 ? (
+                  <span className="chat-queue-count" title="未发送的排队消息">队列中 {queueCount} 条</span>
+                ) : null}
                 <button
                   type="button"
                   className="chat-icon-btn"
@@ -687,7 +580,7 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
                   <Icon name="trash" size={16} aria-hidden />
                 </button>
                 <span className="chat-composer__hint">
-                  {isStreaming ? '生成中' : 'Enter 发送'}
+                  {isStreaming ? '可继续输入排队 · Enter 发送' : 'Enter 发送'}
                 </span>
                 {isStreaming ? (
                   <button
@@ -695,19 +588,20 @@ export function ChatView({ chatState }: { chatState: WorkspaceChatState }) {
                     className="stop-button"
                     onClick={() => { void stopGeneration(); }}
                     aria-label="停止生成"
+                    title="停止当前生成"
                   >
                     <Icon name="stop" size={18} aria-hidden />
                   </button>
-                ) : (
-                  <button
-                    type="submit"
-                    className="send-button"
-                    disabled={sendDisabled}
-                    aria-label="发送消息"
-                  >
-                    <Icon name="send" size={20} aria-hidden />
-                  </button>
-                )}
+                ) : null}
+                <button
+                  type="submit"
+                  className="send-button"
+                  disabled={sendDisabled}
+                  aria-label="发送消息"
+                  title={isStreaming ? '加入队列' : '发送消息'}
+                >
+                  <Icon name="send" size={20} aria-hidden />
+                </button>
               </div>
             </div>
           </form>

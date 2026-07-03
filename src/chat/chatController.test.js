@@ -224,7 +224,14 @@ function createMemoryDb(settings = chatSettings(), options = {}) {
       return result;
     },
 
-    _calls: { all: 0, get: 0, run: 0, getSettings: 0 },
+    // 队列入队（需求 #37）：复用 run 的 INSERT 逻辑并回传新行 id
+    insert(sql, params = []) {
+      db._calls.insert += 1;
+      db.run(sql, params);
+      const last = store.chat_messages[store.chat_messages.length - 1];
+      return last ? last.id : null;
+    },
+    _calls: { all: 0, get: 0, run: 0, getSettings: 0, insert: 0 },
     _runs: [],
     _store: store,
   };
@@ -411,9 +418,7 @@ function textResponseStub(text = 'Hello!') {
     yield { type: 'text_delta', content: text };
     yield { type: 'done' };
   };
-  fn.calls = 0;
-  fn.lastConfig = null;
-  return fn;
+  return Object.assign(fn, { calls: 0, lastConfig: null });
 }
 
 function textThenTitleStub({ reply = 'Hello!', title = '自动标题', failTitle = false } = {}) {
@@ -428,10 +433,7 @@ function textThenTitleStub({ reply = 'Hello!', title = '自动标题', failTitle
     yield { type: 'text_delta', content: isTitleCall ? title : reply };
     yield { type: 'done' };
   };
-  fn.calls = 0;
-  fn.configs = [];
-  fn.lastConfig = null;
-  return fn;
+  return Object.assign(fn, { calls: 0, configs: [], lastConfig: null });
 }
 
 /** tool_call → text 的两轮 llmClient stub */
@@ -449,9 +451,7 @@ function toolThenTextStub() {
       yield { type: 'done' };
     }
   };
-  fn.calls = 0;
-  fn.lastConfig = null;
-  return fn;
+  return Object.assign(fn, { calls: 0, lastConfig: null });
 }
 
 function toolThenTextAndTitleStub({ reply = 'File content looks good.', title = '文件阅读' } = {}) {
@@ -470,10 +470,7 @@ function toolThenTextAndTitleStub({ reply = 'File content looks good.', title = 
       yield { type: 'done' };
     }
   };
-  fn.calls = 0;
-  fn.configs = [];
-  fn.lastConfig = null;
-  return fn;
+  return Object.assign(fn, { calls: 0, configs: [], lastConfig: null });
 }
 
 /** 始终返回 tool_call 的 stub */
@@ -484,9 +481,7 @@ function alwaysToolCallStub() {
     yield { type: 'tool_call', id: `call_${fn.calls}`, name: 'read_file', arguments: `{"filePath":"file_${fn.calls}.js"}` };
     yield { type: 'done' };
   };
-  fn.calls = 0;
-  fn.lastConfig = null;
-  return fn;
+  return Object.assign(fn, { calls: 0, lastConfig: null });
 }
 
 /** 可中止 stub：yield 文本后挂起，等待 signal 触发 */
@@ -510,9 +505,26 @@ function abortableStub() {
       config.signal?.addEventListener('abort', onAbort, { once: true });
     });
   };
-  fn.calls = 0;
-  fn.lastConfig = null;
-  return fn;
+  return Object.assign(fn, { calls: 0, lastConfig: null });
+}
+
+/** 首次可中止（yield 后挂起等 abort），后续返回文本 done（队列续跑场景） */
+function abortThenTextStub() {
+  const fn = async function* ({ config }) {
+    fn.calls += 1;
+    fn.lastConfig = config;
+    if (fn.calls > 1) {
+      yield { type: 'text_delta', content: 'next reply' };
+      yield { type: 'done' };
+      return;
+    }
+    yield { type: 'text_delta', content: 'streaming partial...' };
+    await new Promise((_resolve, reject) => {
+      if (config.signal?.aborted) { const e = new Error('aborted'); e.name = 'AbortError'; return reject(e); }
+      config.signal?.addEventListener('abort', () => { const e = new Error('aborted'); e.name = 'AbortError'; reject(e); }, { once: true });
+    });
+  };
+  return Object.assign(fn, { calls: 0, lastConfig: null });
 }
 
 /** 抛错 stub */
@@ -521,8 +533,7 @@ function errorStub(message = 'Network failure') {
     fn.calls += 1;
     throw new Error(message);
   };
-  fn.calls = 0;
-  return fn;
+  return Object.assign(fn, { calls: 0 });
 }
 
 /** 测试工具定义 */
@@ -544,7 +555,6 @@ const testTools = [
   },
 ];
 
-/* ================================================================== 单轮纯文本对话 ================================================================== */
 
 describe('单轮纯文本对话', () => {
   it('send → LLM 返回文本 → assistant 落库 → onDone done', async () => {
@@ -690,22 +700,19 @@ describe('单轮纯文本对话', () => {
     assert.equal(ctrl.isActive(), false);
   });
 
-  it('正在生成时重复 send 被忽略', async () => {
+  it('正在生成时重复 send 改为入队（需求 #37）', async () => {
     const db = createMemoryDb();
     const llm = textResponseStub();
     const col = createCollector();
-    const ctrl = createChatController({
-      db, llmClient: llm, chatTools: testTools, projectId: 1, workspacePath: '/tmp',
-      onEvent: col.onEvent, onDone: col.onDone,
-    });
-
+    const ctrl = createChatController({ db, llmClient: llm, chatTools: testTools, projectId: 1, workspacePath: '/tmp', onEvent: col.onEvent, onDone: col.onDone });
     ctrl.send('first');
     assert.equal(ctrl.isActive(), true);
-    ctrl.send('second'); // 应被忽略
-    const done = await col.waitForDone();
-
-    assert.equal(done.status, 'done');
-    assert.equal(llm.calls, 1, '仅应调用一次 LLM');
+    ctrl.send('second'); // active → 入队而非忽略
+    assert.ok(ctrl.hasQueued(), 'second 应入队等待顺序处理');
+    assert.equal(ctrl.getQueue().length, 2, '队列含处理中 first + 排队 second');
+    await col.waitForDone();
+    await waitUntil(() => llm.calls >= 2);
+    assert.equal(llm.calls, 2, '两条消息顺序派发，各调用一次 LLM');
   });
 
   it('未配置 API Key → onDone error', async () => {
@@ -757,7 +764,6 @@ describe('单轮纯文本对话', () => {
   });
 });
 
-/* ================================================================== 工具调用多轮 ================================================================== */
 
 describe('工具调用多轮', () => {
   it('send → tool_calls → 工具执行 → 工具结果落库 → 回灌 LLM → 文本回复 → done', async () => {
@@ -863,7 +869,6 @@ describe('工具调用多轮', () => {
   });
 });
 
-/* ================================================================== 最大轮次限制 ================================================================== */
 
 describe('最大轮次限制', () => {
   it('LLM 持续返回 tool_calls，第 8 轮后 onDone max_rounds', async () => {
@@ -889,7 +894,6 @@ describe('最大轮次限制', () => {
   });
 });
 
-/* ================================================================== 中止 ================================================================== */
 
 describe('中止', () => {
   it('send 后立即 stop() → onDone aborted → chat_messages 有 aborted 标记', async () => {
@@ -924,7 +928,6 @@ describe('中止', () => {
   });
 });
 
-/* ================================================================== 错误处理 ================================================================== */
 
 describe('错误处理', () => {
   it('LLM 调用抛异常 → onDone error → system 错误消息落库', async () => {
@@ -1008,7 +1011,6 @@ describe('错误处理', () => {
   });
 });
 
-/* ================================================================== 历史查询 / 清空 ================================================================== */
 
 describe('getHistory / clearHistory', () => {
   it('getHistory 返回按时间排序的消息列表', async () => {
@@ -1273,7 +1275,6 @@ describe('conversation project boundaries', () => {
   });
 });
 
-/* ================================================================== getConfig / isActive ================================================================== */
 
 describe('getConfig / isActive', () => {
   it('getConfig 返回当前对话解析出的全局 AI 配置', () => {
@@ -1369,7 +1370,34 @@ describe('getConfig / isActive', () => {
   });
 });
 
-/* ================================================================== 对话置顶与排序 ================================================================== */
+describe('对话队列：续跑与上下文隔离（需求 #37）', () => {
+  it('stop() 中止当前后继续派发队列下一条', async () => {
+    const db = createMemoryDb();
+    const llm = abortThenTextStub();
+    const col = createCollector();
+    const ctrl = createChatController({ db, llmClient: llm, chatTools: testTools, projectId: 1, workspacePath: '/tmp', onEvent: col.onEvent, onDone: col.onDone });
+    ctrl.send('first');
+    await waitUntil(() => llm.calls >= 1);
+    ctrl.send('second'); // active → 入队
+    assert.ok(ctrl.hasQueued(), 'second 应入队');
+    ctrl.stop(); // 中止 first
+    await col.waitForDone(); // first aborted done
+    await waitUntil(() => llm.calls >= 2 && col.doneResult()?.status === 'done');
+    assert.equal(llm.calls, 2, '中止 first 后 second 被顺序派发');
+  });
+  it('buildMessages 不包含 status=queued 行', async () => {
+    const db = createMemoryDb();
+    db.run(`INSERT INTO chat_messages (project_id, conversation_id, role, content, tool_calls, tool_result, status, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, [1, 1, 'user', 'queued-msg', null, null, 'queued', '2026-01-01T00:00:00.000Z']);
+    const llm = textResponseStub();
+    const col = createCollector();
+    const ctrl = createChatController({ db, llmClient: llm, chatTools: testTools, projectId: 1, workspacePath: '/tmp', onEvent: col.onEvent, onDone: col.onDone });
+    ctrl.send('real question');
+    await waitUntil(() => llm.calls >= 1);
+    const msgs = (llm.lastConfig && llm.lastConfig.messages) || [];
+    assert.ok(!msgs.some((m) => m.content === 'queued-msg'), 'queued 行不应进入 LLM 上下文');
+    await col.waitForDone();
+  });
+});
 
 describe('对话置顶与排序', () => {
   it('旧 conversations 表迁移时补齐 pinned_at 字段并保留已有会话', async () => {

@@ -285,6 +285,7 @@ async function runTool(name, input, context) {
       projectId: input.projectId,
       requirementId: requirement?.id || null,
       requirement: intakeSummary(requirement),
+      openable: intakeOpenable('requirement', input.projectId, requirement),
       snapshot: snapshotSummary(snapshot),
     };
   }
@@ -303,6 +304,7 @@ async function runTool(name, input, context) {
       projectId: input.projectId,
       feedbackId: feedback?.id || null,
       feedback: intakeSummary(feedback),
+      openable: intakeOpenable('feedback', input.projectId, feedback),
       snapshot: snapshotSummary(snapshot),
     };
   }
@@ -717,6 +719,23 @@ function intakeDetail(record) {
     agentCliProvider: record.agent_cli_provider || null,
     agentCliCommand: record.agent_cli_command || '',
     codexReasoningEffort: record.codex_reasoning_effort || null,
+  };
+}
+
+/**
+ * 可打开引用：供外部 MCP 客户端（codex/claude CLI 等）展示入口。
+ * 含应用内深链（HashRouter 路由串）与该条目详情片段（标题/状态）。
+ * record 缺失（创建未确认）时 id/link 为 null，仅做增量、向后兼容。
+ */
+function intakeOpenable(type, projectId, record) {
+  const id = record?.id || null;
+  return {
+    type,
+    projectId,
+    id,
+    title: record ? record.title || null : null,
+    status: record ? record.status || null : null,
+    link: id ? `#/projects/${projectId}?tab=${type}&focus=${type}-${id}` : null,
   };
 }
 

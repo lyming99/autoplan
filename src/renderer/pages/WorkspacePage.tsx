@@ -3,6 +3,7 @@ import type { ComponentProps, ComponentType } from 'react';
 import { isTaskAssociatedWithPlan, readPlanTaskAssociationFilePath } from '../types';
 import type {
   AppSnapshot,
+  ChatIntakeOpenRef,
   Plan,
   Project,
   Script,
@@ -28,6 +29,8 @@ import { WorkspaceScriptsView } from '../components/workspace/WorkspaceScriptsVi
 import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
 import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
 import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+import { buildIntakeAnchorId } from '../utils/chatIntents';
+import { locateWorkspaceAnchor } from '../utils/workspaceLocate';
 
 type WorkspaceSidebarWithChatProps = ComponentProps<typeof WorkspaceSidebar> & {
   chatState: WorkspaceChatState;
@@ -101,6 +104,8 @@ export function WorkspacePage() {
   const [searchPopupOpen, setSearchPopupOpen] = useState(false);
   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
   const [searchLocateNotice, setSearchLocateNotice] = useState('');
+  // 「打开需求/反馈」待定位锚点（沿用搜索定位的 120ms 延时模式）
+  const [pendingIntakeTarget, setPendingIntakeTarget] = useState<{ tab: WorkspaceTab; anchorId: string } | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const searchPopupRef = useRef<HTMLDivElement>(null);
   // 锚点视口坐标，供 SearchResults 的 Portal(fixed) 弹层定位使用。
@@ -208,6 +213,29 @@ export function WorkspacePage() {
 
     return () => window.clearTimeout(timer);
   }, [activeTab, pendingSearchTarget]);
+
+  // 「打开需求/反馈」：切 tab 后延时定位锚点 + 高亮（沿用搜索定位模式）
+  useEffect(() => {
+    if (!pendingIntakeTarget || activeTab !== pendingIntakeTarget.tab) return undefined;
+
+    const timer = window.setTimeout(() => {
+      const located = locateWorkspaceAnchor(pendingIntakeTarget.anchorId);
+      setPendingIntakeTarget(null);
+      setSearchLocateNotice(located ? '' : '已在对应模块打开，但未找到该条目（可能已被删除或不在当前项目）。');
+    }, 120);
+
+    return () => window.clearTimeout(timer);
+  }, [activeTab, pendingIntakeTarget]);
+
+  function handleOpenIntake(ref: ChatIntakeOpenRef) {
+    const { type, projectId: targetProjectId, id } = ref;
+    setPendingIntakeTarget({ tab: type, anchorId: buildIntakeAnchorId(type, id) });
+    // activeTab 不随 URL tab 自动同步，需显式 selectTab；跨项目再 navigate 切换路由
+    selectTab(type);
+    if (Number(targetProjectId) !== Number(projectId)) {
+      navigate(`/projects/${targetProjectId}?tab=${type}`);
+    }
+  }
 
   function handleSearchQueryChange(nextQuery: string) {
     setSearchQuery(nextQuery);
@@ -556,7 +584,7 @@ export function WorkspacePage() {
 
         <section className={`view ${activeTab === 'chat' ? 'active' : ''}`}>
           {activeTab === 'chat' ? (
-            <ChatView chatState={chatState} />
+            <ChatView chatState={chatState} onOpenIntake={handleOpenIntake} />
           ) : null}
         </section>
 

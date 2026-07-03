@@ -29,6 +29,15 @@ const {
   getAiConfig,
   getLegacyChatConfig,
 } = require('./chat/aiConfigService');
+const {
+  FILE_ACCESS_SCOPE_KEY,
+  ALLOW_CROSS_PROJECT_KEY,
+  ALLOWED_ROOTS_KEY,
+  FILE_ACCESS_SCOPE_SET,
+  resolveFileAccessPolicy,
+  isInsidePath,
+  assertPathAllowed,
+} = require('./fileAccess/policy');
 
 if (protocol?.registerSchemesAsPrivileged) {
   protocol.registerSchemesAsPrivileged([
@@ -562,9 +571,8 @@ ipcMain.handle('chat:send', (_event, input = {}) => {
     return { accepted: false, error: '对话不存在或不属于当前项目' };
   }
 
-  const controller = getOrCreateChatController(conversationId, projectId);
-  controller.send(message);
-  return { accepted: true, conversationId };
+  const enqueued = getOrCreateChatController(conversationId, projectId).send(message);
+  return { accepted: true, conversationId, enqueuedId: enqueued.id };
 });
 
 ipcMain.handle('chat:stop', (_event, input = {}) => {
@@ -608,6 +616,21 @@ ipcMain.handle('chat:history', (_event, input = {}) => {
   );
 });
 
+// 队列管理 IPC（需求 #37）：会话/控制器不存在时返回空/{ok:false}，不抛错
+function getQueueController(input = {}) {
+  const cid = Number(input.conversationId || 0);
+  if (!cid || !conversationInProject(cid, requiredProjectId(input))) return null;
+  return chatControllers?.get(cid) || null;
+}
+ipcMain.handle('chat:queueList', (_event, input) => { const c = getQueueController(input); return c ? c.getQueue() : []; });
+ipcMain.handle('chat:queueCancel', (_event, input) => ({ ok: Boolean(getQueueController(input)?.cancelQueueItem(Number(input.id || 0))) }));
+ipcMain.handle('chat:queueEdit', (_event, input) => {
+  const c = getQueueController(input);
+  const message = String(input.message || '').trim();
+  return { ok: Boolean(c && message && c.editQueueItem(Number(input.id || 0), message)) };
+});
+ipcMain.handle('chat:queueClear', (_event, input) => { const c = getQueueController(input); if (c) c.clearQueue(); return { ok: !!c }; });
+
 ipcMain.handle('chat:saveConfig', (_event, config = {}) => {
   const savedConfig = saveChatConfigAsGlobalDefault(config);
   broadcastAiConfigChanged('chat:saveConfig', savedConfig?.id ?? null);
@@ -615,6 +638,60 @@ ipcMain.handle('chat:saveConfig', (_event, config = {}) => {
 });
 
 ipcMain.handle('chat:getConfig', () => getGlobalDefaultChatConfig());
+
+// ------------------------------------------------------- file-access:* IPC（需求 #35）------------------------------------------------
+
+ipcMain.handle('file-access:get', () => {
+  // workspacePath 仅影响 effectiveRoots，get 仅返回三个配置项，传 null 即可
+  const policy = resolveFileAccessPolicy({ db, workspacePath: null });
+  return {
+    scope: policy.scope,
+    allowCrossProject: policy.allowCrossProject,
+    allowedRoots: policy.allowedRoots,
+  };
+});
+
+ipcMain.handle('file-access:save', (_event, config = {}) => {
+  const source = config && typeof config === 'object' ? config : {};
+  // 未提供的字段沿用当前持久化值（idempotent），不静默回退默认值
+  const current = resolveFileAccessPolicy({ db, workspacePath: null });
+
+  let scope = current.scope;
+  if (source.scope !== undefined) {
+    const normalized = String(source.scope).trim().toLowerCase();
+    if (!FILE_ACCESS_SCOPE_SET.has(normalized)) {
+      throw new Error(`非法的文件访问范围：${source.scope}`);
+    }
+    scope = normalized;
+  }
+
+  let allowCrossProject = current.allowCrossProject;
+  if (source.allowCrossProject !== undefined) {
+    if (typeof source.allowCrossProject !== 'boolean') {
+      throw new Error('allowCrossProject 必须为布尔值');
+    }
+    allowCrossProject = source.allowCrossProject;
+  }
+
+  let allowedRoots = current.allowedRoots;
+  if (source.allowedRoots !== undefined) {
+    if (!Array.isArray(source.allowedRoots) || source.allowedRoots.some((r) => typeof r !== 'string')) {
+      throw new Error('allowedRoots 必须为字符串数组');
+    }
+    allowedRoots = source.allowedRoots.filter((r) => r.trim() !== '');
+  }
+
+  db.setSetting(FILE_ACCESS_SCOPE_KEY, scope);
+  db.setSetting(ALLOW_CROSS_PROJECT_KEY, String(allowCrossProject));
+  db.setSetting(ALLOWED_ROOTS_KEY, JSON.stringify(allowedRoots));
+
+  // all 范围不阻塞保存，但记录可观测信息并回传 warned，供 UI 提示风险
+  const warned = scope === 'all';
+  if (warned) {
+    console.warn('[file-access] 已保存为 all 范围：文件读取将不受应用层限制，仅受 OS 权限约束，请谨慎使用');
+  }
+  return { saved: true, ...(warned ? { warned: true } : {}) };
+});
 
 // ------------------------------------------------------- ai-config:* IPC（需求 #28）------------------------------------------------
 
@@ -670,9 +747,8 @@ ipcMain.handle('conversation:delete', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const id = requiredRecordId(input, 'conversationId');
   requireConversationInProject(id, projectId);
-  // 如果该对话正在运行中，先停止
   const controller = chatControllers?.get(id);
-  if (controller) controller.stop();
+  if (controller) { controller.clearQueue(); controller.stop(); } // 清空排队+停止，避免删除后续跑产生孤儿消息
   chatControllers.delete(id);
   return deleteConversation(db, id, { projectId });
 });
@@ -682,50 +758,27 @@ ipcMain.handle('conversation:delete', (_event, input = {}) => {
 function getOrCreateChatController(conversationId, projectId) {
   requireConversationInProject(conversationId, projectId);
   const existing = chatControllers.get(conversationId);
-  if (existing && existing.isActive()) return existing;
-
-  // 清理已结束的 controller（非活跃实例）
-  chatControllers.delete(conversationId);
-
+  if (existing && (existing.isActive() || existing.hasQueued())) return existing; // 复用续跑中实例
+  chatControllers.delete(conversationId); // 清理已结束且无排队实例
   const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
   if (!project) throw new Error('项目不存在');
-
   const workspacePath = String(project.workspace_path || '').trim();
   if (!workspacePath) throw new Error('项目工作区路径为空');
-
-  const tools = getChatToolDefinitions({
-    db,
-    projectId,
-    workspacePath,
-    intakeService: intakeService(),
-  });
-
+  const tools = getChatToolDefinitions({ db, projectId, workspacePath, intakeService: intakeService() });
+  // 局部广播闭包：复用 onEvent/onQueue/onDone，消除重复 mainWindow 守卫
+  const send = (channel, data) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, data); };
   const controller = createChatController({
-    db,
-    llmClient: createLlmClient,
-    chatTools: tools,
-    conversationId,
-    projectId,
-    workspacePath,
-    onEvent: ({ type, data }) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('chat:chunk', { type, data });
-      }
-    },
-    onDone: ({ status, error, conversationId: doneConversationId, title } = {}) => {
-      chatControllers.delete(conversationId);
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('chat:done', {
-          status,
-          error,
-          conversationId: doneConversationId,
-          title,
-        });
-      }
+    db, llmClient: createLlmClient, chatTools: tools, conversationId, projectId, workspacePath,
+    onEvent: ({ type, data }) => send('chat:chunk', { type, data }),
+    onQueue: (items) => send('chat:queue', { conversationId, items, count: Array.isArray(items) ? items.length : 0 }),
+    onDone: ({ status, error, conversationId: doneCid, title } = {}) => {
+      const ctrl = chatControllers.get(conversationId);
+      if (ctrl && !ctrl.isActive() && !ctrl.hasQueued()) chatControllers.delete(conversationId); // 有排队则保留续跑
+      send('chat:done', { status, error, conversationId: doneCid, title });
     },
   });
-
   chatControllers.set(conversationId, controller);
+  controller.resumeQueue(); // 恢复库内历史排队并派发（刷新/重启后）
   return controller;
 }
 
@@ -1038,15 +1091,14 @@ async function openProjectFolder(input = {}) {
 }
 
 async function resolveWorkspaceFilePath(workspacePath, filePath) {
+  const policy = resolveFileAccessPolicy({ db, workspacePath });
   const workspaceRoot = path.resolve(workspacePath);
   const requestedPath = path.resolve(workspaceRoot, filePath);
-  if (!isInsidePath(workspaceRoot, requestedPath)) {
-    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
-  }
+  // 词法预校验：默认范围仅允许工作区内部，尽早拦截越界路径
+  assertPathAllowed(requestedPath, policy);
 
-  let workspaceRealPath;
   try {
-    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
+    await fs.promises.realpath(workspaceRoot);
   } catch {
     throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
   }
@@ -1060,9 +1112,8 @@ async function resolveWorkspaceFilePath(workspacePath, filePath) {
     }
     throw error;
   }
-  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
-    throw planReadError('FILE_PATH_OUTSIDE_WORKSPACE', '文件路径超出项目工作区');
-  }
+  // realpath 二次校验：拦截指向允许范围外部的符号链接逃逸
+  assertPathAllowed(fileRealPath, policy);
   const stat = await fs.promises.stat(fileRealPath);
   if (stat.isDirectory()) throw planReadError('FILE_IS_DIRECTORY', '路径指向目录，不能作为文件打开');
   if (!stat.isFile()) throw planReadError('FILE_NOT_REGULAR', '路径不是普通文件');
@@ -1119,35 +1170,22 @@ function openFileResult(ok, error, extra = {}) {
 }
 
 async function resolvePlanPath(workspacePath, filePath) {
+  const policy = resolveFileAccessPolicy({ db, workspacePath });
   const workspaceRoot = path.resolve(workspacePath);
   const requestedPath = path.resolve(workspaceRoot, filePath);
-  if (!isInsidePath(workspaceRoot, requestedPath)) {
-    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
-  }
+  // 词法预校验：默认范围仅允许工作区内部，尽早拦截越界路径
+  assertPathAllowed(requestedPath, policy);
 
-  let workspaceRealPath;
   try {
-    workspaceRealPath = await fs.promises.realpath(workspaceRoot);
+    await fs.promises.realpath(workspaceRoot);
   } catch {
     throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
   }
 
   const fileRealPath = await fs.promises.realpath(requestedPath);
-  if (!isInsidePath(workspaceRealPath, fileRealPath)) {
-    throw planReadError('PLAN_PATH_OUTSIDE_WORKSPACE', '计划文件路径超出项目工作区');
-  }
+  // realpath 二次校验：拦截指向允许范围外部的符号链接逃逸
+  assertPathAllowed(fileRealPath, policy);
   return fileRealPath;
-}
-
-function isInsidePath(rootPath, targetPath) {
-  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
-  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
-  const relativePath = path.relative(resolvedRoot, resolvedTarget);
-  return relativePath === '' || (!!relativePath && !relativePath.startsWith('..') && !path.isAbsolute(relativePath));
-}
-
-function normalizePathForCompare(value) {
-  return process.platform === 'win32' ? value.toLowerCase() : value;
 }
 
 function planReadResult(plan, markdown, error) {

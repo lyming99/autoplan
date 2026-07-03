@@ -16,10 +16,7 @@ export const PLAN_STATUS = {
 
 export type PlanStatus = (typeof PLAN_STATUS)[keyof typeof PLAN_STATUS];
 
-export interface AgentCliOption {
-  value: AgentCliProvider;
-  label: string;
-}
+export interface AgentCliOption { value: AgentCliProvider; label: string; }
 
 export interface AgentCliDisplaySource {
   agent_cli_provider?: AgentCliProvider | null;
@@ -101,11 +98,7 @@ export interface WorkspaceSearchQuery {
   isEmpty: boolean;
 }
 
-export interface WorkspaceSearchSourceConfig {
-  type: WorkspaceSearchSourceType;
-  label: string;
-  targetTab: WorkspaceTab;
-}
+export interface WorkspaceSearchSourceConfig { type: WorkspaceSearchSourceType; label: string; targetTab: WorkspaceTab; }
 
 export interface WorkspaceSearchMatch {
   field: WorkspaceSearchHitField;
@@ -293,11 +286,7 @@ export interface PlanConcurrencyTask {
   reason: string;
 }
 
-export interface PlanConcurrencyBatch {
-  batch: number;
-  reason: string;
-  tasks: PlanConcurrencyTask[];
-}
+export interface PlanConcurrencyBatch { batch: number; reason: string; tasks: PlanConcurrencyTask[]; }
 
 export interface PlanConcurrencySuggestion {
   hasSafeParallelBatches: boolean;
@@ -425,15 +414,9 @@ export interface PlanTask extends AgentCliSessionInfo, CodexSessionInfo {
 
 export type PlanTaskAssociationSource = 'plan_id' | 'file_path';
 
-export interface PlanTaskAssociationTaskRef {
-  plan_id?: number | null;
-  file_path?: string | null;
-}
+export interface PlanTaskAssociationTaskRef { plan_id?: number | null; file_path?: string | null; }
 
-export interface PlanTaskAssociationPlanRef {
-  id: number;
-  file_path?: string | null;
-}
+export interface PlanTaskAssociationPlanRef { id: number; file_path?: string | null; }
 
 export function readPlanTaskAssociationPlanId(task: PlanTaskAssociationTaskRef) {
   if (task.plan_id === null || typeof task.plan_id === 'undefined') return null;
@@ -496,10 +479,7 @@ export type TaskEventType = (typeof TASK_EVENT_TYPES)[keyof typeof TASK_EVENT_TY
 export type LegacyTaskEventType = (typeof LEGACY_TASK_EVENT_TYPES)[keyof typeof LEGACY_TASK_EVENT_TYPES];
 export type TaskEventStatus = (typeof TASK_EVENT_STATUS)[keyof typeof TASK_EVENT_STATUS];
 
-export interface TaskEventSemantics {
-  status: TaskEventStatus;
-  label: string;
-}
+export interface TaskEventSemantics { status: TaskEventStatus; label: string; }
 
 export const TASK_EVENT_SEMANTICS: Record<TaskEventType, TaskEventSemantics> = {
   [TASK_EVENT_TYPES.STARTED]: { status: TASK_EVENT_STATUS.RUNNING, label: '开始了任务' },
@@ -638,10 +618,7 @@ export interface UpdateScriptInput extends CreateScriptInput {
   scriptId: number;
 }
 
-export interface ScriptIdInput {
-  projectId: number;
-  scriptId: number;
-}
+export interface ScriptIdInput { projectId: number; scriptId: number; }
 
 /** 手动运行 scripts:run 的返回：更新后的快照 + 本次运行的退出码/耗时/日志 */
 export interface ScriptRunResult {
@@ -673,11 +650,7 @@ export interface AppSnapshot {
   lastOperation: ActiveOperation | null;
 }
 
-export interface ActivityLine {
-  role: string;
-  text: string;
-  at: string;
-}
+export interface ActivityLine { role: string; text: string; at: string; }
 
 export interface ActiveOperation extends AgentCliSessionInfo, CodexSessionInfo {
   label: string;
@@ -825,11 +798,7 @@ export interface McpConfigInput {
   authToken?: string;
 }
 
-export interface McpAgentCliInput {
-  agentCliProvider?: McpAgentCliProvider;
-  agentCliCommand?: string;
-  codexReasoningEffort?: McpCodexReasoningEffort;
-}
+export interface McpAgentCliInput { agentCliProvider?: McpAgentCliProvider; agentCliCommand?: string; codexReasoningEffort?: McpCodexReasoningEffort; }
 
 export interface McpAttachmentInput {
   name?: string;
@@ -900,10 +869,7 @@ export interface UpdateProjectInput extends CreateProjectInput {
 }
 
 /** 环境变量键值对（设置面板与表单共用），序列化为 project_states.env_vars 的 JSON 数组 */
-export interface EnvVarEntry {
-  name: string;
-  value: string;
-}
+export interface EnvVarEntry { name: string; value: string; }
 
 export interface LoopConfigInput {
   projectId: number;
@@ -918,10 +884,7 @@ export interface LoopConfigInput {
   envVars?: EnvVarEntry[];
 }
 
-export interface ProjectIdInput {
-  projectId: number;
-  manual?: boolean;
-}
+export interface ProjectIdInput { projectId: number; manual?: boolean; }
 
 export interface RecordIdInput extends ProjectIdInput {
   id: number;
@@ -1063,17 +1026,27 @@ export interface ChatMessage {
   toolCalls: ChatToolCall[] | null;
   tool_result?: string | null;
   toolResult: Record<string, unknown> | null;
-  status: 'streaming' | 'done' | 'aborted' | 'error';
+  status: 'streaming' | 'done' | 'aborted' | 'error' | 'queued';
   created_at?: string;
   createdAt: string;
 }
 
-export interface ChatToolCall {
-  name: string;
-  args: Record<string, unknown>;
-}
+export interface ChatToolCall { name: string; args: Record<string, unknown>; }
 
 export type ChatStreamPhase = 'idle' | 'thinking' | 'replying';
+
+/**
+ * 对话中「打开需求/反馈」的可打开引用。
+ * 工具结果富化（create_*/open_* 的 type/projectId/id）与「打开需求 #N」意图直达共用此契约。
+ */
+export type ChatIntakeOpenRef = {
+  type: IntakeType;
+  projectId: number;
+  id: number;
+};
+
+/** 打开需求/反馈回调：由工作区（WorkspacePage）提供，对话侧触发切 tab + 锚点定位/高亮。 */
+export type OpenIntakeHandler = (ref: ChatIntakeOpenRef) => void;
 
 export interface WorkspaceChatState {
   messages: ChatMessage[];
@@ -1097,6 +1070,12 @@ export interface WorkspaceChatState {
   isThinking: boolean;
   thinkingContent: string;
   streamPhase: ChatStreamPhase;
+  /** 队列发送（需求 #37）：排队快照/计数与管理动作（useChatQueue 提供，接入前可选） */
+  queue?: ChatQueueItem[];
+  queueCount?: number;
+  cancelQueueItem?: (id: number) => Promise<void>;
+  editQueueItem?: (id: number, text: string) => Promise<void>;
+  clearQueue?: () => Promise<void>;
 }
 
 export type ChatChunkEvent =
@@ -1118,32 +1097,21 @@ export interface ChatDoneEvent {
   title?: string;
 }
 
-export interface AiConfigChangedEvent {
-  source: string;
-  configId: number | null;
-  configs: AiConfig[];
-}
+export interface AiConfigChangedEvent { source: string; configId: number | null; configs: AiConfig[]; }
 
-export interface ChatSendPayload {
-  projectId: number;
-  conversationId?: number;
-  message: string;
-}
+export interface ChatSendPayload { projectId: number; conversationId?: number; message: string; }
 
-export interface ChatClearPayload {
-  projectId: number;
-  conversationId: number;
-}
+export interface ChatClearPayload { projectId: number; conversationId: number; }
 
-export interface ChatStopPayload {
-  projectId: number;
-  conversationId: number;
-}
+export interface ChatStopPayload { projectId: number; conversationId: number; }
 
-export interface ChatHistoryPayload {
-  projectId: number;
-  conversationId: number;
-}
+export interface ChatHistoryPayload { projectId: number; conversationId: number; }
+
+/** 队列发送（需求 #37）：AI 回复中可继续输入，新消息入队按序处理 */
+export type ChatQueueItemState = 'queued' | 'processing';
+export interface ChatQueueItem { id: number; content: string; state: ChatQueueItemState; }
+export interface ChatQueueSnapshot { conversationId: number; items: ChatQueueItem[]; count: number; }
+export interface ChatQueuePayload { projectId: number; conversationId: number; id?: number; message?: string; }
 
 export interface ChatSaveConfigInput {
   name?: string;
@@ -1182,20 +1150,12 @@ export interface AiConfigUpdateInput {
   thinkingBudgetTokens?: number | null;
 }
 
-export interface AiConfigDeleteInput {
-  configId: number;
-}
+export interface AiConfigDeleteInput { configId: number; }
 
-export interface AiConfigGetInput {
-  configId: number;
-}
+export interface AiConfigGetInput { configId: number; }
 
 /** 对话 CRUD 载荷（需求 #28）*/
-export interface ConversationCreateInput {
-  projectId: number;
-  title?: string;
-  aiConfigId?: number | null;
-}
+export interface ConversationCreateInput { projectId: number; title?: string; aiConfigId?: number | null; }
 
 export interface ConversationUpdateInput {
   projectId: number;
@@ -1206,14 +1166,23 @@ export interface ConversationUpdateInput {
   pinnedAt?: string | null;
 }
 
-export interface ConversationDeleteInput {
-  projectId: number;
-  conversationId: number;
-}
+export interface ConversationDeleteInput { projectId: number; conversationId: number; }
 
-export interface ConversationListInput {
-  projectId: number;
-}
+export interface ConversationListInput { projectId: number; }
+
+/** 文件访问范围（需求 #35）*/
+
+/** 文件读取入口（read_file / search_files / 打开文件 / 读取计划）可访问的范围 */
+export type FileAccessScope = 'project' | 'workspace' | 'custom' | 'all';
+
+/** 文件访问设置快照：file-access:get 返回 / file-access:save 入参的公共形态 */
+export interface FileAccessSettings { scope: FileAccessScope; allowCrossProject: boolean; allowedRoots: string[]; }
+
+/** file-access:save 入参（字段均可选，未提供字段沿用既有持久化值） */
+export interface FileAccessSaveInput { scope?: FileAccessScope; allowCrossProject?: boolean; allowedRoots?: string[]; }
+
+/** file-access:save 返回：warned 表示已保存为 all 范围（高风险） */
+export interface FileAccessSaveResult { saved: boolean; warned?: boolean; }
 
 export interface AutoplanApi {
   mcpToolNames: McpToolName[];
@@ -1272,6 +1241,12 @@ export interface AutoplanApi {
   chatGetConfig: () => Promise<ChatConfig>;
   onChatChunk: (handler: (event: { type: string; data: Record<string, unknown> }) => void) => () => void;
   onChatDone: (handler: (event: ChatDoneEvent) => void) => () => void;
+  /** 队列发送（需求 #37） */
+  chatQueueList: (payload: ChatQueuePayload) => Promise<ChatQueueItem[]>;
+  chatQueueCancel: (payload: ChatQueuePayload) => Promise<{ ok: boolean }>;
+  chatQueueEdit: (payload: ChatQueuePayload) => Promise<{ ok: boolean }>;
+  chatQueueClear: (payload: ChatQueuePayload) => Promise<{ ok: boolean }>;
+  onChatQueue: (handler: (event: ChatQueueSnapshot) => void) => () => void;
   // AI 配置（需求 #28）
   aiConfigList: () => Promise<AiConfig[]>;
   aiConfigCreate: (payload: AiConfigCreateInput) => Promise<AiConfig>;
@@ -1284,6 +1259,11 @@ export interface AutoplanApi {
   conversationCreate: (payload: ConversationCreateInput) => Promise<Conversation>;
   conversationUpdate: (payload: ConversationUpdateInput) => Promise<Conversation>;
   conversationDelete: (payload: ConversationDeleteInput) => Promise<{ deleted: boolean; id: number }>;
+  // 文件访问范围（需求 #35）
+  fileAccess: {
+    get: () => Promise<FileAccessSettings>;
+    save: (config: FileAccessSaveInput) => Promise<FileAccessSaveResult>;
+  };
 }
 declare global {
   interface Window {

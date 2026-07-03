@@ -5,7 +5,7 @@
  *
  * 安全边界：
  * - 仅注册 5 个只读/安全创建工具，不含 write_file/edit_file/delete_* /run_command/run_script
- * - read_file 经 isInsidePath 校验 + 256KB 截断
+ * - read_file 经共享访问策略（fileAccess/policy）校验 + 256KB 截断
  * - search_files 结果上限 50 条 + 5s 超时保护
  * - create_requirement/create_feedback 走 IntakeService（autoRun=true）
  * - create_script 仅 INSERT 落库，不调用 runScript
@@ -14,6 +14,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { nowIso } = require('../database');
+const { resolveFileAccessPolicy, isPathAllowed, assertPathAllowed } = require('../fileAccess/policy');
 
 const READ_FILE_MAX_BYTES = 256 * 1024; // 256KB
 const SEARCH_MAX_RESULTS = 50;
@@ -44,7 +45,7 @@ function getChatToolDefinitions({ db, projectId, workspacePath, intakeService })
         },
         required: ['filePath'],
       },
-      handler: (args) => handleReadFile(workspacePath, args),
+      handler: (args) => handleReadFile(db, workspacePath, args),
     },
     {
       name: 'search_files',
@@ -106,12 +107,40 @@ function getChatToolDefinitions({ db, projectId, workspacePath, intakeService })
       },
       handler: (args) => handleCreateScript(db, projectId, args),
     },
+    {
+      name: 'open_requirement',
+      description:
+        '打开/查看指定需求并返回详情（标题、正文、状态、绑定执行计划）。可按 id（精确）或 title（模糊包含）定位；多命中时返回最近更新的一条。结果含 openable 入口，供对话直接查看或在卡片打开。',
+      input_schema: {
+        type: 'object',
+        description: 'id 与 title 至少二选一。',
+        properties: {
+          id: { type: 'integer', description: '需求 ID（精确匹配，正整数）' },
+          title: { type: 'string', description: '需求标题关键词（模糊包含，title LIKE %keyword%）' },
+        },
+      },
+      handler: (args) => handleOpenRequirement(projectId, db, workspacePath, args),
+    },
+    {
+      name: 'open_feedback',
+      description:
+        '打开/查看指定反馈并返回详情（标题、正文、状态、绑定执行计划）。可按 id（精确）或 title（模糊包含）定位；多命中时返回最近更新的一条。结果含 openable 入口，供对话直接查看或在卡片打开。',
+      input_schema: {
+        type: 'object',
+        description: 'id 与 title 至少二选一。',
+        properties: {
+          id: { type: 'integer', description: '反馈 ID（精确匹配，正整数）' },
+          title: { type: 'string', description: '反馈标题关键词（模糊包含，title LIKE %keyword%）' },
+        },
+      },
+      handler: (args) => handleOpenFeedback(projectId, db, workspacePath, args),
+    },
   ]);
 }
 
 /* ------------------------------------------------------------------ read_file ------------------------------------------------------------------ */
 
-function handleReadFile(workspacePath, args) {
+function handleReadFile(db, workspacePath, args) {
   const filePath = String(args.filePath || '').trim();
   if (!filePath) {
     return { error: '缺少 filePath 参数', errorCode: 'MISSING_PARAM' };
@@ -125,8 +154,12 @@ function handleReadFile(workspacePath, args) {
     return { error: '文件路径无效', errorCode: 'INVALID_PATH' };
   }
 
-  if (!isInsidePath(workspaceRoot, resolvedPath)) {
-    return { error: '文件路径超出项目工作区，拒绝访问', errorCode: 'FILE_PATH_OUTSIDE_WORKSPACE' };
+  // 统一访问策略：调用期解析以保证读到最新配置；默认 project 仅允许工作区内部
+  const policy = resolveFileAccessPolicy({ db, workspacePath });
+  try {
+    assertPathAllowed(resolvedPath, policy);
+  } catch (err) {
+    return { error: err.message, errorCode: err.code || 'FILE_PATH_OUTSIDE_SCOPE' };
   }
 
   let stat;
@@ -188,14 +221,16 @@ async function handleSearchFiles(db, projectId, workspacePath, args) {
     timedOut = true;
   }, SEARCH_TIMEOUT_MS);
 
+  // 调用期解析访问策略，保证读到最新配置
+  const policy = resolveFileAccessPolicy({ db, workspacePath });
   try {
-    return await doSearch(db, projectId, workspacePath, keyword, () => timedOut);
+    return await doSearch(db, projectId, workspacePath, keyword, () => timedOut, policy);
   } finally {
     clearTimeout(timer);
   }
 }
 
-async function doSearch(db, projectId, workspacePath, keyword, isTimedOut) {
+async function doSearch(db, projectId, workspacePath, keyword, isTimedOut, policy) {
   const results = [];
   const seen = new Set();
   const workspaceRoot = path.resolve(workspacePath);
@@ -236,6 +271,8 @@ async function doSearch(db, projectId, workspacePath, keyword, isTimedOut) {
 
     const absPath = path.join(workspaceRoot, row.file_path);
     if (!fs.existsSync(absPath)) continue;
+    // 访问策略守卫：内容读取前确认 absPath 在允许范围内（默认仅工作区；跨项目开启后含白名单根）
+    if (!isPathAllowed(absPath, policy)) continue;
 
     // 跳过大文件（>1MB）的内容搜索以避免阻塞
     if (Number(row.size) > 1024 * 1024) continue;
@@ -282,9 +319,26 @@ function handleCreateRequirement(projectId, intakeService, args) {
     const requirements = snapshot?.requirements || [];
     const created = requirements[0]; // 按 updated_at DESC 排序，第一条为最新
     if (created) {
-      return { id: created.id, title: created.title, status: created.status };
+      // 富化工具结果：附带可打开引用，供渲染层识别「可打开卡片」（id 为正整数即可定位）
+      return {
+        id: created.id,
+        title: created.title,
+        status: created.status,
+        type: 'requirement',
+        projectId,
+        openable: true,
+      };
     }
-    return { id: null, title, status: 'open', note: '需求已创建，但未在快照中找到确认记录。' };
+    // 快照未取到确认记录（note 分支）：仍输出可打开引用契约，id 为 null
+    return {
+      id: null,
+      title,
+      status: 'open',
+      type: 'requirement',
+      projectId,
+      openable: true,
+      note: '需求已创建，但未在快照中找到确认记录。',
+    };
   } catch (err) {
     return { error: `创建需求失败：${err.message}`, errorCode: 'CREATE_FAILED' };
   }
@@ -314,9 +368,26 @@ function handleCreateFeedback(projectId, intakeService, args) {
     const feedbackList = snapshot?.feedback || [];
     const created = feedbackList[0]; // 按 updated_at DESC 排序，第一条为最新
     if (created) {
-      return { id: created.id, title: created.title, status: created.status };
+      // 富化工具结果：附带可打开引用，供渲染层识别「可打开卡片」（id 为正整数即可定位）
+      return {
+        id: created.id,
+        title: created.title,
+        status: created.status,
+        type: 'feedback',
+        projectId,
+        openable: true,
+      };
     }
-    return { id: null, title, status: 'open', note: '反馈已创建，但未在快照中找到确认记录。' };
+    // 快照未取到确认记录（note 分支）：仍输出可打开引用契约，id 为 null
+    return {
+      id: null,
+      title,
+      status: 'open',
+      type: 'feedback',
+      projectId,
+      openable: true,
+      note: '反馈已创建，但未在快照中找到确认记录。',
+    };
   } catch (err) {
     return { error: `创建反馈失败：${err.message}`, errorCode: 'CREATE_FAILED' };
   }
@@ -354,17 +425,125 @@ function normalizeScriptRuntime(value) {
   return allowed.includes(v) ? v : 'node';
 }
 
-/* ------------------------------------------------------------------ 路径校验（与 main.js isInsidePath 同逻辑） ------------------------------------------------------------------ */
+/* ------------------------------------------------------------------ open_requirement / open_feedback ------------------------------------------------------------------ */
 
-function isInsidePath(rootPath, targetPath) {
-  const resolvedRoot = normalizePathForCompare(path.resolve(rootPath));
-  const resolvedTarget = normalizePathForCompare(path.resolve(targetPath));
-  const rel = path.relative(resolvedRoot, resolvedTarget);
-  return rel === '' || (!!rel && !rel.startsWith('..') && !path.isAbsolute(rel));
+function handleOpenRequirement(projectId, db, workspacePath, args) {
+  return openIntakeDetail('requirement', 'requirements', '需求', projectId, db, workspacePath, args);
 }
 
-function normalizePathForCompare(value) {
-  return process.platform === 'win32' ? value.toLowerCase() : value;
+function handleOpenFeedback(projectId, db, workspacePath, args) {
+  return openIntakeDetail('feedback', 'feedback', '反馈', projectId, db, workspacePath, args);
+}
+
+/**
+ * 按 id（精确）或 title（模糊包含）定位当前项目的需求/反馈，返回结构化详情。
+ * 只读查询：通过 LEFT JOIN plans 读取绑定执行计划（标题从 plan markdown 文件解析，缺失/不可读则回退 Plan #id）。
+ * 未命中或未提供 id/title 时返回 INTAKE_NOT_FOUND，不抛未处理异常。
+ */
+function openIntakeDetail(type, table, label, projectId, db, workspacePath, args) {
+  if (!db) {
+    return { error: '数据库未注入，无法查询详情', errorCode: 'SERVICE_UNAVAILABLE' };
+  }
+
+  const id = Number((args || {}).id);
+  const hasId = Number.isInteger(id) && id > 0;
+  const titleKeyword = String((args || {}).title || '').trim();
+
+  if (!hasId && !titleKeyword) {
+    return { error: `未指定${label}：请提供 id 或 title`, errorCode: 'INTAKE_NOT_FOUND' };
+  }
+
+  // table 为内部硬编码常量（requirements/feedback），非用户输入；id/title 走参数化绑定。
+  const joinFrom = `${table}
+      LEFT JOIN plans ON plans.id = ${table}.linked_plan_id
+        AND plans.project_id = ${table}.project_id`;
+
+  let row;
+  try {
+    if (hasId) {
+      row = db.get(
+        `SELECT ${table}.*, plans.file_path AS plan_file_path,
+                plans.status AS plan_status,
+                plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+           FROM ${joinFrom}
+          WHERE ${table}.project_id = ? AND ${table}.id = ?
+          LIMIT 1`,
+        [projectId, id],
+      );
+    } else {
+      row = db.get(
+        `SELECT ${table}.*, plans.file_path AS plan_file_path,
+                plans.status AS plan_status,
+                plans.completed_tasks AS plan_completed, plans.total_tasks AS plan_total
+           FROM ${joinFrom}
+          WHERE ${table}.project_id = ? AND ${table}.title LIKE ?
+          ORDER BY ${table}.updated_at DESC, ${table}.id DESC
+          LIMIT 1`,
+        [projectId, `%${titleKeyword}%`],
+      );
+    }
+  } catch (err) {
+    return { error: `查询${label}失败：${err.message}`, errorCode: 'INTAKE_NOT_FOUND' };
+  }
+
+  if (!row) {
+    return { error: `未找到${label}（id 或 title 未命中当前项目）`, errorCode: 'INTAKE_NOT_FOUND' };
+  }
+
+  return {
+    type,
+    projectId,
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    status: row.status,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    linkedPlan: buildLinkedPlanDetail(db, workspacePath, row),
+    openable: true,
+  };
+}
+
+/** 从 intake 行（含 LEFT JOIN plans 的 plan_* 列）构造绑定计划详情；无 linked_plan_id 关联返回 null。 */
+function buildLinkedPlanDetail(db, workspacePath, row = {}) {
+  const planId = Number(row.linked_plan_id);
+  if (!Number.isInteger(planId) || planId <= 0) return null;
+
+  const title = readPlanMarkdownTitle(db, workspacePath, row.plan_file_path);
+  return {
+    id: planId,
+    title: title || `Plan #${planId}`,
+    filePath: row.plan_file_path || null,
+    status: row.plan_status || null,
+    completed: Number.isFinite(Number(row.plan_completed)) ? Number(row.plan_completed) : null,
+    total: Number.isFinite(Number(row.plan_total)) ? Number(row.plan_total) : null,
+  };
+}
+
+/** 只读解析 plan markdown 标题（首个 # 标题）；经访问策略校验，文件缺失/越界/不可读时返回 ''，不抛异常。 */
+function readPlanMarkdownTitle(db, workspacePath, filePath) {
+  if (!workspacePath || !filePath) return '';
+  try {
+    const workspaceRoot = path.resolve(workspacePath);
+    const absPath = path.resolve(workspaceRoot, filePath);
+    const policy = resolveFileAccessPolicy({ db, workspacePath });
+    if (!isPathAllowed(absPath, policy)) return '';
+    if (!fs.existsSync(absPath) || fs.statSync(absPath).isDirectory()) return '';
+    const content = fs.readFileSync(absPath, 'utf8').slice(0, 64 * 1024);
+    return extractMarkdownHeading(content);
+  } catch {
+    return '';
+  }
+}
+
+function extractMarkdownHeading(markdown) {
+  let text = String(markdown || '');
+  if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // 剥离行首 BOM
+  const lines = text.split(/\r?\n/);
+  const h1 = lines.find((line) => /^\s*#\s+\S/.test(line) && !/^\s*#{2,}\s+/.test(line));
+  if (h1) return h1.replace(/^\s*#\s+/, '').trim();
+  const anyHeading = lines.find((line) => /^\s*#{1,6}\s+\S/.test(line));
+  return anyHeading ? anyHeading.replace(/^\s*#{1,6}\s+/, '').trim() : '';
 }
 
 /* ------------------------------------------------------------------ search 辅助 ------------------------------------------------------------------ */

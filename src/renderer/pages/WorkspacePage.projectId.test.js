@@ -40,6 +40,7 @@ describe('Workspace chat project boundary regression', () => {
     expectIncludes(page, 'const chatState = useChat(projectId);', 'WorkspacePage should key chat state by projectId');
     expectIncludes(settingsCall, 'projectId={projectId}', 'settings still receives the current project for non-AI settings');
     expectIncludes(chatCall, 'chatState={chatState}', 'ChatView should consume the shared chat state');
+    expectIncludes(chatCall, 'onOpenIntake={handleOpenIntake}', 'ChatView should receive the open-intake handler');
     expectNotIncludes(chatCall, 'projectId={projectId}', 'ChatView should not receive a separate projectId prop');
   });
 

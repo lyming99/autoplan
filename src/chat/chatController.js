@@ -14,6 +14,7 @@
 
 const { nowIso } = require('../database');
 const { resolveAiConfigForConversation } = require('./aiConfigService');
+const { createChatQueue } = require('./chatQueue');
 
 const MAX_ROUNDS = 8;
 const MAX_MESSAGES = 20;
@@ -30,7 +31,7 @@ const MAX_MESSAGES = 20;
  * @param {Function} deps.onDone - ({status, error?, conversationId?, title?}) => void
  * @returns {{send:Function, stop:Function, getHistory:Function, clearHistory:Function, getConfig:Function, invalidateConfig:Function, isActive:Function}}
  */
-function createChatController({ db, llmClient, chatTools, conversationId, projectId, workspacePath, onEvent, onDone }) {
+function createChatController({ db, llmClient, chatTools, conversationId, projectId, workspacePath, onEvent, onDone, onQueue }) {
   conversationId = normalizeRequiredId(conversationId, 'conversationId');
   projectId = normalizeRequiredId(projectId, 'projectId');
   requireConversationForProject(db, conversationId, projectId);
@@ -38,6 +39,10 @@ function createChatController({ db, llmClient, chatTools, conversationId, projec
   const noop = () => {};
   const emitEvent = onEvent || noop;
   const emitDone = onDone || noop;
+
+  // 会话级消息队列（需求 #37）：快照优先走主进程专用通道（onQueue → chat:queue），否则回退 queue_update 事件
+  const emitQueue = (snap) => (typeof onQueue === 'function' ? onQueue(snap) : emitEvent({ type: 'queue_update', data: snap }));
+  const queue = createChatQueue({ db, conversationId, projectId, emit: emitQueue });
 
   let abortController = null;
   let active = false;
@@ -47,33 +52,39 @@ function createChatController({ db, llmClient, chatTools, conversationId, projec
   let cachedAiConfig = null;
 
   /**
-   * 发送用户消息，启动 agent loop（不等待结束）。
-   * @param {string} message
+   * 发送用户消息：入队（status='queued'）后尝试派发；生成中再次发送改为排队（不再丢弃）。
+   * @returns {{id:number, content:string, state:string}|null} 入队项（含 chat_messages 行 id），空串为 null
    */
   function send(message) {
-    const text = String(message || '').trim();
-    if (!text) return;
-    if (active) return; // 已在进行中，忽略重复发送
+    const enqueued = queue.enqueue(message);
+    if (!enqueued) return null;
+    pump();
+    return enqueued;
+  }
 
+  /**
+   * 顺序派发：空闲且有排队项时取队首、置处理中（库内行翻为 done 进入上下文）并启动 agent loop；
+   * 由 send 与 finishGeneration 调用，上一条结束（done/aborted/error/max_rounds）后立即续跑下一条。
+   */
+  function pump() {
+    if (active || !queue.hasQueued()) return;
+    const item = queue.peekNext();
+    if (!item) return;
+    queue.markProcessing(item.id);
     active = true;
     currentRound = 0;
     abortController = new AbortController();
-
-    // 持久化用户消息（含 conversation_id）
-    storeMessage(db, conversationId, projectId, 'user', text, null, null, 'done');
-
-    // 异步启动 agent loop
-    runAgentLoop(text).catch((error) => {
-      if (error?.name === 'AbortError') {
-        finishGeneration({ status: 'aborted' });
-      } else {
-        finishGeneration({ status: 'error', error: error?.message || 'unknown error' });
-        storeMessage(db, conversationId, projectId, 'system', `错误：${error?.message || 'unknown error'}`, null, null, 'error');
-      }
-    }).finally(() => {
-      active = false;
-      abortController = null;
+    runAgentLoop(item.content).catch((error) => {
+      if (error?.name === 'AbortError') return finishGeneration({ status: 'aborted' });
+      finishGeneration({ status: 'error', error: error?.message || 'unknown error' });
+      storeMessage(db, conversationId, projectId, 'system', `错误：${error?.message || 'unknown error'}`, null, null, 'error');
     });
+  }
+
+  /** 恢复历史排队（刷新/重启后）：从库内 status='queued' 行重建 FIFO 并尝试派发；主进程创建 controller 后调用。 */
+  function resumeQueue() {
+    queue.loadPersisted();
+    pump();
   }
 
   /**
@@ -139,6 +150,8 @@ function createChatController({ db, llmClient, chatTools, conversationId, projec
   function finishGeneration(payload) {
     active = false;
     abortController = null;
+    queue.releaseProcessing(); // 上一条结束，出队其队列项（库内行已为 done，保留为历史用户消息）
+    pump(); // 续跑下一条（若有）
     emitDone(payload);
   }
 
@@ -429,7 +442,21 @@ function createChatController({ db, llmClient, chatTools, conversationId, projec
     return result;
   }
 
-  return { send, stop, getHistory, clearHistory, getConfig, invalidateConfig, isActive };
+  return {
+    send,
+    stop,
+    getHistory,
+    clearHistory,
+    getConfig,
+    invalidateConfig,
+    isActive,
+    resumeQueue,
+    getQueue: () => queue.getQueue(),
+    hasQueued: () => queue.hasQueued(),
+    cancelQueueItem: (id) => queue.cancelItem(id),
+    editQueueItem: (id, text) => queue.editItem(id, text),
+    clearQueue: () => queue.clear(),
+  };
 }
 
 /* ------------------------------------------------------------------ 消息持久化 ------------------------------------------------------------------ */
@@ -483,10 +510,9 @@ function buildMessages(db, conversationId, projectId, provider) {
     [conversationId, projectId],
   );
 
-  const completed = rows.filter((row) => {
-    if (row.status === 'streaming') return false;
-    return true;
-  });
+  // 排除 streaming（流式中未完成）与 queued（尚未派发的排队消息，不得提前进入上下文）；
+  // 处理中项已被 markProcessing 翻为 done，自然进入。
+  const completed = rows.filter((row) => row.status !== 'streaming' && row.status !== 'queued');
 
   const recent = completed.slice(-MAX_MESSAGES);
 

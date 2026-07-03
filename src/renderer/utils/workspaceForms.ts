@@ -12,6 +12,8 @@ import type {
   CodexReasoningEffort,
   CreateScriptInput,
   EnvVarEntry,
+  FileAccessScope,
+  FileAccessSettings,
   IntakeType,
   LoopConfigInput,
   McpConfigInput,
@@ -103,6 +105,55 @@ export const scopeFileOpenModeOptions: Array<SettingsChoiceOption<ScopeFileOpenM
   { value: 'vscode', label: 'VSCode', description: '使用 code 命令打开文件。' },
   { value: 'command', label: '第三方命令', description: '自定义编辑器命令，支持 {file}。' },
 ];
+
+/* ===================== 文件访问范围 draft 表单（设置面板，需求 #35） ===================== */
+
+export type FileAccessFormState = {
+  scope: FileAccessScope;
+  allowCrossProject: boolean;
+  allowedRoots: string[];
+};
+
+/** 默认文件访问设置：默认安全，仅当前项目工作区 */
+export const defaultFileAccessSettings: FileAccessFormState = {
+  scope: 'project',
+  allowCrossProject: false,
+  allowedRoots: [],
+};
+
+export const fileAccessScopeOptions: Array<SettingsChoiceOption<FileAccessScope>> = [
+  { value: 'project', label: '仅当前项目', description: '默认安全，仅可访问当前项目工作区。' },
+  { value: 'workspace', label: '工作区', description: '当前项目为单根，等同于仅当前项目。' },
+  { value: 'custom', label: '自定义白名单', description: '当前项目工作区 + 额外白名单根目录。' },
+  { value: 'all', label: '不限制', description: '访问不受应用层限制，高风险。' },
+];
+
+/** 将存储值归一化为合法 scope；非法值回退 project */
+export function normalizeFileAccessScope(value?: string | null): FileAccessScope {
+  const scope = String(value || '').trim().toLowerCase();
+  return scope === 'workspace' || scope === 'custom' || scope === 'all' ? scope : 'project';
+}
+
+/** 从 file-access:get 返回的快照构造表单 draft */
+export function fileAccessFormFromSettings(settings?: FileAccessSettings | null): FileAccessFormState {
+  if (!settings) return { ...defaultFileAccessSettings, allowedRoots: [] };
+  const roots = Array.isArray(settings.allowedRoots)
+    ? settings.allowedRoots.filter((root): root is string => typeof root === 'string')
+    : [];
+  return {
+    scope: normalizeFileAccessScope(settings.scope),
+    allowCrossProject: Boolean(settings.allowCrossProject),
+    allowedRoots: roots,
+  };
+}
+
+/** 比较两个文件访问表单 draft 是否一致（用于脏检测） */
+export function fileAccessFormsEqual(a: FileAccessFormState, b: FileAccessFormState): boolean {
+  if (a.scope !== b.scope) return false;
+  if (a.allowCrossProject !== b.allowCrossProject) return false;
+  if (a.allowedRoots.length !== b.allowedRoots.length) return false;
+  return a.allowedRoots.every((root, i) => root === b.allowedRoots[i]);
+}
 
 export function createEmptyPlanReadState(): WorkspacePlanReadState {
   return { plan: null, result: null, loading: false, error: null };

@@ -297,7 +297,8 @@ describe('Workspace chat AI config state regression', () => {
     expectIncludes(page, 'const chatState = useChat(projectId);', 'WorkspacePage should own the shared chat state');
     expect(page.split('useChat(projectId)').length - 1 === 1, 'WorkspacePage should create chat state exactly once');
     expectCountAtLeast(page, 'chatState={chatState}', 2, 'WorkspacePage should pass chat state into sidebar and ChatView render paths');
-    expectIncludes(page, '<ChatView chatState={chatState} />', 'ChatView should consume the shared workspace chat state');
+    expectIncludes(page, '<ChatView chatState={chatState} onOpenIntake={handleOpenIntake} />', 'ChatView should consume the shared workspace chat state');
+    expectIncludes(page, 'onOpenIntake={handleOpenIntake}', 'ChatView should receive an open-intake handler from WorkspacePage');
     expectIncludes(page, 'type WorkspaceSidebarWithChatProps = ComponentProps<typeof WorkspaceSidebar> & {', 'WorkspaceSidebar should be typed to receive chat state');
   });
 

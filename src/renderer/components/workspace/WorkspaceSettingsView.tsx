@@ -11,6 +11,10 @@ import {
   chatConfigFormsEqual,
   codexReasoningOptionDetails,
   createDefaultChatConfigForm,
+  defaultFileAccessSettings,
+  fileAccessFormFromSettings,
+  fileAccessFormsEqual,
+  fileAccessScopeOptions,
   getErrorMessage,
   isCodexAgentCliProvider,
   maskApiKeyUtil,
@@ -23,6 +27,7 @@ import {
   providerSupportsThinkingDepth,
   providerSupportsThinkingBudget,
   type ChatConfigFormState,
+  type FileAccessFormState,
   type LoopFormState,
   type McpConfigFormState,
   type ScopeFileOpenMode,
@@ -32,13 +37,14 @@ import { Icon } from '../icons';
 import { Modal } from '../Modal';
 import { McpControlPanel, mcpStatusText, mcpStatusTone } from './McpControlPanel';
 
-type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'mcp' | 'ai' | 'env' | 'about';
+type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'file-access' | 'mcp' | 'ai' | 'env' | 'about';
 
 const SETTINGS_NAV: Array<{ id: SettingsPane; label: string; hint: string; icon: string }> = [
   { id: 'loop', label: '循环控制', hint: '路径、间隔、验收命令', icon: 'loop' },
   { id: 'cli', label: 'CLI 后端', hint: 'Provider 与 Codex 深度', icon: 'cli' },
   { id: 'appearance', label: '外观', hint: '浅色 / 深色', icon: 'theme' },
   { id: 'scope', label: 'scope 文件', hint: '打开方式与编辑器命令', icon: 'scope' },
+  { id: 'file-access', label: '文件访问', hint: '读取范围与白名单', icon: 'file-access' },
   { id: 'mcp', label: 'MCP 接入', hint: '服务状态与工具清单', icon: 'mcp' },
   { id: 'ai', label: 'AI 对话', hint: 'LLM 接口与模型配置', icon: 'ai' },
   { id: 'env', label: '环境变量', hint: '注入到脚本与 CLI 执行环境', icon: 'env' },
@@ -50,6 +56,12 @@ function scopeModeLabel(mode: ScopeFileOpenMode) {
   if (mode === 'vscode') return 'VSCode';
   if (mode === 'command') return '第三方命令';
   return '系统默认';
+}
+
+function fileAccessScopeNavLabel(form: FileAccessFormState) {
+  if (form.scope === 'all') return '不限制';
+  if (form.scope === 'custom' || form.allowCrossProject) return '白名单';
+  return '仅项目';
 }
 
 function agentCliNavLabel(provider: string) {
@@ -135,6 +147,62 @@ export function WorkspaceSettingsView({
   const [aiConfigName, setAiConfigName] = useState('');
   const [aiConfigSaving, setAiConfigSaving] = useState(false);
   const [aiConfigError, setAiConfigError] = useState<string | null>(null);
+
+  // 文件访问范围（需求 #35）：全局配置，与项目无关
+  const [fileAccessForm, setFileAccessForm] = useState<FileAccessFormState>(() => ({ ...defaultFileAccessSettings }));
+  const [fileAccessSaved, setFileAccessSaved] = useState<FileAccessFormState>(() => ({ ...defaultFileAccessSettings }));
+  const [fileAccessSaving, setFileAccessSaving] = useState(false);
+  const [fileAccessMessage, setFileAccessMessage] = useState<string | null>(null);
+  const fileAccessDirty = !fileAccessFormsEqual(fileAccessForm, fileAccessSaved);
+
+  const loadFileAccess = useCallback(async () => {
+    try {
+      const settings = await window.autoplan.fileAccess.get();
+      const form = fileAccessFormFromSettings(settings);
+      setFileAccessForm(form);
+      setFileAccessSaved(form);
+    } catch {
+      /* 取配置失败保持默认值 */
+    }
+  }, []);
+
+  const saveFileAccess = useCallback(async () => {
+    setFileAccessSaving(true);
+    setFileAccessMessage(null);
+    try {
+      const result = await window.autoplan.fileAccess.save({
+        scope: fileAccessForm.scope,
+        allowCrossProject: fileAccessForm.allowCrossProject,
+        allowedRoots: fileAccessForm.allowedRoots,
+      });
+      setFileAccessSaved({ ...fileAccessForm });
+      setFileAccessMessage(
+        result?.warned
+          ? '已保存为「不限制」：文件读取将不受应用层限制，仅受操作系统权限约束，请谨慎使用。'
+          : '文件访问范围已保存。',
+      );
+    } catch (error) {
+      setFileAccessMessage(getErrorMessage(error, '保存文件访问范围失败'));
+    } finally {
+      setFileAccessSaving(false);
+    }
+  }, [fileAccessForm]);
+
+  const addAllowedRoot = useCallback(async () => {
+    const dir = await window.autoplan.pickDirectory();
+    if (!dir) return;
+    setFileAccessForm((current) =>
+      current.allowedRoots.includes(dir) ? current : { ...current, allowedRoots: [...current.allowedRoots, dir] },
+    );
+  }, []);
+
+  const removeAllowedRoot = useCallback((root: string) => {
+    setFileAccessForm((current) => ({
+      ...current,
+      allowedRoots: current.allowedRoots.filter((item) => item !== root),
+    }));
+  }, []);
+
   const loadChatConfig = useCallback(async () => {
     try {
       const cfg = await window.autoplan.chatGetConfig();
@@ -159,7 +227,8 @@ export function WorkspaceSettingsView({
   useEffect(() => {
     void loadChatConfig();
     void loadAiConfigs();
-  }, [loadAiConfigs, loadChatConfig]);
+    void loadFileAccess();
+  }, [loadAiConfigs, loadChatConfig, loadFileAccess]);
 
   const chatConfigDirty = !chatConfigFormsEqual(chatConfigForm, chatConfigSaved, hasExistingApiKey);
 
@@ -274,6 +343,7 @@ export function WorkspaceSettingsView({
     cli: { label: agentCliNavLabel(loopForm.agentCliProvider), tone: isCodexProvider ? 'ok' : '' },
     appearance: { label: themeModeLabel },
     scope: { label: scopeModeLabel(scopeFileOpenSettings.mode) },
+    'file-access': { label: fileAccessScopeNavLabel(fileAccessForm) },
     mcp: { label: mcpStatus, tone: mcpStatusTone(mcp) },
     ai: { label: hasExistingApiKey ? '已配置' : '未配置', tone: hasExistingApiKey ? 'ok' : '' },
     env: { label: loopForm.envVars.length ? `${loopForm.envVars.length} 个` : '未配置' },
@@ -548,6 +618,124 @@ export function WorkspaceSettingsView({
                   <div className="inline-banner info">
                     <span>无法判断影响范围时使用 <b>unknown</b>，完整验收任务使用 <b>validation</b>；打开前会校验目标路径位于当前工作区内。</span>
                   </div>
+                </div>
+              </div>
+
+              <SettingsActions running={running} onToggleRun={onToggleRun} />
+            </section>
+          ) : null}
+
+          {activePane === 'file-access' ? (
+            <section className="settings-pane active" aria-labelledby="settings-file-access-title">
+              <div className="pane-head">
+                <h2 id="settings-file-access-title"><span className="pane-ico" aria-hidden="true" />文件访问范围</h2>
+                <p>控制 read_file、search_files、打开文件与读取计划等入口可访问的目录范围。默认仅允许当前项目工作区；开启后可按白名单访问其他文件夹。</p>
+              </div>
+
+              <div className="set-card">
+                <div className="set-card-head">
+                  <h3>访问范围</h3>
+                  <div className="set-card-hint">范围越大风险越高，默认即安全</div>
+                </div>
+                <div className="set-card-body">
+                  <label className="field">
+                    <span className="field-label">文件访问范围</span>
+                    <div className="segmented scope-segmented" role="radiogroup" aria-label="文件访问范围">
+                      {fileAccessScopeOptions.map((option) => {
+                        const active = fileAccessForm.scope === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`seg-opt${active ? ' active' : ''}`}
+                            aria-pressed={active}
+                            onClick={() => setFileAccessForm((current) => ({ ...current, scope: option.value }))}
+                          >
+                            <span>{option.label}</span>
+                            <span className="seg-note">{option.description}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <span className="field-hint">默认「仅当前项目」即可满足绝大多数场景。</span>
+                  </label>
+
+                  {fileAccessForm.scope === 'all' ? (
+                    <div className="inline-banner" style={{ borderColor: 'var(--danger)', color: 'var(--danger)' }}>
+                      <span><b>⚠ 高风险：</b>选择「不限制」后，文件读取入口可访问本机任意路径（仍受操作系统权限约束）。仅在你完全信任执行环境时使用。</span>
+                    </div>
+                  ) : null}
+                  {fileAccessForm.scope === 'project' || fileAccessForm.scope === 'workspace' ? (
+                    <div className="inline-banner info">
+                      <span>当前为默认安全范围：仅允许读取当前项目工作区内部文件，工作区之外的路径会被拒绝。</span>
+                    </div>
+                  ) : null}
+                  {fileAccessForm.scope === 'custom' ? (
+                    <div className="inline-banner info">
+                      <span>「自定义白名单」需在下方添加允许访问的目录；未在白名单内的路径仍会被拒绝。</span>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="set-card">
+                <div className="set-card-head">
+                  <h3>跨项目访问</h3>
+                  <div className="set-card-hint">快捷开启工作区外的白名单访问</div>
+                </div>
+                <div className="set-card-body">
+                  <label className="field">
+                    <span className="field-label">允许跨项目访问</span>
+                    <input
+                      type="checkbox"
+                      checked={fileAccessForm.allowCrossProject}
+                      onChange={(event) => setFileAccessForm((current) => ({ ...current, allowCrossProject: event.target.checked }))}
+                    />
+                    <span className="field-hint">开启后等效于「自定义白名单」，需在下方配置白名单目录。</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="set-card">
+                <div className="set-card-head">
+                  <h3>白名单目录</h3>
+                  <div className="set-card-hint">当前项目工作区之外额外允许读取的目录</div>
+                </div>
+                <div className="set-card-body">
+                  {fileAccessForm.allowedRoots.length === 0 ? (
+                    <div className="empty-hint">尚未配置白名单目录，点击下方「添加目录」选择要放行的文件夹。</div>
+                  ) : (
+                    fileAccessForm.allowedRoots.map((root) => (
+                      <div className="env-var-row" key={root}>
+                        <span className="env-value mono">{root}</span>
+                        <button
+                          type="button"
+                          className="btn-icon env-var-delete"
+                          title="移除目录"
+                          aria-label="移除目录"
+                          onClick={() => removeAllowedRoot(root)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))
+                  )}
+                  <button type="button" className="btn btn-sm" onClick={() => void addAllowedRoot()}>+ 添加目录</button>
+                  <span className="field-hint">每行通过系统目录选择器指定一个绝对路径根；仅配置必要的目录以缩小暴露面。</span>
+                </div>
+              </div>
+
+              <div className="set-card">
+                <div className="set-card-body">
+                  <button
+                    type="button"
+                    className="btn btn-sm btn-primary"
+                    onClick={() => void saveFileAccess()}
+                    disabled={!fileAccessDirty || fileAccessSaving}
+                  >
+                    {fileAccessSaving ? '保存中…' : '保存访问范围'}
+                  </button>
+                  {fileAccessMessage ? <span className="field-hint" style={{ marginLeft: 12 }}>{fileAccessMessage}</span> : null}
                 </div>
               </div>
 

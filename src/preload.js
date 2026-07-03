@@ -86,6 +86,16 @@ function chatConversationPayload(payload = {}) {
   };
 }
 
+function chatQueuePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    projectId: source.projectId,
+    conversationId: source.conversationId ?? source.id,
+    id: source.id,
+    message: source.message,
+  };
+}
+
 function conversationCreatePayload(payload = {}) {
   const source = payload && typeof payload === 'object' ? payload : {};
   return {
@@ -196,6 +206,16 @@ contextBridge.exposeInMainWorld('autoplan', {
     ipcRenderer.on('chat:done', listener);
     return () => ipcRenderer.removeListener('chat:done', listener);
   },
+  // 队列发送（需求 #37）
+  chatQueueList: (payload) => ipcRenderer.invoke('chat:queueList', chatConversationPayload(payload)),
+  chatQueueCancel: (payload) => ipcRenderer.invoke('chat:queueCancel', chatQueuePayload(payload)),
+  chatQueueEdit: (payload) => ipcRenderer.invoke('chat:queueEdit', chatQueuePayload(payload)),
+  chatQueueClear: (payload) => ipcRenderer.invoke('chat:queueClear', chatConversationPayload(payload)),
+  onChatQueue: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('chat:queue', listener);
+    return () => ipcRenderer.removeListener('chat:queue', listener);
+  },
   // AI 配置（需求 #28）
   aiConfigList: () => ipcRenderer.invoke('ai-config:list'),
   aiConfigCreate: (payload) => ipcRenderer.invoke('ai-config:create', aiConfigCreatePayload(payload)),
@@ -212,4 +232,9 @@ contextBridge.exposeInMainWorld('autoplan', {
   conversationCreate: (payload) => ipcRenderer.invoke('conversation:create', conversationCreatePayload(payload)),
   conversationUpdate: (payload) => ipcRenderer.invoke('conversation:update', conversationUpdatePayload(payload)),
   conversationDelete: (payload) => ipcRenderer.invoke('conversation:delete', chatConversationPayload(payload)),
+  // 文件访问范围（需求 #35）：读取/保存访问策略配置
+  fileAccess: {
+    get: () => ipcRenderer.invoke('file-access:get'),
+    save: (config) => ipcRenderer.invoke('file-access:save', config),
+  },
 });

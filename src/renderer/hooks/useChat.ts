@@ -8,6 +8,7 @@ import type {
   Conversation,
   WorkspaceChatState,
 } from '../types';
+import { useChatQueue } from './useChatQueue';
 
 /* ------------------------------------------------------------------ 辅助 ------------------------------------------------------------------ */
 
@@ -565,18 +566,25 @@ export function useChat(projectId: number): WorkspaceChatState {
     async (message: string) => {
       const text = String(message || '').trim();
       const cid = stateRef.current.activeConversationId;
-      if (!text || stateRef.current.isStreaming || stateRef.current.awaitingResponse || !cid || !projectId) return;
+      // 移除流式中发送守卫：回复中也可继续输入并入队（需求 #37）
+      if (!text || !cid || !projectId) return;
 
+      // 乐观以排队态追加用户消息（onChatDone 后 reload history 以服务端真实 id 协调，避免重复/错位）
       const userMsg = newMessage(projectId, 'user', {
         id: makeTempId(tempIdRef.current),
         content: text,
+        status: 'queued',
       });
       const next = [...stateRef.current.messages, userMsg];
       stateRef.current.messages = next;
-      stateRef.current.awaitingResponse = true;
-      stateRef.current.isStreaming = true;
-      setIsStreaming(true);
       setMessages(next);
+
+      // 首次发送（非流式中）乐观进入流式态；流式中再发送仅入队，不重置流式态
+      if (!stateRef.current.isStreaming) {
+        stateRef.current.isStreaming = true;
+        stateRef.current.awaitingResponse = true;
+        setIsStreaming(true);
+      }
 
       try {
         await window.autoplan.chatSend({
@@ -736,6 +744,9 @@ export function useChat(projectId: number): WorkspaceChatState {
     [aiConfigs, conversations],
   );
 
+  // 队列发送（需求 #37）：组合队列状态 hook（会话隔离快照 + 管理动作）
+  const queue = useChatQueue(projectId, activeConversationId);
+
   const chatState: WorkspaceChatState & WorkspaceChatComposerActions = {
     messages,
     isStreaming,
@@ -760,6 +771,12 @@ export function useChat(projectId: number): WorkspaceChatState {
     isThinking,
     thinkingContent,
     streamPhase,
+    // 队列发送（需求 #37）
+    queue: queue.items,
+    queueCount: queue.count,
+    cancelQueueItem: queue.cancelQueueItem,
+    editQueueItem: queue.editQueueItem,
+    clearQueue: queue.clearQueue,
     updateConversationAiConfig,
     updateActiveAiConfigThinkingDepth,
   };
