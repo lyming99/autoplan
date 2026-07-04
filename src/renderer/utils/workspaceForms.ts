@@ -407,7 +407,7 @@ export function terminalCommandShortcutsFromScripts(
         description: script.description || '',
       };
     })
-    .filter((item): item is TerminalCommandShortcut => Boolean(item));
+    .filter(isPresent);
 }
 
 export function terminalCommandShortcutsFromExecutors(
@@ -432,11 +432,15 @@ export function terminalCommandShortcutsFromExecutors(
         description: executor.group?.kind || executor.type || '',
       };
     })
-    .filter((item): item is TerminalCommandShortcut => Boolean(item));
+    .filter(isPresent);
 }
 
 export function terminalShortcutCommandText(shortcut: TerminalCommandShortcut | null | undefined): string {
   return String(shortcut?.command || '').trim();
+}
+
+function isPresent<T>(value: T | null | undefined): value is T {
+  return value !== null && typeof value !== 'undefined';
 }
 
 function readTerminalField(source: Record<string, unknown>, name: string): unknown {

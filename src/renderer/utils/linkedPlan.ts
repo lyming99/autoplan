@@ -32,7 +32,7 @@ export function normalizeLinkedPlans(item: LinkedPlanIntakeItem | null | undefin
   const fromArray = Array.isArray(item?.linked_plans)
     ? item.linked_plans
         .map((summary, index) => normalizeLinkedPlanSummary(summary, index + 1))
-        .filter((summary): summary is LinkedPlanSummary => summary !== null)
+        .filter(isLinkedPlanSummary)
     : [];
   if (fromArray.length > 0) {
     return fromArray.sort(
@@ -62,7 +62,7 @@ export function normalizeLinkedPlans(item: LinkedPlanIntakeItem | null | undefin
 export function currentLinkedPlanSummary(linkedPlans: LinkedPlanSummary[] | null | undefined) {
   const normalized = (linkedPlans || [])
     .map((summary, index) => normalizeLinkedPlanSummary(summary, index + 1))
-    .filter((summary): summary is LinkedPlanSummary => summary !== null);
+    .filter(isLinkedPlanSummary);
   if (normalized.length === 0) return null;
   return normalized.find((summary) => Boolean(summary.is_current || summary.current))
     || normalized.find((summary) => {
@@ -166,7 +166,7 @@ export function createUnavailableLinkedPlanFromSummary(projectId: number, linked
   };
 }
 
-function normalizeLinkedPlanSummary(summary: LinkedPlanSummary | null | undefined, fallbackPhaseIndex: number) {
+function normalizeLinkedPlanSummary(summary: LinkedPlanSummary | null | undefined, fallbackPhaseIndex: number): LinkedPlanSummary | null {
   const planId = linkedPlanSummaryPlanId(summary);
   if (planId === null) return null;
   return {
@@ -182,6 +182,10 @@ function normalizeLinkedPlanSummary(summary: LinkedPlanSummary | null | undefine
     validation_passed: summary?.validation_passed ?? summary?.validationPassed ?? null,
     is_current: Boolean(summary?.is_current ?? summary?.current ?? false),
   };
+}
+
+function isLinkedPlanSummary(summary: LinkedPlanSummary | null): summary is LinkedPlanSummary {
+  return summary !== null;
 }
 
 function linkedPlanSummaryPlanId(summary: LinkedPlanSummary | null | undefined) {
