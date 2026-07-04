@@ -15,6 +15,13 @@ const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'exec
 const ACTIVE_RUNTIME_PHASE_SQL = "('running','scan','generate-plan','execute-task','validate')";
 const DEFAULT_UPDATE_THROTTLE_MS = 1200;
 
+/**
+ * plugin 持久进程注册表：key `${projectId}:${executorId}` → 子进程句柄。
+ * 与 executorRunner.pluginProcesses 单一来源协作：本表登记直接注册的进程，
+ * 查找/停止时未命中则委托给 executorRunner（lazy require，规避循环依赖）。
+ */
+const activePluginProcesses = new Map();
+
 function createProjectRuntime() {
   return {
     timer: null,
@@ -31,31 +38,47 @@ function createProjectRuntime() {
 function createThrottledUpdateEmitter(options = {}) {
   const throttleMs = Number(options.throttleMs || DEFAULT_UPDATE_THROTTLE_MS);
   const pendingTimers = new Map();
+  const pendingModes = new Map();
   const lastEmittedAt = new Map();
   const snapshot = options.snapshot;
+  const patch = options.patch;
   const emit = options.emit;
+  const emitPatch = options.emitPatch;
 
-  const flushKey = (key, projectId) => {
+  const modeFor = (scheduleOptions = {}) =>
+    scheduleOptions.lightweight && typeof patch === 'function' && typeof emitPatch === 'function'
+      ? 'patch'
+      : 'snapshot';
+
+  const flushKey = (key, projectId, mode = pendingModes.get(key) || 'snapshot') => {
     const timer = pendingTimers.get(key);
     if (timer) clearTimeout(timer);
     pendingTimers.delete(key);
+    pendingModes.delete(key);
     lastEmittedAt.set(key, Date.now());
-    emit(snapshot(projectId));
+    if (mode === 'patch') emitPatch(patch(projectId));
+    else emit(snapshot(projectId));
   };
 
   const schedule = (projectId, scheduleOptions = {}) => {
     const key = String(projectId || 'all');
+    const mode = modeFor(scheduleOptions);
     if (scheduleOptions.immediate) {
-      flushKey(key, projectId);
+      const pendingMode = pendingModes.get(key);
+      flushKey(key, projectId, pendingMode === 'snapshot' && mode === 'patch' ? 'snapshot' : mode);
       return;
     }
 
     const elapsed = Date.now() - (lastEmittedAt.get(key) || 0);
     if (elapsed >= throttleMs) {
-      flushKey(key, projectId);
+      flushKey(key, projectId, mode);
       return;
     }
-    if (pendingTimers.has(key)) return;
+    if (pendingTimers.has(key)) {
+      if (mode === 'snapshot') pendingModes.set(key, mode);
+      return;
+    }
+    pendingModes.set(key, mode);
     const timer = setTimeout(() => flushKey(key, projectId), throttleMs - elapsed);
     if (typeof timer.unref === 'function') timer.unref();
     pendingTimers.set(key, timer);
@@ -65,7 +88,7 @@ function createThrottledUpdateEmitter(options = {}) {
     emit: schedule,
     flush() {
       for (const key of Array.from(pendingTimers.keys())) {
-        schedule(key === 'all' ? null : Number(key), { immediate: true });
+        flushKey(key, key === 'all' ? null : Number(key));
       }
     },
   };
@@ -120,23 +143,33 @@ function normalizeRuntimeStatus(state, runtime = null, agentCliConfig) {
 }
 
 function resetStoredRuntimeState(db, now = nowIso()) {
-  db.run(
-    `UPDATE project_states
-     SET running = 0,
-         phase = CASE WHEN phase IN ${ACTIVE_RUNTIME_PHASE_SQL} THEN 'stopped' ELSE phase END,
-         updated_at = ?
-     WHERE running != 0 OR phase IN ${ACTIVE_RUNTIME_PHASE_SQL}`,
-    [now],
-  );
-  db.run(
-    `UPDATE loop_state
-     SET running = 0,
-         phase = CASE WHEN phase IN ${ACTIVE_RUNTIME_PHASE_SQL} THEN 'stopped' ELSE phase END,
-         updated_at = ?
-     WHERE id = 1 AND (running != 0 OR phase IN ${ACTIVE_RUNTIME_PHASE_SQL})`,
-    [now],
-  );
-  db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE status = ?', ['pending', now, 'running']);
+  const statements = [
+    {
+      sql: `UPDATE project_states
+            SET running = 0,
+                phase = CASE WHEN phase IN ${ACTIVE_RUNTIME_PHASE_SQL} THEN 'stopped' ELSE phase END,
+                updated_at = ?
+            WHERE running != 0 OR phase IN ${ACTIVE_RUNTIME_PHASE_SQL}`,
+      params: [now],
+    },
+    {
+      sql: `UPDATE loop_state
+            SET running = 0,
+                phase = CASE WHEN phase IN ${ACTIVE_RUNTIME_PHASE_SQL} THEN 'stopped' ELSE phase END,
+                updated_at = ?
+            WHERE id = 1 AND (running != 0 OR phase IN ${ACTIVE_RUNTIME_PHASE_SQL})`,
+      params: [now],
+    },
+    {
+      sql: 'UPDATE plan_tasks SET status = ?, updated_at = ? WHERE status = ?',
+      params: ['pending', now, 'running'],
+    },
+  ];
+  if (typeof db.runBatch === 'function') {
+    db.runBatch(statements);
+    return;
+  }
+  for (const statement of statements) db.run(statement.sql, statement.params);
 }
 
 function scheduleProjectRuntime(runtime, intervalSeconds, runOnce) {
@@ -198,6 +231,8 @@ function stopProjectRuntime(projectId, runtime, callbacks) {
       }
     }
   }
+  // 清理该项目全部 plugin 持久进程（本表 + executorRunner 注册表）
+  try { clearRuntimePluginProcesses(projectId); } catch { /* ignore */ }
   callbacks.markStopped(projectId);
   callbacks.addEvent(projectId, 'loop.stopped', '循环已停止');
   callbacks.emitUpdate(projectId);
@@ -261,19 +296,57 @@ function stopRuntimePlanOperations(runtime, planId, options = {}) {
   return stopped;
 }
 
+function stopRuntimeExecutorOperations(runtime, executorId, options = {}) {
+  // plugin 持久进程：顺带停止该执行器对应的 plugin 进程（无活跃 operation 时也需处理）
+  if (executorId && options.projectId) {
+    try { stopRuntimePluginProcess(options.projectId, executorId); } catch { /* ignore */ }
+  }
+  if (!runtime?.activeOperations || !executorId) return [];
+  const archive = options.archive !== false;
+  const stoppedAt = options.stoppedAt || nowIso();
+  const targetId = Number(executorId);
+  const matches = findRuntimeOperations(
+    runtime,
+    (operation) => operation?.operationType === 'executor' && (
+      Number(operation?.executorId) === targetId ||
+      Number(operation?.rootExecutorId) === targetId
+    ),
+  );
+  const stopped = [];
+  for (const entry of matches) {
+    if (entry.operation) {
+      entry.operation.cancelled = true;
+      entry.operation.cancelledAt = stoppedAt;
+      if (options.errorMessage && !entry.operation.errorMessage) {
+        entry.operation.errorMessage = options.errorMessage;
+      }
+    }
+    killChildProcess(entry.child);
+    stopped.push({ ...entry, stoppedAt });
+    if (archive) archiveRuntimeOperation(runtime, entry.operationKey);
+    else removeRuntimeOperation(runtime, entry.operationKey);
+  }
+  refreshRuntimeActive(runtime);
+  return stopped;
+}
+
 function setProjectPhase(db, projectId, phase) {
-  db.run('UPDATE project_states SET phase = ?, updated_at = ? WHERE project_id = ?', [
+  db.run('UPDATE project_states SET phase = ?, updated_at = ? WHERE project_id = ? AND phase != ?', [
     phase,
     nowIso(),
     projectId,
+    phase,
   ]);
 }
 
 function recordRuntimeError(db, projectId, error, addEvent, emitUpdate) {
   const message = error?.stack || error?.message || String(error);
   db.run(
-    'UPDATE project_states SET phase = ?, last_error = ?, updated_at = ? WHERE project_id = ?',
-    ['error', message, nowIso(), projectId],
+    `UPDATE project_states
+        SET phase = ?, last_error = ?, updated_at = ?
+      WHERE project_id = ?
+        AND (phase != ? OR COALESCE(last_error, '') != ?)`,
+    ['error', message, nowIso(), projectId, 'error', message],
   );
   addEvent(projectId, 'loop.error', message);
   emitUpdate(projectId);
@@ -291,6 +364,13 @@ function archiveRuntimeOperation(runtime, operationKey) {
       projectId: op.projectId || null,
       planId: op.planId || null,
       taskId: op.taskId || null,
+      operationType: op.operationType || null,
+      executorId: op.executorId || null,
+      executorLabel: op.executorLabel || null,
+      rootExecutorId: op.rootExecutorId || null,
+      rootExecutorLabel: op.rootExecutorLabel || null,
+      parentExecutorId: op.parentExecutorId || null,
+      executorRunId: op.executorRunId || null,
       cancelled: Boolean(op.cancelled),
       cancelledAt: op.cancelledAt || null,
       ...agentCliContextFields(op),
@@ -341,6 +421,13 @@ function operationSnapshotRow(operation) {
     projectId: operation.projectId || null,
     planId: operation.planId || null,
     taskId: operation.taskId || null,
+    operationType: operation.operationType || null,
+    executorId: operation.executorId || null,
+    executorLabel: operation.executorLabel || null,
+    rootExecutorId: operation.rootExecutorId || null,
+    rootExecutorLabel: operation.rootExecutorLabel || null,
+    parentExecutorId: operation.parentExecutorId || null,
+    executorRunId: operation.executorRunId || null,
     ...agentContext,
     startedAt: operation.startedAt || null,
     ...(operation.finishedAt ? { finishedAt: operation.finishedAt } : {}),
@@ -442,7 +529,7 @@ function waitForChild(child, timeoutMs) {
 }
 
 function killChildProcess(child) {
-  if (!child || child.killed) return;
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
   if (process.platform === 'win32' && child.pid) {
     const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
     killer.on('error', () => child.kill());
@@ -451,10 +538,97 @@ function killChildProcess(child) {
   child.kill('SIGTERM');
 }
 
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │ plugin 持久进程句柄管理                                                    │
+// └─────────────────────────────────────────────────────────────────────────┘
+
+function pluginProcessKey(projectId, executorId) {
+  return `${Number(projectId)}:${Number(executorId)}`;
+}
+
+/** 延迟加载 executorRunner，规避 runtime ↔ executorRunner 的循环依赖（仅在调用时取值） */
+function loadExecutorRunner() {
+  try { return require('../executors/executorRunner'); } catch { return null; }
+}
+
+/** 注册 plugin 持久进程；进程退出时自动从表中移除 */
+function startRuntimePluginProcess(projectId, executorId, childProcess) {
+  if (!childProcess) return;
+  const key = pluginProcessKey(projectId, executorId);
+  activePluginProcesses.set(key, childProcess);
+  if (typeof childProcess.on !== 'function') return;
+  const onExit = () => {
+    if (activePluginProcesses.get(key) === childProcess) activePluginProcesses.delete(key);
+    if (typeof childProcess.removeListener === 'function') childProcess.removeListener('exit', onExit);
+  };
+  childProcess.on('exit', onExit);
+}
+
+/** 查找 plugin 进程句柄：优先本表，未命中委托 executorRunner（runner 为单一来源） */
+function findRuntimePluginChild(projectId, executorId) {
+  const own = activePluginProcesses.get(pluginProcessKey(projectId, executorId));
+  if (own) return { child: own, owned: true };
+  const runner = loadExecutorRunner();
+  const entry = runner && typeof runner.getPluginProcess === 'function'
+    ? runner.getPluginProcess(projectId, executorId)
+    : null;
+  if (entry && entry.child) return { child: entry.child, owned: false };
+  return null;
+}
+
+/** 向运行中的 plugin 进程 stdin 写入数据 */
+function sendRuntimePluginInput(projectId, executorId, input) {
+  const text = String(input ?? '');
+  const found = findRuntimePluginChild(projectId, executorId);
+  if (!found || !found.child.stdin || found.child.stdin.destroyed) return false;
+  try { found.child.stdin.write(text); return true; } catch { return false; }
+}
+
+/** 优雅终止 plugin 进程（SIGTERM/taskkill）；未命中返回 false */
+function stopRuntimePluginProcess(projectId, executorId) {
+  const key = pluginProcessKey(projectId, executorId);
+  const own = activePluginProcesses.get(key);
+  if (own) {
+    activePluginProcesses.delete(key);
+    killChildProcess(own);
+    return true;
+  }
+  const runner = loadExecutorRunner();
+  const entry = runner && typeof runner.getPluginProcess === 'function'
+    ? runner.getPluginProcess(projectId, executorId)
+    : null;
+  if (entry && entry.child) {
+    // 直接终止会触发 executorRunner 注册的 exit 回调，由其回写 stopped 状态
+    killChildProcess(entry.child);
+    return true;
+  }
+  return false;
+}
+
+/** 循环停止时清理指定项目的全部 plugin 进程（本表 + executorRunner 注册表） */
+function clearRuntimePluginProcesses(projectId) {
+  const id = Number(projectId);
+  let cleared = 0;
+  for (const [key, child] of Array.from(activePluginProcesses.entries())) {
+    const [pid] = key.split(':');
+    if (Number(pid) !== id) continue;
+    activePluginProcesses.delete(key);
+    killChildProcess(child);
+    cleared += 1;
+  }
+  const runner = loadExecutorRunner();
+  if (runner && typeof runner.clearPluginProcesses === 'function') {
+    cleared += Number(runner.clearPluginProcesses(id)) || 0;
+  }
+  return cleared;
+}
+
 module.exports = {
   ACTIVE_RUNTIME_PHASES,
   ACTIVE_RUNTIME_PHASE_SQL,
+  activePluginProcesses,
   archiveRuntimeOperation,
+  clearRuntimePluginProcesses,
   createProjectRuntime,
   createThrottledUpdateEmitter,
   createUnrefInterval,
@@ -472,7 +646,11 @@ module.exports = {
   runtimeOperationContextByTask,
   runtimeProjectSummary,
   scheduleProjectRuntime,
+  sendRuntimePluginInput,
   setProjectPhase,
+  startRuntimePluginProcess,
+  stopRuntimeExecutorOperations,
+  stopRuntimePluginProcess,
   stopRuntimePlanOperations,
   stopProjectRuntime,
   stopRuntimeTask,

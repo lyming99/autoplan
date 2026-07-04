@@ -31,6 +31,7 @@ const OpenAI = require('openai').OpenAI;
  * @param {number|string} opts.config.temperature
  * @param {Array<{role:string,content:string|Array}>} opts.config.messages
  * @param {Array<object>} [opts.config.tools]
+ * @param {object|string} [opts.config.toolChoice] - OpenAI/Anthropic 工具选择透传
  * @param {AbortSignal} [opts.config.signal]
  * @param {string} [opts.config.thinkingDepth] - 'low'|'medium'|'high'（OpenAI o-series / DeepSeek 推理模型）
  * @param {number} [opts.config.thinkingBudgetTokens] - Anthropic 扩展思考 token 预算
@@ -39,20 +40,67 @@ const OpenAI = require('openai').OpenAI;
  */
 async function* createLlmClient({ config, fetch: injectedFetch }) {
   const fetchFn = injectedFetch || globalThis.fetch;
-  const { provider, baseUrl, apiKey, model, temperature, messages, tools, signal, thinkingDepth, thinkingBudgetTokens } = config;
+  const {
+    provider,
+    baseUrl,
+    apiKey,
+    model,
+    temperature,
+    messages,
+    tools,
+    toolChoice,
+    tool_choice: snakeToolChoice,
+    signal,
+    thinkingDepth,
+    thinkingBudgetTokens,
+  } = config;
+  const effectiveToolChoice = toolChoice ?? snakeToolChoice;
 
   const temp = temperature != null ? Number(temperature) : 0.3;
 
   if (provider === 'anthropic') {
-    yield* streamAnthropic({ fetchFn, baseUrl, apiKey, model, temperature: temp, messages, tools, signal, thinkingBudgetTokens });
+    yield* streamAnthropic({
+      fetchFn,
+      baseUrl,
+      apiKey,
+      model,
+      temperature: temp,
+      messages,
+      tools,
+      toolChoice: effectiveToolChoice,
+      signal,
+      thinkingBudgetTokens,
+    });
   } else {
-    yield* streamOpenAiCompat({ fetchFn, baseUrl, apiKey, model, temperature: temp, messages, tools, signal, thinkingDepth });
+    yield* streamOpenAiCompat({
+      fetchFn,
+      baseUrl,
+      apiKey,
+      model,
+      temperature: temp,
+      messages,
+      tools,
+      toolChoice: effectiveToolChoice,
+      signal,
+      thinkingDepth,
+    });
   }
 }
 
 /* ------------------------------------------------------------------ OpenAI 兼容协议（openai SDK）------------------------------------------------------------------ */
 
-async function* streamOpenAiCompat({ fetchFn, baseUrl, apiKey, model, temperature, messages, tools, signal, thinkingDepth }) {
+async function* streamOpenAiCompat({
+  fetchFn,
+  baseUrl,
+  apiKey,
+  model,
+  temperature,
+  messages,
+  tools,
+  toolChoice,
+  signal,
+  thinkingDepth,
+}) {
   const client = new OpenAI({
     baseURL: baseUrl.replace(/\/+$/, ''),
     apiKey: apiKey || 'sk-placeholder',
@@ -70,6 +118,9 @@ async function* streamOpenAiCompat({ fetchFn, baseUrl, apiKey, model, temperatur
   if (Number.isFinite(temperature)) params.temperature = temperature;
   if (tools && tools.length > 0) {
     params.tools = tools.map(normalizeToolForOpenAiSdk);
+  }
+  if (toolChoice !== undefined && toolChoice !== null) {
+    params.tool_choice = toolChoice;
   }
   if (thinkingDepth) {
     params.reasoning_effort = thinkingDepth;
@@ -164,9 +215,20 @@ async function* streamOpenAiCompat({ fetchFn, baseUrl, apiKey, model, temperatur
 
 /* ------------------------------------------------------------------ Anthropic Messages 协议（fetch + SSE）------------------------------------------------------------------ */
 
-async function* streamAnthropic({ fetchFn, baseUrl, apiKey, model, temperature, messages, tools, signal, thinkingBudgetTokens }) {
+async function* streamAnthropic({
+  fetchFn,
+  baseUrl,
+  apiKey,
+  model,
+  temperature,
+  messages,
+  tools,
+  toolChoice,
+  signal,
+  thinkingBudgetTokens,
+}) {
   const url = `${baseUrl.replace(/\/+$/, '')}/messages`;
-  const body = buildAnthropicBody({ model, messages, temperature, tools, thinkingBudgetTokens });
+  const body = buildAnthropicBody({ model, messages, temperature, tools, toolChoice, thinkingBudgetTokens });
 
   let response;
   try {
@@ -316,19 +378,23 @@ async function* streamAnthropic({ fetchFn, baseUrl, apiKey, model, temperature, 
  */
 function normalizeToolForOpenAiSdk(tool) {
   if (tool.type === 'function' && tool.function) {
-    return { type: 'function', function: { ...tool.function } };
+    const fn = { ...tool.function };
+    if (tool.strict === true && fn.strict !== true) fn.strict = true;
+    return { type: 'function', function: fn };
   }
+  const fn = {
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.input_schema || tool.parameters,
+  };
+  if (tool.strict === true) fn.strict = true;
   return {
     type: 'function',
-    function: {
-      name: tool.name,
-      description: tool.description,
-      parameters: tool.input_schema || tool.parameters,
-    },
+    function: fn,
   };
 }
 
-function buildAnthropicBody({ model, messages, temperature, tools, thinkingBudgetTokens }) {
+function buildAnthropicBody({ model, messages, temperature, tools, toolChoice, thinkingBudgetTokens }) {
   const thinkingEnabled = thinkingBudgetTokens != null && Number(thinkingBudgetTokens) > 0;
   const body = {
     model,
@@ -338,6 +404,7 @@ function buildAnthropicBody({ model, messages, temperature, tools, thinkingBudge
   };
   if (Number.isFinite(temperature)) body.temperature = temperature;
   if (tools && tools.length > 0) body.tools = tools;
+  if (toolChoice !== undefined && toolChoice !== null) body.tool_choice = toolChoice;
 
   // Anthropic 扩展思考（需求 #28）
   if (thinkingEnabled) {

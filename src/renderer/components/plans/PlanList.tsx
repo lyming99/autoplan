@@ -1,8 +1,9 @@
 import type { KeyboardEvent, MouseEvent, ReactNode } from 'react';
-import { useId, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import type { Plan, PlanTask, WorkspacePlanReadState } from '../../types';
 import { planCliSummaryLabel } from '../shared';
 import { formatChinaDateTime } from '../../utils/time';
+import { Icon } from '../icons';
 import {
   formatPlanDurationSummary,
   planTitle,
@@ -19,6 +20,8 @@ const PLAN_CARD_INTERACTIVE_SELECTOR = [
   'textarea',
   'summary',
   '[role="button"]',
+  '[role="menu"]',
+  '[role="menuitem"]',
   '[role="link"]',
   '[tabindex]:not([tabindex="-1"])',
 ].join(',');
@@ -61,14 +64,20 @@ function planCardChipClass(state: string) {
   return 'chip-pending';
 }
 
+function canStopPlan(plan: Plan, hasRunningTask: boolean) {
+  return hasRunningTask || plan.status === 'running';
+}
+
 export function PlanList({
   emptyText = '暂无 plan。',
   latestReadingPlan,
   onCloseReader,
+  onDeletePlan,
   onOpenReader,
   onRunParallel,
   onSelectPlan,
   onRefreshReader,
+  onStopPlan,
   plans,
   readerState,
   renderPlanControls,
@@ -79,10 +88,12 @@ export function PlanList({
   emptyText?: string;
   latestReadingPlan?: Plan | null;
   onCloseReader: () => void;
+  onDeletePlan?: (plan: Plan) => Promise<void> | void;
   onOpenReader: (plan: Plan) => void;
   onRunParallel?: (request: ParallelRunRequest) => void;
   onSelectPlan?: (plan: Plan) => void;
   onRefreshReader: () => void;
+  onStopPlan?: (plan: Plan) => Promise<void> | void;
   plans: Plan[];
   readerState: WorkspacePlanReadState;
   renderPlanControls?: (plan: Plan) => ReactNode;
@@ -93,7 +104,31 @@ export function PlanList({
   const readingPlan = readerState.plan;
   const planReading = readerState.loading;
   const readerDialogId = useId();
+  const menuBaseId = useId();
   const [confirmingPlan, setConfirmingPlan] = useState<Plan | null>(null);
+  const [deletingPlan, setDeletingPlan] = useState<Plan | null>(null);
+  const [openMenuPlanId, setOpenMenuPlanId] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (openMenuPlanId === null) return undefined;
+
+    function handlePointerDown(event: globalThis.PointerEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest('[data-plan-action-menu="true"]')) return;
+      setOpenMenuPlanId(null);
+    }
+
+    function handleKeyDown(event: globalThis.KeyboardEvent) {
+      if (event.key === 'Escape') setOpenMenuPlanId(null);
+    }
+
+    document.addEventListener('pointerdown', handlePointerDown, true);
+    document.addEventListener('keydown', handleKeyDown, true);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, true);
+      document.removeEventListener('keydown', handleKeyDown, true);
+    };
+  }, [openMenuPlanId]);
 
   return (
     <>
@@ -114,8 +149,15 @@ export function PlanList({
             const parallelDisabledReason = parallelRunDisabledReason(plan, runningInPlan);
             const canRunParallel = Boolean(onRunParallel && suggestion?.hasSafeParallelBatches && !parallelDisabledReason);
             const cardState = planCardState(plan, runningInPlan);
+            const menuOpen = openMenuPlanId === plan.id;
+            const menuId = `${menuBaseId}-plan-menu-${plan.id}`;
             const selected = selectedPlanId === plan.id;
             const progressTone = plan.validation_passed || plan.status === 'completed' ? ' success' : runningInPlan ? ' running' : '';
+            const stopDisabledReason = !onStopPlan
+              ? '计划停止入口不可用'
+              : canStopPlan(plan, runningInPlan)
+                ? ''
+                : '仅运行中的计划可停止';
             return (
               <article
                 className={`plan-card ${cardState}${selected ? ' selected' : ''}`}
@@ -195,6 +237,66 @@ export function PlanList({
                     </button>
                   </div>
                   {renderPlanControls ? <div className="plan-secondary-actions">{renderPlanControls(plan)}</div> : null}
+                  <div
+                    className="plan-action-menu-wrap"
+                    data-plan-action-menu="true"
+                    onBlur={(event) => {
+                      const nextFocus = event.relatedTarget;
+                      if (!(nextFocus instanceof Node) || !event.currentTarget.contains(nextFocus)) {
+                        setOpenMenuPlanId(null);
+                      }
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="plan-action-menu-button"
+                      aria-haspopup="menu"
+                      aria-expanded={menuOpen}
+                      aria-controls={menuOpen ? menuId : undefined}
+                      aria-label={`更多操作：${title || plan.file_path || `Plan #${plan.id}`}`}
+                      title="更多操作"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setOpenMenuPlanId((current) => (current === plan.id ? null : plan.id));
+                      }}
+                    >
+                      <Icon name="more-horizontal" size={16} aria-hidden />
+                    </button>
+                    {menuOpen ? (
+                      <div className="plan-action-menu ctx-menu" id={menuId} role="menu">
+                        <button
+                          type="button"
+                          className="plan-action-menu-item"
+                          role="menuitem"
+                          disabled={Boolean(stopDisabledReason)}
+                          title={stopDisabledReason || '停止该计划'}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            if (stopDisabledReason) return;
+                            setOpenMenuPlanId(null);
+                            void onStopPlan?.(plan);
+                          }}
+                        >
+                          <Icon name="stop" size={15} aria-hidden />
+                          <span>停止</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="plan-action-menu-item danger"
+                          role="menuitem"
+                          title="删除该计划"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setOpenMenuPlanId(null);
+                            setDeletingPlan(plan);
+                          }}
+                        >
+                          <Icon name="trash" size={15} aria-hidden />
+                          <span>删除</span>
+                        </button>
+                      </div>
+                    ) : null}
+                  </div>
                   <span className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}>
                     验收 {plan.validation_passed ? 'passed' : 'pending'}
                   </span>
@@ -262,6 +364,40 @@ export function PlanList({
                 }}
               >
                 确认并发执行
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {deletingPlan ? (
+        <div className="modal-mask" onClick={() => setDeletingPlan(null)}>
+          <div className="modal plan-delete-confirm-modal" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head">
+              <h3>删除计划</h3>
+              <button type="button" className="modal-close" onClick={() => setDeletingPlan(null)} aria-label="关闭删除计划确认">
+                ×
+              </button>
+            </div>
+            <div className="plan-delete-confirm-body">
+              <p>删除后会先停止该计划运行，并删除计划文件和任务记录。</p>
+              <p>关联的需求和反馈记录会保留，不会被删除。</p>
+              <div className="plan-delete-target" title={deletingPlan.file_path}>
+                {planTitle(deletingPlan) || deletingPlan.file_path || `Plan #${deletingPlan.id}`}
+              </div>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn" onClick={() => setDeletingPlan(null)}>取消</button>
+              <button
+                type="button"
+                className="btn btn-danger"
+                onClick={() => {
+                  const plan = deletingPlan;
+                  setDeletingPlan(null);
+                  void onDeletePlan?.(plan);
+                }}
+              >
+                删除计划
               </button>
             </div>
           </div>

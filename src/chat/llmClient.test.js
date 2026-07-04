@@ -120,6 +120,39 @@ const sampleTools = [
   },
 ];
 
+const strictCreatePlanSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    title: { type: 'string' },
+    tasks: {
+      type: 'array',
+      minItems: 1,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          title: { type: 'string' },
+          scope: { type: 'string' },
+          acceptancePoints: { type: 'array', items: { type: 'string' }, minItems: 1 },
+        },
+        required: ['title', 'scope', 'acceptancePoints'],
+      },
+    },
+    overallAcceptance: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        commands: { type: 'array', items: { type: 'string' }, minItems: 1 },
+        scope: { type: 'string' },
+        passCriteria: { type: 'array', items: { type: 'string' }, minItems: 1 },
+      },
+      required: ['commands', 'scope', 'passCriteria'],
+    },
+  },
+  required: ['title', 'tasks', 'overallAcceptance'],
+};
+
 /* ================================================================== OpenAI 协议 ================================================================== */
 
 describe('createLlmClient OpenAI 协议', () => {
@@ -154,6 +187,62 @@ describe('createLlmClient OpenAI 协议', () => {
     assert.ok(fetch.body.tools, 'tools 应出现在 body 中');
     assert.equal(fetch.body.tools.length, 1);
     assert.equal(fetch.body.tools[0].function.name, 'read_file');
+  });
+
+  it('OpenAI SDK 归一化保留 function.strict 与严格 parameters', async () => {
+    const fetch = capturingFetch(() => ({
+      ok: true,
+      body: sseStream(['data: {"id":"1","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n\n']),
+    }));
+    const tools = [
+      {
+        type: 'function',
+        function: {
+          name: 'create_plan',
+          description: 'Create plan',
+          strict: true,
+          parameters: strictCreatePlanSchema,
+        },
+      },
+    ];
+
+    await collectEvents(
+      createLlmClient({ config: { ...baseOpenAiConfig, tools }, fetch }),
+    );
+
+    const tool = fetch.body.tools[0];
+    assert.equal(tool.function.name, 'create_plan');
+    assert.equal(tool.function.strict, true);
+    assert.equal(tool.function.parameters.additionalProperties, false);
+    assert.equal(tool.function.parameters.properties.tasks.minItems, 1);
+    assert.equal(tool.function.parameters.properties.tasks.items.additionalProperties, false);
+  });
+
+  it('OpenAI SDK 归一化支持 top-level strict + input_schema 工具定义', async () => {
+    const fetch = capturingFetch(() => ({
+      ok: true,
+      body: sseStream(['data: {"id":"1","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":"stop"}]}\n\n']),
+    }));
+
+    await collectEvents(
+      createLlmClient({
+        config: {
+          ...baseOpenAiConfig,
+          tools: [{
+            name: 'create_plan',
+            description: 'Create plan',
+            strict: true,
+            input_schema: strictCreatePlanSchema,
+          }],
+        },
+        fetch,
+      }),
+    );
+
+    const tool = fetch.body.tools[0];
+    assert.equal(tool.type, 'function');
+    assert.equal(tool.function.strict, true);
+    assert.deepEqual(tool.function.parameters.required, ['title', 'tasks', 'overallAcceptance']);
   });
 
   it('baseUrl 末尾斜杠规范化处理', async () => {
@@ -420,6 +509,32 @@ describe('createLlmClient Anthropic 协议', () => {
     assert.equal(fetch.headers['Content-Type'], 'application/json');
     assert.equal(fetch.headers['x-api-key'], 'sk-ant-test-key');
     assert.equal(fetch.headers['anthropic-version'], '2023-06-01');
+  });
+
+  it('tools 非空时 Anthropic 请求体继续使用 input_schema', async () => {
+    const fetch = capturingFetch(() => ({
+      ok: true,
+      body: sseStream([
+        'event: message_start\ndata: {"type":"message_start","message":{"id":"m1","role":"assistant"}}\n\n',
+        'event: content_block_start\ndata: {"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}\n\n',
+        'event: content_block_delta\ndata: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hi"}}\n\n',
+        'event: message_delta\ndata: {"type":"message_delta","delta":{"stop_reason":"end_turn"}}\n\n',
+        'event: message_stop\ndata: {"type":"message_stop"}\n\n',
+      ]),
+    }));
+    const tools = [{
+      name: 'create_plan',
+      description: 'Create plan',
+      input_schema: strictCreatePlanSchema,
+    }];
+
+    await collectEvents(createLlmClient({ config: { ...baseAnthropicConfig, tools }, fetch }));
+
+    assert.equal(fetch.body.tools.length, 1);
+    assert.equal(fetch.body.tools[0].name, 'create_plan');
+    assert.equal(fetch.body.tools[0].function, undefined);
+    assert.equal(fetch.body.tools[0].input_schema.additionalProperties, false);
+    assert.equal(fetch.body.tools[0].input_schema.properties.tasks.items.additionalProperties, false);
   });
 
   it('增量解析 text_delta（content_block_delta type=text_delta）', async () => {

@@ -143,6 +143,16 @@ const closeIcon = (
   </>
 );
 
+const clearIcon = (
+  <>
+    <path d="M4 18h16" />
+    <path d="M8 18 6.5 9.2a2 2 0 0 1 2-2.4h7a2 2 0 0 1 2 2.4L16 18" />
+    <path d="M9.5 7V5.5a2.5 2.5 0 0 1 5 0V7" />
+    <path d="M9 12h6" />
+    <path d="M10 15h4" />
+  </>
+);
+
 const searchIcon = (
   <>
     <circle cx="10.5" cy="10.5" r="6" />
@@ -235,6 +245,15 @@ const scriptIcon = (
     <path d="M7 3h8l4 4v11a3 3 0 0 1-3 3H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z" />
     <path d="M14.5 3.6V8H19" />
     <path d="m10 13 2 2 3-4" />
+  </>
+);
+
+const executorIcon = (
+  <>
+    <rect x="4" y="5" width="16" height="14" rx="2.4" />
+    <path d="M8 9h8" />
+    <path d="m8 13 2 2 3-4" />
+    <path d="M15.5 14.5H18" />
   </>
 );
 
@@ -415,6 +434,7 @@ const ICONS = {
   send: sendIcon,
   plus: plusIcon,
   close: closeIcon,
+  clear: clearIcon,
   search: searchIcon,
   enter: enterIcon,
   open: enterIcon,
@@ -432,6 +452,8 @@ const ICONS = {
   save: saveIcon,
   check: completeIcon,
   script: scriptIcon,
+  executor: executorIcon,
+  executors: executorIcon,
   bolt: boltIcon,
   power: powerIcon,
   history: historyIcon,

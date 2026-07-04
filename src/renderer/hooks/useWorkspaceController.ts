@@ -1,14 +1,17 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { DEFAULT_WORKSPACE_TAB, getPlanTaskAssociationSource } from '../types';
+import { DEFAULT_WORKSPACE_TAB, WORKSPACE_SEARCH_SOURCE_TYPES, getPlanTaskAssociationSource } from '../types';
 import type {
-  AgentCliProvider,
   AppSnapshot,
   CodexReasoningEffort,
   IntakeType,
+  LinkedPlanSummary,
   PendingAttachment,
+  PlanBackendProvider,
+  PlanGenerationInputFields,
   Plan,
   PlanTask,
+  RetryIntakePlanGenerationOptions,
   WorkspacePlanReadState,
   WorkspaceSearchResult,
   WorkspaceTab,
@@ -18,21 +21,24 @@ import { useSnapshot } from './useSnapshot';
 import { searchWorkspaceSnapshot } from '../utils/search';
 import {
   createUnavailableLinkedPlan,
-  findLinkedPlanInSnapshot,
+  createUnavailableLinkedPlanFromSummary,
+  currentLinkedPlanSummary,
+  findPreviewableLinkedPlan,
   matchFallbackPlan,
   normalizeLinkedPlanId,
+  normalizeLinkedPlans,
   type LinkedPlanIntakeItem,
 } from '../utils/linkedPlan';
 import {
   appendPendingAttachments,
   agentCliOptions,
   codexReasoningOptions,
+  composerPlanGenerationSelectionFromProjectState,
   createEmptyPlanReadState,
   createPendingClipboardImageAttachment,
   createPendingPathAttachment,
   defaultCodexReasoningEffort,
-  defaultComposerCliProviders,
-  defaultComposerCodexReasoning,
+  defaultComposerPlanGenerationSelections,
   defaultScopeFileOpenSettings,
   emptyPendingAttachments,
   getErrorMessage,
@@ -41,13 +47,19 @@ import {
   loopFormsEqual,
   mcpConfigFormToPayload,
   normalizeCodexReasoningEffort,
+  normalizePlanBackendProvider,
+  normalizePlanGenerationStrategy,
+  planGenerationInputFromComposerSelection,
   resolveWorkspaceTab,
   useMcpConfigForm,
+  type ComposerPlanGenerationSelection,
   type LoopFormState,
   type ScopeFileOpenSettings,
 } from '../utils/workspaceForms';
 import {
-  createFilteredWorkspaceItems,
+  EMPTY_WORKSPACE_FILTERABLE_ITEMS,
+  filterItemsByWorkspaceSearch,
+  filterTasksByWorkspaceSearch,
   searchNoMatchText,
   withTaskCliProviderTitle,
 } from '../utils/workspaceSearch';
@@ -68,10 +80,8 @@ export function useWorkspaceController() {
   const [activeTab, setActiveTab] = useState<WorkspaceTab>(() => resolveWorkspaceTab(tabParam));
   const [pendingAttachments, setPendingAttachments] =
     useState<Record<IntakeType, PendingAttachment[]>>(emptyPendingAttachments);
-  const [composerCliProviders, setComposerCliProviders] =
-    useState<Record<IntakeType, AgentCliProvider>>(defaultComposerCliProviders);
-  const [composerCodexReasoning, setComposerCodexReasoning] =
-    useState<Record<IntakeType, CodexReasoningEffort>>(defaultComposerCodexReasoning);
+  const [composerPlanGeneration, setComposerPlanGeneration] =
+    useState<Record<IntakeType, ComposerPlanGenerationSelection>>(defaultComposerPlanGenerationSelections);
   const [loopForm, setLoopForm] = useState<LoopFormState>({
     workspacePath: '',
     intervalSeconds: '5',
@@ -79,6 +89,16 @@ export function useWorkspaceController() {
     agentCliProvider: 'codex',
     agentCliCommand: '',
     codexReasoningEffort: defaultCodexReasoningEffort,
+    planGenerationStrategy: 'external-cli-markdown',
+    planGenerationProvider: 'codex',
+    planGenerationCommand: '',
+    planGenerationModel: '',
+    planGenerationCodexReasoningEffort: defaultCodexReasoningEffort,
+    planExecutionStrategy: 'external-cli',
+    planExecutionProvider: 'codex',
+    planExecutionCommand: '',
+    planExecutionModel: '',
+    planExecutionCodexReasoningEffort: defaultCodexReasoningEffort,
     envVars: [],
   });
   const [loopFormDirty, setLoopFormDirty] = useState(false);
@@ -101,38 +121,107 @@ export function useWorkspaceController() {
   const project = snapshot?.activeProject || null;
   const state = snapshot?.state || null;
   const projects = snapshot?.projects || [];
-  const workspaceSearch = useMemo(() => searchWorkspaceSnapshot(snapshot, searchQuery), [snapshot, searchQuery]);
+  const searchableSnapshot = searchQuery.trim() ? snapshot : null;
+  const workspaceSearch = useMemo(
+    () => searchWorkspaceSnapshot(searchableSnapshot, searchQuery),
+    [searchableSnapshot, searchQuery],
+  );
   const searchHitCount = workspaceSearch.total;
   const isSearching = !workspaceSearch.query.isEmpty;
-  const filteredItems = useMemo(
-    () => createFilteredWorkspaceItems(snapshot, workspaceSearch),
-    [snapshot, workspaceSearch],
+
+  const requirementItems = activeTab === 'requirement'
+    ? snapshot?.requirements ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.requirements
+    : EMPTY_WORKSPACE_FILTERABLE_ITEMS.requirements;
+  const feedbackItems = activeTab === 'feedback'
+    ? snapshot?.feedback ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.feedback
+    : EMPTY_WORKSPACE_FILTERABLE_ITEMS.feedback;
+  const planItems = activeTab === 'tasks'
+    ? snapshot?.plans ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.plans
+    : EMPTY_WORKSPACE_FILTERABLE_ITEMS.plans;
+  const taskItems = activeTab === 'tasks'
+    ? snapshot?.tasks ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.tasks
+    : EMPTY_WORKSPACE_FILTERABLE_ITEMS.tasks;
+  const eventItems = activeTab === 'events'
+    ? snapshot?.events ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.events
+    : EMPTY_WORKSPACE_FILTERABLE_ITEMS.events;
+
+  const filteredRequirements = useMemo(
+    () => (activeTab === 'requirement'
+      ? filterItemsByWorkspaceSearch(requirementItems, workspaceSearch, WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT)
+      : EMPTY_WORKSPACE_FILTERABLE_ITEMS.requirements),
+    [activeTab, requirementItems, workspaceSearch],
   );
+  const filteredFeedback = useMemo(
+    () => (activeTab === 'feedback'
+      ? filterItemsByWorkspaceSearch(feedbackItems, workspaceSearch, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK)
+      : EMPTY_WORKSPACE_FILTERABLE_ITEMS.feedback),
+    [activeTab, feedbackItems, workspaceSearch],
+  );
+  const filteredPlans = useMemo(
+    () => (activeTab === 'tasks'
+      ? filterItemsByWorkspaceSearch(planItems, workspaceSearch, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN)
+      : EMPTY_WORKSPACE_FILTERABLE_ITEMS.plans),
+    [activeTab, planItems, workspaceSearch],
+  );
+  const filteredTasks = useMemo(
+    () => (activeTab === 'tasks'
+      ? filterTasksByWorkspaceSearch(taskItems, filteredPlans, workspaceSearch)
+      : EMPTY_WORKSPACE_FILTERABLE_ITEMS.tasks),
+    [activeTab, filteredPlans, taskItems, workspaceSearch],
+  );
+  const filteredEvents = useMemo(
+    () => (activeTab === 'events'
+      ? filterItemsByWorkspaceSearch(eventItems, workspaceSearch, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT)
+      : EMPTY_WORKSPACE_FILTERABLE_ITEMS.events),
+    [activeTab, eventItems, workspaceSearch],
+  );
+  const filteredItems = useMemo(
+    () => ({
+      requirements: filteredRequirements,
+      feedback: filteredFeedback,
+      plans: filteredPlans,
+      tasks: filteredTasks,
+      events: filteredEvents,
+    }),
+    [filteredRequirements, filteredFeedback, filteredPlans, filteredTasks, filteredEvents],
+  );
+  const taskCliProvider = activeTab === 'tasks' ? state?.agent_cli_provider : null;
   const displayTasks = useMemo(
-    () => filteredItems.tasks.map((task) => withTaskCliProviderTitle(task, state?.agent_cli_provider)),
-    [filteredItems.tasks, state?.agent_cli_provider],
+    () => (activeTab === 'tasks'
+      ? filteredTasks.map((task) => withTaskCliProviderTitle(task, taskCliProvider))
+      : EMPTY_WORKSPACE_FILTERABLE_ITEMS.tasks),
+    [activeTab, filteredTasks, taskCliProvider],
   );
   const filteredEmptyText = isSearching ? searchNoMatchText : undefined;
+  const acceptancePlanItems = activeTab === 'acceptance'
+    ? snapshot?.plans ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.plans
+    : EMPTY_WORKSPACE_FILTERABLE_ITEMS.plans;
+  const acceptanceTaskItems = activeTab === 'acceptance'
+    ? snapshot?.tasks ?? EMPTY_WORKSPACE_FILTERABLE_ITEMS.tasks
+    : EMPTY_WORKSPACE_FILTERABLE_ITEMS.tasks;
+  const acceptanceProjectPlans = useMemo(
+    () => (activeTab === 'acceptance'
+      ? acceptancePlanItems.filter((plan) => Number(plan.project_id) === projectId)
+      : EMPTY_WORKSPACE_FILTERABLE_ITEMS.plans),
+    [acceptancePlanItems, activeTab, projectId],
+  );
   const acceptanceGroups = useMemo(
-    () => buildAcceptanceGroups(
-      (snapshot?.plans || []).filter((plan) => Number(plan.project_id) === projectId),
-      snapshot?.tasks || [],
-    ),
-    [snapshot?.plans, snapshot?.tasks, projectId],
+    () => (activeTab === 'acceptance'
+      ? buildAcceptanceGroups(acceptanceProjectPlans, acceptanceTaskItems)
+      : []),
+    [acceptanceProjectPlans, acceptanceTaskItems, activeTab],
   );
   const recentAccepted = useMemo(
-    () => buildRecentAccepted(
-      (snapshot?.plans || []).filter((plan) => Number(plan.project_id) === projectId),
-      snapshot?.tasks || [],
-    ),
-    [snapshot?.plans, snapshot?.tasks, projectId],
+    () => (activeTab === 'acceptance'
+      ? buildRecentAccepted(acceptanceProjectPlans, acceptanceTaskItems)
+      : []),
+    [acceptanceProjectPlans, acceptanceTaskItems, activeTab],
   );
   const acceptedGroups = useMemo(
-    () => buildAcceptedGroups(
-      (snapshot?.plans || []).filter((plan) => Number(plan.project_id) === projectId),
-      snapshot?.tasks || [],
-    ),
-    [snapshot?.plans, snapshot?.tasks, projectId],
+    () => (activeTab === 'acceptance'
+      ? buildAcceptedGroups(acceptanceProjectPlans, acceptanceTaskItems)
+      : []),
+    [acceptanceProjectPlans, acceptanceTaskItems, activeTab],
   );
   const latestReadingPlan = useMemo(() => {
     if (!planReadState.plan) return null;
@@ -175,39 +264,119 @@ export function useWorkspaceController() {
     if (!state || Number(state.project_id) !== Number(projectId)) return;
     const nextForm = loopFormFromProjectState(state);
     setLoopForm((current) => (loopFormDirty || loopFormsEqual(current, nextForm) ? current : nextForm));
-  }, [projectId, loopFormDirty, state?.project_id, state?.workspace_path, state?.interval_seconds, state?.validation_command, state?.agent_cli_provider, state?.agent_cli_command, state?.codex_reasoning_effort, state?.env_vars, state]);
+  }, [
+    projectId,
+    loopFormDirty,
+    state?.project_id,
+    state?.workspace_path,
+    state?.interval_seconds,
+    state?.validation_command,
+    state?.agent_cli_provider,
+    state?.agent_cli_command,
+    state?.codex_reasoning_effort,
+    state?.plan_generation_strategy,
+    state?.plan_generation_provider,
+    state?.plan_generation_command,
+    state?.plan_generation_model,
+    state?.plan_generation_codex_reasoning_effort,
+    state?.plan_execution_strategy,
+    state?.plan_execution_provider,
+    state?.plan_execution_command,
+    state?.plan_execution_model,
+    state?.plan_execution_codex_reasoning_effort,
+    state?.env_vars,
+    state,
+  ]);
 
   useEffect(() => {
     setLoopFormDirty(false);
   }, [projectId]);
 
   useEffect(() => {
-    const defaultProvider = state?.agent_cli_provider || 'codex';
-    const defaultReasoning = normalizeCodexReasoningEffort(state?.codex_reasoning_effort);
-    setComposerCliProviders({
-      requirement: defaultProvider,
-      feedback: defaultProvider,
+    const defaultPlanGeneration = composerPlanGenerationSelectionFromProjectState(state);
+    setComposerPlanGeneration({
+      requirement: defaultPlanGeneration,
+      feedback: defaultPlanGeneration,
     });
-    setComposerCodexReasoning({
-      requirement: defaultReasoning,
-      feedback: defaultReasoning,
-    });
-  }, [projectId, state?.agent_cli_provider, state?.codex_reasoning_effort]);
+  }, [
+    projectId,
+    state?.agent_cli_provider,
+    state?.codex_reasoning_effort,
+    state?.plan_generation_strategy,
+    state?.plan_generation_provider,
+    state?.plan_generation_command,
+    state?.plan_generation_model,
+    state?.plan_generation_codex_reasoning_effort,
+    state,
+  ]);
 
   const composerCliSelection = useMemo(
     () => ({
       options: agentCliOptions,
-      selectedByType: composerCliProviders,
       reasoningOptions: codexReasoningOptions,
-      reasoningByType: composerCodexReasoning,
-      onProviderChange: (type: IntakeType, provider: AgentCliProvider) => {
-        setComposerCliProviders((current) => ({ ...current, [type]: provider }));
+      selectedByType: composerPlanGeneration,
+      onProviderChange: (type: IntakeType, provider: PlanBackendProvider) => {
+        setComposerPlanGeneration((current) => {
+          const currentSelection = current[type];
+          const strategy = normalizePlanGenerationStrategy(currentSelection.strategy);
+          return {
+            ...current,
+            [type]: {
+              ...currentSelection,
+              useProjectDefault: false,
+              provider: normalizePlanBackendProvider(provider, strategy),
+            },
+          };
+        });
       },
       onReasoningChange: (type: IntakeType, effort: CodexReasoningEffort) => {
-        setComposerCodexReasoning((current) => ({ ...current, [type]: normalizeCodexReasoningEffort(effort) }));
+        setComposerPlanGeneration((current) => ({
+          ...current,
+          [type]: {
+            ...current[type],
+            useProjectDefault: false,
+            codexReasoningEffort: normalizeCodexReasoningEffort(effort),
+          },
+        }));
+      },
+      onUseProjectDefaultChange: (type: IntakeType, useProjectDefault: boolean) => {
+        setComposerPlanGeneration((current) => ({
+          ...current,
+          [type]: {
+            ...(useProjectDefault ? composerPlanGenerationSelectionFromProjectState(state) : current[type]),
+            useProjectDefault,
+          },
+        }));
+      },
+      onStrategyChange: (type: IntakeType, strategy: string) => {
+        setComposerPlanGeneration((current) => {
+          const normalizedStrategy = normalizePlanGenerationStrategy(strategy);
+          const provider = normalizePlanBackendProvider(current[type].provider, normalizedStrategy);
+          return {
+            ...current,
+            [type]: {
+              ...current[type],
+              useProjectDefault: false,
+              strategy: normalizedStrategy,
+              provider,
+            },
+          };
+        });
+      },
+      onCommandChange: (type: IntakeType, command: string) => {
+        setComposerPlanGeneration((current) => ({
+          ...current,
+          [type]: { ...current[type], useProjectDefault: false, command },
+        }));
+      },
+      onModelChange: (type: IntakeType, model: string) => {
+        setComposerPlanGeneration((current) => ({
+          ...current,
+          [type]: { ...current[type], useProjectDefault: false, model },
+        }));
       },
     }),
-    [composerCliProviders, composerCodexReasoning],
+    [composerPlanGeneration, state],
   );
 
   useEffect(() => {
@@ -267,16 +436,29 @@ export function useWorkspaceController() {
   }, []);
 
   const createIntake = useCallback(
-    async (type: IntakeType, body: string) => {
+    async (type: IntakeType, body: string | ({ body: string; createAsDraft?: boolean } & PlanGenerationInputFields)) => {
       if (!projectId) return false;
       try {
-        const provider = composerCliProviders[type];
+        const payload = body && typeof body === 'object' && !Array.isArray(body)
+          ? body
+          : { body: String(body || '') };
+        const selectedPlanGeneration = planGenerationInputFromComposerSelection(composerPlanGeneration[type]);
+        const explicitPlanGeneration: PlanGenerationInputFields = {
+          ...(payload.planGenerationStrategy !== undefined ? { planGenerationStrategy: payload.planGenerationStrategy } : {}),
+          ...(payload.planGenerationProvider !== undefined ? { planGenerationProvider: payload.planGenerationProvider } : {}),
+          ...(payload.planGenerationCommand !== undefined ? { planGenerationCommand: payload.planGenerationCommand } : {}),
+          ...(payload.planGenerationModel !== undefined ? { planGenerationModel: payload.planGenerationModel } : {}),
+          ...(payload.planGenerationCodexReasoningEffort !== undefined
+            ? { planGenerationCodexReasoningEffort: payload.planGenerationCodexReasoningEffort }
+            : {}),
+        };
+        const planGenerationPayload = Object.keys(explicitPlanGeneration).length ? explicitPlanGeneration : selectedPlanGeneration;
         const next = await window.autoplan[type === 'requirement' ? 'createRequirement' : 'createFeedback']({
           projectId,
-          body,
+          body: payload.body,
           attachments: pendingAttachments[type],
-          agentCliProvider: provider,
-          ...(provider === 'claude' ? {} : { codexReasoningEffort: composerCodexReasoning[type] }),
+          ...(payload.createAsDraft ? { createAsDraft: true } : {}),
+          ...planGenerationPayload,
         });
         setSnapshot(next);
         setPendingAttachments((current) => ({ ...current, [type]: [] }));
@@ -287,11 +469,11 @@ export function useWorkspaceController() {
         return false;
       }
     },
-    [composerCliProviders, composerCodexReasoning, pendingAttachments, projectId, setSnapshot, setError, showError],
+    [composerPlanGeneration, pendingAttachments, projectId, setSnapshot, setError, showError],
   );
 
-  const createRequirement = useCallback((body: string) => createIntake('requirement', body), [createIntake]);
-  const createFeedback = useCallback((body: string) => createIntake('feedback', body), [createIntake]);
+  const createRequirement = useCallback((body: string | ({ body: string; createAsDraft?: boolean } & PlanGenerationInputFields)) => createIntake('requirement', body), [createIntake]);
+  const createFeedback = useCallback((body: string | ({ body: string; createAsDraft?: boolean } & PlanGenerationInputFields)) => createIntake('feedback', body), [createIntake]);
 
   const updateRequirement = useCallback(
     async (id: number, input: { title?: string; body?: string; status?: string }) => {
@@ -374,7 +556,7 @@ export function useWorkspaceController() {
     }
   };
 
-  const runLoopAction = async (action: () => Promise<AppSnapshot>) => {
+  const runLoopAction = useCallback(async (action: () => Promise<AppSnapshot>) => {
     try {
       const next = await action();
       setSnapshot(next);
@@ -382,7 +564,34 @@ export function useWorkspaceController() {
     } catch (e) {
       showError(e);
     }
-  };
+  }, [setSnapshot, setError, showError]);
+
+  const stopPlan = useCallback(
+    async (plan: Plan) => {
+      const targetProjectId = Number(plan?.project_id || projectId);
+      const planId = Number(plan?.id || 0);
+      if (!targetProjectId || !planId) return;
+      await runLoopAction(() => window.autoplan.stopPlan({ projectId: targetProjectId, planId }));
+    },
+    [projectId, runLoopAction],
+  );
+
+  const deletePlan = useCallback(
+    async (plan: Plan) => {
+      const targetProjectId = Number(plan?.project_id || projectId);
+      const planId = Number(plan?.id || 0);
+      if (!targetProjectId || !planId) return;
+      try {
+        const next = await window.autoplan.deletePlan({ projectId: targetProjectId, planId });
+        setSnapshot(next);
+        clearDeletedPlanReader(next);
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [clearDeletedPlanReader, projectId, setSnapshot, setError, showError],
+  );
 
   const startMcp = () => runLoopAction(() => window.autoplan.startMcp({ projectId }));
   const stopMcp = () => runLoopAction(() => window.autoplan.stopMcp({ projectId }));
@@ -455,6 +664,19 @@ export function useWorkspaceController() {
     [projectId, setSnapshot, setError, showError],
   );
 
+  const retryIntakePlanGeneration = useCallback(
+    async (type: IntakeType, id: number, options: RetryIntakePlanGenerationOptions = {}) => {
+      try {
+        const next = await window.autoplan.retryIntakePlanGeneration({ projectId, type, id, ...options });
+        setSnapshot(next);
+        setError(null);
+      } catch (e) {
+        showError(e);
+      }
+    },
+    [projectId, setSnapshot, setError, showError],
+  );
+
   const readPlanForReader = useCallback(async (plan: Plan) => {
     const requestId = planReadRequestRef.current + 1;
     planReadRequestRef.current = requestId;
@@ -498,10 +720,17 @@ export function useWorkspaceController() {
   );
 
   const showUnavailableLinkedPlanReader = useCallback(
-    (item: LinkedPlanIntakeItem, message: string, planId: number | null = normalizeLinkedPlanId(item.linked_plan_id)) => {
+    (
+      item: LinkedPlanIntakeItem,
+      message: string,
+      planId: number | null = normalizeLinkedPlanId(item.linked_plan_id),
+      linkedPlan: LinkedPlanSummary | null = null,
+    ) => {
       planReadRequestRef.current += 1;
       setPlanReadState({
-        plan: createUnavailableLinkedPlan(projectId, item, planId),
+        plan: linkedPlan
+          ? createUnavailableLinkedPlanFromSummary(projectId, linkedPlan)
+          : createUnavailableLinkedPlan(projectId, item, planId),
         result: null,
         loading: false,
         error: message,
@@ -511,8 +740,9 @@ export function useWorkspaceController() {
   );
 
   const openIntakePlanReader = useCallback(
-    (item: LinkedPlanIntakeItem, fallbackPlan?: Plan | null) => {
-      const planId = normalizeLinkedPlanId(item.linked_plan_id);
+    (item: LinkedPlanIntakeItem, linkedPlan?: LinkedPlanSummary | null, fallbackPlan?: Plan | null) => {
+      const targetLinkedPlan = linkedPlan || currentLinkedPlanSummary(normalizeLinkedPlans(item));
+      const planId = linkedPlanIdFromSummary(targetLinkedPlan) || normalizeLinkedPlanId(item.linked_plan_id);
       if (planId === null) {
         if (fallbackPlan) {
           openPlanReader(fallbackPlan);
@@ -522,12 +752,14 @@ export function useWorkspaceController() {
         return;
       }
 
-      const plan = findLinkedPlanInSnapshot(snapshot?.plans || [], planId, projectId) || matchFallbackPlan(fallbackPlan, planId);
+      const plan = findPreviewableLinkedPlan(item, snapshot?.plans || [], projectId, targetLinkedPlan)
+        || matchFallbackPlan(fallbackPlan, planId);
       if (!plan) {
         showUnavailableLinkedPlanReader(
           item,
           `绑定 Plan #${planId} 当前不可用，可能尚未同步、已删除或不属于当前项目。`,
           planId,
+          targetLinkedPlan,
         );
         return;
       }
@@ -598,6 +830,7 @@ export function useWorkspaceController() {
     createFeedback,
     createRequirement,
     deleteFeedback,
+    deletePlan,
     deleteRequirement,
     displayTasks,
     error,
@@ -621,6 +854,7 @@ export function useWorkspaceController() {
     refreshPlanReader,
     removePendingAttachment,
     resumeIntake,
+    retryIntakePlanGeneration,
     runLoopAction,
     saveMcpConfig,
     scopeFileOpenSettings,
@@ -635,6 +869,7 @@ export function useWorkspaceController() {
     startMcp,
     state,
     stopMcp,
+    stopPlan,
     submitLoopConfig,
     switchProject,
     unacceptItem,
@@ -645,4 +880,8 @@ export function useWorkspaceController() {
     updateRequirement,
     workspaceSearch,
   };
+}
+
+function linkedPlanIdFromSummary(linkedPlan: LinkedPlanSummary | null | undefined) {
+  return normalizeLinkedPlanId(linkedPlan?.plan_id ?? linkedPlan?.planId ?? linkedPlan?.id);
 }

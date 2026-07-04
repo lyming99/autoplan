@@ -7,6 +7,14 @@ import type { IntakeType } from '../types';
 export type OpenIntakeIntent = { type: IntakeType; id: number };
 
 /**
+ * 「打开/查看 执行器」意图解析结果。
+ * id 可直接定位卡片；label 供 Chat 工具进一步解析已保存执行器。
+ */
+export type OpenExecutorIntent = { type: 'executor'; id?: number; label?: string };
+
+export type OpenWorkspaceIntent = OpenIntakeIntent | OpenExecutorIntent;
+
+/**
  * 打开/查看类动词。按长度降序排列，避免「看一下」被「看下」前缀截断。
  * 仅强匹配（动词 + 类型名词 + 数字）才认定为打开意图，规避普通消息误伤。
  */
@@ -18,6 +26,8 @@ const INTAKE_NOUNS: Record<IntakeType, string[]> = {
   feedback: ['反馈', 'feedback'],
 };
 
+const EXECUTOR_NOUNS = ['执行器', 'executor', 'exec'];
+
 /** 动词 →（最多 12 字间隔）→ 类型名词 → 可选 #/＃与空格 → 数字。i 标志兼容英文大小写。 */
 const REQUIREMENT_PATTERN = new RegExp(
   `(?:${OPEN_VERBS.join('|')})[\\s\\S]{0,12}?(?:${INTAKE_NOUNS.requirement.join('|')})\\s*[#＃]?\\s*(\\d+)`,
@@ -26,6 +36,16 @@ const REQUIREMENT_PATTERN = new RegExp(
 
 const FEEDBACK_PATTERN = new RegExp(
   `(?:${OPEN_VERBS.join('|')})[\\s\\S]{0,12}?(?:${INTAKE_NOUNS.feedback.join('|')})\\s*[#＃]?\\s*(\\d+)`,
+  'i',
+);
+
+const EXECUTOR_ID_PATTERN = new RegExp(
+  `(?:${OPEN_VERBS.join('|')})[\\s\\S]{0,12}?(?:${EXECUTOR_NOUNS.join('|')})\\s*[#＃]?\\s*(\\d+)`,
+  'i',
+);
+
+const EXECUTOR_LABEL_PATTERN = new RegExp(
+  `(?:${OPEN_VERBS.join('|')})[\\s\\S]{0,12}?(?:${EXECUTOR_NOUNS.join('|')})\\s*(?:标签|label|名为|名称)?\\s*["“'「]([^"”'」]{1,80})["”'」]`,
   'i',
 );
 
@@ -61,9 +81,43 @@ export function parseOpenIntakeIntent(text: string): OpenIntakeIntent | null {
 }
 
 /**
+ * 解析「打开/查看 执行器 #N」或「打开执行器 "label"」意图。
+ * label 仅在引号包裹时识别，避免把普通动词尾词误判为执行器名称。
+ */
+export function parseOpenExecutorIntent(text: string): OpenExecutorIntent | null {
+  const input = String(text ?? '');
+  if (!input) return null;
+
+  const idMatch = input.match(EXECUTOR_ID_PATTERN);
+  if (idMatch && idMatch[1]) {
+    const id = Number(idMatch[1]);
+    if (Number.isInteger(id) && id > 0) return { type: 'executor', id };
+  }
+
+  const labelMatch = input.match(EXECUTOR_LABEL_PATTERN);
+  const label = labelMatch?.[1]?.trim();
+  if (label) return { type: 'executor', label };
+
+  return null;
+}
+
+/** 统一解析 Chat 中的工作区打开意图：需求/反馈优先，其次执行器。 */
+export function parseOpenWorkspaceIntent(text: string): OpenWorkspaceIntent | null {
+  return parseOpenIntakeIntent(text) || parseOpenExecutorIntent(text);
+}
+
+/**
  * 构造与 IntakePanel 一致的 DOM 锚点 id：`workspace-${type}-${id}`。
  * 例如 `workspace-requirement-35` / `workspace-feedback-12`。
  */
 export function buildIntakeAnchorId(type: IntakeType, id: number): string {
   return `workspace-${type}-${id}`;
+}
+
+/**
+ * 构造执行器卡片定位锚点 id：`workspace-executor-${id}`。
+ * Chat/MCP openRef 与工作区执行器 tab 共用该契约。
+ */
+export function buildExecutorAnchorId(id: number): string {
+  return `workspace-executor-${id}`;
 }

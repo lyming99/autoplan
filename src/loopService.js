@@ -13,6 +13,9 @@ const {
   runAgentCliAttempt,
 } = require('./agentCli');
 const {
+  AGENT_CLI_COMMAND_INPUT_KEYS,
+  AGENT_CLI_PROVIDER_INPUT_KEYS,
+  CODEX_REASONING_EFFORT_COLUMNS,
   DEFAULT_AGENT_CLI_PROVIDER,
   LOOP_CONFIG_INPUT_KEYS,
   VALIDATION_COMMAND_INPUT_KEYS,
@@ -48,9 +51,11 @@ const {
   existingProjectRuntime,
   findActiveRuntimeProject,
   normalizeRuntimeStatus,
+  operationSnapshotRow,
   recordRuntimeError,
   registerRuntimeOperation,
   resetStoredRuntimeState,
+  runtimeOperationContextByTask,
   runtimeProjectSummary,
   scheduleProjectRuntime,
   setProjectPhase,
@@ -77,6 +82,8 @@ const {
   normalizeEnvVarsJson,
   normalizeRelative,
   readSnippet,
+  resolveSafePlanMarkdownPath,
+  resolveSafePlanManifestPath,
   safePart,
   tailText,
   timestampForPath,
@@ -87,11 +94,14 @@ const acceptance = require('./loop/acceptance');
 const agentCliRunner = require('./loop/agentCliRunner');
 const intakeDeletion = require('./loop/intakeDeletion');
 const planAgentCli = require('./loop/planAgentCli');
+const planBackendConfig = require('./loop/planBackendConfig');
 const planLifecycle = require('./loop/planLifecycle');
 const taskExecution = require('./loop/taskExecution');
 const validationFlow = require('./loop/validation');
 const { classifyExecutionFailure } = validationFlow;
 const scriptHooks = require('./loop/scriptHooks');
+const executorRunner = require('./executors/executorRunner');
+const { getExecutor } = require('./executors/executorStore');
 const {
   LEGACY_TASK_EVENT_TYPES,
   TASK_EVENT_COMPATIBILITY,
@@ -119,6 +129,30 @@ const {
   CLAUDE_SESSION_INPUT_KEYS,
 } = agentCliRunner;
 
+const INTAKE_RETRY_AGENT_CLI_INPUT_KEYS = Object.freeze([
+  ...AGENT_CLI_PROVIDER_INPUT_KEYS,
+  ...AGENT_CLI_COMMAND_INPUT_KEYS,
+  ...CODEX_REASONING_EFFORT_COLUMNS,
+]);
+const LEGACY_AGENT_CLI_CONFIG_INPUT_KEYS = Object.freeze([
+  ...AGENT_CLI_PROVIDER_INPUT_KEYS,
+  ...AGENT_CLI_COMMAND_INPUT_KEYS,
+  ...CODEX_REASONING_EFFORT_COLUMNS,
+]);
+const PLAN_GENERATION_CONFIG_INPUT_KEYS = Object.freeze([
+  ...planBackendConfig.PLAN_GENERATION_STRATEGY_KEYS,
+  ...planBackendConfig.PLAN_GENERATION_PROVIDER_KEYS,
+  ...planBackendConfig.PLAN_GENERATION_COMMAND_KEYS,
+  ...planBackendConfig.PLAN_GENERATION_MODEL_KEYS,
+  ...planBackendConfig.PLAN_GENERATION_CODEX_REASONING_EFFORT_KEYS,
+]);
+const PLAN_EXECUTION_CONFIG_INPUT_KEYS = Object.freeze([
+  ...planBackendConfig.PLAN_EXECUTION_STRATEGY_KEYS,
+  ...planBackendConfig.PLAN_EXECUTION_PROVIDER_KEYS,
+  ...planBackendConfig.PLAN_EXECUTION_COMMAND_KEYS,
+  ...planBackendConfig.PLAN_EXECUTION_MODEL_KEYS,
+  ...planBackendConfig.PLAN_EXECUTION_CODEX_REASONING_EFFORT_KEYS,
+]);
 // 判定 runCodex 的本次调用是否为「OpenCode 计划生成」操作（区别于任务执行/修复）。
 // 仅在计划生成阶段注入 AutoPlan 专用受限 agent（P002），任务执行/修复复用既有 session 行为不变。
 // 判据与 src/loop/planGeneration.js 的调用方一致：label 为 generate-plan（issue-scan 走查计划）、
@@ -139,13 +173,17 @@ class LoopService extends EventEmitter {
     this.runtimes = new Map();
     // 由 main.js 在持有 mcpServer 句柄后注入：返回 mcpServer?.status?.()，供快照叠加实时运行态。
     this.mcpStatusProvider = null;
+    // 由终端模块注入轻量会话元数据读取函数；未注入时快照降级为空列表。
+    this.terminalMetadataProvider = null;
     this.hookOperationContext = new AsyncLocalStorage();
     // 全局定时调度器句柄（setInterval，60s，unref 不阻塞进程退出）：由 main.js 创建 loop 后调
     // startScheduler、will-quit 调 stopScheduler 启停；独立于循环运行态。
     this.scheduleTimer = null;
     this.updateEmitter = createThrottledUpdateEmitter({
       snapshot: (projectId) => this.snapshot(projectId),
+      patch: (projectId) => this.snapshotPatch(projectId),
       emit: (snapshot) => this.emit('update', snapshot),
+      emitPatch: (patch) => this.emit('patch', patch),
     });
     this.resetRuntimeState();
   }
@@ -242,6 +280,8 @@ class LoopService extends EventEmitter {
       ['interval_seconds', nextInterval],
       ['validation_command', nextValidationCommand],
       ...agentCliStateUpdates(this.projectStateColumns(), agentCliConfig),
+      ...planGenerationStateUpdates(this.projectStateColumns(), current, config),
+      ...planExecutionStateUpdates(this.projectStateColumns(), current, config),
       ['updated_at', nowIso()],
     ];
     if (Array.isArray(config.envVars) && this.projectStateColumns().has('env_vars')) {
@@ -356,7 +396,7 @@ class LoopService extends EventEmitter {
     if (!runtime || runtime.busy) return;
     const startedFromRunningLoop = runtime.running;
     runtime.busy = true;
-    const cycleSummary = { stage: 'loop:end', pendingIntakes: 0, generatedPlanId: null };
+    const cycleSummary = { stage: 'loop:end', pendingIntakes: 0, generatedPlanId: null, generatedPlanIds: [] };
     try {
       const project = this.project(projectId);
       const workspace = project?.workspace_path;
@@ -369,6 +409,12 @@ class LoopService extends EventEmitter {
         .all(
           `SELECT * FROM requirements
            WHERE project_id = ? AND linked_plan_id IS NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM intake_plan_links links
+               WHERE links.project_id = requirements.project_id
+                 AND links.intake_type = 'requirement'
+                 AND links.intake_id = requirements.id
+             )
              AND status NOT IN ('completed', 'closed')
              AND (generate_fail_count < 3 OR (generate_fail_count >= 3 AND last_generate_fail_at < datetime('now','-15 minutes')))
            ORDER BY created_at ASC`,
@@ -379,6 +425,12 @@ class LoopService extends EventEmitter {
         .all(
           `SELECT * FROM feedback
            WHERE project_id = ? AND linked_plan_id IS NULL
+             AND NOT EXISTS (
+               SELECT 1 FROM intake_plan_links links
+               WHERE links.project_id = feedback.project_id
+                 AND links.intake_type = 'feedback'
+                 AND links.intake_id = feedback.id
+             )
              AND status NOT IN ('completed', 'closed')
              AND (generate_fail_count < 3 OR (generate_fail_count >= 3 AND last_generate_fail_at < datetime('now','-15 minutes')))
            ORDER BY created_at ASC`,
@@ -391,10 +443,25 @@ class LoopService extends EventEmitter {
 
       // 一次只生成一个计划（保持串行，避免 codex 并发），剩余等下一轮 timer
       let generatedPlanId = null;
+      let generatedPlanIds = [];
       if (pendingIntakes.length > 0) {
-        generatedPlanId = await this.generatePlanForIntake(projectId, workspace, pendingIntakes[0]);
+        const generatedPlanResult = await this.generatePlanForIntake(projectId, workspace, pendingIntakes[0]);
+        generatedPlanIds = normalizeGeneratedPlanIds(generatedPlanResult);
+        const linkedPlanIds = this.linkedPlansForIntake(
+          projectId,
+          pendingIntakes[0].__type,
+          pendingIntakes[0].id,
+        ).map((link) => Number(link.planId));
+        if (
+          linkedPlanIds.length > generatedPlanIds.length ||
+          (generatedPlanIds.length > 0 && linkedPlanIds.includes(generatedPlanIds[0]))
+        ) {
+          generatedPlanIds = linkedPlanIds;
+        }
+        generatedPlanId = generatedPlanIds[0] || null;
       }
       cycleSummary.generatedPlanId = generatedPlanId;
+      cycleSummary.generatedPlanIds = generatedPlanIds;
 
       // 同步 docs/plan 目录下的 plan 文件（兼容文件式需求）
       const planScan = await this.scanDirectoryInWorker(path.join(workspace, 'docs', 'plan'), workspace, ['.md']);
@@ -402,9 +469,16 @@ class LoopService extends EventEmitter {
       this.saveScan(projectId, 'plan', planScan);
 
       // 执行队列里可运行的 plan
-      const generatedPlan = generatedPlanId
-        ? this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [generatedPlanId, projectId])
-        : null;
+      const generatedPlans = generatedPlanIds.length > 0
+        ? this.db.all(
+          `SELECT * FROM plans
+           WHERE project_id = ?
+             AND id IN (${generatedPlanIds.map(() => '?').join(', ')})
+           ORDER BY sort_order ASC, created_at ASC, id ASC`,
+          [projectId, ...generatedPlanIds],
+        )
+        : [];
+      const generatedPlan = generatedPlans.find((plan) => plan.status !== 'draft') || null;
       const nextPlan = generatedPlan && generatedPlan.status !== 'draft'
         ? generatedPlan
         : this.nextRunnablePlan(projectId);
@@ -604,6 +678,10 @@ class LoopService extends EventEmitter {
     const projectId = Number(operation.projectId || 0);
     const planId = Number(operation.planId || 0);
     const taskId = Number(operation.taskId || 0);
+    const executorId = Number(operation.executorId || 0);
+    if (executorId && !this.db.get('SELECT id FROM executors WHERE id = ? AND project_id = ?', [executorId, projectId])) {
+      return false;
+    }
     if (!planId) return true;
     if (!this.planExists(projectId, planId)) return false;
     if (taskId && !this.taskExists(projectId, planId, taskId)) return false;
@@ -727,7 +805,7 @@ class LoopService extends EventEmitter {
 
   addTaskLifecycleEvent(projectId, type, task, metaOverrides = {}) {
     const meta = taskEventMeta(task, metaOverrides);
-    this.addEvent(projectId, type, taskEventMessage(type, task, meta), meta);
+    this.addEvent(projectId, type, taskEventMessage(type, task, meta), meta, { lightweight: true });
   }
 
   recordTaskFailure(projectId, plan, task, finishedAt = nowIso(), metaOverrides = {}) {
@@ -745,28 +823,19 @@ class LoopService extends EventEmitter {
 
   /** 中断某个 plan：停止正在执行的 codex 进程，未完成任务标记为 blocked，plan 标记为 interrupted */
   interruptPlan(projectId, planId) {
-    const plan = this.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId]);
-    if (!plan) return;
-    this.stopPlanOperations(projectId, planId, {
-      taskStatus: 'blocked',
-      taskEventType: TASK_EVENT_TYPES.INTERRUPTED,
-      taskEventStatus: TASK_EVENT_STATUS.INTERRUPTED,
-      errorMessage: `plan #${planId} 已中断`,
-      addOperationEvent: false,
-    });
-    // 其余未完成任务 → blocked
-    this.db.run(
-      `UPDATE plan_tasks SET status = ?, updated_at = ?
-       WHERE plan_id = ? AND status IN ('pending', 'running')`,
-      ['blocked', nowIso(), planId],
-    );
-    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['interrupted', nowIso(), planId]);
-    this.addEvent(projectId, 'plan.interrupted', `plan #${planId} 已中断，未完成任务已挂起`);
-    this.emitUpdate(projectId);
+    return planLifecycle.interruptPlan(this, projectId, planId);
+  }
+
+  stopPlan(projectId, planId) {
+    return planLifecycle.stopPlan(this, projectId, planId);
   }
 
   deleteIntake(projectId, intakeType, intakeId, options) {
     return intakeDeletion.deleteIntake(this, projectId, intakeType, intakeId, options);
+  }
+
+  deletePlan(projectId, planId, options) {
+    return intakeDeletion.deletePlan(this, projectId, planId, options);
   }
 
   deleteAttachmentFiles(attachments, attachmentsRoot) {
@@ -775,6 +844,10 @@ class LoopService extends EventEmitter {
 
   safeAutoPlanIntakePlanFileDeleteTarget(project, plan, intakeType, intakeId) {
     return intakeDeletion.safeAutoPlanIntakePlanFileDeleteTarget(project, plan, intakeType, intakeId);
+  }
+
+  safePlanFileDeleteTarget(project, plan) {
+    return intakeDeletion.safePlanFileDeleteTarget(project, plan);
   }
 
   recordPlanFileDeleteSkipped(plan, result) {
@@ -787,14 +860,111 @@ class LoopService extends EventEmitter {
 
   /** 恢复被中断的 plan：blocked → pending，plan → pending，循环运行时自动继续执行 */
   resumePlan(projectId, planId) {
+    return planLifecycle.resumePlan(this, projectId, planId);
+  }
+
+  linkedPlansForIntake(projectId, intakeType, intakeId) {
+    return planLifecycle.linkedPlansForIntake(this, projectId, intakeType, intakeId);
+  }
+
+  interruptIntakePlans(projectId, intakeType, intakeId) {
+    return planLifecycle.interruptPlansForIntake(this, projectId, intakeType, intakeId);
+  }
+
+  resumeIntakePlans(projectId, intakeType, intakeId) {
+    return planLifecycle.resumePlansForIntake(this, projectId, intakeType, intakeId);
+  }
+
+  appendTaskToIntakePlan(projectId, intakeType, intakeId, title) {
+    return planLifecycle.appendTaskToIntakePlan(this, projectId, intakeType, intakeId, title);
+  }
+
+  async retryIntakePlanGeneration(projectId, intakeType, intakeId, input = {}) {
+    const normalizedProjectId = Number(projectId || 0);
+    const normalizedIntakeId = Number(intakeId || 0);
+    if (!normalizedProjectId || !this.project(normalizedProjectId)) throw new Error('项目不存在');
+    if (!normalizedIntakeId) throw new Error('记录不存在');
+
+    const normalizedType = normalizeLoopIntakeType(intakeType);
+    const table = intakeTableForLoopType(normalizedType);
+    const sourceName = normalizedType === 'feedback' ? '反馈' : '需求';
+    const intake = this.db.get(`SELECT * FROM ${table} WHERE id = ? AND project_id = ?`, [
+      normalizedIntakeId,
+      normalizedProjectId,
+    ]);
+    if (!intake) throw new Error(`${sourceName}不存在`);
+
+    const status = String(intake.status || 'open').trim().toLowerCase();
+    if (status === 'closed' || status === 'completed') {
+      throw new Error(`${sourceName}已关闭或已完成，不能重试生成计划`);
+    }
+    if (normalizePositiveInteger(intake.linked_plan_id)) {
+      throw new Error(`${sourceName}已绑定 Plan，不能重复生成`);
+    }
+    const linkedPlans = this.linkedPlansForIntake(normalizedProjectId, normalizedType, normalizedIntakeId);
+    if (linkedPlans.length > 0) throw new Error(`${sourceName}已绑定 Plan，不能重复生成`);
+
+    const hasCliInput = hasAnyOwnProperty(input, INTAKE_RETRY_AGENT_CLI_INPUT_KEYS);
+    const planGenerationConfig = nextIntakePlanGenerationConfig(intake, input);
+    const agentCliConfig = hasCliInput
+      ? nextIntakeAgentCliConfig(intake, input)
+      : normalizeIntakeAgentCliConfig(intake);
+    const updatedAt = nowIso();
     this.db.run(
-      `UPDATE plan_tasks SET status = ?, updated_at = ?
-       WHERE plan_id = ? AND status = ?`,
-      ['pending', nowIso(), planId, 'blocked'],
+      `UPDATE ${table}
+          SET agent_cli_provider = ?,
+              agent_cli_command = ?,
+              codex_reasoning_effort = ?,
+              plan_generation_strategy = ?,
+              plan_generation_provider = ?,
+              plan_generation_command = ?,
+              plan_generation_model = ?,
+              plan_generation_codex_reasoning_effort = ?,
+              generate_fail_count = 0,
+              last_generate_fail_at = NULL,
+              last_generate_error = NULL,
+              last_generate_log_file = NULL,
+              last_generate_agent_cli_provider = NULL,
+              last_generate_codex_reasoning_effort = NULL,
+              updated_at = ?
+        WHERE id = ? AND project_id = ?`,
+      [
+        agentCliConfig.provider,
+        agentCliConfig.command,
+        agentCliConfig.codexReasoningEffort,
+        planGenerationConfig.strategy,
+        planGenerationConfig.provider,
+        planGenerationConfig.command,
+        planGenerationConfig.model,
+        planGenerationConfig.codexReasoningEffort,
+        updatedAt,
+        normalizedIntakeId,
+        normalizedProjectId,
+      ],
     );
-    this.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', ['pending', nowIso(), planId]);
-    this.addEvent(projectId, 'plan.resumed', `plan #${planId} 已恢复`);
-    this.emitUpdate(projectId);
+
+    const runtime = this.runtime(normalizedProjectId);
+    this.addEvent(
+      normalizedProjectId,
+      'plan.generate.retry.requested',
+      `已请求重试生成${sourceName} #${normalizedIntakeId} 计划`,
+      {
+        intakeType: normalizedType,
+        intakeId: normalizedIntakeId,
+        agentCliProvider: agentCliConfig.provider,
+        agentCliCommand: agentCliConfig.command,
+        codexReasoningEffort: agentCliConfig.codexReasoningEffort,
+        planGenerationStrategy: planGenerationConfig.strategy,
+        planGenerationProvider: planGenerationConfig.provider,
+        planGenerationCommand: planGenerationConfig.command,
+        planGenerationModel: planGenerationConfig.model,
+        planGenerationCodexReasoningEffort: planGenerationConfig.codexReasoningEffort,
+        runtimeBusy: Boolean(runtime?.busy),
+        running: Boolean(runtime?.running),
+      },
+    );
+    await this.runOnce(normalizedProjectId);
+    return this.snapshot(normalizedProjectId);
   }
 
   /** 人工验收：对已完成的计划/任务置 accepted_at（不改变执行态 status），并记事件；重复验收刷新时间不报错。 */
@@ -890,6 +1060,22 @@ class LoopService extends EventEmitter {
     return planAgentCli.planSnapshotAgentCliConfig(this, plan);
   }
 
+  planGenerationConfig(defaults = {}, intake = {}) {
+    return planBackendConfig.effectivePlanGenerationConfig(defaults, intake);
+  }
+
+  planExecutionConfig(defaults = {}, plan = {}) {
+    return planBackendConfig.effectivePlanExecutionConfig(defaults, plan);
+  }
+
+  planGenerationAgentCliOperationFields(config = {}) {
+    return planBackendConfig.planGenerationAgentCliOperationFields(config);
+  }
+
+  planExecutionAgentCliOperationFields(config = {}) {
+    return planBackendConfig.planExecutionAgentCliOperationFields(config);
+  }
+
   planAgentCliEventSnapshot(projectId, planId) {
     return planAgentCli.planAgentCliEventSnapshot(this, projectId, planId);
   }
@@ -974,6 +1160,7 @@ class LoopService extends EventEmitter {
   /** 把当前 activeOperation 转存为 lastOperation（保留日志），然后清空 active */
   archiveOperation(projectId, operationKey) {
     archiveRuntimeOperation(this.runtime(projectId), operationKey);
+    this.emitRuntimePatch(projectId, { immediate: true });
   }
 
   async runCodexWithPlanGuard(workspace, prompt, label, operation, planFile) {
@@ -1276,7 +1463,7 @@ class LoopService extends EventEmitter {
       }
     }
     const tailTimer = setInterval(() => {
-      if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
+      if (projectIdForEmit) this.emitRuntimePatch(projectIdForEmit);
     }, 1500);
     try {
       if (isOpenCodeProvider) {
@@ -1482,11 +1669,13 @@ class LoopService extends EventEmitter {
     const activeOperation = {
       ...operation,
       label,
+      logFile,
       logBuffer: '',
       activity: new CodexActivityPrinter(200),
       startedAt: nowIso(),
     };
     const operationKey = registerRuntimeOperation(runtime, child, activeOperation);
+    this.emitRuntimePatch(projectIdForEmit, { immediate: true });
     if (operation.stdin != null && operation.stdin !== '') {
       try {
         child.stdin.end(String(operation.stdin));
@@ -1515,7 +1704,7 @@ class LoopService extends EventEmitter {
     child.stdout.on('data', (chunk) => onChunk(chunk, 'stdout'));
     child.stderr.on('data', (chunk) => onChunk(chunk, 'stderr'));
     const tailTimer = setInterval(() => {
-      if (projectIdForEmit) this.emitUpdate(projectIdForEmit);
+      if (projectIdForEmit) this.emitRuntimePatch(projectIdForEmit);
     }, 1500);
     try {
       const exitCode = await waitForChild(child, timeoutMs);
@@ -1532,11 +1721,13 @@ class LoopService extends EventEmitter {
       fs.writeFileSync(logFile, output, 'utf8');
       if (runtime.activeOperations.has(operationKey)) activeOperation.exitCode = exitCode;
       if (activeOperation.cancelled || !this.operationTargetExists(operation)) {
+        const targetExists = this.operationTargetExists(operation);
+        const errorText = activeOperation.errorMessage || (targetExists ? '操作已停止' : '操作目标已删除');
         return {
           exitCode: -1,
           output,
           logFile,
-          errorMessage: '操作目标已删除',
+          errorMessage: errorText,
           timedOut,
           timeoutMs,
           cancelled: true,
@@ -1553,7 +1744,7 @@ class LoopService extends EventEmitter {
 
   setPhase(projectId, phase) {
     setProjectPhase(this.db, projectId, phase);
-    this.emitUpdate(projectId);
+    this.emitRuntimePatch(projectId);
   }
 
   /** 循环钩子：执行某阶段下所有已启用脚本，单脚本异常不冒泡；仅 validation:before 可中断 */
@@ -1576,6 +1767,46 @@ class LoopService extends EventEmitter {
   /** 停止运行中的脚本（scripts:stop），复用 runShell 的 operation 取消能力 */
   stopScript(projectId, scriptId) {
     return scriptHooks.stopScript(this, projectId, scriptId);
+  }
+
+  /** 运行工作区执行器，依赖调度与状态回写由 executorRunner 处理。 */
+  async runExecutor(projectId, executorId) {
+    return executorRunner.runExecutor(this, projectId, executorId);
+  }
+
+  /** 停止指定执行器及其依赖链上仍在运行的子进程。 */
+  stopExecutor(projectId, executorId) {
+    return executorRunner.stopExecutor(this, projectId, executorId);
+  }
+
+  /** 触发 plugin 执行器生命周期动作（start/reload/stop）。 */
+  async runExecutorAction(projectId, executorId, action) {
+    const id = Number(projectId);
+    const executorIdNum = Number(executorId);
+    if (!Number.isInteger(id) || id <= 0) throw new Error('项目不存在');
+    if (!Number.isInteger(executorIdNum) || executorIdNum <= 0) throw new Error('executorId 无效');
+    if (action !== 'start' && action !== 'reload' && action !== 'stop') {
+      throw new Error('action 仅支持 start/reload/stop');
+    }
+
+    const project = this.project(id);
+    if (!project) throw new Error('项目不存在');
+    const executor = getExecutor(this.db, id, executorIdNum);
+    if (!executor) throw new Error('执行器不存在');
+    if (executor.type !== 'plugin') throw new Error('仅 plugin 执行器支持生命周期动作');
+
+    const workspacePath = String(project.workspace_path || '').trim();
+    const context = {
+      projectId: id,
+      workspace: workspacePath ? path.resolve(workspacePath) : '',
+      rootExecutorId: executorIdNum,
+      rootExecutorLabel: executor.label,
+      executorRunId: `plugin-${action}-${executorIdNum}-${Date.now()}`,
+    };
+
+    if (action === 'start') return executorRunner.startPluginExecutor(this, context, executor);
+    if (action === 'reload') return executorRunner.reloadPluginExecutor(this, context, executor);
+    return executorRunner.stopPluginExecutor(this, context, executor);
   }
 
   /** 启动全局定时调度器：单一 setInterval（周期 60000ms，unref 不阻塞进程退出），每 tick 调 runScheduledScripts。
@@ -1669,7 +1900,7 @@ class LoopService extends EventEmitter {
     );
   }
 
-  addEvent(projectId, type, message, meta = null) {
+  addEvent(projectId, type, message, meta = null, options = {}) {
     this.db.run('INSERT INTO events (project_id, type, message, meta, created_at) VALUES (?, ?, ?, ?, ?)', [
       projectId,
       type,
@@ -1677,11 +1908,16 @@ class LoopService extends EventEmitter {
       meta ? JSON.stringify(meta) : null,
       nowIso(),
     ]);
-    this.emitUpdate(projectId);
+    if (options.lightweight) this.emitRuntimePatch(projectId);
+    else this.emitUpdate(projectId);
   }
 
   emitUpdate(projectId, options = {}) {
     this.updateEmitter.emit(projectId, options);
+  }
+
+  emitRuntimePatch(projectId, options = {}) {
+    this.updateEmitter.emit(projectId, { ...options, lightweight: true });
   }
 
   flushPendingUpdates() {
@@ -1693,8 +1929,88 @@ class LoopService extends EventEmitter {
     this.mcpStatusProvider = typeof provider === 'function' ? provider : null;
   }
 
+  setTerminalMetadataProvider(provider) {
+    this.terminalMetadataProvider = typeof provider === 'function' ? provider : null;
+  }
+
   snapshot(projectId = null) {
     return snapshots.snapshot(this, loopFlowHelpers(), projectId);
+  }
+
+  snapshotPatch(projectId = null) {
+    const id = Number(projectId || 0);
+    if (!id) return runtimePatchEmpty(null);
+
+    const activeProject = this.project(id);
+    if (!activeProject) return runtimePatchEmpty(id);
+
+    const runtime = this.existingRuntime(id);
+    const state = {
+      ...(this.status(id) || {}),
+      workspace_path: activeProject.workspace_path || '',
+    };
+
+    return {
+      projectId: id,
+      activeProjectId: id,
+      state,
+      tasks: this.runtimeTaskSnapshots(id, activeProject.workspace_path || '', runtime),
+      events: this.runtimeEventSnapshots(id),
+      ...this.runtimeOperationSnapshots(id, runtime),
+    };
+  }
+
+  runtimeTaskSnapshots(projectId, workspace, runtime = null) {
+    const taskOperationContexts = runtimeOperationContextByTask(runtime, projectId);
+    return this.db
+      .all(
+        `SELECT plan_tasks.*, plans.file_path,
+                plans.hash AS __plan_hash,
+                plans.updated_at AS __plan_updated_at
+         FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+         WHERE plans.project_id = ?
+         ORDER BY plans.sort_order ASC, plans.created_at ASC, plans.id ASC, plan_tasks.sort_order ASC, plan_tasks.id ASC`,
+        [projectId],
+      )
+      .map((row) => {
+        const { __plan_hash: planHash, __plan_updated_at: planUpdatedAt, ...task } = row;
+        const planTitle = snapshots.cachedPlanMarkdownTitle(this, workspace, {
+          id: task.plan_id,
+          file_path: task.file_path,
+          hash: planHash,
+          updated_at: planUpdatedAt,
+        });
+        return snapshots.taskSnapshotRow(
+          this,
+          workspace,
+          { ...task, plan_title: planTitle || '' },
+          taskOperationContexts.get(Number(task.id)),
+        );
+      });
+  }
+
+  runtimeEventSnapshots(projectId) {
+    return this.db
+      .all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId])
+      .map((event) => snapshots.eventSnapshotRow(event));
+  }
+
+  runtimeOperationSnapshots(projectId, runtime = null) {
+    return {
+      activeOperation:
+        runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
+          ? operationSnapshotRow(runtime.activeOperation)
+          : null,
+      activeOperations: runtime?.activeOperations
+        ? Array.from(runtime.activeOperations.values())
+            .filter((operation) => Number(operation.projectId) === Number(projectId))
+            .map((operation) => operationSnapshotRow(operation))
+        : [],
+      lastOperation:
+        runtime?.lastOperation && Number(runtime.lastOperation.projectId) === Number(projectId)
+          ? runtime.lastOperation
+          : null,
+    };
   }
 }
 
@@ -1708,15 +2024,164 @@ function loopFlowHelpers() {
     isAcceptanceTask,
     normalizeRelative,
     readSnippet,
+    resolveSafePlanMarkdownPath,
+    resolveSafePlanManifestPath,
     tailText,
     timestampForPath,
   };
 }
 
+function runtimePatchEmpty(projectId = null) {
+  return {
+    projectId,
+    activeProjectId: null,
+    state: null,
+    tasks: [],
+    events: [],
+    activeOperation: null,
+    activeOperations: [],
+    lastOperation: null,
+  };
+}
+
+function normalizeGeneratedPlanIds(result) {
+  if (Array.isArray(result)) return uniquePositiveIds(result);
+  if (result && typeof result === 'object') {
+    if (Array.isArray(result.generatedPlanIds)) return uniquePositiveIds(result.generatedPlanIds);
+    if (Array.isArray(result.planIds)) return uniquePositiveIds(result.planIds);
+    return uniquePositiveIds([result.generatedPlanId, result.planId, result.id]);
+  }
+  return uniquePositiveIds([result]);
+}
+
+function uniquePositiveIds(values = []) {
+  const ids = [];
+  const seen = new Set();
+  for (const value of values) {
+    const id = Number(value || 0);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+function normalizePositiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function normalizeLoopIntakeType(value) {
+  return value === 'feedback' ? 'feedback' : 'requirement';
+}
+
+function intakeTableForLoopType(value) {
+  return normalizeLoopIntakeType(value) === 'feedback' ? 'feedback' : 'requirements';
+}
+
+function hasLegacyAgentCliConfigInput(input = {}) {
+  return hasAnyOwnProperty(input, LEGACY_AGENT_CLI_CONFIG_INPUT_KEYS);
+}
+
+function hasPlanGenerationConfigInput(input = {}) {
+  return hasAnyOwnProperty(input, PLAN_GENERATION_CONFIG_INPUT_KEYS);
+}
+
+function hasPlanExecutionConfigInput(input = {}) {
+  return hasAnyOwnProperty(input, PLAN_EXECUTION_CONFIG_INPUT_KEYS);
+}
+
+function planGenerationStateUpdates(columns, current = {}, input = {}) {
+  if (!hasPlanGenerationConfigInput(input) && !hasLegacyAgentCliConfigInput(input)) return [];
+  const config = planBackendConfig.effectivePlanGenerationConfig(
+    current,
+    planGenerationInputWithLegacyStrategyDefault(input),
+  );
+  return planBackendStateUpdates(columns, 'plan_generation', config);
+}
+
+function planExecutionStateUpdates(columns, current = {}, input = {}) {
+  if (!hasPlanExecutionConfigInput(input) && !hasLegacyAgentCliConfigInput(input)) return [];
+  const config = planBackendConfig.effectivePlanExecutionConfig(
+    current,
+    planExecutionInputWithLegacyStrategyDefault(input),
+  );
+  return planBackendStateUpdates(columns, 'plan_execution', config);
+}
+
+function planBackendStateUpdates(columns, prefix, config = {}) {
+  const updates = [];
+  addColumnUpdate(updates, columns, `${prefix}_strategy`, config.strategy);
+  addColumnUpdate(updates, columns, `${prefix}_provider`, config.provider);
+  addColumnUpdate(updates, columns, `${prefix}_command`, config.command || '');
+  addColumnUpdate(updates, columns, `${prefix}_model`, config.model || '');
+  addColumnUpdate(updates, columns, `${prefix}_codex_reasoning_effort`, config.codexReasoningEffort || null);
+  return updates;
+}
+
+function addColumnUpdate(updates, columns, column, value) {
+  if (columns.has(column)) updates.push([column, value]);
+}
+
+function nextIntakePlanGenerationConfig(current = {}, input = {}) {
+  if (hasPlanGenerationConfigInput(input) || hasLegacyAgentCliConfigInput(input)) {
+    return planBackendConfig.effectivePlanGenerationConfig(
+      current,
+      planGenerationInputWithLegacyStrategyDefault(input),
+    );
+  }
+  return storedIntakePlanGenerationConfig(current);
+}
+
+function planGenerationInputWithLegacyStrategyDefault(input = {}) {
+  if (hasPlanGenerationConfigInput(input) || !hasLegacyAgentCliConfigInput(input)) return input;
+  return { ...input, planGenerationStrategy: planBackendConfig.DEFAULT_PLAN_GENERATION_STRATEGY };
+}
+
+function planExecutionInputWithLegacyStrategyDefault(input = {}) {
+  if (hasPlanExecutionConfigInput(input) || !hasLegacyAgentCliConfigInput(input)) return input;
+  return { ...input, planExecutionStrategy: planBackendConfig.DEFAULT_PLAN_EXECUTION_STRATEGY };
+}
+
+function storedIntakePlanGenerationConfig(source = {}) {
+  const strategy = normalizeNullablePlanGenerationStrategy(source.plan_generation_strategy);
+  const provider = normalizeNullablePlanBackendProvider(source.plan_generation_provider, strategy);
+  const command = normalizeNullableText(source.plan_generation_command) || '';
+  const model = normalizeNullableText(source.plan_generation_model) || '';
+  const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
+    ? normalizeNullableCodexReasoningEffort(source.plan_generation_codex_reasoning_effort)
+    : null;
+  return { strategy, provider, command, model, codexReasoningEffort };
+}
+
+function normalizeNullablePlanGenerationStrategy(value) {
+  const text = normalizeNullableText(value);
+  return text ? planBackendConfig.normalizePlanGenerationStrategy(text) : null;
+}
+
+function normalizeNullablePlanBackendProvider(value, strategy = null) {
+  const text = normalizeNullableText(value);
+  return text ? planBackendConfig.normalizePlanBackendProvider(text, strategy) : null;
+}
+
+function normalizeNullableCodexReasoningEffort(value) {
+  const text = normalizeNullableText(value)?.toLowerCase();
+  return text && ['low', 'medium', 'high', 'xhigh'].includes(text) ? text : null;
+}
+
+function normalizeNullableText(value) {
+  if (value === undefined || value === null) return '';
+  return String(value).trim();
+}
+
 module.exports = {
   LoopService,
   LEGACY_TASK_EVENT_TYPES,
+  ...planBackendConfig,
+  hasPlanExecutionConfigInput,
+  hasPlanGenerationConfigInput,
   normalizeIntakeAgentCliConfig,
+  nextIntakePlanGenerationConfig,
   nextIntakeAgentCliConfig,
   TASK_EVENT_COMPATIBILITY,
   TASK_EVENT_SEMANTICS,

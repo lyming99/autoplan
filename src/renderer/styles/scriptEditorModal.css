@@ -1,6 +1,7 @@
 /* 从 workspace.css 抽离：脚本详情弹窗（P005）相关样式与深色主题覆盖。 */
 /* 代码/日志的深色面沿用应用内 .codex-log 的深蓝底（--bg-code 未纳入设计 token，这里直接写色值） */
 .script-editor-modal { width: 100%; max-width: min(1040px, calc(100vw - 48px)); max-height: min(86dvh, 780px); display: flex; flex-direction: column; overflow: hidden; }
+.executor-editor-modal { max-width: min(980px, calc(100vw - 48px)); }
 .script-modal-head { display: flex; align-items: center; gap: 14px; padding: 16px 22px; border-bottom: 1px solid var(--line-soft); flex: 0 0 auto; }
 .script-modal-head .mh-ico { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 12px; display: grid; place-items: center; background: var(--brand-grad); color: #fff; box-shadow: 0 8px 18px rgba(77, 110, 255, 0.28); line-height: 0; }
 .script-modal-head .mh-title-wrap { min-width: 0; flex: 1 1 auto; }
@@ -10,6 +11,7 @@
 .mh-title-input:hover:not(:focus) { border-color: var(--brand-border); }
 .mh-title-input:focus { outline: none; border-color: var(--brand-500); box-shadow: var(--focus-ring); }
 .script-modal-head .mh-sub { font-size: 12px; color: var(--text-3); margin-top: 4px; font-family: var(--font-mono); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.script-modal-head .mh-sub span { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .script-modal-head .mh-sub-dot { color: var(--text-4); }
 .script-modal-head .mh-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 6px; }
 .mh-toggle-group { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--text-3); font-weight: 600; padding-right: 4px; }
@@ -22,6 +24,7 @@
 
 .script-modal-body { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 18px 22px; }
 .dlg-layout { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(280px, 1fr); gap: 18px; }
+.executor-editor-modal .dlg-layout { grid-template-columns: minmax(0, 1.16fr) minmax(300px, 0.84fr); }
 .dlg-left { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 
 .editor-card { display: flex; flex-direction: column; min-height: 0; background: var(--bg-elevated); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); overflow: hidden; }
@@ -81,8 +84,18 @@
 .cfg-body .field { gap: 5px; }
 .cfg-body .field label { display: flex; align-items: center; gap: 5px; color: var(--text-3); }
 .cfg-body .field label .app-icon { color: var(--text-4); }
-.cfg-body input { padding: 7px 10px; font-size: 12.5px; }
-.cfg-body input.mono { font-family: var(--font-mono); font-size: 11.5px; }
+.cfg-body input,
+.cfg-body select,
+.cfg-body textarea { width: 100%; min-width: 0; padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-elevated); color: var(--text-1); font: inherit; font-size: 12.5px; }
+.cfg-body textarea { resize: vertical; line-height: 1.5; }
+.cfg-body input:hover:not(:focus),
+.cfg-body select:hover:not(:focus),
+.cfg-body textarea:hover:not(:focus) { border-color: var(--brand-border); }
+.cfg-body input:focus,
+.cfg-body select:focus,
+.cfg-body textarea:focus { outline: none; border-color: var(--brand-500); box-shadow: var(--focus-ring); }
+.cfg-body input.mono,
+.cfg-body textarea.mono { font-family: var(--font-mono); font-size: 11.5px; }
 .field-hint { font-size: 11px; color: var(--text-4); line-height: 1.5; }
 .field-hint code, .cfg-body code { font-family: var(--font-mono); font-size: 10.5px; padding: 1px 4px; border-radius: 4px; background: var(--bg-soft); color: var(--brand-700); }
 
@@ -92,6 +105,10 @@
 .env-var-row .env-name { flex: 0 0 180px; min-width: 0; font-family: var(--font-mono); }
 .env-var-row .env-value { flex: 1 1 auto; min-width: 0; font-family: var(--font-mono); }
 .env-var-row .env-var-delete { flex: 0 0 auto; }
+.executor-env-grid { display: grid; gap: 8px; min-width: 0; }
+.executor-env-row { display: grid; grid-template-columns: minmax(110px, 0.42fr) minmax(0, 1fr) auto; gap: 8px; align-items: center; min-width: 0; }
+.executor-env-row input { font-family: var(--font-mono); font-size: 11.5px; }
+.executor-env-row .executor-env-delete { flex: 0 0 auto; }
 .btn-icon { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--bg-soft); color: var(--text-3); font-size: 15px; font-weight: 700; line-height: 1; cursor: pointer; transition: background 0.14s, color 0.14s, border-color 0.14s; }
 .btn-icon:hover:not(:disabled) { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); }
 .btn-icon:focus-visible { outline: none; box-shadow: var(--focus-ring); }
@@ -101,6 +118,8 @@
 .segment button { flex: 1 1 0; border: 0; background: transparent; padding: 6px 8px; border-radius: 5px; font-size: 12px; font-weight: 600; color: var(--text-3); display: inline-flex; align-items: center; justify-content: center; gap: 5px; line-height: 0; }
 .segment button:hover { color: var(--text-1); }
 .segment button.active { background: var(--bg-elevated); color: var(--brand-700); box-shadow: var(--shadow-sm); }
+.executor-editor-modal .segment { min-width: 0; }
+.executor-editor-modal .segment button { min-width: 0; white-space: nowrap; }
 
 .fail-control { display: flex; align-items: center; gap: 10px; }
 .fail-control .ft-text { font-size: 12px; color: var(--text-2); line-height: 1.5; }
@@ -124,19 +143,27 @@
 .script-modal-foot .mf-info .rc-bad { color: var(--danger); }
 .script-modal-foot .mf-error { font-size: 12px; color: var(--danger); }
 .script-modal-foot .mf-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.executor-editor-modal .mf-info { min-width: 0; }
+.executor-editor-modal .mf-info span { min-width: 0; }
 .btn-success { background: var(--success); border-color: var(--success); color: #fff; }
 .btn-success:hover { filter: brightness(1.06); }
 .btn-success:disabled { background: var(--bg-soft); border-color: var(--line); color: var(--text-4); filter: none; }
 
 @media (max-width: 900px) {
   .dlg-layout { grid-template-columns: 1fr; }
+  .executor-editor-modal .dlg-layout { grid-template-columns: 1fr; }
   .config-panel { order: -1; }
   .code-wrap { min-height: 240px; }
 }
 @media (max-width: 640px) {
   .script-modal-head { flex-wrap: wrap; }
+  .executor-editor-modal { max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); }
+  .script-modal-body { padding: 14px; }
   .script-modal-head .mh-actions { width: 100%; justify-content: flex-end; }
   .script-modal-foot .mf-actions { width: 100%; justify-content: flex-end; }
+  .executor-env-row { grid-template-columns: 1fr; }
+  .segment { overflow-x: auto; }
+  .segment button { flex: 0 0 auto; min-width: 88px; }
 }
 
 /* 脚本弹窗内代码/日志面的深色主题覆盖 */
@@ -144,6 +171,11 @@
 [data-theme="dark"] .code-gutter { background: #080a12; color: #4a5478; }
 [data-theme="dark"] .code-input { color: #e6ebfb; }
 [data-theme="dark"] .code-input::placeholder { color: #6a749a; }
+[data-theme="dark"] .cfg-body input,
+[data-theme="dark"] .cfg-body select,
+[data-theme="dark"] .cfg-body textarea { background: #131620; border-color: #292d3e; color: #e6ebfb; }
+[data-theme="dark"] .cfg-body input::placeholder,
+[data-theme="dark"] .cfg-body textarea::placeholder { color: #6a749a; }
 [data-theme="dark"] .log-body { background: #0b0d18; color: #97a2c8; }
 [data-theme="dark"] .log-line { color: #97a2c8; }
 [data-theme="dark"] .log-line.lvl-i { color: #8fb6ff; }

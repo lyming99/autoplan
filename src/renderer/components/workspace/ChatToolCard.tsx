@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import type { ChatMessage, IntakeType, OpenIntakeHandler } from '../../types';
+import type { ChatMessage, ChatPlanToolResult, IntakeType, OpenIntakeHandler } from '../../types';
 import { buildIntakeAnchorId } from '../../utils/chatIntents';
 import { Modal } from '../Modal';
 import { Icon } from '../icons';
@@ -11,9 +11,11 @@ export function ChatToolCard({ message, onOpenIntake }: { message: ChatMessage; 
   const name = String(result.name || '工具');
   const args = result.args;
   const isLoading = result.loading === true;
-  const isError = message.status === 'error' || message.status === 'aborted';
   const toolResult = result.result;
   const hasToolResult = Object.prototype.hasOwnProperty.call(result, 'result');
+  const toolResultRecord = asRecord(toolResult);
+  const toolErrorText = formatToolErrorText(toolResultRecord);
+  const isError = message.status === 'error' || message.status === 'aborted' || Boolean(toolErrorText);
   const hasArgs = hasDisplayableToolValue(args);
   const hasVisibleToolResult = hasDisplayableToolValue(toolResult);
   const statusKind = isLoading ? 'loading' : isError ? 'error' : 'success';
@@ -33,6 +35,8 @@ export function ChatToolCard({ message, onOpenIntake }: { message: ChatMessage; 
     ? intakeResult.error.trim()
     : '';
   const intakeNotFound = intakeResult?.errorCode === 'INTAKE_NOT_FOUND';
+  const planResult = planToolResultFromResult(name, toolResultRecord);
+  const planErrorText = name === 'create_plan' && !planResult ? toolErrorText : '';
 
   const resolveIntakeProjectId = (): number | null =>
     toPositiveInt(intakeResult?.projectId)
@@ -91,6 +95,15 @@ export function ChatToolCard({ message, onOpenIntake }: { message: ChatMessage; 
             onOpen={handleOpenIntake}
             onCopyLink={handleCopyIntakeLink}
           />
+        ) : null}
+        {planResult ? (
+          <PlanResultCard result={planResult} />
+        ) : null}
+        {planErrorText ? (
+          <div className="chat-tool-card__intake-error">
+            <Icon name="alert" size={13} aria-hidden />
+            <span>{planErrorText}</span>
+          </div>
         ) : null}
         {!hasOpenableIntake && intakeType && (intakeErrorText || intakeNotFound) ? (
           <div className="chat-tool-card__intake-error">
@@ -191,6 +204,44 @@ function formatToolResult(value: unknown): string {
   }
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function formatToolErrorText(result: Record<string, unknown> | null): string {
+  if (!result) return '';
+  const error = typeof result.error === 'string' ? result.error.trim() : '';
+  if (error) return error;
+  const errorCode = typeof result.errorCode === 'string' ? result.errorCode.trim() : '';
+  return errorCode ? `工具返回错误：${errorCode}` : '';
+}
+
+function planToolResultFromResult(name: string, result: Record<string, unknown> | null): ChatPlanToolResult | null {
+  if (!result) return null;
+  if (result.type !== 'plan' && name !== 'create_plan') return null;
+  if (typeof result.error === 'string' && result.error.trim()) return null;
+
+  const id = toPositiveInt(result.id);
+  const title = typeof result.title === 'string' ? result.title.trim() : '';
+  const status = typeof result.status === 'string' ? result.status.trim() : '';
+  const filePath = typeof result.filePath === 'string' ? result.filePath.trim() : '';
+  const totalTasks = toNonNegInt(result.totalTasks) ?? 0;
+  if (!title && !filePath && id === null) return null;
+
+  return {
+    type: 'plan',
+    id,
+    title: title || (id !== null ? `Plan #${id}` : '执行计划'),
+    status,
+    totalTasks,
+    filePath,
+    projectId: toPositiveInt(result.projectId),
+    openable: result.openable === true,
+  };
+}
+
 /* ------------------------------------------------------------------ intake 可打开卡片 ------------------------------------------------------------------ */
 
 /** 可打开 intake 工具（按 name 识别，渲染富卡片 + 打开/复制链接动作）。 */
@@ -225,6 +276,31 @@ function toNonNegInt(value: unknown): number | null {
   if (typeof value === 'boolean') return null;
   const n = Number(value);
   return Number.isInteger(n) && n >= 0 ? n : null;
+}
+
+/* ------------------------------------------------------------------ plan 结果卡片 ------------------------------------------------------------------ */
+
+function PlanResultCard({ result }: { result: ChatPlanToolResult }) {
+  const idText = result.id !== null ? `#${result.id}` : '';
+  const taskText = result.totalTasks > 0 ? `${result.totalTasks} 个任务` : '任务数未返回';
+
+  return (
+    <div className="chat-tool-card__intake chat-tool-card__plan">
+      <div className="chat-tool-card__intake-head">
+        <span className="chat-tool-card__intake-type">计划</span>
+        <span className="chat-tool-card__intake-title" title={result.title}>{result.title}</span>
+        {result.status ? <span className="chat-tool-card__intake-status">{result.status}</span> : null}
+      </div>
+      <div className="chat-tool-card__intake-plan">
+        <Icon name="plan" size={13} aria-hidden />
+        <span className="chat-tool-card__intake-plan-title" title={result.filePath || idText}>
+          {result.filePath || '计划文件已创建'}
+        </span>
+        <span className="chat-tool-card__intake-plan-progress">{taskText}</span>
+      </div>
+      {idText ? <p className="chat-tool-card__intake-body">Plan {idText}</p> : null}
+    </div>
+  );
 }
 
 /** 应用内定位深链（HashRouter）：含项目 / 类型 / 锚点。 */

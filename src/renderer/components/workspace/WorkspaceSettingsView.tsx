@@ -4,10 +4,8 @@ import { useTheme, type ThemeMode } from '../../hooks/useTheme';
 import { useUpdateStatus } from '../../hooks/useUpdateStatus';
 import { formatChinaDateTime } from '../../utils/time';
 import {
-  agentCliDefaultCommand,
   aiConfigFormForProviderChange,
   aiConfigInputFromForm,
-  agentCliOptionDetails,
   chatConfigFormsEqual,
   codexReasoningOptionDetails,
   createDefaultChatConfigForm,
@@ -16,9 +14,22 @@ import {
   fileAccessFormsEqual,
   fileAccessScopeOptions,
   getErrorMessage,
-  isCodexAgentCliProvider,
+  isBuiltinPlanExecutionStrategy,
+  isBuiltinPlanGenerationStrategy,
+  isCodexPlanBackendProvider,
   maskApiKeyUtil,
+  normalizePlanBackendProvider,
   normalizeCodexReasoningEffort,
+  normalizePlanExecutionStrategy,
+  normalizePlanGenerationStrategy,
+  planBackendDefaultCommand,
+  planBackendDefaultModel,
+  planBackendProviderLabel,
+  planBackendProviderOptionsForStrategy,
+  planExecutionStrategyLabel,
+  planExecutionStrategyOptions,
+  planGenerationStrategyLabel,
+  planGenerationStrategyOptions,
   scopeFileOpenModeOptions,
   aiProviderOptions,
   thinkingDepthOptions,
@@ -41,7 +52,7 @@ type SettingsPane = 'loop' | 'cli' | 'appearance' | 'scope' | 'file-access' | 'm
 
 const SETTINGS_NAV: Array<{ id: SettingsPane; label: string; hint: string; icon: string }> = [
   { id: 'loop', label: '循环控制', hint: '路径、间隔、验收命令', icon: 'loop' },
-  { id: 'cli', label: 'CLI 后端', hint: 'Provider 与 Codex 深度', icon: 'cli' },
+  { id: 'cli', label: '计划后端', hint: '生成与执行方案', icon: 'cli' },
   { id: 'appearance', label: '外观', hint: '浅色 / 深色', icon: 'theme' },
   { id: 'scope', label: 'scope 文件', hint: '打开方式与编辑器命令', icon: 'scope' },
   { id: 'file-access', label: '文件访问', hint: '读取范围与白名单', icon: 'file-access' },
@@ -64,17 +75,8 @@ function fileAccessScopeNavLabel(form: FileAccessFormState) {
   return '仅项目';
 }
 
-function agentCliNavLabel(provider: string) {
-  if (provider === 'claude') return 'Claude';
-  if (provider === 'opencode') return 'OpenCode';
-  if (provider === 'oh-my-pi') return 'Oh My Pi';
-  return 'Codex';
-}
-
-function agentCliNonCodexHint(provider: string) {
-  if (provider === 'opencode') return 'OpenCode CLI 不使用该配置';
-  if (provider === 'oh-my-pi') return 'Oh My Pi CLI 不使用该配置';
-  return 'Claude CLI 不使用该配置';
+function planBackendNavLabel(form: LoopFormState) {
+  return `${planBackendProviderLabel(form.planGenerationProvider)} / ${planBackendProviderLabel(form.planExecutionProvider)}`;
 }
 
 function aiProviderLabel(provider: string) {
@@ -128,7 +130,8 @@ export function WorkspaceSettingsView({
   projectId: number;
 }) {
   const [activePane, setActivePane] = useState<SettingsPane>('loop');
-  const isCodexProvider = isCodexAgentCliProvider(loopForm.agentCliProvider);
+  const hasCodexBackend = isCodexPlanBackendProvider(loopForm.planGenerationProvider)
+    || isCodexPlanBackendProvider(loopForm.planExecutionProvider);
   const mcpStatus = mcpStatusText(mcp);
   const { theme, setTheme } = useTheme();
 
@@ -340,7 +343,7 @@ export function WorkspaceSettingsView({
 
   const navMeta: Record<SettingsPane, { label: string; tone?: string }> = {
     loop: { label: running ? '运行中' : '已停止', tone: running ? 'ok' : '' },
-    cli: { label: agentCliNavLabel(loopForm.agentCliProvider), tone: isCodexProvider ? 'ok' : '' },
+    cli: { label: planBackendNavLabel(loopForm), tone: hasCodexBackend ? 'ok' : '' },
     appearance: { label: themeModeLabel },
     scope: { label: scopeModeLabel(scopeFileOpenSettings.mode) },
     'file-access': { label: fileAccessScopeNavLabel(fileAccessForm) },
@@ -433,90 +436,12 @@ export function WorkspaceSettingsView({
           {activePane === 'cli' ? (
             <section className="settings-pane active" aria-labelledby="settings-cli-title">
               <div className="pane-head">
-                <h2 id="settings-cli-title"><span className="pane-ico" aria-hidden="true" />CLI 后端</h2>
-                <p>选择执行任务时使用的 CLI 后端，并为 Codex 配置思考深度和命令路径。</p>
+                <h2 id="settings-cli-title"><span className="pane-ico" aria-hidden="true" />计划后端</h2>
+                <p>分别配置计划生成与任务执行方案。生成可使用外部 CLI 或内置 LLM；执行阶段一仅支持外部 CLI。</p>
               </div>
 
-              <div className="set-card">
-                <div className="set-card-head">
-                  <h3>后端与命令</h3>
-                  <div className="set-card-hint">Codex / Claude / OpenCode / Oh My Pi Provider、思考深度与可执行命令</div>
-                </div>
-                <div className="set-card-body">
-                  <label className="field">
-                    <span className="field-label">CLI 后端</span>
-                    <div className="segmented" role="radiogroup" aria-label="CLI 后端">
-                      {agentCliOptionDetails.map((option) => {
-                        const active = loopForm.agentCliProvider === option.value;
-                        return (
-                          <button
-                            key={option.value}
-                            type="button"
-                            className={`seg-opt${active ? ' active' : ''}`}
-                            aria-pressed={active}
-                            onClick={() => setLoopForm((current) => ({ ...current, agentCliProvider: option.value }))}
-                          >
-                            <span>{option.label}</span>
-                            <span className="seg-note">{option.description}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                    {loopForm.agentCliProvider === 'claude' ? (
-                      <span className="field-hint">需本机已安装 claude CLI 并完成认证。</span>
-                    ) : null}
-                    {loopForm.agentCliProvider === 'opencode' ? (
-                      <span className="field-hint">需本机已安装 opencode CLI 并完成认证，默认命令为 opencode。</span>
-                    ) : null}
-                    {loopForm.agentCliProvider === 'oh-my-pi' ? (
-                      <span className="field-hint">需本机已安装 omp CLI 并完成认证，默认命令为 omp。</span>
-                    ) : null}
-                  </label>
-                  {isCodexProvider ? (
-                    <div className="field">
-                      <span className="field-label">Codex 思考深度</span>
-                      <div className="effort-grid" role="radiogroup" aria-label="Codex 思考深度">
-                        {codexReasoningOptionDetails.map((option) => {
-                          const active = loopForm.codexReasoningEffort === option.value;
-                          return (
-                            <button
-                              key={option.value}
-                              type="button"
-                              className={`effort-opt${active ? ' active' : ''}`}
-                              aria-pressed={active}
-                              onClick={() =>
-                                setLoopForm((current) => ({
-                                  ...current,
-                                  codexReasoningEffort: normalizeCodexReasoningEffort(option.value),
-                                }))
-                              }
-                            >
-                              <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
-                              <span className="eff-desc">{option.description}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <span className="field-hint">仅 Codex CLI 生效，保存后执行参数会使用该深度。</span>
-                    </div>
-                  ) : (
-                    <div className="field readonly-field">
-                      <span className="field-label">Codex 思考深度</span>
-                      <span>{agentCliNonCodexHint(loopForm.agentCliProvider)}</span>
-                    </div>
-                  )}
-                  <label className="field">
-                    <span className="field-label">CLI 命令路径 <span className="tag">可选</span></span>
-                    <input
-                      className="field-input mono"
-                      value={loopForm.agentCliCommand}
-                      onChange={(event) => setLoopForm((current) => ({ ...current, agentCliCommand: event.target.value }))}
-                      placeholder={agentCliDefaultCommand(loopForm.agentCliProvider)}
-                    />
-                    <span className="field-hint">后端在 PATH 中时留空即可，否则填写可执行文件完整路径。</span>
-                  </label>
-                </div>
-              </div>
+              <PlanBackendConfigCard kind="generation" loopForm={loopForm} setLoopForm={setLoopForm} />
+              <PlanBackendConfigCard kind="execution" loopForm={loopForm} setLoopForm={setLoopForm} />
 
               <SettingsActions running={running} onToggleRun={onToggleRun} />
             </section>
@@ -1128,6 +1053,224 @@ export function WorkspaceSettingsView({
       </div>
     </div>
   );
+}
+
+function PlanBackendConfigCard({
+  kind,
+  loopForm,
+  setLoopForm,
+}: {
+  kind: 'generation' | 'execution';
+  loopForm: LoopFormState;
+  setLoopForm: Dispatch<SetStateAction<LoopFormState>>;
+}) {
+  const isGeneration = kind === 'generation';
+  const strategy = isGeneration ? loopForm.planGenerationStrategy : loopForm.planExecutionStrategy;
+  const provider = isGeneration ? loopForm.planGenerationProvider : loopForm.planExecutionProvider;
+  const command = isGeneration ? loopForm.planGenerationCommand : loopForm.planExecutionCommand;
+  const model = isGeneration ? loopForm.planGenerationModel : loopForm.planExecutionModel;
+  const reasoning = isGeneration
+    ? loopForm.planGenerationCodexReasoningEffort
+    : loopForm.planExecutionCodexReasoningEffort;
+  const strategyOptions = isGeneration ? planGenerationStrategyOptions : planExecutionStrategyOptions;
+  const isBuiltin = isGeneration ? isBuiltinPlanGenerationStrategy(strategy) : isBuiltinPlanExecutionStrategy(strategy);
+  const providerOptions = planBackendProviderOptionsForStrategy(strategy);
+  const isCodexProvider = isCodexPlanBackendProvider(provider);
+  const title = isGeneration ? '计划生成' : '计划执行';
+  const hint = isGeneration
+    ? '生成 Plan Markdown 或 PlanSpec，按需求/反馈可在 Composer 单次覆盖。'
+    : '执行计划任务；阶段一内置 LLM 执行仅保存配置，不参与实际执行。';
+
+  const setStrategy = (value: string) => {
+    setLoopForm((current) => {
+      if (isGeneration) {
+        const nextStrategy = normalizePlanGenerationStrategy(value);
+        const nextProvider = normalizePlanBackendProvider(current.planGenerationProvider, nextStrategy);
+        return {
+          ...current,
+          planGenerationStrategy: nextStrategy,
+          planGenerationProvider: nextProvider,
+          planGenerationModel: isBuiltinPlanGenerationStrategy(nextStrategy)
+            ? current.planGenerationModel || planBackendDefaultModel(nextProvider)
+            : current.planGenerationModel,
+        };
+      }
+      const nextStrategy = normalizePlanExecutionStrategy(value);
+      const nextProvider = normalizePlanBackendProvider(current.planExecutionProvider, nextStrategy);
+      return {
+        ...current,
+        planExecutionStrategy: nextStrategy,
+        planExecutionProvider: nextProvider,
+        planExecutionModel: isBuiltinPlanExecutionStrategy(nextStrategy)
+          ? current.planExecutionModel || planBackendDefaultModel(nextProvider)
+          : current.planExecutionModel,
+      };
+    });
+  };
+
+  const setProvider = (value: string) => {
+    setLoopForm((current) => {
+      if (isGeneration) {
+        const nextProvider = normalizePlanBackendProvider(value, current.planGenerationStrategy);
+        return {
+          ...current,
+          planGenerationProvider: nextProvider,
+          planGenerationModel: isBuiltinPlanGenerationStrategy(current.planGenerationStrategy)
+            ? nextModelForProvider(current.planGenerationModel, current.planGenerationProvider, nextProvider)
+            : current.planGenerationModel,
+        };
+      }
+      const nextProvider = normalizePlanBackendProvider(value, current.planExecutionStrategy);
+      return {
+        ...current,
+        planExecutionProvider: nextProvider,
+        planExecutionModel: isBuiltinPlanExecutionStrategy(current.planExecutionStrategy)
+          ? nextModelForProvider(current.planExecutionModel, current.planExecutionProvider, nextProvider)
+          : current.planExecutionModel,
+      };
+    });
+  };
+
+  return (
+    <div className="set-card backend-config-card">
+      <div className="set-card-head">
+        <h3>{title}</h3>
+        <div className="set-card-hint">{hint}</div>
+      </div>
+      <div className="set-card-body backend-config-body">
+        <label className="field">
+          <span className="field-label">策略</span>
+          <div className="segmented" role="radiogroup" aria-label={`${title}策略`}>
+            {strategyOptions.map((option) => {
+              const active = strategy === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`seg-opt${active ? ' active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => setStrategy(option.value)}
+                >
+                  <span>{option.label}</span>
+                  <span className="seg-note">{option.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </label>
+
+        <label className="field">
+          <span className="field-label">Provider</span>
+          <div className="segmented" role="radiogroup" aria-label={`${title} Provider`}>
+            {providerOptions.map((option) => {
+              const active = provider === option.value;
+              return (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`seg-opt${active ? ' active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => setProvider(option.value)}
+                >
+                  <span>{option.label}</span>
+                  <span className="seg-note">{option.description}</span>
+                </button>
+              );
+            })}
+          </div>
+        </label>
+
+        {isBuiltin ? (
+          <label className="field">
+            <span className="field-label">模型名称</span>
+            <input
+              className="field-input mono"
+              value={model}
+              onChange={(event) =>
+                setLoopForm((current) => (
+                  isGeneration
+                    ? { ...current, planGenerationModel: event.target.value }
+                    : { ...current, planExecutionModel: event.target.value }
+                ))
+              }
+              placeholder={planBackendDefaultModel(provider)}
+            />
+            <span className="field-hint">内置 LLM 路径使用模型名称，不使用外部命令。</span>
+          </label>
+        ) : (
+          <label className="field">
+            <span className="field-label">CLI 命令路径 <span className="tag">可选</span></span>
+            <input
+              className="field-input mono"
+              value={command}
+              onChange={(event) =>
+                setLoopForm((current) => (
+                  isGeneration
+                    ? { ...current, planGenerationCommand: event.target.value }
+                    : { ...current, planExecutionCommand: event.target.value }
+                ))
+              }
+              placeholder={planBackendDefaultCommand(provider)}
+            />
+            <span className="field-hint">后端在 PATH 中时留空即可，否则填写可执行文件完整路径。</span>
+          </label>
+        )}
+
+        {isCodexProvider ? (
+          <div className="field">
+            <span className="field-label">Codex 思考深度</span>
+            <div className="effort-grid" role="radiogroup" aria-label={`${title} Codex 思考深度`}>
+              {codexReasoningOptionDetails.map((option) => {
+                const active = reasoning === option.value;
+                return (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={`effort-opt${active ? ' active' : ''}`}
+                    aria-pressed={active}
+                    onClick={() =>
+                      setLoopForm((current) => (
+                        isGeneration
+                          ? {
+                              ...current,
+                              planGenerationCodexReasoningEffort: normalizeCodexReasoningEffort(option.value),
+                            }
+                          : {
+                              ...current,
+                              planExecutionCodexReasoningEffort: normalizeCodexReasoningEffort(option.value),
+                            }
+                      ))
+                    }
+                  >
+                    <span className="eff-name"><span className="eff-dot" aria-hidden="true" />{option.label}</span>
+                    <span className="eff-desc">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
+
+        {!isGeneration && isBuiltin ? (
+          <div className="backend-warning" role="note">
+            builtin-llm 执行阶段一仅允许保存配置；真正执行任务时后端会返回明确的不支持错误。
+          </div>
+        ) : null}
+
+        <div className="backend-config-summary">
+          <span>{isGeneration ? planGenerationStrategyLabel(strategy) : planExecutionStrategyLabel(strategy)}</span>
+          <span>{planBackendProviderLabel(provider)}</span>
+          <span className="mono">{isBuiltin ? (model || planBackendDefaultModel(provider)) : (command || planBackendDefaultCommand(provider))}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function nextModelForProvider(currentModel: string, currentProvider: string, nextProvider: string) {
+  const current = String(currentModel || '').trim();
+  if (!current || current === planBackendDefaultModel(currentProvider)) return planBackendDefaultModel(nextProvider);
+  return currentModel;
 }
 
 function AboutPane() {

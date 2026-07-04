@@ -1,12 +1,16 @@
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
 import type { ComponentProps, ComponentType } from 'react';
 import { isTaskAssociatedWithPlan, readPlanTaskAssociationFilePath } from '../types';
 import type {
+  AgentCliOption,
   AppSnapshot,
   ChatIntakeOpenRef,
+  IntakeType,
   Plan,
   Project,
+  RetryIntakePlanGenerationOptions,
   Script,
+  TerminalSession,
   WorkspaceChatState,
   WorkspacePlanSelectionState,
   WorkspaceSearchResult,
@@ -25,10 +29,12 @@ import { UpdateNotice } from '../components/UpdateNotice';
 import { AcceptanceView } from '../components/workspace/AcceptanceView';
 import { WorkspaceOverviewView } from '../components/workspace/WorkspaceOverviewView';
 import { ChatView } from '../components/workspace/ChatView';
+import { WorkspaceExecutorsView } from '../components/workspace/WorkspaceExecutorsView';
 import { WorkspaceScriptsView } from '../components/workspace/WorkspaceScriptsView';
 import { WorkspaceSearchBox } from '../components/workspace/WorkspaceSearchBox';
 import { WorkspaceSettingsView } from '../components/workspace/WorkspaceSettingsView';
 import { WorkspaceSidebar, agentCliConfigSummary } from '../components/workspace/WorkspaceSidebar';
+import { WorkspaceTerminalView } from '../components/workspace/WorkspaceTerminalView';
 import { buildIntakeAnchorId } from '../utils/chatIntents';
 import { locateWorkspaceAnchor } from '../utils/workspaceLocate';
 
@@ -37,6 +43,27 @@ type WorkspaceSidebarWithChatProps = ComponentProps<typeof WorkspaceSidebar> & {
 };
 
 const WorkspaceSidebarWithChat = WorkspaceSidebar as ComponentType<WorkspaceSidebarWithChatProps>;
+
+type WorkspaceIntakePanelProps = ComponentProps<typeof IntakePanel> & {
+  onRetryGeneratePlan: (
+    type: IntakeType,
+    id: number,
+    options?: RetryIntakePlanGenerationOptions,
+  ) => Promise<void> | void;
+  retryAgentCliOptions: AgentCliOption[];
+  retryCodexReasoningOptions: AgentCliOption[];
+};
+
+const WorkspaceIntakePanel = IntakePanel as ComponentType<WorkspaceIntakePanelProps>;
+
+type WorkspacePlanListProps = ComponentProps<typeof PlanList> & {
+  onStopPlan: (plan: Plan) => Promise<void> | void;
+  onDeletePlan: (plan: Plan) => Promise<void> | void;
+};
+
+const WorkspacePlanList = PlanList as ComponentType<WorkspacePlanListProps>;
+
+type PendingIntakeTarget = { tab: WorkspaceTab; id: number; anchorId: string };
 
 export function WorkspacePage() {
   const {
@@ -53,6 +80,7 @@ export function WorkspacePage() {
     createFeedback,
     createRequirement,
     deleteFeedback,
+    deletePlan,
     deleteRequirement,
     displayTasks,
     error,
@@ -68,13 +96,13 @@ export function WorkspacePage() {
     openTaskPlanReader,
     pendingAttachments,
     planReadState,
-    project,
     projectId,
     projects,
     recentAccepted,
     refreshPlanReader,
     removePendingAttachment,
     resumeIntake,
+    retryIntakePlanGeneration,
     runLoopAction,
     saveMcpConfig,
     scopeFileOpenSettings,
@@ -89,6 +117,7 @@ export function WorkspacePage() {
     startMcp,
     state,
     stopMcp,
+    stopPlan,
     submitLoopConfig,
     switchProject,
     unacceptItem,
@@ -105,13 +134,41 @@ export function WorkspacePage() {
   const [pendingSearchTarget, setPendingSearchTarget] = useState<WorkspaceSearchResult | null>(null);
   const [searchLocateNotice, setSearchLocateNotice] = useState('');
   // 「打开需求/反馈」待定位锚点（沿用搜索定位的 120ms 延时模式）
-  const [pendingIntakeTarget, setPendingIntakeTarget] = useState<{ tab: WorkspaceTab; anchorId: string } | null>(null);
+  const [pendingIntakeTarget, setPendingIntakeTarget] = useState<PendingIntakeTarget | null>(null);
   const [selectedPlanId, setSelectedPlanId] = useState<number | null>(null);
   const searchPopupRef = useRef<HTMLDivElement>(null);
+  const terminalProjectIdRef = useRef(projectId);
+  terminalProjectIdRef.current = projectId;
   // 锚点视口坐标，供 SearchResults 的 Portal(fixed) 弹层定位使用。
   const [searchPopupRect, setSearchPopupRect] = useState<SearchResultsAnchorRect | null>(null);
+  const [terminalSessions, setTerminalSessions] = useState<TerminalSession[]>([]);
+  const [terminalListLoaded, setTerminalListLoaded] = useState(false);
   const hasSearchQuery = !workspaceSearch.query.isEmpty;
-  const selectedPlan = snapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
+  const activeSnapshot = isWorkspaceSnapshotForProject(snapshot, projectId) ? snapshot : null;
+  const routeProject = projects.find((item) => Number(item.id) === Number(projectId)) || null;
+  const sidebarProject = activeSnapshot?.activeProject || routeProject;
+  const selectedPlan = activeSnapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
+
+  const refreshTerminalSessions = useCallback(async () => {
+    const requestProjectId = projectId;
+    if (!Number.isInteger(projectId) || projectId <= 0) {
+      if (terminalProjectIdRef.current === requestProjectId) {
+        setTerminalSessions([]);
+        setTerminalListLoaded(true);
+      }
+      return;
+    }
+    try {
+      const result = await window.autoplan.listTerminals({ projectId });
+      if (terminalProjectIdRef.current === requestProjectId) {
+        setTerminalSessions(result.ok ? normalizeTerminalSessions(result.sessions, requestProjectId) : []);
+      }
+    } catch {
+      if (terminalProjectIdRef.current === requestProjectId) setTerminalSessions([]);
+    } finally {
+      if (terminalProjectIdRef.current === requestProjectId) setTerminalListLoaded(true);
+    }
+  }, [projectId]);
 
   const planSelectionState: WorkspacePlanSelectionState = {
     selectedPlanId,
@@ -120,7 +177,7 @@ export function WorkspacePage() {
     clearSelection: () => setSelectedPlanId(null),
   };
   const selectedPlanAllTasks = selectedPlan
-    ? (snapshot?.tasks || []).filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
+    ? activeSnapshot?.tasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan)) || []
     : [];
   const taskListTasks = selectedPlan
     ? displayTasks.filter((task) => isTaskAssociatedWithPlan(task, selectedPlan))
@@ -141,10 +198,37 @@ export function WorkspacePage() {
   useEffect(() => {
     setSelectedPlanId((current) => {
       if (current === null) return current;
-      if (!snapshot) return null;
-      return snapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
+      if (!activeSnapshot) return null;
+      return activeSnapshot.plans.some((plan) => plan.id === current && plan.project_id === projectId) ? current : null;
     });
-  }, [projectId, snapshot]);
+  }, [activeSnapshot, projectId]);
+
+  useEffect(() => {
+    setTerminalSessions([]);
+    setTerminalListLoaded(false);
+    void refreshTerminalSessions();
+  }, [refreshTerminalSessions]);
+
+  useEffect(() => {
+    const upsert = (session: TerminalSession) => {
+      if (!terminalBelongsToProject(session, projectId)) return;
+      setTerminalListLoaded(true);
+      setTerminalSessions((current) => upsertTerminalSession(current, session, projectId));
+    };
+    const unsubscribeStatus = window.autoplan.onTerminalStatus((event) => upsert(event.session));
+    const unsubscribeExit = window.autoplan.onTerminalExit((event) => upsert(event.session));
+    return () => {
+      unsubscribeStatus();
+      unsubscribeExit();
+    };
+  }, [projectId]);
+
+  useEffect(() => {
+    const tabParam = new URLSearchParams(window.location.search).get('tab');
+    if ((tabParam === 'executors' || tabParam === 'terminal') && activeTab !== tabParam) {
+      selectTab(tabParam);
+    }
+  }, [activeTab, selectTab]);
 
   // Portal 弹层定位：弹层打开时读取锚点（.workspace-search-popover-anchor）视口坐标，
   // 并在滚动 / 缩放时刷新，保证 fixed 弹层始终紧贴搜索框定位。
@@ -229,7 +313,7 @@ export function WorkspacePage() {
 
   function handleOpenIntake(ref: ChatIntakeOpenRef) {
     const { type, projectId: targetProjectId, id } = ref;
-    setPendingIntakeTarget({ tab: type, anchorId: buildIntakeAnchorId(type, id) });
+    setPendingIntakeTarget({ tab: type, id, anchorId: buildIntakeAnchorId(type, id) });
     // activeTab 不随 URL tab 自动同步，需显式 selectTab；跨项目再 navigate 切换路由
     selectTab(type);
     if (Number(targetProjectId) !== Number(projectId)) {
@@ -247,7 +331,7 @@ export function WorkspacePage() {
   }
 
   function handleSelectSearchResult(result: WorkspaceSearchResult) {
-    const resultPlan = findPlanForSearchResult(result, snapshot?.plans || []);
+    const resultPlan = findPlanForSearchResult(result, activeSnapshot?.plans || []);
     if (result.targetTab === 'tasks') {
       setSelectedPlanId((current) => (resultPlan ? resultPlan.id : result.targetType === 'task' ? null : current));
     }
@@ -260,7 +344,7 @@ export function WorkspacePage() {
     createRequirement(payload as unknown as string);
   const createFeedbackFromComposer = (payload: string | ComposerSubmitPayload) =>
     createFeedback(payload as unknown as string);
-  if (!snapshot) {
+  if (!activeSnapshot) {
     return (
       <div
         className={`workspace-shell${sidebarResize.resizing ? ' is-sidebar-resizing' : ''}`}
@@ -272,8 +356,10 @@ export function WorkspacePage() {
           onBack={() => navigate('/projects')}
           projectId={projectId}
           projects={projects}
-          currentProject={project}
+          currentProject={sidebarProject}
           state={null}
+          terminalCount={0}
+          executorCount={0}
           scriptCount={0}
           onSwitchProject={switchProject}
           chatState={chatState}
@@ -288,8 +374,8 @@ export function WorkspacePage() {
     );
   }
 
-  const intakePlanPreviewProps = {
-    plans: snapshot.plans,
+  const intakePlanPreviewProps: Pick<ComponentProps<typeof IntakePanel>, 'plans' | 'onPreviewPlan'> = {
+    plans: activeSnapshot.plans,
     onPreviewPlan: openIntakePlanReader,
   };
   const planListReaderState = planReadState.plan ? { ...planReadState, plan: null } : planReadState;
@@ -314,6 +400,15 @@ export function WorkspacePage() {
   const syncScripts = (next: AppSnapshot) => {
     runLoopAction(async () => next);
   };
+  const syncExecutors = (next: AppSnapshot) => {
+    runLoopAction(async () => next);
+  };
+  const currentTerminalSessions = normalizeTerminalSessions(
+    terminalListLoaded ? terminalSessions : (activeSnapshot.terminals || terminalSessions),
+    projectId,
+  );
+  const activeTerminalCount = currentTerminalSessions.filter(isTerminalActive).length;
+  const workspacePath = activeSnapshot.activeProject?.workspace_path || routeProject?.workspace_path || '';
 
   return (
     <div
@@ -326,9 +421,11 @@ export function WorkspacePage() {
         onBack={() => navigate('/projects')}
         projectId={projectId}
         projects={projects}
-        currentProject={project}
+        currentProject={sidebarProject}
         state={state}
-        scriptCount={snapshot.scripts.length}
+        terminalCount={activeTerminalCount}
+        executorCount={(activeSnapshot.executors || []).length}
+        scriptCount={activeSnapshot.scripts.length}
         onSwitchProject={switchProject}
         chatState={chatState}
         resizing={sidebarResize.resizing}
@@ -339,7 +436,7 @@ export function WorkspacePage() {
         <header className="topbar">
           <div className="topbar-title">
             <h1>{tabTitle(activeTab)}</h1>
-            <p>{tabSubtitle(activeTab, project)}</p>
+            <p>{tabSubtitle(activeTab, sidebarProject)}</p>
           </div>
           <div className="workspace-search-popover-anchor" ref={searchPopupRef}>
             <WorkspaceSearchBox
@@ -392,7 +489,7 @@ export function WorkspacePage() {
           {activeTab === 'overview' ? (
             <>
               {error ? <div className="error-banner">{error}</div> : null}
-              <WorkspaceOverviewView snapshot={snapshot} state={state} onGoTasks={() => selectTab('tasks')} />
+              <WorkspaceOverviewView snapshot={activeSnapshot} state={state} onGoTasks={() => selectTab('tasks')} />
             </>
           ) : null}
         </section>
@@ -400,17 +497,18 @@ export function WorkspacePage() {
         <section className={`view ${activeTab === 'requirement' ? 'active' : ''}`}>
           {activeTab === 'requirement' ? (
             <ComposerCliSelectionProvider value={composerCliSelection}>
-              <IntakePanel
+              <WorkspaceIntakePanel
                 emptyText={filteredEmptyText || '暂无需求。也可以把需求文件放到工作区 docs/issues。'}
                 heading="需求记录"
                 items={filteredItems.requirements}
+                locateItemId={intakeLocateItemId('requirement', pendingSearchTarget, pendingIntakeTarget)}
                 pendingAttachments={pendingAttachments.requirement}
                 placeholder="输入需求，Enter 发送，Shift+Enter 换行"
                 submitLabel="发送需求"
                 subtitle="循环开启后自动扫描并生成计划"
                 type="requirement"
                 {...intakePlanPreviewProps}
-                attachments={snapshot.attachments}
+                attachments={activeSnapshot.attachments}
                 onAddFiles={addPendingFiles}
                 onDelete={deleteRequirement}
                 onRemoveAttachment={removePendingAttachment}
@@ -419,6 +517,10 @@ export function WorkspacePage() {
                 onInterrupt={interruptIntake}
                 onResume={resumeIntake}
                 onAppendTask={appendIntakeTask}
+                onRetryGeneratePlan={retryIntakePlanGeneration}
+                retryAgentCliOptions={composerCliSelection.options}
+                retryCodexReasoningOptions={composerCliSelection.reasoningOptions}
+                composerIdentityKey={`project:${projectId}:requirement`}
                 draftValue={composerDrafts.requirement}
                 onDraftChange={(next) => updateComposerDraft('requirement', next)}
               />
@@ -429,17 +531,18 @@ export function WorkspacePage() {
         <section className={`view ${activeTab === 'feedback' ? 'active' : ''}`}>
           {activeTab === 'feedback' ? (
             <ComposerCliSelectionProvider value={composerCliSelection}>
-              <IntakePanel
+              <WorkspaceIntakePanel
                 emptyText={filteredEmptyText || '暂无反馈。'}
                 heading="反馈记录"
                 items={filteredItems.feedback}
+                locateItemId={intakeLocateItemId('feedback', pendingSearchTarget, pendingIntakeTarget)}
                 pendingAttachments={pendingAttachments.feedback}
                 placeholder="输入反馈，Enter 发送，Shift+Enter 换行"
                 submitLabel="发送反馈"
                 subtitle="循环开启后自动扫描并生成计划"
                 type="feedback"
                 {...intakePlanPreviewProps}
-                attachments={snapshot.attachments}
+                attachments={activeSnapshot.attachments}
                 onAddFiles={addPendingFiles}
                 onDelete={deleteFeedback}
                 onRemoveAttachment={removePendingAttachment}
@@ -448,6 +551,10 @@ export function WorkspacePage() {
                 onInterrupt={interruptIntake}
                 onResume={resumeIntake}
                 onAppendTask={appendIntakeTask}
+                onRetryGeneratePlan={retryIntakePlanGeneration}
+                retryAgentCliOptions={composerCliSelection.options}
+                retryCodexReasoningOptions={composerCliSelection.reasoningOptions}
+                composerIdentityKey={`project:${projectId}:feedback`}
                 draftValue={composerDrafts.feedback}
                 onDraftChange={(next) => updateComposerDraft('feedback', next)}
               />
@@ -483,10 +590,11 @@ export function WorkspacePage() {
                   <div className="card-head">
                     <h2>Plan</h2>
                   </div>
-                  <PlanList
+                  <WorkspacePlanList
                     emptyText={filteredEmptyText}
                     latestReadingPlan={latestReadingPlan}
                     onCloseReader={closePlanReader}
+                    onDeletePlan={deletePlan}
                     onOpenReader={openPlanReader}
                     onRunParallel={({ plan, batches }) =>
                       runLoopAction(() =>
@@ -505,11 +613,12 @@ export function WorkspacePage() {
                     }
                     onRefreshReader={refreshPlanReader}
                     onSelectPlan={planSelectionState.selectPlan}
+                    onStopPlan={stopPlan}
                     plans={filteredItems.plans}
                     readerState={planListReaderState}
                     selectedPlanId={planSelectionState.selectedPlanId}
-                    tasks={snapshot.tasks}
-                    totalPlanCount={snapshot.plans.length}
+                    tasks={activeSnapshot.tasks}
+                    totalPlanCount={activeSnapshot.plans.length}
                   />
                 </section>
                 <section className="card">
@@ -531,6 +640,18 @@ export function WorkspacePage() {
           ) : null}
         </section>
 
+        <section className={`view ${activeTab === 'terminal' ? 'active' : ''}`}>
+          {activeTab === 'terminal' ? (
+            <WorkspaceTerminalView
+              executors={activeSnapshot.executors || []}
+              projectId={projectId}
+              scripts={activeSnapshot.scripts}
+              terminals={currentTerminalSessions}
+              workspacePath={workspacePath}
+            />
+          ) : null}
+        </section>
+
         <section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>
           {activeTab === 'settings' ? (
             <WorkspaceSettingsView
@@ -541,7 +662,7 @@ export function WorkspacePage() {
               setLoopForm={updateLoopForm}
               setMcpForm={setMcpForm}
               setScopeFileOpenSettings={setScopeFileOpenSettings}
-              mcp={snapshot.mcp}
+              mcp={activeSnapshot.mcp}
               startMcp={startMcp}
               stopMcp={stopMcp}
               saveMcpConfig={saveMcpConfig}
@@ -573,11 +694,21 @@ export function WorkspacePage() {
         <section className={`view ${activeTab === 'scripts' ? 'active' : ''}`}>
           {activeTab === 'scripts' ? (
             <WorkspaceScriptsView
-              scripts={snapshot.scripts}
+              scripts={activeSnapshot.scripts}
               projectId={projectId}
               onToggle={toggleScript}
               onRun={runScript}
               onSync={syncScripts}
+            />
+          ) : null}
+        </section>
+
+        <section className={`view ${activeTab === 'executors' ? 'active' : ''}`}>
+          {activeTab === 'executors' ? (
+            <WorkspaceExecutorsView
+              executors={activeSnapshot.executors || []}
+              projectId={projectId}
+              onSync={syncExecutors}
             />
           ) : null}
         </section>
@@ -597,6 +728,42 @@ export function WorkspacePage() {
       </div>
     </div>
   );
+}
+
+function isWorkspaceSnapshotForProject(
+  snapshot: AppSnapshot | null,
+  projectId: number,
+): snapshot is AppSnapshot {
+  return (
+    Boolean(snapshot)
+    && snapshot?.activeProjectId !== null
+    && Number(snapshot?.activeProjectId) === Number(projectId)
+  );
+}
+
+function normalizeTerminalSessions(sessions: TerminalSession[] = [], projectId: number) {
+  return sessions
+    .filter((session) => terminalBelongsToProject(session, projectId))
+    .slice()
+    .sort((left, right) => String(left.createdAt || '').localeCompare(String(right.createdAt || '')));
+}
+
+function upsertTerminalSession(current: TerminalSession[], next: TerminalSession, projectId: number) {
+  if (!terminalBelongsToProject(next, projectId)) return normalizeTerminalSessions(current, projectId);
+  return normalizeTerminalSessions([
+    ...current.filter((session) => session.id !== next.id),
+    next,
+  ], projectId);
+}
+
+function terminalBelongsToProject(session: TerminalSession | null | undefined, projectId: number) {
+  if (!session) return false;
+  return Number(session.projectId) === Number(projectId);
+}
+
+function isTerminalActive(session: TerminalSession) {
+  const status = String(session.status || '').toLowerCase();
+  return !session.endedAt && !['exited', 'killed', 'error'].includes(status);
 }
 
 function locateWorkspaceSearchResult(result: WorkspaceSearchResult) {
@@ -652,6 +819,16 @@ function findPlanForSearchResult(result: WorkspaceSearchResult, plans: Plan[]) {
   return plans.find((plan) => readPlanTaskAssociationFilePath(plan) === filePath) || null;
 }
 
+function intakeLocateItemId(
+  type: IntakeType,
+  pendingSearchTarget: WorkspaceSearchResult | null,
+  pendingIntakeTarget: PendingIntakeTarget | null,
+) {
+  if (pendingIntakeTarget?.tab === type) return pendingIntakeTarget.id;
+  if (pendingSearchTarget?.targetTab !== type || pendingSearchTarget.targetType !== type) return null;
+  return normalizeSearchResultPlanId(pendingSearchTarget.targetId);
+}
+
 function normalizeSearchResultPlanId(value: number | null | undefined) {
   if (value === null || typeof value === 'undefined') return null;
   const planId = Number(value);
@@ -664,7 +841,7 @@ function formatSearchLocateFallback(result: WorkspaceSearchResult) {
 
 
 function tabTitle(tab: WorkspaceTab) {
-  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', acceptance: '验收模块', tasks: '计划与任务', scripts: '脚本模块', events: '事件流', settings: '设置', chat: 'AI 对话' }[tab];
+  return { overview: '概览', requirement: '需求模块', feedback: '反馈模块', acceptance: '验收模块', tasks: '计划与任务', terminal: '终端', executors: '执行器', scripts: '脚本模块', events: '事件流', settings: '设置', chat: 'AI 对话' }[tab];
 }
 
 function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
@@ -674,6 +851,8 @@ function tabSubtitle(tab: WorkspaceTab, project: Project | null) {
     feedback: '收集反馈，关联需求并由循环生成开发计划',
     acceptance: '对已完成的计划与任务逐项验收',
     tasks: 'Plan 与任务进度',
+    terminal: '当前项目的交互终端会话',
+    executors: '管理工作区命令执行器，导入 tasks.json 并手动运行',
     scripts: '自定义脚本，手动运行或挂到循环各阶段自动触发',
     events: '循环运行日志与任务执行记录',
     settings: '工作区路径、循环间隔、验收命令、CLI 后端与 MCP 接入',

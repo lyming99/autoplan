@@ -4,34 +4,48 @@
  * Chat 工具层（需求 #26）：白名单工具注册表与处理器。
  *
  * 安全边界：
- * - 仅注册 5 个只读/安全创建工具，不含 write_file/edit_file/delete_* /run_command/run_script
+ * - 仅注册白名单只读/安全创建工具，不含 write_file/edit_file/delete_* /run_command/run_script
  * - read_file 经共享访问策略（fileAccess/policy）校验 + 256KB 截断
  * - search_files 结果上限 50 条 + 5s 超时保护
  * - create_requirement/create_feedback 走 IntakeService（autoRun=true）
+ * - create_plan 只接受结构化 JSON，由后端渲染为固定 AutoPlan markdown 格式
  * - create_script 仅 INSERT 落库，不调用 runScript
+ * - executor 工具只运行/停止当前项目内已保存执行器，不接收任意命令或 launch/debug 参数
  */
 
 const fs = require('node:fs');
 const path = require('node:path');
+const crypto = require('node:crypto');
 const { nowIso } = require('../database');
+const { executorFromRow } = require('../executors/executorStore');
 const { resolveFileAccessPolicy, isPathAllowed, assertPathAllowed } = require('../fileAccess/policy');
+const { isPlanContentValid } = require('../loop/planGeneration');
+const intakePlanLinks = require('../loop/intakePlanLinks');
+const {
+  CREATE_PLAN_TOOL_SCHEMA,
+  CREATE_PLAN_TOOL_STRICT,
+  renderCreatePlanMarkdown,
+} = require('./chatPlanTools');
 
 const READ_FILE_MAX_BYTES = 256 * 1024; // 256KB
 const SEARCH_MAX_RESULTS = 50;
 const SEARCH_TIMEOUT_MS = 5000;
 const SEARCH_CONTENT_SCAN_LIMIT = 200;
+const EXECUTOR_LOG_TAIL_MAX_CHARS = 3000;
+const EXECUTOR_STATUSES = Object.freeze(['idle', 'running', 'ok', 'bad', 'stopped']);
 
 /**
  * 获取白名单 Chat 工具定义列表。
  * 外部无法注册额外工具——工具注册表在此函数内闭合。
  *
- * @param {{db:object, projectId:number, workspacePath:string, intakeService:object}} deps
- * @returns {Array<{name:string, description:string, input_schema:object, handler:Function}>}
+ * @param {{db:object, projectId:number, workspacePath:string, intakeService:object, planService?:object, loopService?:object, conversationId?:number}} deps
+ * @returns {Array<{name:string, description:string, input_schema:object, strict?:boolean, handler:Function}>}
  */
-function getChatToolDefinitions({ db, projectId, workspacePath, intakeService }) {
+function getChatToolDefinitions({ db, projectId, workspacePath, intakeService, planService, loopService, conversationId }) {
   if (!workspacePath || !String(workspacePath).trim()) {
     throw new Error('工作区路径为空，无法初始化 Chat 工具');
   }
+  const planLifecycleService = planService || loopService || null;
 
   return Object.freeze([
     {
@@ -89,6 +103,14 @@ function getChatToolDefinitions({ db, projectId, workspacePath, intakeService })
       handler: (args) => handleCreateFeedback(projectId, intakeService, args),
     },
     {
+      name: 'create_plan',
+      description:
+        '直接创建 AutoPlan 执行计划的结构化输入工具。必须提交 JSON 对象，不接收任意 markdown 全文；后端会统一渲染 ## 任务拆解、连续 P001 编号、scope 注释、缩进验收要点和最后的完整验收任务。',
+      input_schema: CREATE_PLAN_TOOL_SCHEMA,
+      strict: CREATE_PLAN_TOOL_STRICT,
+      handler: (args) => handleCreatePlan(db, projectId, workspacePath, planLifecycleService, conversationId, args),
+    },
+    {
       name: 'create_script',
       description:
         '创建新脚本（仅保存到脚本库，不执行）。脚本创建后可在工作区"脚本"页面手动运行或配置定时/钩子触发。',
@@ -106,6 +128,74 @@ function getChatToolDefinitions({ db, projectId, workspacePath, intakeService })
         required: ['name', 'body'],
       },
       handler: (args) => handleCreateScript(db, projectId, args),
+    },
+    {
+      name: 'list_executors',
+      description:
+        '查询当前项目的工作区执行器列表和最近运行状态。只返回已保存执行器配置、状态和日志尾部；不运行临时命令，不支持 launch/debug 配置。',
+      input_schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          scope: {
+            type: 'string',
+            enum: ['current_project'],
+            description: '固定为 current_project；Chat 执行器工具只作用于当前项目。',
+          },
+          label: { type: 'string', description: '按执行器 label 关键词过滤（可选）' },
+          group: { type: 'string', description: '按 group kind 精确过滤，例如 build/test/custom（可选）' },
+          status: { type: 'string', enum: EXECUTOR_STATUSES, description: '按当前或最近状态过滤（可选）' },
+          enabled: { type: 'boolean', description: '按启用状态过滤（可选）' },
+          limit: { type: 'integer', minimum: 1, maximum: 50, description: '返回数量上限（默认 20，最多 50）' },
+        },
+        required: ['scope'],
+      },
+      handler: (args) => handleListExecutors(db, projectId, loopService, args),
+    },
+    {
+      name: 'run_executor',
+      description:
+        '运行当前项目内已有执行器。只能按 id 或精确 label 选择已保存执行器，不接受 command、launch 或 debug 参数；返回状态、退出码、耗时和日志尾部。',
+      input_schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'integer', minimum: 1, description: '执行器 ID。若未知可改用 label。' },
+          label: { type: 'string', description: '执行器精确 label。id 与 label 至少二选一。' },
+        },
+        required: ['id'],
+      },
+      handler: (args) => handleRunExecutor(projectId, db, loopService, args),
+    },
+    {
+      name: 'stop_executor',
+      description:
+        '停止当前项目内正在运行的已有执行器。只能按 id 或精确 label 定位，不影响脚本、计划任务或循环；不支持 launch/debug 配置。',
+      input_schema: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          id: { type: 'integer', minimum: 1, description: '执行器 ID。若未知可改用 label。' },
+          label: { type: 'string', description: '执行器精确 label。id 与 label 至少二选一。' },
+        },
+        required: ['id'],
+      },
+      handler: (args) => handleStopExecutor(projectId, db, loopService, args),
+    },
+    {
+      name: 'open_executor',
+      description:
+        '定位当前项目内已有执行器，并返回可打开的执行器 tab/card 锚点。不存在或已删除时返回结构化不可用结果。',
+      input_schema: {
+        type: 'object',
+        additionalProperties: false,
+        description: 'id 与 label 至少二选一。',
+        properties: {
+          id: { type: 'integer', minimum: 1, description: '执行器 ID（精确匹配）' },
+          label: { type: 'string', description: '执行器精确 label' },
+        },
+      },
+      handler: (args) => handleOpenExecutor(projectId, db, loopService, args),
     },
     {
       name: 'open_requirement',
@@ -393,6 +483,197 @@ function handleCreateFeedback(projectId, intakeService, args) {
   }
 }
 
+/* ------------------------------------------------------------------ create_plan ------------------------------------------------------------------ */
+
+function handleCreatePlan(db, projectId, workspacePath, planService, conversationId, args) {
+  if (!planService || typeof planService.insertPlan !== 'function' || typeof planService.syncPlanTasks !== 'function') {
+    return { error: '计划生命周期服务未注入，无法创建计划', errorCode: 'SERVICE_UNAVAILABLE' };
+  }
+
+  let planFile = '';
+  let planId = null;
+  try {
+    const rendered = renderCreatePlanMarkdown(args);
+    const workspaceRoot = resolveExistingWorkspace(workspacePath);
+    const planDir = ensurePlanOutputDir(planService, workspaceRoot);
+    planFile = nextChatPlanFilePath(planDir, conversationId);
+    const relativePath = normalizeRelativePath(workspaceRoot, planFile);
+
+    fs.writeFileSync(planFile, rendered.markdown, 'utf8');
+
+    const persistedContent = fs.readFileSync(planFile, 'utf8');
+    if (!isPlanContentValid(persistedContent)) {
+      cleanupCreatedPlanFile(planFile);
+      return {
+        error: '生成的计划格式不合规：缺少 ## 任务拆解 或合规任务行',
+        errorCode: 'PLAN_FORMAT_INVALID',
+      };
+    }
+
+    const issueHash = stableChatPlanIssueHash(projectId, conversationId, rendered.markdown);
+    planId = planService.insertPlan({
+      projectId,
+      issueHash,
+      filePath: relativePath,
+      hash: hashFile(planFile),
+      status: rendered.status,
+    });
+    if (!Number.isInteger(Number(planId)) || Number(planId) <= 0) {
+      const err = new Error('计划记录插入失败');
+      err.code = 'PLAN_INSERT_FAILED';
+      throw err;
+    }
+    planService.syncPlanTasks(planId, planFile);
+    forcePlanStatus(db, planId, rendered.status);
+    recordChatPlanCreated(planService, projectId, planId, relativePath, rendered);
+
+    return {
+      id: planId,
+      type: 'plan',
+      title: rendered.title,
+      status: rendered.status,
+      totalTasks: rendered.totalTasks,
+      filePath: relativePath,
+      projectId,
+      openable: true,
+    };
+  } catch (err) {
+    cleanupPartialCreatePlan(db, planId, planFile);
+    return { error: `创建计划失败：${err.message}`, errorCode: err.code || 'CREATE_PLAN_FAILED' };
+  }
+}
+
+function resolveExistingWorkspace(workspacePath) {
+  const workspaceRoot = path.resolve(String(workspacePath || '').trim());
+  if (!workspaceRoot || workspaceRoot === path.parse(workspaceRoot).root) {
+    const err = new Error('工作区路径无效');
+    err.code = 'INVALID_WORKSPACE';
+    throw err;
+  }
+  let stat;
+  try {
+    stat = fs.statSync(workspaceRoot);
+  } catch (err) {
+    const wrapped = new Error(`无法访问工作区：${err.message}`);
+    wrapped.code = 'WORKSPACE_ACCESS_ERROR';
+    throw wrapped;
+  }
+  if (!stat.isDirectory()) {
+    const err = new Error('工作区路径不是目录');
+    err.code = 'INVALID_WORKSPACE';
+    throw err;
+  }
+  return workspaceRoot;
+}
+
+function ensurePlanOutputDir(planService, workspaceRoot) {
+  if (typeof planService.ensureWorkspaceDirs === 'function') {
+    planService.ensureWorkspaceDirs(workspaceRoot);
+  }
+
+  const planDir = path.resolve(workspaceRoot, 'docs', 'plan');
+  const relative = path.relative(workspaceRoot, planDir);
+  if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+    const err = new Error('计划输出目录不在工作区内');
+    err.code = 'PLAN_DIR_OUTSIDE_WORKSPACE';
+    throw err;
+  }
+
+  try {
+    fs.mkdirSync(planDir, { recursive: true });
+    if (!fs.statSync(planDir).isDirectory()) throw new Error('目标不是目录');
+  } catch (err) {
+    const wrapped = new Error(`无法准备计划输出目录：${err.message}`);
+    wrapped.code = 'PLAN_DIR_ACCESS_ERROR';
+    throw wrapped;
+  }
+  return planDir;
+}
+
+function nextChatPlanFilePath(planDir, conversationId) {
+  const safeConversationId = safeFilePart(conversationId || 'unknown');
+  const baseName = `plan_chat_${safeConversationId}_${timestampForPath()}`;
+  let candidate = path.join(planDir, `${baseName}.md`);
+  let suffix = 2;
+  while (fs.existsSync(candidate)) {
+    candidate = path.join(planDir, `${baseName}_${suffix}.md`);
+    suffix += 1;
+  }
+  return candidate;
+}
+
+function stableChatPlanIssueHash(projectId, conversationId, markdown) {
+  return `chat-${safeFilePart(projectId || '0')}-${safeFilePart(conversationId || 'unknown')}-${hashText(markdown).slice(0, 16)}`;
+}
+
+function hashFile(filePath) {
+  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+}
+
+function hashText(text) {
+  return crypto.createHash('sha256').update(String(text || '')).digest('hex');
+}
+
+function normalizeRelativePath(root, fullPath) {
+  return path.relative(root, fullPath).replaceAll(path.sep, '/');
+}
+
+function timestampForPath() {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+}
+
+function safeFilePart(value) {
+  return String(value).replace(/[^A-Za-z0-9_.-]+/g, '_') || 'unknown';
+}
+
+function forcePlanStatus(db, planId, status) {
+  if (!db || typeof db.run !== 'function' || !planId || !['pending', 'draft'].includes(status)) return;
+  db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [status, nowIso(), planId]);
+}
+
+function recordChatPlanCreated(planService, projectId, planId, relativePath, rendered) {
+  try {
+    if (typeof planService.addEvent === 'function') {
+      planService.addEvent(projectId, 'plan.generated', `对话创建计划：${relativePath}`, {
+        planId,
+        source: 'chat',
+        title: rendered.title,
+        status: rendered.status,
+        totalTasks: rendered.totalTasks,
+      });
+      return;
+    }
+    if (typeof planService.emitUpdate === 'function') {
+      planService.emitUpdate(projectId);
+    }
+  } catch {
+    /* 事件记录失败不影响计划创建结果 */
+  }
+}
+
+function cleanupPartialCreatePlan(db, planId, planFile) {
+  if (planId && db && typeof db.run === 'function') {
+    try {
+      db.run('DELETE FROM plan_tasks WHERE plan_id = ?', [planId]);
+      db.run('DELETE FROM plans WHERE id = ?', [planId]);
+    } catch {
+      /* 清理失败不覆盖原始错误 */
+    }
+  }
+  cleanupCreatedPlanFile(planFile);
+}
+
+function cleanupCreatedPlanFile(planFile) {
+  if (!planFile) return;
+  try {
+    if (fs.existsSync(planFile) && fs.statSync(planFile).isFile()) fs.unlinkSync(planFile);
+  } catch {
+    /* 清理失败不覆盖原始错误 */
+  }
+}
+
 /* ------------------------------------------------------------------ create_script ------------------------------------------------------------------ */
 
 function handleCreateScript(db, projectId, args) {
@@ -423,6 +704,318 @@ function normalizeScriptRuntime(value) {
   const v = String(value || '').trim().toLowerCase();
   const allowed = ['node', 'python', 'bash', 'sh'];
   return allowed.includes(v) ? v : 'node';
+}
+
+/* ------------------------------------------------------------------ executors ------------------------------------------------------------------ */
+
+function handleListExecutors(db, projectId, loopService, args = {}) {
+  const invalid = validateExecutorToolArgs(args, ['scope', 'label', 'group', 'status', 'enabled', 'limit']);
+  if (invalid) return invalid;
+  if (!db || typeof db.all !== 'function') {
+    return { error: '数据库未注入，无法查询执行器', errorCode: 'SERVICE_UNAVAILABLE' };
+  }
+  const scope = String(args.scope || 'current_project').trim();
+  if (scope !== 'current_project') {
+    return { error: '执行器工具只支持当前项目范围', errorCode: 'EXECUTOR_SCOPE_UNSUPPORTED' };
+  }
+
+  const status = String(args.status || '').trim();
+  if (status && !EXECUTOR_STATUSES.includes(status)) {
+    return { error: `执行器状态无效：${status}`, errorCode: 'INVALID_STATUS' };
+  }
+
+  const limit = Math.min(50, normalizePositiveInteger(args.limit) || 20);
+  const rows = listChatExecutorRows(db, projectId, {
+    label: String(args.label || '').trim(),
+    group: String(args.group || '').trim(),
+    enabled: typeof args.enabled === 'boolean' ? args.enabled : undefined,
+  });
+  const executors = rows
+    .map((row) => chatExecutorSummary(row, loopService))
+    .filter((executor) => !status || executor.status === status)
+    .slice(0, limit);
+
+  return {
+    type: 'executor_list',
+    projectId,
+    count: executors.length,
+    executors,
+  };
+}
+
+async function handleRunExecutor(projectId, db, loopService, args = {}) {
+  const invalid = validateExecutorToolArgs(args, ['id', 'executorId', 'label']);
+  if (invalid) return invalid;
+  if (!loopService || typeof loopService.runExecutor !== 'function') {
+    return { error: '执行器运行服务未注入', errorCode: 'SERVICE_UNAVAILABLE' };
+  }
+
+  const resolved = resolveChatExecutor(db, projectId, args);
+  if (!resolved.executor) return resolved.unavailable;
+
+  try {
+    const result = await loopService.runExecutor(projectId, resolved.executor.id);
+    return chatExecutorRunResult(result, resolved.executor, loopService);
+  } catch (err) {
+    return {
+      ...chatExecutorSummary(resolved.executor, loopService),
+      action: 'run',
+      error: `运行执行器失败：${err.message}`,
+      errorCode: 'EXECUTOR_RUN_FAILED',
+    };
+  }
+}
+
+function handleStopExecutor(projectId, db, loopService, args = {}) {
+  const invalid = validateExecutorToolArgs(args, ['id', 'executorId', 'label']);
+  if (invalid) return invalid;
+  if (!loopService || typeof loopService.stopExecutor !== 'function') {
+    return { error: '执行器停止服务未注入', errorCode: 'SERVICE_UNAVAILABLE' };
+  }
+
+  const resolved = resolveChatExecutor(db, projectId, args);
+  if (!resolved.executor) return resolved.unavailable;
+
+  try {
+    const result = loopService.stopExecutor(projectId, resolved.executor.id);
+    const latest = getChatExecutorById(db, projectId, resolved.executor.id) || resolved.executor;
+    const summary = chatExecutorSummary(latest, loopService);
+    return {
+      ...summary,
+      action: 'stop',
+      stopped: Number(result?.stopped || 0),
+    };
+  } catch (err) {
+    return {
+      ...chatExecutorSummary(resolved.executor, loopService),
+      action: 'stop',
+      error: `停止执行器失败：${err.message}`,
+      errorCode: 'EXECUTOR_STOP_FAILED',
+    };
+  }
+}
+
+function handleOpenExecutor(projectId, db, loopService, args = {}) {
+  const invalid = validateExecutorToolArgs(args, ['id', 'executorId', 'label']);
+  if (invalid) return invalid;
+  const resolved = resolveChatExecutor(db, projectId, args);
+  if (!resolved.executor) return resolved.unavailable;
+  return {
+    ...chatExecutorSummary(resolved.executor, loopService),
+    action: 'open',
+  };
+}
+
+function validateExecutorToolArgs(args = {}, allowedKeys) {
+  if (!args || typeof args !== 'object' || Array.isArray(args)) {
+    return { error: '执行器工具参数必须是对象', errorCode: 'INVALID_ARGS' };
+  }
+  const allowed = new Set(allowedKeys);
+  const unknown = Object.keys(args).filter((key) => !allowed.has(key));
+  if (!unknown.length) return null;
+  return {
+    error: `执行器工具不接受这些参数：${unknown.join(', ')}`,
+    errorCode: 'UNSUPPORTED_EXECUTOR_FIELDS',
+    unsupportedFields: unknown,
+  };
+}
+
+function listChatExecutorRows(db, projectId, filters = {}) {
+  const params = [projectId];
+  let where = '';
+  if (filters.label) {
+    where += ' AND label LIKE ?';
+    params.push(`%${filters.label}%`);
+  }
+  if (filters.group) {
+    where += ' AND group_kind = ?';
+    params.push(filters.group);
+  }
+  if (filters.enabled !== undefined) {
+    where += ' AND enabled = ?';
+    params.push(filters.enabled ? 1 : 0);
+  }
+  return db.all(
+    `SELECT * FROM executors
+     WHERE project_id = ?${where}
+     ORDER BY sort_order ASC, id ASC`,
+    params,
+  );
+}
+
+function resolveChatExecutor(db, projectId, args = {}) {
+  const selector = executorSelector(args);
+  if (!selector.id && !selector.label) {
+    return { executor: null, unavailable: executorUnavailable(projectId, selector, '未指定执行器：请提供 id 或 label') };
+  }
+  if (!db || typeof db.get !== 'function') {
+    return { executor: null, unavailable: executorUnavailable(projectId, selector, '数据库未注入，无法查询执行器', 'SERVICE_UNAVAILABLE') };
+  }
+
+  let row = null;
+  try {
+    if (selector.id) {
+      row = db.get('SELECT * FROM executors WHERE id = ? AND project_id = ?', [selector.id, projectId]);
+    } else {
+      row = db.get(
+        `SELECT * FROM executors
+         WHERE project_id = ? AND label = ?
+         ORDER BY sort_order ASC, id ASC
+         LIMIT 1`,
+        [projectId, selector.label],
+      );
+    }
+  } catch (err) {
+    return { executor: null, unavailable: executorUnavailable(projectId, selector, `查询执行器失败：${err.message}`) };
+  }
+
+  if (!row) {
+    return { executor: null, unavailable: executorUnavailable(projectId, selector, '未找到执行器（可能不存在、已删除或不属于当前项目）') };
+  }
+  return { executor: executorFromRow(row), unavailable: null };
+}
+
+function getChatExecutorById(db, projectId, executorId) {
+  if (!db || typeof db.get !== 'function') return null;
+  try {
+    const row = db.get('SELECT * FROM executors WHERE id = ? AND project_id = ?', [executorId, projectId]);
+    return row ? executorFromRow(row) : null;
+  } catch {
+    return null;
+  }
+}
+
+function executorSelector(args = {}) {
+  return {
+    id: normalizePositiveInteger(args.id) || normalizePositiveInteger(args.executorId),
+    label: String(args.label || '').trim(),
+  };
+}
+
+function executorUnavailable(projectId, selector = {}, message, errorCode = 'EXECUTOR_UNAVAILABLE') {
+  return {
+    type: 'executor',
+    projectId,
+    id: selector.id || null,
+    label: selector.label || null,
+    available: false,
+    openable: false,
+    error: message,
+    errorCode,
+  };
+}
+
+function chatExecutorSummary(record, loopService = null) {
+  const executor = normalizeChatExecutorRecord(record);
+  const activeOperation = executor ? activeExecutorOperation(loopService, executor.projectId, executor.id) : null;
+  const running = Boolean(activeOperation);
+  const status = running ? 'running' : (executor?.lastStatus || 'idle');
+  const exitCode = running ? null : executor?.lastExitCode ?? null;
+  const durationMs = running ? null : executor?.lastDurationMs ?? null;
+  const logTail = executorLogTail(running && activeOperation?.logBuffer ? activeOperation.logBuffer : executor?.lastLog);
+  const openRef = executorOpenRef(executor?.projectId, executor);
+  return {
+    type: 'executor',
+    projectId: executor?.projectId || null,
+    id: executor?.id || null,
+    label: executor?.label || '',
+    executorId: executor?.id || null,
+    available: Boolean(executor),
+    command: executor?.command || '',
+    group: executor?.group || { kind: null, isDefault: false },
+    enabled: Boolean(executor?.enabled),
+    status,
+    running,
+    exitCode,
+    durationMs,
+    lastRunAt: executor?.lastRunAt || null,
+    logTail,
+    openable: Boolean(openRef.id),
+    openRef,
+  };
+}
+
+function normalizeChatExecutorRecord(record) {
+  if (!record) return null;
+  if (record.projectId !== undefined && record.label !== undefined) return record;
+  return executorFromRow(record);
+}
+
+function chatExecutorRunResult(result = {}, executor, loopService = null) {
+  const mergedExecutor = {
+    ...executor,
+    lastStatus: result.status || executor.lastStatus,
+    lastExitCode: result.exitCode ?? executor.lastExitCode,
+    lastDurationMs: result.durationMs ?? executor.lastDurationMs,
+    lastLog: result.log || executor.lastLog,
+  };
+  return {
+    ...chatExecutorSummary(mergedExecutor, loopService),
+    action: 'run',
+    status: result.status || null,
+    exitCode: typeof result.exitCode === 'number' ? result.exitCode : null,
+    durationMs: typeof result.durationMs === 'number' ? result.durationMs : null,
+    logTail: executorLogTail(result.log),
+    logFile: result.logFile || null,
+    timedOut: Boolean(result.timedOut),
+    error: result.error || null,
+    dependencyResults: Array.isArray(result.dependencyResults)
+      ? result.dependencyResults.map(chatExecutorDependencyResult)
+      : [],
+  };
+}
+
+function chatExecutorDependencyResult(result = {}) {
+  return {
+    executorId: result.executorId || null,
+    label: result.label || result.dependencyLabel || null,
+    status: result.status || 'bad',
+    exitCode: typeof result.exitCode === 'number' ? result.exitCode : null,
+    durationMs: typeof result.durationMs === 'number' ? result.durationMs : null,
+    error: result.errorMessage || result.error || null,
+    logTail: executorLogTail(result.log, 1200),
+  };
+}
+
+function activeExecutorOperation(loopService, projectId, executorId) {
+  let runtime = null;
+  try {
+    runtime = typeof loopService?.existingRuntime === 'function' ? loopService.existingRuntime(projectId) : null;
+  } catch {
+    runtime = null;
+  }
+  if (!runtime?.activeOperations) return null;
+  for (const operation of runtime.activeOperations.values()) {
+    if (
+      Number(operation?.projectId) === Number(projectId)
+      && operation?.operationType === 'executor'
+      && Number(operation?.executorId) === Number(executorId)
+    ) {
+      return operation;
+    }
+  }
+  return null;
+}
+
+function executorLogTail(value, maxLength = EXECUTOR_LOG_TAIL_MAX_CHARS) {
+  const text = value === undefined || value === null ? '' : String(value);
+  if (!text) return '';
+  return text.length > maxLength ? text.slice(-maxLength) : text;
+}
+
+function executorOpenRef(projectId, executor) {
+  const id = normalizePositiveInteger(executor?.id);
+  const scopedProjectId = normalizePositiveInteger(projectId);
+  const anchorId = id ? `workspace-executor-${id}` : null;
+  return {
+    type: 'executor',
+    projectId: scopedProjectId,
+    id,
+    label: executor?.label || null,
+    tab: 'executors',
+    anchorId,
+    link: id && scopedProjectId ? `#/projects/${scopedProjectId}?tab=executors&anchor=${anchorId}` : null,
+  };
 }
 
 /* ------------------------------------------------------------------ open_requirement / open_feedback ------------------------------------------------------------------ */
@@ -490,6 +1083,7 @@ function openIntakeDetail(type, table, label, projectId, db, workspacePath, args
     return { error: `未找到${label}（id 或 title 未命中当前项目）`, errorCode: 'INTAKE_NOT_FOUND' };
   }
 
+  const linkedPlans = buildLinkedPlanDetails(db, workspacePath, type, projectId, row);
   return {
     type,
     projectId,
@@ -499,8 +1093,107 @@ function openIntakeDetail(type, table, label, projectId, db, workspacePath, args
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    linkedPlan: buildLinkedPlanDetail(db, workspacePath, row),
+    linkedPlan: linkedPlanCompatDetail(currentLinkedPlanDetail(linkedPlans)) || buildLinkedPlanDetail(db, workspacePath, row),
+    linkedPlans,
     openable: true,
+  };
+}
+
+function buildLinkedPlanDetails(db, workspacePath, type, projectId, row = {}) {
+  let links = [];
+  try {
+    links = intakePlanLinks.getPlansForIntake({ db }, projectId, type, row.id, {
+      includeMissingPlans: true,
+    });
+  } catch {
+    links = [];
+  }
+
+  const linkedPlans = links
+    .map((link) => buildLinkedPlanDetailFromLink(db, workspacePath, link, row))
+    .filter(Boolean);
+  if (linkedPlans.length > 0) return markCurrentLinkedPlanDetails(linkedPlans);
+
+  const legacy = buildLegacyLinkedPlanDetail(db, workspacePath, row);
+  return legacy ? markCurrentLinkedPlanDetails([legacy]) : [];
+}
+
+function buildLinkedPlanDetailFromLink(db, workspacePath, link = {}, row = {}) {
+  const planId = normalizePositiveInteger(link.planId ?? link.plan_id ?? link.id);
+  if (!planId) return null;
+  const phaseTitle = String(link.phaseTitle || link.phase_title || '').trim();
+  const plan = link.plan || rowPlanFallback(row, planId) || {};
+  const filePath = plan.file_path || '';
+  return {
+    id: planId,
+    planId,
+    linkId: normalizePositiveInteger(link.linkId ?? link.link_id),
+    phaseIndex: normalizePositiveInteger(link.phaseIndex ?? link.phase_index) || 1,
+    phaseTitle,
+    title: readPlanMarkdownTitle(db, workspacePath, filePath) || phaseTitle || `Plan #${planId}`,
+    filePath: filePath || null,
+    status: plan.status || null,
+    completed: normalizeNullableNumber(plan.completed_tasks),
+    total: normalizeNullableNumber(plan.total_tasks),
+    validationPassed: plan.validation_passed ?? null,
+    current: false,
+  };
+}
+
+function buildLegacyLinkedPlanDetail(db, workspacePath, row = {}) {
+  const detail = buildLinkedPlanDetail(db, workspacePath, row);
+  if (!detail) return null;
+  return {
+    ...detail,
+    planId: detail.id,
+    linkId: null,
+    phaseIndex: 1,
+    phaseTitle: '',
+    validationPassed: null,
+    current: false,
+  };
+}
+
+function rowPlanFallback(row = {}, planId) {
+  if (Number(row.linked_plan_id) !== Number(planId)) return null;
+  return {
+    file_path: row.plan_file_path || '',
+    status: row.plan_status || null,
+    completed_tasks: row.plan_completed,
+    total_tasks: row.plan_total,
+    validation_passed: row.plan_validation_passed,
+  };
+}
+
+function markCurrentLinkedPlanDetails(linkedPlans = []) {
+  const current = currentLinkedPlanDetail(linkedPlans);
+  return linkedPlans.map((linkedPlan) => ({
+    ...linkedPlan,
+    current: Boolean(
+      current
+      && Number(linkedPlan.planId) === Number(current.planId)
+      && Number(linkedPlan.phaseIndex || 0) === Number(current.phaseIndex || 0),
+    ),
+  }));
+}
+
+function currentLinkedPlanDetail(linkedPlans = []) {
+  if (!Array.isArray(linkedPlans) || linkedPlans.length === 0) return null;
+  return linkedPlans.find((linkedPlan) => {
+    const status = String(linkedPlan.status || '').toLowerCase();
+    return status && !['completed', 'interrupted', 'draft'].includes(status);
+  }) || linkedPlans.find((linkedPlan) => String(linkedPlan.status || '').toLowerCase() !== 'completed') || linkedPlans[0];
+}
+
+function linkedPlanCompatDetail(linkedPlan) {
+  if (!linkedPlan) return null;
+  return {
+    id: linkedPlan.id,
+    title: linkedPlan.title,
+    filePath: linkedPlan.filePath,
+    status: linkedPlan.status,
+    completed: linkedPlan.completed,
+    total: linkedPlan.total,
   };
 }
 
@@ -518,6 +1211,17 @@ function buildLinkedPlanDetail(db, workspacePath, row = {}) {
     completed: Number.isFinite(Number(row.plan_completed)) ? Number(row.plan_completed) : null,
     total: Number.isFinite(Number(row.plan_total)) ? Number(row.plan_total) : null,
   };
+}
+
+function normalizePositiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function normalizeNullableNumber(value) {
+  if (value === null || typeof value === 'undefined' || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }
 
 /** 只读解析 plan markdown 标题（首个 # 标题）；经访问策略校验，文件缺失/越界/不可读时返回 ''，不抛异常。 */

@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
 const { DEFAULT_MCP_CONFIG, createMcpServer, describeListenError } = require('./mcpServer');
+const { MCP_TOOL_DEFINITIONS, MCP_TOOL_NAMES } = require('./mcpTools');
 
 /**
  * 临时把 process.platform 改写为指定值，用于覆盖 describeListenError 的 darwin 平台分支。
@@ -192,5 +193,35 @@ describe('MCP HTTP 监听失败集成路径', () => {
     } finally {
       await server.stop().catch(() => undefined);
     }
+  });
+});
+
+describe('MCP tool schema exposure', () => {
+  it('keeps plan generation and execution config fields registered for intake tools', () => {
+    const createProject = MCP_TOOL_DEFINITIONS.find((tool) => tool.name === MCP_TOOL_NAMES.CREATE_PROJECT);
+    const createRequirement = MCP_TOOL_DEFINITIONS.find((tool) => tool.name === MCP_TOOL_NAMES.CREATE_REQUIREMENT);
+    const createFeedback = MCP_TOOL_DEFINITIONS.find((tool) => tool.name === MCP_TOOL_NAMES.CREATE_FEEDBACK);
+
+    assert.ok(createProject, 'create_project 工具定义应存在');
+    assert.ok(createRequirement, 'create_requirement 工具定义应存在');
+    assert.ok(createFeedback, 'create_feedback 工具定义应存在');
+
+    assert.deepEqual(
+      createProject.inputSchema.properties.planGenerationStrategy.enum,
+      ['external-cli-markdown', 'external-cli-structured', 'builtin-llm-structured'],
+      'create_project 应暴露计划生成策略枚举',
+    );
+    assert.deepEqual(
+      createProject.inputSchema.properties.planExecutionStrategy.enum,
+      ['external-cli', 'builtin-llm'],
+      'create_project 应暴露计划执行策略枚举',
+    );
+    assert.ok(createProject.inputSchema.properties.planGenerationModel, 'create_project 应暴露内置生成模型字段');
+    assert.ok(createProject.inputSchema.properties.planExecutionCommand, 'create_project 应暴露执行 CLI 命令字段');
+
+    assert.ok(createRequirement.inputSchema.properties.planGenerationProvider, 'create_requirement 应允许生成 Provider 覆盖');
+    assert.ok(createFeedback.inputSchema.properties.planGenerationModel, 'create_feedback 应允许内置生成模型覆盖');
+    assert.equal(createRequirement.inputSchema.properties.planExecutionProvider, undefined, 'create_requirement 不应暴露执行覆盖字段');
+    assert.equal(createFeedback.inputSchema.properties.planExecutionStrategy, undefined, 'create_feedback 不应暴露执行覆盖字段');
   });
 });

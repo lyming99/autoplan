@@ -117,6 +117,50 @@ function conversationUpdatePayload(payload = {}) {
   return next;
 }
 
+function terminalSessionPayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return { sessionId: source.sessionId ?? source.id };
+}
+
+function terminalCreatePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    projectId: source.projectId,
+    title: source.title,
+    cwd: source.cwd,
+    profileId: source.profileId,
+    profile: source.profile,
+    cols: source.cols,
+    rows: source.rows,
+    env: source.env,
+  };
+}
+
+function terminalWritePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    sessionId: source.sessionId ?? source.id,
+    data: source.data,
+  };
+}
+
+function terminalResizePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    sessionId: source.sessionId ?? source.id,
+    cols: source.cols,
+    rows: source.rows,
+  };
+}
+
+function terminalRenamePayload(payload = {}) {
+  const source = payload && typeof payload === 'object' ? payload : {};
+  return {
+    sessionId: source.sessionId ?? source.id,
+    title: source.title,
+  };
+}
+
 contextBridge.exposeInMainWorld('autoplan', {
   mcpToolNames: [
     'list_projects',
@@ -129,6 +173,10 @@ contextBridge.exposeInMainWorld('autoplan', {
     'list_plans',
     'get_plan',
     'list_tasks',
+    'list_executors',
+    'run_executor',
+    'stop_executor',
+    'run_executor_action',
     'start_loop',
     'stop_loop',
   ],
@@ -146,6 +194,8 @@ contextBridge.exposeInMainWorld('autoplan', {
   saveMcpConfig: (config) => ipcRenderer.invoke('mcp:saveConfig', config),
   readPlan: (input) => ipcRenderer.invoke('plans:read', input),
   reorderPlans: (input) => ipcRenderer.invoke('plans:reorder', input),
+  stopPlan: (input) => ipcRenderer.invoke('plans:stop', input),
+  deletePlan: (input) => ipcRenderer.invoke('plans:delete', input),
   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
   pickDirectory: () => ipcRenderer.invoke('projects:pickDirectory'),
   openProjectFolder: (input) => ipcRenderer.invoke('projects:openFolder', input),
@@ -165,6 +215,7 @@ contextBridge.exposeInMainWorld('autoplan', {
   interruptIntake: (input) => ipcRenderer.invoke('intake:interrupt', input),
   resumeIntake: (input) => ipcRenderer.invoke('intake:resume', input),
   appendIntakeTask: (input) => ipcRenderer.invoke('intake:appendTask', input),
+  retryIntakePlanGeneration: (input) => ipcRenderer.invoke('intake:retryGeneratePlan', input),
   pickScriptFile: (input) => ipcRenderer.invoke('scripts:pickFile', input),
   createScript: (input) => ipcRenderer.invoke('scripts:create', input),
   updateScript: (input) => ipcRenderer.invoke('scripts:update', input),
@@ -172,6 +223,24 @@ contextBridge.exposeInMainWorld('autoplan', {
   toggleScript: (input) => ipcRenderer.invoke('scripts:toggle', input),
   runScript: (input) => ipcRenderer.invoke('scripts:run', input),
   stopScript: (input) => ipcRenderer.invoke('scripts:stop', input),
+  pickTasksJson: () => ipcRenderer.invoke('executors:pickTasksJson'),
+  createExecutor: (input) => ipcRenderer.invoke('executors:create', input),
+  updateExecutor: (input) => ipcRenderer.invoke('executors:update', input),
+  deleteExecutor: (input) => ipcRenderer.invoke('executors:delete', input),
+  toggleExecutor: (input) => ipcRenderer.invoke('executors:toggle', input),
+  runExecutor: (input) => ipcRenderer.invoke('executors:run', input),
+  stopExecutor: (input) => ipcRenderer.invoke('executors:stop', input),
+  runExecutorAction: (input) => ipcRenderer.invoke('executors:runAction', input),
+  importTasksJson: (input) => ipcRenderer.invoke('executors:importTasksJson', input),
+  createTerminal: (input) => ipcRenderer.invoke('terminal:create', terminalCreatePayload(input)),
+  listTerminals: (input) => ipcRenderer.invoke('terminal:list', input),
+  writeTerminal: (input) => ipcRenderer.invoke('terminal:write', terminalWritePayload(input)),
+  resizeTerminal: (input) => ipcRenderer.invoke('terminal:resize', terminalResizePayload(input)),
+  killTerminal: (input) => ipcRenderer.invoke('terminal:kill', terminalSessionPayload(input)),
+  closeTerminal: (input) => ipcRenderer.invoke('terminal:close', terminalSessionPayload(input)),
+  renameTerminal: (input) => ipcRenderer.invoke('terminal:rename', terminalRenamePayload(input)),
+  replayTerminal: (input) => ipcRenderer.invoke('terminal:replay', terminalSessionPayload(input)),
+  clearTerminal: (input) => ipcRenderer.invoke('terminal:clear', terminalSessionPayload(input)),
   getDroppedFilePath: (file) => webUtils.getPathForFile(file),
   toFileUrl,
   updateStatus: () => ipcRenderer.invoke('updates:status'),
@@ -184,10 +253,30 @@ contextBridge.exposeInMainWorld('autoplan', {
     ipcRenderer.on('loop:update', listener);
     return () => ipcRenderer.removeListener('loop:update', listener);
   },
+  onLoopPatch: (handler) => {
+    const listener = (_event, patch) => handler(patch);
+    ipcRenderer.on('loop:patch', listener);
+    return () => ipcRenderer.removeListener('loop:patch', listener);
+  },
   onUpdateStatus: (handler) => {
     const listener = (_event, status) => handler(status);
     ipcRenderer.on('updates:status', listener);
     return () => ipcRenderer.removeListener('updates:status', listener);
+  },
+  onTerminalData: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('terminal:data', listener);
+    return () => ipcRenderer.removeListener('terminal:data', listener);
+  },
+  onTerminalExit: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('terminal:exit', listener);
+    return () => ipcRenderer.removeListener('terminal:exit', listener);
+  },
+  onTerminalStatus: (handler) => {
+    const listener = (_event, data) => handler(data);
+    ipcRenderer.on('terminal:status', listener);
+    return () => ipcRenderer.removeListener('terminal:status', listener);
   },
   // Chat 对话模块（需求 #26 / #28）
   chatSend: (payload) => ipcRenderer.invoke('chat:send', chatSendPayload(payload)),

@@ -54,6 +54,8 @@ type TaskListPlanFilter = {
 };
 type PlanListProps = ComponentProps<typeof BasePlanList> & {
   onRunDraft?: (plan: Plan, task: PlanTask) => Promise<void> | void;
+  onStopPlan?: (plan: Plan) => Promise<void> | void;
+  onDeletePlan?: (plan: Plan) => Promise<void> | void;
   selectedPlanId?: number | null;
   onSelectPlan?: (plan: Plan) => void;
 };
@@ -345,6 +347,8 @@ export function PlanList({
   emptyText,
   onRunDraft,
   onRunParallel,
+  onStopPlan,
+  onDeletePlan,
   selectedPlanId,
   onSelectPlan,
   ...props
@@ -469,6 +473,8 @@ export function PlanList({
       <BasePlanList
         {...props}
         onRunParallel={onRunParallel}
+        onStopPlan={onStopPlan}
+        onDeletePlan={onDeletePlan}
         onSelectPlan={selectPlan}
         emptyText={activeStatus === 'all' ? emptyText : '当前分类暂无 Plan。'}
         plans={visiblePlans}

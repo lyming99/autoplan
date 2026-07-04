@@ -27,6 +27,9 @@ const {
   taskResultSessionId,
   taskResultSessionContextFields,
 } = require('./taskSessionContext');
+const planAgentCli = require('./planAgentCli');
+
+const { BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR } = planAgentCli;
 
 /** 退避重试序列：首次等待 5s，逐次递增，上限 30s */
 const TASK_RETRY_BACKOFF_SECONDS = Object.freeze([5, 10, 20, 30]);
@@ -38,6 +41,15 @@ function sleep(ms) {
 function isEnvironmentBlocking(result) {
   const failure = classifyExecutionFailure(result);
   return failure.environmentBlocked === true;
+}
+
+function planExecutionForTask(service, plan) {
+  const config = planAgentCli.planExecutionConfig(service, plan);
+  return {
+    config,
+    meta: planAgentCli.planExecutionEventMeta(config),
+    builtinLlm: planAgentCli.isBuiltinLlmPlanExecution(config),
+  };
 }
 
 async function processPlan(service, helpers, workspace, plan) {
@@ -151,6 +163,16 @@ function parallelTaskBatch(service, helpers, tasks) {
 
 async function executeTaskBatch(service, helpers, workspace, plan, tasks, options = {}) {
     service.setPhase(plan.project_id, 'execute-task');
+    const execution = planExecutionForTask(service, plan);
+    if (execution.builtinLlm) {
+      const results = [];
+      for (const task of tasks) {
+        const result = await service.executeTask(workspace, plan, task, { parallel: false });
+        results.push({ task, result });
+        if (!taskTargetExists(service, plan, task) || result?.cancelled || Number(result?.exitCode) !== 0) break;
+      }
+      return results;
+    }
     const agentContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
     if (agentContext.agentCliProvider === 'opencode') {
       service.addEvent(
@@ -158,6 +180,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
         'tasks.parallel.serialized',
         `OpenCode 会话复用已将并发批次转为串行执行：${tasks.map((task) => task.task_key).join(', ')}`,
         {
+          ...execution.meta,
           ...agentContext,
           planId: plan.id,
           taskIds: tasks.map((task) => task.id),
@@ -231,6 +254,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
       'tasks.parallel.started',
       `${agentCliProviderDisplayName(agentContext.agentCliProvider)} 并发执行 ${tasks.map((task) => task.task_key).join(', ')}`,
       {
+        ...execution.meta,
         ...agentContext,
         planId: plan.id,
         taskIds: tasks.map((task) => task.id),
@@ -307,6 +331,41 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
     if (!taskTargetExists(service, plan, startedTask)) {
       return { exitCode: -1, output: '', errorMessage: '任务目标已删除', cancelled: true, finishedAt: nowIso() };
     }
+    const execution = planExecutionForTask(service, plan);
+    if (execution.builtinLlm) {
+      service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedTask, {
+        ...execution.meta,
+        planId: plan.id,
+        status: TASK_EVENT_STATUS.RUNNING,
+        startedAt,
+      });
+      const finishedAt = nowIso();
+      const result = {
+        ...execution.meta,
+        exitCode: -1,
+        output: '',
+        errorMessage: BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR,
+        finishedAt,
+      };
+      const failure = classifyExecutionFailure(result);
+      service.recordTaskFailure(plan.project_id, plan, startedTask, finishedAt, {
+        ...execution.meta,
+        error: BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR,
+        ...failure,
+      });
+      await service.runHookScripts(plan.project_id, 'on:fail', {
+        failedStage: 'task',
+        planId: plan.id,
+        taskId: startedTask.id,
+        taskKey: startedTask.task_key,
+        error: BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR,
+        ...failure,
+      });
+      return {
+        ...result,
+        ...failure,
+      };
+    }
     const taskAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
     const isTaskCodexProvider = taskAgentCliContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
     const isTaskClaudeProvider = taskAgentCliContext.agentCliProvider === 'claude';
@@ -344,6 +403,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
           })
       : {};
     service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedTask, {
+      ...execution.meta,
       ...taskAgentCliContext,
       planId: plan.id,
       status: TASK_EVENT_STATUS.RUNNING,
@@ -388,6 +448,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         planId: plan.id,
         taskId: task.id,
         parallel: Boolean(options.parallel),
+        ...execution.meta,
         ...taskAgentCliContext,
         ...startedSessionContext,
         ...(isTaskCodexProvider && existingSessionId ? { codexSessionId: existingSessionId } : {}),
@@ -404,6 +465,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       const errorMessage = error?.message || String(error);
       const failure = classifyExecutionFailure({ exitCode: -1, errorMessage });
       const failedTask = service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+        ...execution.meta,
         ...taskAgentCliContext,
         error: errorMessage,
         ...failure,
@@ -440,6 +502,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       }
       const failure = classifyExecutionFailure(result);
       service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+        ...execution.meta,
         ...agentCliContextFields(result, { defaultProvider: true }),
         exitCode: result.exitCode,
         log: result.logFile,

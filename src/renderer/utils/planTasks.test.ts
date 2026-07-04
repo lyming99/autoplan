@@ -101,6 +101,7 @@ const {
   buildAcceptedGroups,
   buildAcceptanceGroups,
   buildRecentAccepted,
+  groupTasksByPlan,
   isAcceptancePendingPlan,
   isAcceptancePendingTask,
   acceptanceSelectionKey,
@@ -113,6 +114,96 @@ function sortedAcceptDates(groups: Array<{ plan: { accepted_at?: string | null }
   ]);
   return dates;
 }
+
+describe('Requirement #52 – groupTasksByPlan sequence sorting', () => {
+  it('sorts tasks within a plan group by sort_order before task activity time', () => {
+    const tasks = [
+      makeTask({
+        id: 3,
+        plan_id: 1,
+        task_key: 'P003',
+        sort_order: 3,
+        finished_at: iso('2026-07-03T12:00:00Z'),
+        updated_at: iso('2026-07-03T12:00:00Z'),
+      }),
+      makeTask({
+        id: 1,
+        plan_id: 1,
+        task_key: 'P001',
+        sort_order: 1,
+        finished_at: iso('2026-07-01T12:00:00Z'),
+        updated_at: iso('2026-07-01T12:00:00Z'),
+      }),
+      makeTask({
+        id: 2,
+        plan_id: 1,
+        task_key: 'P002',
+        sort_order: 2,
+        finished_at: iso('2026-07-02T12:00:00Z'),
+        updated_at: iso('2026-07-02T12:00:00Z'),
+      }),
+    ];
+
+    const groups = groupTasksByPlan(tasks);
+
+    expectLength(groups, 1, 'all tasks should be in one plan group');
+    expectEqual(groups[0].tasks.map((task) => task.task_key).join(','), 'P001,P002,P003');
+  });
+
+  it('sorts plan groups by the minimum visible task sequence instead of latest activity time', () => {
+    const newerLateSequence = makeTask({
+      id: 10,
+      plan_id: 10,
+      plan_title: 'Late sequence plan',
+      task_key: 'P010',
+      sort_order: 10,
+      finished_at: iso('2026-07-03T12:00:00Z'),
+      updated_at: iso('2026-07-03T12:00:00Z'),
+    });
+    const olderEarlySequence = makeTask({
+      id: 1,
+      plan_id: 1,
+      plan_title: 'Early sequence plan',
+      task_key: 'P001',
+      sort_order: 1,
+      finished_at: iso('2026-07-01T12:00:00Z'),
+      updated_at: iso('2026-07-01T12:00:00Z'),
+    });
+
+    const groups = groupTasksByPlan([newerLateSequence, olderEarlySequence]);
+
+    expectLength(groups, 2, 'tasks should be split into two plan groups');
+    expectEqual(groups[0].sourceId, '1');
+    expectEqual(groups[1].sourceId, '10');
+  });
+
+  it('falls back to numeric task_key sequence when sort_order is missing or invalid', () => {
+    const missingSortOrder = makeTask({ id: 1, plan_id: 1, task_key: 'P001' });
+    delete (missingSortOrder as { sort_order?: number }).sort_order;
+
+    const tasks = [
+      makeTask({ id: 10, plan_id: 1, task_key: 'TASK-10', sort_order: 0 }),
+      missingSortOrder,
+      makeTask({ id: 2, plan_id: 1, task_key: 'P002', sort_order: Number.NaN }),
+    ];
+
+    const groups = groupTasksByPlan(tasks);
+
+    expectLength(groups, 1, 'all fallback tasks should be in one plan group');
+    expectEqual(groups[0].tasks.map((task) => task.task_key).join(','), 'P001,P002,TASK-10');
+  });
+
+  it('keeps input order stable when neither sort_order nor task_key yields a sequence', () => {
+    const first = makeTask({ id: 21, plan_id: 101, task_key: 'ALPHA', sort_order: 0 });
+    const second = makeTask({ id: 22, plan_id: 102, task_key: 'BETA', sort_order: Number.NaN });
+    const third = makeTask({ id: 23, plan_id: 103, task_key: 'GAMMA', sort_order: -1 });
+
+    const groups = groupTasksByPlan([second, first, third]);
+
+    expectLength(groups, 3, 'tasks without sequences should remain in separate plan groups');
+    expectEqual(groups.map((group) => group.sourceId).join(','), '102,101,103');
+  });
+});
 
 describe('P001 – buildAcceptedGroups grouped construction', () => {
   it('aggregates accepted plans with their accepted tasks into AcceptedGroup', () => {

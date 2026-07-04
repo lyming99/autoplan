@@ -50,6 +50,49 @@ describe('LoopService.deleteIntake cascade deletion', () => {
     }
   });
 
+  it('deletes every phase plan linked to a requirement and records all plan ids', async () => {
+    const fixture = await createFixture('requirement-multi-phase');
+    try {
+      const requirementId = insertRequirement(fixture.db, fixture.projectId, '多阶段删除需求');
+      const phaseOne = createPlanForIntake(fixture, 'requirement', requirementId, 'phase-one');
+      const phaseTwo = createPlanForIntake(fixture, 'requirement', requirementId, 'phase-two');
+      linkIntakePlan(fixture, 'requirement', requirementId, phaseOne.planId, 1, '阶段一');
+      linkIntakePlan(fixture, 'requirement', requirementId, phaseTwo.planId, 2, '阶段二');
+
+      const next = fixture.loop.deleteIntake(fixture.projectId, 'requirement', requirementId);
+      const deleteEvent = latestEvent(fixture, 'intake.deleted');
+      const deleteMeta = JSON.parse(deleteEvent.meta);
+
+      assert.equal(rowCount(fixture.db, 'requirements', 'id = ?', [requirementId]), 0, '需求记录应删除');
+      for (const phase of [phaseOne, phaseTwo]) {
+        assert.equal(rowCount(fixture.db, 'plans', 'id = ?', [phase.planId]), 0, `阶段 plan #${phase.planId} 应删除`);
+        assert.equal(rowCount(fixture.db, 'plan_tasks', 'plan_id = ?', [phase.planId]), 0, `阶段 plan #${phase.planId} 任务应删除`);
+        assert.equal(fs.existsSync(phase.planFile), false, `阶段 plan #${phase.planId} 文件应删除`);
+        assert.equal(rowCount(fixture.db, 'scan_files', 'project_id = ? AND scan_type = ? AND file_path = ?', [
+          fixture.projectId,
+          'plan',
+          phase.planRel,
+        ]), 0, `阶段 plan #${phase.planId} 扫描缓存应删除`);
+        assert.equal(next.plans.some((plan) => plan.id === phase.planId), false, `快照不应包含阶段 plan #${phase.planId}`);
+        assert.equal(next.tasks.some((task) => task.plan_id === phase.planId), false, `快照不应包含阶段 plan #${phase.planId} 任务`);
+      }
+      assert.equal(
+        rowCount(fixture.db, 'intake_plan_links', 'project_id = ? AND intake_type = ? AND intake_id = ?', [
+          fixture.projectId,
+          'requirement',
+          requirementId,
+        ]),
+        0,
+        '删除 intake 应清空全部阶段链接',
+      );
+      assert.deepEqual(deleteMeta.planIds, [phaseOne.planId, phaseTwo.planId]);
+      assert.equal(deleteMeta.planId, phaseOne.planId, '兼容字段 planId 应保留第一阶段 plan');
+      assert.equal(deleteMeta.planFiles.length, 2, '删除事件应记录每个阶段 plan 文件结果');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
   it('deletes a bound feedback, its plan, tasks, and attachments without deleting the requirement', async () => {
     const fixture = await createFixture('feedback-bound');
     try {
@@ -162,6 +205,112 @@ describe('LoopService.deleteIntake cascade deletion', () => {
   });
 });
 
+describe('LoopService.deletePlan lifecycle deletion', () => {
+  it('deletes a plan, tasks, scan cache, markdown file, and clears linked intakes without deleting them', async () => {
+    const fixture = await createFixture('delete-plan');
+    try {
+      const requirementId = insertRequirement(fixture.db, fixture.projectId, '删除计划保留需求');
+      const feedbackId = insertFeedback(fixture.db, fixture.projectId, requirementId, '删除计划保留反馈');
+      const { planId, planFile, planRel } = createPlanForIntake(fixture, 'requirement', requirementId, 'direct-delete');
+      linkIntakePlan(fixture, 'requirement', requirementId, planId);
+      linkIntakePlan(fixture, 'feedback', feedbackId, planId);
+      const task = fixture.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC LIMIT 1', [planId]);
+      const startedAt = nowIso();
+      fixture.db.run('UPDATE plan_tasks SET status = ?, started_at = ?, updated_at = ? WHERE id = ?', [
+        'running',
+        startedAt,
+        startedAt,
+        task.id,
+      ]);
+      const child = attachActivePlanOperation(fixture, planId, task.id, startedAt);
+
+      const next = fixture.loop.deletePlan(fixture.projectId, planId, { reason: 'plan-card-menu' });
+      const requirement = fixture.db.get('SELECT * FROM requirements WHERE id = ?', [requirementId]);
+      const feedback = fixture.db.get('SELECT * FROM feedback WHERE id = ?', [feedbackId]);
+      const deleteEvent = latestEvent(fixture, 'plan.deleted');
+      const deleteMeta = JSON.parse(deleteEvent.meta);
+
+      assert.equal(child.killed, true, '删除运行中计划应先终止 active operation');
+      assert.equal(child.signal, 'SIGTERM', '删除运行中计划应向子进程发送 SIGTERM');
+      assert.equal(fixture.loop.runtime(fixture.projectId).activeOperations.size, 0, '删除后 active operations 应被清理');
+      assert.equal(rowCount(fixture.db, 'plans', 'id = ?', [planId]), 0, '计划记录应删除');
+      assert.equal(rowCount(fixture.db, 'plan_tasks', 'plan_id = ?', [planId]), 0, '计划任务应删除');
+      assert.equal(rowCount(fixture.db, 'scan_files', 'project_id = ? AND scan_type = ? AND file_path = ?', [
+        fixture.projectId,
+        'plan',
+        planRel,
+      ]), 0, '计划扫描缓存应删除');
+      assert.equal(fs.existsSync(planFile), false, '安全 docs/plan 内计划文件应删除');
+      assert.equal(rowCount(fixture.db, 'intake_plan_links', 'project_id = ? AND plan_id = ?', [fixture.projectId, planId]), 0, '计划 intake 链接应删除');
+      assert.equal(requirement.linked_plan_id, null, '需求 linked_plan_id 应清空');
+      assert.equal(feedback.linked_plan_id, null, '反馈 linked_plan_id 应清空');
+      assert.equal(rowCount(fixture.db, 'requirements', 'id = ?', [requirementId]), 1, '删除计划不应删除需求记录');
+      assert.equal(rowCount(fixture.db, 'feedback', 'id = ?', [feedbackId]), 1, '删除计划不应删除反馈记录');
+      assert.equal(next.plans.some((plan) => plan.id === planId), false, '返回 snapshot 不应再包含已删除计划');
+      assert.equal(next.tasks.some((item) => item.plan_id === planId), false, '返回 snapshot 不应再包含已删除任务');
+      assert.equal(next.activeOperation, null, '返回 snapshot 不应暴露已删除计划的 active operation');
+      assert.deepEqual(next.activeOperations, [], '返回 snapshot 不应暴露已删除计划的 active operations');
+      assert.equal(deleteMeta.planId, planId, '删除事件应记录 planId');
+      assert.equal(deleteMeta.stoppedOperations, 1, '删除事件应记录被终止的运行时操作数量');
+      assert.equal(deleteMeta.deletedTasks, 2, '删除事件应记录被删除任务数量');
+      assert.equal(deleteMeta.keepIntakes, true, '删除事件应说明需求/反馈记录被保留');
+      assert.equal(deleteMeta.linkedIntakes.requirements, 1, '删除事件应记录关联需求数量');
+      assert.equal(deleteMeta.linkedIntakes.feedback, 1, '删除事件应记录关联反馈数量');
+      assert.equal(deleteMeta.reason, 'plan-card-menu', '删除事件应记录调用方原因');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('does not delete an out-of-bounds plan file path and records a skipped event', async () => {
+    const fixture = await createFixture('delete-plan-outside-path');
+    try {
+      const outsideFile = path.join(fixture.tempRoot, 'outside-plan.md');
+      fs.writeFileSync(outsideFile, '# outside plan\n', 'utf8');
+      const unsafeRel = path.join('..', 'outside-plan.md');
+      const planId = insertPlanRecord(fixture, unsafeRel, 'unsafe-outside');
+
+      fixture.loop.deletePlan(fixture.projectId, planId);
+      const skipEvent = latestEvent(fixture, 'plan.file.delete.skipped');
+      const skipMeta = JSON.parse(skipEvent.meta);
+
+      assert.equal(fs.existsSync(outsideFile), true, '越界计划路径指向的文件不应被删除');
+      assert.equal(rowCount(fixture.db, 'plans', 'id = ?', [planId]), 0, '越界路径不应阻止计划记录删除');
+      assert.equal(skipMeta.planId, planId, '跳过事件应记录 planId');
+      assert.equal(skipMeta.reason, 'outside_docs_plan', '跳过事件应记录越界原因');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('does not delete a symlink target that escapes docs/plan and records a skipped event', async (t) => {
+    const fixture = await createFixture('delete-plan-symlink-escape');
+    try {
+      const outsideFile = path.join(fixture.tempRoot, 'symlink-target.md');
+      fs.writeFileSync(outsideFile, '# symlink target\n', 'utf8');
+      const linkRel = path.join('docs', 'plan', 'plan_symlink_escape.md');
+      const linkFile = path.join(fixture.workspace, linkRel);
+      try {
+        fs.symlinkSync(outsideFile, linkFile, 'file');
+      } catch (error) {
+        t.skip(`当前环境不能创建文件符号链接：${error?.message || error}`);
+        return;
+      }
+      const planId = insertPlanRecord(fixture, linkRel, 'symlink-escape');
+
+      fixture.loop.deletePlan(fixture.projectId, planId);
+      const skipEvent = latestEvent(fixture, 'plan.file.delete.skipped');
+      const skipMeta = JSON.parse(skipEvent.meta);
+
+      assert.equal(fs.existsSync(outsideFile), true, '符号链接逃逸目标不应被删除');
+      assert.equal(skipMeta.planId, planId, '跳过事件应记录 planId');
+      assert.equal(skipMeta.reason, 'realpath_outside_docs_plan', '跳过事件应记录 realpath 逃逸原因');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});
+
 async function createFixture(name) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `autoplan-intake-deletion-${name}-`));
   const workspace = path.join(tempRoot, 'workspace');
@@ -246,6 +395,71 @@ function saveIntakeAttachment(fixture, ownerType, ownerId) {
   assert.ok(attachment, `${ownerType} 附件应保存成功`);
   assert.ok(fs.existsSync(attachment.stored_path), `${ownerType} 附件文件应存在`);
   return attachment;
+}
+
+function linkIntakePlan(fixture, intakeType, intakeId, planId, phaseIndex = 1, phaseTitle = '') {
+  const table = intakeType === 'feedback' ? 'feedback' : 'requirements';
+  const now = nowIso();
+  fixture.db.run(
+    `INSERT INTO intake_plan_links
+     (project_id, intake_type, intake_id, plan_id, phase_index, phase_title, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [fixture.projectId, intakeType, intakeId, planId, phaseIndex, phaseTitle, now, now],
+  );
+  fixture.db.run(`UPDATE ${table} SET linked_plan_id = ?, updated_at = ? WHERE id = ?`, [
+    planId,
+    now,
+    intakeId,
+  ]);
+}
+
+function insertPlanRecord(fixture, planRel, hashSuffix = 'unsafe') {
+  const now = nowIso();
+  const planId = fixture.db.insert(
+    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+     VALUES (?, ?, ?, ?, 'running', 0, 0, 0, ?, ?)`,
+    [fixture.projectId, `delete-plan-${hashSuffix}`, planRel, `${hashSuffix}-hash`, now, now],
+  );
+  fixture.db.run(
+    `INSERT OR REPLACE INTO scan_files
+     (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [fixture.projectId, 'plan', planRel, 'scan-hash', 0, now, now],
+  );
+  return planId;
+}
+
+function attachActivePlanOperation(fixture, planId, taskId, startedAt) {
+  const runtime = fixture.loop.runtime(fixture.projectId);
+  const child = {
+    killed: false,
+    signal: '',
+    kill(signal) {
+      this.killed = true;
+      this.signal = signal;
+    },
+  };
+  const operation = {
+    projectId: fixture.projectId,
+    planId,
+    taskId,
+    label: 'delete active plan',
+    startedAt,
+  };
+  runtime.activeOperations.set('delete-plan-op', operation);
+  runtime.activeChildren.set('delete-plan-op', child);
+  runtime.activeOperation = operation;
+  runtime.activeChild = child;
+  return child;
+}
+
+function latestEvent(fixture, type) {
+  const event = fixture.db.get('SELECT * FROM events WHERE project_id = ? AND type = ? ORDER BY id DESC LIMIT 1', [
+    fixture.projectId,
+    type,
+  ]);
+  assert.ok(event, `应记录 ${type} 事件`);
+  return event;
 }
 
 function rowCount(db, table, where = '1 = 1', params = []) {

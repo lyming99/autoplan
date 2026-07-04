@@ -59,6 +59,38 @@ export function planCliSummaryLabel(source?: object | null): string {
   return `${providerLabel} · 思考深度 ${codexReasoningEffortLabel(effort)}`;
 }
 
+export function planGenerationSummaryLabel(source?: object | null): string {
+  const strategy = normalizePlanGenerationStrategy(readFirstString(source, [
+    'plan_generation_strategy',
+    'planGenerationStrategy',
+  ]));
+  const provider = readPlanBackendProvider(source, strategy, [
+    'plan_generation_provider',
+    'planGenerationProvider',
+  ]);
+  const model = readFirstString(source, ['plan_generation_model', 'planGenerationModel']);
+  const command = readFirstString(source, ['plan_generation_command', 'planGenerationCommand']);
+  const mode = strategy === 'builtin-llm-structured' ? '内置 LLM' : '外部 CLI';
+  const value = strategy === 'builtin-llm-structured' ? model : command;
+  return [mode, planBackendProviderDisplayLabel(provider), value].filter(Boolean).join(' · ');
+}
+
+export function planExecutionSummaryLabel(source?: object | null): string {
+  const strategy = normalizePlanExecutionStrategy(readFirstString(source, [
+    'plan_execution_strategy',
+    'planExecutionStrategy',
+  ]));
+  const provider = readPlanBackendProvider(source, strategy, [
+    'plan_execution_provider',
+    'planExecutionProvider',
+  ]);
+  const model = readFirstString(source, ['plan_execution_model', 'planExecutionModel']);
+  const command = readFirstString(source, ['plan_execution_command', 'planExecutionCommand']);
+  const mode = strategy === 'builtin-llm' ? '内置 LLM' : '外部 CLI';
+  const value = strategy === 'builtin-llm' ? model : command;
+  return [mode, planBackendProviderDisplayLabel(provider), value].filter(Boolean).join(' · ');
+}
+
 export function readAgentCliProvider(source?: object | null): string {
   return normalizeAgentCliProvider(readFirstString(source, [
     'agent_cli_provider',
@@ -107,6 +139,39 @@ function normalizeCodexReasoningEffort(effort?: string | null): string {
   const value = String(effort || '').trim().toLowerCase();
   if (value === 'low' || value === 'high' || value === 'xhigh') return value;
   return 'medium';
+}
+
+function normalizePlanGenerationStrategy(strategy?: string | null): string {
+  const value = String(strategy || '').trim().toLowerCase();
+  if (value === 'external-cli-structured' || value === 'builtin-llm-structured') return value;
+  return 'external-cli-markdown';
+}
+
+function normalizePlanExecutionStrategy(strategy?: string | null): string {
+  return String(strategy || '').trim().toLowerCase() === 'builtin-llm' ? 'builtin-llm' : 'external-cli';
+}
+
+function readPlanBackendProvider(source: object | null | undefined, strategy: string, keys: string[]): string {
+  return normalizePlanBackendProvider(readFirstString(source, keys) || readAgentCliProvider(source), strategy);
+}
+
+function normalizePlanBackendProvider(provider: string, strategy: string): string {
+  const value = String(provider || '').trim().toLowerCase();
+  if (strategy === 'builtin-llm' || strategy === 'builtin-llm-structured') {
+    if (value === 'deepseek' || value === 'anthropic') return value;
+    return 'openai';
+  }
+  return normalizeAgentCliProvider(value);
+}
+
+function planBackendProviderDisplayLabel(provider: string): string {
+  if (provider === 'claude') return 'Claude CLI';
+  if (provider === 'opencode') return 'OpenCode CLI';
+  if (provider === 'oh-my-pi') return 'Oh My Pi CLI';
+  if (provider === 'openai') return 'OpenAI 兼容';
+  if (provider === 'deepseek') return 'DeepSeek';
+  if (provider === 'anthropic') return 'Anthropic';
+  return 'Codex CLI';
 }
 
 /** 状态 → 语义化 chip class */

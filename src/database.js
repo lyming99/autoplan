@@ -5,6 +5,8 @@ const initSqlJs = require('sql.js');
 
 const PERSIST_RETRY_DELAYS_MS = [20, 50, 100, 200, 400];
 const RETRYABLE_FS_ERROR_CODES = new Set(['EACCES', 'EBUSY', 'EPERM']);
+const READ_ONLY_SQL_COMMANDS = new Set(['', 'SELECT', 'EXPLAIN']);
+const ROW_MODIFYING_SQL_COMMANDS = new Set(['UPDATE', 'DELETE', 'INSERT', 'REPLACE']);
 
 class AppDatabase {
   constructor(dbPath) {
@@ -68,6 +70,16 @@ class AppDatabase {
         agent_cli_provider TEXT NOT NULL DEFAULT 'codex',
         agent_cli_command TEXT NOT NULL DEFAULT '',
         codex_reasoning_effort TEXT,
+        plan_generation_strategy TEXT NOT NULL DEFAULT 'external-cli-markdown',
+        plan_generation_provider TEXT,
+        plan_generation_command TEXT NOT NULL DEFAULT '',
+        plan_generation_model TEXT NOT NULL DEFAULT '',
+        plan_generation_codex_reasoning_effort TEXT,
+        plan_execution_strategy TEXT NOT NULL DEFAULT 'external-cli',
+        plan_execution_provider TEXT,
+        plan_execution_command TEXT NOT NULL DEFAULT '',
+        plan_execution_model TEXT NOT NULL DEFAULT '',
+        plan_execution_codex_reasoning_effort TEXT,
         last_issue_hash TEXT,
         last_error TEXT,
         env_vars TEXT NOT NULL DEFAULT '',
@@ -83,6 +95,17 @@ class AppDatabase {
         agent_cli_provider TEXT,
         agent_cli_command TEXT NOT NULL DEFAULT '',
         codex_reasoning_effort TEXT,
+        plan_generation_strategy TEXT,
+        plan_generation_provider TEXT,
+        plan_generation_command TEXT NOT NULL DEFAULT '',
+        plan_generation_model TEXT NOT NULL DEFAULT '',
+        plan_generation_codex_reasoning_effort TEXT,
+        generate_fail_count INTEGER DEFAULT 0,
+        last_generate_fail_at TEXT,
+        last_generate_error TEXT,
+        last_generate_log_file TEXT,
+        last_generate_agent_cli_provider TEXT,
+        last_generate_codex_reasoning_effort TEXT,
         source_path TEXT,
         source_hash TEXT,
         created_at TEXT NOT NULL,
@@ -99,7 +122,18 @@ class AppDatabase {
         agent_cli_provider TEXT,
         agent_cli_command TEXT NOT NULL DEFAULT '',
         codex_reasoning_effort TEXT,
+        plan_generation_strategy TEXT,
+        plan_generation_provider TEXT,
+        plan_generation_command TEXT NOT NULL DEFAULT '',
+        plan_generation_model TEXT NOT NULL DEFAULT '',
+        plan_generation_codex_reasoning_effort TEXT,
         agent_cli_session_id TEXT,
+        generate_fail_count INTEGER DEFAULT 0,
+        last_generate_fail_at TEXT,
+        last_generate_error TEXT,
+        last_generate_log_file TEXT,
+        last_generate_agent_cli_provider TEXT,
+        last_generate_codex_reasoning_effort TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
@@ -145,6 +179,16 @@ class AppDatabase {
         agent_cli_provider TEXT,
         agent_cli_command TEXT NOT NULL DEFAULT '',
         codex_reasoning_effort TEXT,
+        plan_generation_strategy TEXT NOT NULL DEFAULT 'external-cli-markdown',
+        plan_generation_provider TEXT,
+        plan_generation_command TEXT NOT NULL DEFAULT '',
+        plan_generation_model TEXT NOT NULL DEFAULT '',
+        plan_generation_codex_reasoning_effort TEXT,
+        plan_execution_strategy TEXT NOT NULL DEFAULT 'external-cli',
+        plan_execution_provider TEXT,
+        plan_execution_command TEXT NOT NULL DEFAULT '',
+        plan_execution_model TEXT NOT NULL DEFAULT '',
+        plan_execution_codex_reasoning_effort TEXT,
         agent_cli_session_id TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -214,6 +258,39 @@ class AppDatabase {
       CREATE INDEX IF NOT EXISTS idx_scripts_project_hook_stage
       ON scripts (project_id, hook_stage);
 
+      CREATE TABLE IF NOT EXISTS executors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        label TEXT NOT NULL,
+        type TEXT NOT NULL DEFAULT 'shell',
+        command TEXT NOT NULL,
+        args_json TEXT NOT NULL DEFAULT '[]',
+        actions_json TEXT,
+        options_json TEXT NOT NULL DEFAULT '{}',
+        group_kind TEXT,
+        group_is_default INTEGER NOT NULL DEFAULT 0,
+        presentation_json TEXT NOT NULL DEFAULT '{}',
+        problem_matcher_json TEXT,
+        depends_on_json TEXT NOT NULL DEFAULT '[]',
+        depends_order TEXT NOT NULL DEFAULT 'parallel',
+        enabled INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        last_status TEXT,
+        last_exit_code INTEGER,
+        last_duration_ms INTEGER,
+        last_log TEXT,
+        last_run_at TEXT,
+        plugin_state_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_executors_project_sort
+      ON executors (project_id, sort_order, id);
+
+      CREATE INDEX IF NOT EXISTS idx_executors_project_label
+      ON executors (project_id, label);
+
       CREATE TABLE IF NOT EXISTS chat_messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id INTEGER,
@@ -281,24 +358,53 @@ class AppDatabase {
     this.ensureColumn('requirements', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('requirements', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('requirements', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('requirements', 'plan_generation_strategy', 'TEXT');
+    this.ensureColumn('requirements', 'plan_generation_provider', 'TEXT');
+    this.ensureColumn('requirements', 'plan_generation_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('requirements', 'plan_generation_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('requirements', 'plan_generation_codex_reasoning_effort', 'TEXT');
     this.ensureColumn('requirements', 'generate_fail_count', 'INTEGER DEFAULT 0');
     this.ensureColumn('requirements', 'last_generate_fail_at', 'TEXT');
+    this.ensureColumn('requirements', 'last_generate_error', 'TEXT');
+    this.ensureColumn('requirements', 'last_generate_log_file', 'TEXT');
+    this.ensureColumn('requirements', 'last_generate_agent_cli_provider', 'TEXT');
+    this.ensureColumn('requirements', 'last_generate_codex_reasoning_effort', 'TEXT');
     this.ensureColumn('feedback', 'project_id', 'INTEGER');
     this.ensureColumn('feedback', 'linked_plan_id', 'INTEGER');
     this.ensureColumn('feedback', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('feedback', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('feedback', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('feedback', 'plan_generation_strategy', 'TEXT');
+    this.ensureColumn('feedback', 'plan_generation_provider', 'TEXT');
+    this.ensureColumn('feedback', 'plan_generation_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('feedback', 'plan_generation_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('feedback', 'plan_generation_codex_reasoning_effort', 'TEXT');
     this.ensureColumn('feedback', 'agent_cli_session_id', 'TEXT');
     this.ensureColumn('feedback', 'generate_fail_count', 'INTEGER DEFAULT 0');
     this.ensureColumn('feedback', 'last_generate_fail_at', 'TEXT');
+    this.ensureColumn('feedback', 'last_generate_error', 'TEXT');
+    this.ensureColumn('feedback', 'last_generate_log_file', 'TEXT');
+    this.ensureColumn('feedback', 'last_generate_agent_cli_provider', 'TEXT');
+    this.ensureColumn('feedback', 'last_generate_codex_reasoning_effort', 'TEXT');
     this.ensureColumn('attachments', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'project_id', 'INTEGER');
     this.ensureColumn('plans', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
     this.ensureColumn('plans', 'agent_cli_provider', 'TEXT');
     this.ensureColumn('plans', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('plans', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('plans', 'plan_generation_strategy', "TEXT NOT NULL DEFAULT 'external-cli-markdown'");
+    this.ensureColumn('plans', 'plan_generation_provider', 'TEXT');
+    this.ensureColumn('plans', 'plan_generation_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_generation_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_generation_codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('plans', 'plan_execution_strategy', "TEXT NOT NULL DEFAULT 'external-cli'");
+    this.ensureColumn('plans', 'plan_execution_provider', 'TEXT');
+    this.ensureColumn('plans', 'plan_execution_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_execution_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('plans', 'plan_execution_codex_reasoning_effort', 'TEXT');
     this.ensureColumn('plans', 'agent_cli_session_id', 'TEXT');
     this.ensureColumn('plans', 'accepted_at', 'TEXT');
+    this.ensureIntakePlanLinksTable();
     this.db.run(`
       CREATE INDEX IF NOT EXISTS idx_plans_project_sort
       ON plans (project_id, sort_order, created_at, id)
@@ -313,9 +419,42 @@ class AppDatabase {
     this.ensureColumn('events', 'project_id', 'INTEGER');
     this.ensureColumn('scripts', 'source_type', "TEXT NOT NULL DEFAULT 'inline'");
     this.ensureColumn('scripts', 'schedule_cron', 'TEXT');
+    this.ensureColumn('executors', 'project_id', 'INTEGER NOT NULL DEFAULT 1');
+    this.ensureColumn('executors', 'label', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('executors', 'type', "TEXT NOT NULL DEFAULT 'shell'");
+    this.ensureColumn('executors', 'command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('executors', 'args_json', "TEXT NOT NULL DEFAULT '[]'");
+    this.ensureColumn('executors', 'options_json', "TEXT NOT NULL DEFAULT '{}'");
+    this.ensureColumn('executors', 'group_kind', 'TEXT');
+    this.ensureColumn('executors', 'group_is_default', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('executors', 'presentation_json', "TEXT NOT NULL DEFAULT '{}'");
+    this.ensureColumn('executors', 'problem_matcher_json', 'TEXT');
+    this.ensureColumn('executors', 'depends_on_json', "TEXT NOT NULL DEFAULT '[]'");
+    this.ensureColumn('executors', 'depends_order', "TEXT NOT NULL DEFAULT 'parallel'");
+    this.ensureColumn('executors', 'enabled', 'INTEGER NOT NULL DEFAULT 1');
+    this.ensureColumn('executors', 'sort_order', 'INTEGER NOT NULL DEFAULT 0');
+    this.ensureColumn('executors', 'last_status', 'TEXT');
+    this.ensureColumn('executors', 'last_exit_code', 'INTEGER');
+    this.ensureColumn('executors', 'last_duration_ms', 'INTEGER');
+    this.ensureColumn('executors', 'last_log', 'TEXT');
+    this.ensureColumn('executors', 'last_run_at', 'TEXT');
+    this.ensureColumn('executors', 'actions_json', 'TEXT');
+    this.ensureColumn('executors', 'plugin_state_json', 'TEXT');
+    this.ensureColumn('executors', 'created_at', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('executors', 'updated_at', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
     this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('project_states', 'plan_generation_strategy', "TEXT NOT NULL DEFAULT 'external-cli-markdown'");
+    this.ensureColumn('project_states', 'plan_generation_provider', 'TEXT');
+    this.ensureColumn('project_states', 'plan_generation_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_generation_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_generation_codex_reasoning_effort', 'TEXT');
+    this.ensureColumn('project_states', 'plan_execution_strategy', "TEXT NOT NULL DEFAULT 'external-cli'");
+    this.ensureColumn('project_states', 'plan_execution_provider', 'TEXT');
+    this.ensureColumn('project_states', 'plan_execution_command', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_execution_model', "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn('project_states', 'plan_execution_codex_reasoning_effort', 'TEXT');
     this.ensureColumn('project_states', 'env_vars', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('chat_messages', 'project_id', 'INTEGER');
     this.ensureColumn('chat_messages', 'conversation_id', 'INTEGER');
@@ -338,6 +477,7 @@ class AppDatabase {
     this.ensureDefaultSettings();
     this.migrateScanFilesTable(defaultProjectId);
     this.assignLegacyRows(defaultProjectId);
+    this.backfillIntakePlanLinks();
     this.backfillPlanSortOrders();
     this.ensureProjectState(defaultProjectId);
     this.migrateAiConfigsToGlobal();
@@ -390,6 +530,54 @@ class AppDatabase {
     }
   }
 
+  ensureIntakePlanLinksTable() {
+    this.db.run(`
+      CREATE TABLE IF NOT EXISTS intake_plan_links (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        project_id INTEGER NOT NULL,
+        intake_type TEXT NOT NULL CHECK (intake_type IN ('requirement', 'feedback')),
+        intake_id INTEGER NOT NULL,
+        plan_id INTEGER NOT NULL,
+        phase_index INTEGER NOT NULL DEFAULT 1,
+        phase_title TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(project_id, intake_type, intake_id, plan_id)
+      );
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_intake_plan_links_intake_phase
+      ON intake_plan_links (project_id, intake_type, intake_id, phase_index);
+
+      CREATE INDEX IF NOT EXISTS idx_intake_plan_links_intake
+      ON intake_plan_links (project_id, intake_type, intake_id, phase_index, plan_id);
+
+      CREATE INDEX IF NOT EXISTS idx_intake_plan_links_plan
+      ON intake_plan_links (project_id, plan_id, intake_type, intake_id);
+    `);
+  }
+
+  backfillIntakePlanLinks() {
+    const now = nowIso();
+    for (const [table, intakeType] of [
+      ['requirements', 'requirement'],
+      ['feedback', 'feedback'],
+    ]) {
+      this.db.run(
+        `INSERT OR IGNORE INTO intake_plan_links
+         (project_id, intake_type, intake_id, plan_id, phase_index, phase_title, created_at, updated_at)
+         SELECT ${table}.project_id, ?, ${table}.id, ${table}.linked_plan_id, 1, '', ?, ?
+           FROM ${table}
+           JOIN plans
+             ON plans.id = ${table}.linked_plan_id
+            AND plans.project_id = ${table}.project_id
+          WHERE ${table}.project_id IS NOT NULL
+            AND ${table}.linked_plan_id IS NOT NULL
+            AND CAST(${table}.linked_plan_id AS INTEGER) > 0`,
+        [intakeType, now, now],
+      );
+    }
+  }
+
   ensureDefaultSettings() {
     const defaults = {
       'mcp.enabled': 'true',
@@ -409,6 +597,12 @@ class AppDatabase {
       'chat.apiKey': '',
       'chat.model': 'gpt-4o',
       'chat.temperature': '0.3',
+      'terminal.defaultProfile': 'default',
+      'terminal.initialCwd': '',
+      'terminal.fontSize': '13',
+      'terminal.scrollbackLimit': '10000',
+      'terminal.retainOnExit': 'true',
+      'terminal.confirmBeforeKill': 'true',
     };
     for (const [key, value] of Object.entries(defaults)) {
       this.db.run('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)', [key, value]);
@@ -663,16 +857,20 @@ class AppDatabase {
 
   run(sql, params = []) {
     this.db.run(sql, params);
-    this.persist();
+    if (this.shouldPersistAfterStatement(sql)) this.persist();
   }
 
   runBatch(statements = []) {
-    if (!Array.isArray(statements) || statements.length === 0) return;
+    const validStatements = Array.isArray(statements)
+      ? statements.filter((statement) => String(statement?.sql || '').trim())
+      : [];
+    if (validStatements.length === 0) return;
+    let changed = false;
     this.db.run('BEGIN TRANSACTION');
     try {
-      for (const statement of statements) {
-        if (!statement?.sql) continue;
+      for (const statement of validStatements) {
         this.db.run(statement.sql, statement.params || []);
+        if (this.shouldPersistAfterStatement(statement.sql)) changed = true;
       }
       this.db.run('COMMIT');
     } catch (error) {
@@ -683,7 +881,7 @@ class AppDatabase {
       }
       throw error;
     }
-    this.persist();
+    if (changed) this.persist();
   }
 
   get(sql, params = []) {
@@ -706,8 +904,17 @@ class AppDatabase {
   insert(sql, params = []) {
     this.db.run(sql, params);
     const id = this.get('SELECT last_insert_rowid() AS id').id;
-    this.persist();
+    if (this.shouldPersistAfterStatement(sql)) this.persist();
     return id;
+  }
+
+  shouldPersistAfterStatement(sql) {
+    const command = firstSqlCommand(sql);
+    if (READ_ONLY_SQL_COMMANDS.has(command)) return false;
+    if (ROW_MODIFYING_SQL_COMMANDS.has(command) && typeof this.db.getRowsModified === 'function') {
+      return this.db.getRowsModified() > 0;
+    }
+    return true;
   }
 }
 
@@ -747,6 +954,10 @@ function tryUnlink(filePath) {
   } catch {
     // Temporary files are best-effort cleanup only.
   }
+}
+
+function firstSqlCommand(sql) {
+  return String(sql || '').trim().split(/\s+/, 1)[0].toUpperCase();
 }
 
 module.exports = { AppDatabase, nowIso };

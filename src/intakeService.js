@@ -1,6 +1,6 @@
 const { saveAttachments } = require('./attachments');
 const { nowIso } = require('./database');
-const { nextIntakeAgentCliConfig } = require('./loopService');
+const { nextIntakeAgentCliConfig, nextIntakePlanGenerationConfig } = require('./loopService');
 
 class IntakeService {
   constructor(options = {}) {
@@ -31,10 +31,15 @@ class IntakeService {
     const projectId = this.requiredProjectId(input);
     const now = nowIso();
     const agentCliConfig = nextIntakeAgentCliConfig({}, input);
+    const planGenerationConfig = nextIntakePlanGenerationConfig({}, input);
     const id = this.db.insert(
       `INSERT INTO requirements (
-         project_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         project_id, title, body, status,
+         agent_cli_provider, agent_cli_command, codex_reasoning_effort,
+         plan_generation_strategy, plan_generation_provider, plan_generation_command,
+         plan_generation_model, plan_generation_codex_reasoning_effort,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         titleFromInput(input.title, input.body, '未命名需求'),
@@ -43,6 +48,11 @@ class IntakeService {
         agentCliConfig.provider,
         agentCliConfig.command,
         agentCliConfig.codexReasoningEffort,
+        planGenerationConfig.strategy,
+        planGenerationConfig.provider,
+        planGenerationConfig.command,
+        planGenerationConfig.model,
+        planGenerationConfig.codexReasoningEffort,
         now,
         now,
       ],
@@ -59,10 +69,15 @@ class IntakeService {
     const requirementId = this.validRequirementId(projectId, input.requirementId);
     const now = nowIso();
     const agentCliConfig = nextIntakeAgentCliConfig({}, input);
+    const planGenerationConfig = nextIntakePlanGenerationConfig({}, input);
     const id = this.db.insert(
       `INSERT INTO feedback (
-         project_id, requirement_id, title, body, status, agent_cli_provider, agent_cli_command, codex_reasoning_effort, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         project_id, requirement_id, title, body, status,
+         agent_cli_provider, agent_cli_command, codex_reasoning_effort,
+         plan_generation_strategy, plan_generation_provider, plan_generation_command,
+         plan_generation_model, plan_generation_codex_reasoning_effort,
+         created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         projectId,
         requirementId,
@@ -72,6 +87,11 @@ class IntakeService {
         agentCliConfig.provider,
         agentCliConfig.command,
         agentCliConfig.codexReasoningEffort,
+        planGenerationConfig.strategy,
+        planGenerationConfig.provider,
+        planGenerationConfig.command,
+        planGenerationConfig.model,
+        planGenerationConfig.codexReasoningEffort,
         now,
         now,
       ],

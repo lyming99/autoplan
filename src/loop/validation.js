@@ -11,6 +11,9 @@ const {
   operationCodexSessionId,
 } = require('./agentCliConfig');
 const { compactEventMeta, TASK_EVENT_STATUS, TASK_EVENT_TYPES } = require('./taskEvents');
+const planAgentCli = require('./planAgentCli');
+
+const { BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR } = planAgentCli;
 
 function isFinalAcceptanceTask(service, helpers, planId, task) {
   const { isAcceptanceTask } = helpers;
@@ -53,7 +56,10 @@ function completeAcceptanceTask(service, helpers, workspace, plan, task, result)
       [hash, 'completed', Number(totals.total || 0), Number(totals.completed || 0), nowIso(), plan.id],
     );
     service.completeLinkedIntakesForPlan(plan);
-    const planAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
+    const execution = planExecutionForValidation(service, plan);
+    const planAgentCliContext = execution.builtinLlm
+      ? execution.meta
+      : { ...execution.meta, ...agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true }) };
     service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.SUCCEEDED, completedTask, {
       ...planAgentCliContext,
       ...validationResultSessionContextFields(result, planAgentCliContext.agentCliProvider),
@@ -75,7 +81,10 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
     }
     service.setPhase(plan.project_id, 'validate');
     const planFile = path.join(workspace, plan.file_path);
-    const planAgentCliContext = agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true });
+    const execution = planExecutionForValidation(service, plan);
+    const planAgentCliContext = execution.builtinLlm
+      ? execution.meta
+      : { ...execution.meta, ...agentCliContextFields(service.planAgentCliConfig(plan), { defaultProvider: true }) };
     const acceptanceTask = options.task || null;
     let startedAcceptanceTask = acceptanceTask;
     let acceptanceStartedAt = null;
@@ -173,6 +182,16 @@ async function validatePlan(service, helpers, workspace, plan, options = {}) {
       attempt += 1
     ) {
       if (!planTargetExists(service, plan)) return { ...validation, exitCode: -1, cancelled: true, finishedAt: nowIso() };
+      if (execution.builtinLlm) {
+        return recordUnsupportedValidationRepair(service, {
+          plan,
+          task: startedAcceptanceTask,
+          command,
+          validation,
+          planAgentCliContext,
+          executionMeta: execution.meta,
+        });
+      }
       service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
         'validation_failed',
         nowIso(),
@@ -280,7 +299,11 @@ function classifyExecutionFailure(result = {}) {
   let failureCategory = 'execution';
   let environmentBlocked = false;
 
-  if (/(?:PathAccessException|Permission\s+denied|Access\s+is\s+denied|EACCES|EPERM|errno\s*=\s*5|拒绝访问|存取被拒)/i.test(text)) {
+  if (text.includes(BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR)) {
+    failureKind = 'unsupported_execution_strategy';
+    failureCategory = 'configuration';
+    environmentBlocked = true;
+  } else if (/(?:PathAccessException|Permission\s+denied|Access\s+is\s+denied|EACCES|EPERM|errno\s*=\s*5|拒绝访问|存取被拒)/i.test(text)) {
     failureKind = 'environment_permission';
     failureCategory = 'environment';
     environmentBlocked = true;
@@ -318,6 +341,74 @@ function classifyExecutionFailure(result = {}) {
 
 function isEnvironmentBlockingFailure(failure = {}) {
   return Boolean(failure.environmentBlocked || failure.failureCategory === 'environment');
+}
+
+function planExecutionForValidation(service, plan) {
+  const config = planAgentCli.planExecutionConfig(service, plan);
+  return {
+    config,
+    meta: planAgentCli.planExecutionEventMeta(config),
+    builtinLlm: planAgentCli.isBuiltinLlmPlanExecution(config),
+  };
+}
+
+async function recordUnsupportedValidationRepair(service, input) {
+  const {
+    plan,
+    task,
+    command,
+    validation,
+    planAgentCliContext,
+    executionMeta,
+  } = input;
+  const finishedAt = nowIso();
+  const result = {
+    ...executionMeta,
+    exitCode: -1,
+    output: validation?.output || '',
+    errorMessage: BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR,
+    logFile: validation?.logFile || null,
+    finishedAt,
+  };
+  const failure = classifyExecutionFailure(result);
+  service.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [
+    'validation_failed',
+    finishedAt,
+    plan.id,
+  ]);
+  service.addEvent(plan.project_id, 'validation.failed', BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR, {
+    ...planAgentCliContext,
+    planId: plan.id,
+    exitCode: -1,
+    validationExitCode: validation?.exitCode,
+    validationCommand: command,
+    log: validation?.logFile,
+    repairRequired: true,
+    ...failure,
+  });
+  if (task && taskTargetExists(service, plan, task)) {
+    service.recordTaskFailure(plan.project_id, plan, task, finishedAt, {
+      ...planAgentCliContext,
+      exitCode: -1,
+      log: validation?.logFile,
+      acceptanceTask: true,
+      error: BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR,
+      ...failure,
+    });
+  }
+  await service.runHookScripts(plan.project_id, 'on:fail', {
+    failedStage: 'validation',
+    planId: plan.id,
+    validationCommand: command,
+    exitCode: -1,
+    log: validation?.logFile || null,
+    error: BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR,
+    ...failure,
+  });
+  return {
+    ...result,
+    ...failure,
+  };
 }
 
 function summarizeFailure(text, exitCode, failureKind) {

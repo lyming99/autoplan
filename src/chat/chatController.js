@@ -600,14 +600,18 @@ function formatToolsForProvider(tools, provider) {
       input_schema: t.input_schema,
     }));
   }
-  return tools.map((t) => ({
-    type: 'function',
-    function: {
+  return tools.map((t) => {
+    const fn = {
       name: t.name,
       description: t.description,
       parameters: t.input_schema,
-    },
-  }));
+    };
+    if (t.strict === true) fn.strict = true;
+    return {
+      type: 'function',
+      function: fn,
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ 标题生成工具（需求 #36） ------------------------------------------------------------------ */

@@ -17,6 +17,14 @@ export const searchNoMatchText = '没有匹配结果。';
 
 export type WorkspaceFilterableItems = Pick<AppSnapshot, 'requirements' | 'feedback' | 'plans' | 'tasks' | 'events'>;
 
+export const EMPTY_WORKSPACE_FILTERABLE_ITEMS: WorkspaceFilterableItems = {
+  requirements: [],
+  feedback: [],
+  plans: [],
+  tasks: [],
+  events: [],
+};
+
 export function normalizeSearchQuery(value: string) {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -26,7 +34,7 @@ export function createFilteredWorkspaceItems(
   searchState: WorkspaceSearchState,
 ): WorkspaceFilterableItems {
   if (!snapshot) {
-    return { requirements: [], feedback: [], plans: [], tasks: [], events: [] };
+    return EMPTY_WORKSPACE_FILTERABLE_ITEMS;
   }
   if (searchState.query.isEmpty) {
     return {
@@ -38,20 +46,38 @@ export function createFilteredWorkspaceItems(
     };
   }
 
-  const plans = filterItemsBySearchGroup(snapshot.plans, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
-  const tasks = filterTasksBySearchGroups(snapshot.tasks, plans, searchState.groups);
+  const plans = filterItemsByWorkspaceSearch(snapshot.plans, searchState, WORKSPACE_SEARCH_SOURCE_TYPES.PLAN);
+  const tasks = filterTasksByWorkspaceSearch(snapshot.tasks, plans, searchState);
 
   return {
-    requirements: filterItemsBySearchGroup(
+    requirements: filterItemsByWorkspaceSearch(
       snapshot.requirements,
-      searchState.groups,
+      searchState,
       WORKSPACE_SEARCH_SOURCE_TYPES.REQUIREMENT,
     ),
-    feedback: filterItemsBySearchGroup(snapshot.feedback, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
+    feedback: filterItemsByWorkspaceSearch(snapshot.feedback, searchState, WORKSPACE_SEARCH_SOURCE_TYPES.FEEDBACK),
     plans,
     tasks,
-    events: filterItemsBySearchGroup(snapshot.events, searchState.groups, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
+    events: filterItemsByWorkspaceSearch(snapshot.events, searchState, WORKSPACE_SEARCH_SOURCE_TYPES.EVENT),
   };
+}
+
+export function filterItemsByWorkspaceSearch<T extends { id: number }>(
+  items: T[],
+  searchState: WorkspaceSearchState,
+  source: WorkspaceSearchSourceType,
+) {
+  if (searchState.query.isEmpty) return items;
+  return filterItemsBySearchGroup(items, searchState.groups, source);
+}
+
+export function filterTasksByWorkspaceSearch(
+  tasks: PlanTask[],
+  plans: Plan[],
+  searchState: WorkspaceSearchState,
+) {
+  if (searchState.query.isEmpty) return tasks;
+  return filterTasksBySearchGroups(tasks, plans, searchState.groups);
 }
 
 export function filterItemsBySearchGroup<T extends { id: number }>(

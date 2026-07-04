@@ -1,18 +1,41 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { nowIso } = require('../database');
-const { DEFAULT_AGENT_CLI_PROVIDER, agentCliContextFields, codexSessionContextFields, effectiveAgentCliConfig, intakeSnapshotRow, normalizeOptionalString } = require('./agentCliConfig');
+const {
+  DEFAULT_AGENT_CLI_PROVIDER,
+  agentCliContextFields,
+  codexSessionContextFields,
+  effectiveAgentCliConfig,
+  intakeSnapshotRow,
+  normalizeOptionalAgentCliProvider,
+  normalizeOptionalCodexReasoningEffort,
+  normalizeOptionalString,
+} = require('./agentCliConfig');
 const { TASK_EVENT_STATUS, normalizeDurationMs, taskRunDurationMs } = require('./taskEvents');
 const { operationSnapshotRow, runtimeOperationContextByTask } = require('./runtime');
 const { emptyConcurrencySuggestion, planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');
 const { extractMarkdownTitle } = require('./planParser');
+const intakePlanLinks = require('./intakePlanLinks');
 const { readSnippet, resolveWorkspaceChildPath } = require('./workspaceFiles');
+const { executorFromRow } = require('../executors/executorStore');
 const { MCP_TOOL_NAMES: MCP_TOOL_NAME_MAP } = require('../mcpTools');
 const { MCP_TOOL_DOCS } = require('../mcpToolDocs');
 
 const MCP_DEFAULT_CONFIG = Object.freeze({ enabled: true, transport: 'http', host: '127.0.0.1', port: 43847, path: '/mcp', authToken: '' });
 const MCP_TOOL_NAMES = Object.freeze(Object.values(MCP_TOOL_NAME_MAP));
 const LOCAL_MCP_HOSTS = new Set(['127.0.0.1', '::1', 'localhost']);
+const PLAN_BACKEND_SNAPSHOT_COLUMNS = Object.freeze([
+  'plan_generation_strategy',
+  'plan_generation_provider',
+  'plan_generation_command',
+  'plan_generation_model',
+  'plan_generation_codex_reasoning_effort',
+  'plan_execution_strategy',
+  'plan_execution_provider',
+  'plan_execution_command',
+  'plan_execution_model',
+  'plan_execution_codex_reasoning_effort',
+]);
 
 function snapshot(service, helpers, projectId = null) {
     const projects = service.projects();
@@ -22,8 +45,10 @@ function snapshot(service, helpers, projectId = null) {
     const activeProject = service.project(projectId);
     if (!activeProject) return emptySnapshot(projects, mcp);
 
+    const rawState = service.status(projectId) || {};
     const state = {
-      ...(service.status(projectId) || {}),
+      ...rawState,
+      ...planBackendSnapshotFields(rawState),
       workspace_path: activeProject.workspace_path || '',
     };
     const runtime = service.existingRuntime(projectId);
@@ -60,6 +85,11 @@ function snapshot(service, helpers, projectId = null) {
     ));
     const planSnapshotById = new Map(planSnapshots.map((plan) => [Number(plan.id), plan]));
     const planTitleById = new Map(planSnapshots.map((plan) => [Number(plan.id), plan.title || '']));
+    const linkedPlanSnapshotsByIntake = linkedPlanSnapshotsByIntakeForProject(
+      service,
+      projectId,
+      planSnapshotById,
+    );
 
     return {
       activeProjectId: projectId,
@@ -77,7 +107,12 @@ function snapshot(service, helpers, projectId = null) {
          WHERE requirements.project_id = ?
           ORDER BY requirements.updated_at DESC`,
         [projectId],
-      ).map((row) => intakeLinkedPlanSnapshotRow(row, planSnapshotById)),
+      ).map((row) => intakeLinkedPlanSnapshotRow(
+        row,
+        planSnapshotById,
+        state,
+        linkedPlanSnapshotsForGroupedIntake(linkedPlanSnapshotsByIntake, 'requirement', row.id),
+      )),
       feedback: service.db.all(
         `SELECT feedback.*, plans.file_path AS plan_file_path,
                 plans.status AS plan_status,
@@ -88,7 +123,12 @@ function snapshot(service, helpers, projectId = null) {
          WHERE feedback.project_id = ?
           ORDER BY feedback.updated_at DESC`,
         [projectId],
-      ).map((row) => intakeLinkedPlanSnapshotRow(row, planSnapshotById)),
+      ).map((row) => intakeLinkedPlanSnapshotRow(
+        row,
+        planSnapshotById,
+        state,
+        linkedPlanSnapshotsForGroupedIntake(linkedPlanSnapshotsByIntake, 'feedback', row.id),
+      )),
       attachments: service.db.all(
         'SELECT * FROM attachments WHERE project_id = ? ORDER BY created_at DESC, id DESC',
         [projectId],
@@ -107,14 +147,17 @@ function snapshot(service, helpers, projectId = null) {
       events: service.db
         .all('SELECT * FROM events WHERE project_id = ? ORDER BY id DESC LIMIT 80', [projectId])
         .map((event) => eventSnapshotRow(event)),
-      scans: service.db.all(
-        'SELECT * FROM scan_files WHERE project_id = ? ORDER BY scanned_at DESC, file_path ASC',
-        [projectId],
-      ),
+      scans: [],
+      scanSummary: scanSummarySnapshot(service.db, projectId),
       scripts: service.db.all(
         'SELECT * FROM scripts WHERE project_id = ? ORDER BY sort_order ASC, id ASC',
         [projectId],
       ),
+      executors: service.db.all(
+        'SELECT * FROM executors WHERE project_id = ? ORDER BY sort_order ASC, id ASC',
+        [projectId],
+      ).map((row) => executorSnapshotRow(row, runtime, projectId)),
+      terminals: readTerminalMetadata(service, projectId),
       activeOperation:
         runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
           ? operationSnapshotRow(runtime.activeOperation)
@@ -160,20 +203,41 @@ function taskSnapshotRow(service, workspace, task, operationContext = null) {
   };
 }
 
-function intakeLinkedPlanSnapshotRow(row = {}, planSnapshotById = new Map()) {
+function intakeLinkedPlanSnapshotRow(row = {}, planSnapshotById = new Map(), state = {}, linkedPlans = []) {
   const normalized = intakeSnapshotRow(row);
-  const linkedPlanId = Number(normalized.linked_plan_id);
-  const linkedPlan = Number.isFinite(linkedPlanId) ? planSnapshotById.get(linkedPlanId) : null;
-  if (!linkedPlan) return normalized;
+  // 生效 CLI：记录覆盖优先，否则回退项目默认（state）；写入快照行让渲染层只管显示。
+  const effective = effectiveAgentCliConfig(state || {}, normalized);
+  const base = {
+    ...normalized,
+    ...planBackendSnapshotFields(normalized),
+    ...intakeGenerateFailureSnapshotFields(normalized),
+    agent_cli_provider: effective.provider,
+    agent_cli_command: effective.command,
+    codex_reasoning_effort: effective.codexReasoningEffort,
+  };
+  let normalizedLinkedPlans = Array.isArray(linkedPlans) ? linkedPlans : [];
+  if (normalizedLinkedPlans.length === 0) {
+    const legacyLinkedPlan = legacyLinkedPlanSnapshot(base, planSnapshotById);
+    normalizedLinkedPlans = legacyLinkedPlan ? [legacyLinkedPlan] : [];
+  }
+  normalizedLinkedPlans = markCurrentLinkedPlanSnapshot(normalizedLinkedPlans);
+  const linkedPlan = currentLinkedPlanSnapshot(normalizedLinkedPlans);
+  if (!linkedPlan) {
+    return {
+      ...base,
+      linked_plans: [],
+    };
+  }
 
   const title = linkedPlan.title || null;
-  const filePath = linkedPlan.file_path || normalized.plan_file_path || null;
-  const status = linkedPlan.status || normalized.plan_status || null;
-  const completed = linkedPlan.completed_tasks ?? normalized.plan_completed ?? null;
-  const total = linkedPlan.total_tasks ?? normalized.plan_total ?? null;
+  const filePath = linkedPlan.file_path || base.plan_file_path || null;
+  const status = linkedPlan.status || base.plan_status || null;
+  const completed = linkedPlan.completed_tasks ?? base.plan_completed ?? null;
+  const total = linkedPlan.total_tasks ?? base.plan_total ?? null;
 
   return {
-    ...normalized,
+    ...base,
+    linked_plans: normalizedLinkedPlans,
     plan_title: title,
     plan_file_path: filePath,
     plan_status: status,
@@ -184,6 +248,130 @@ function intakeLinkedPlanSnapshotRow(row = {}, planSnapshotById = new Map()) {
     linked_plan_status: status,
     linked_plan_completed_tasks: completed,
     linked_plan_total_tasks: total,
+  };
+}
+
+function linkedPlanSnapshotsByIntakeForProject(service, projectId, planSnapshotById = new Map()) {
+  let linksByIntake = new Map();
+  try {
+    linksByIntake = intakePlanLinks.getPlansByIntakeForProject(service, projectId, {
+      includeMissingPlans: true,
+    });
+  } catch {
+    linksByIntake = new Map();
+  }
+
+  const snapshotsByIntake = new Map();
+  for (const [key, links] of linksByIntake.entries()) {
+    const linkedPlans = markCurrentLinkedPlanSnapshot(
+      links
+        .map((link) => linkedPlanSnapshotFromLink(link, planSnapshotById))
+        .filter(Boolean),
+    );
+    if (linkedPlans.length > 0) snapshotsByIntake.set(key, linkedPlans);
+  }
+  return snapshotsByIntake;
+}
+
+function linkedPlanSnapshotsForGroupedIntake(linksByIntake, intakeType, intakeId) {
+  const key = linkedPlanSnapshotGroupKey(intakeType, intakeId);
+  if (!key || !linksByIntake?.has(key)) return [];
+  return linksByIntake.get(key) || [];
+}
+
+function linkedPlanSnapshotGroupKey(intakeType, intakeId) {
+  const normalizedIntakeId = normalizePositiveInteger(intakeId);
+  if (!normalizedIntakeId) return null;
+  return `${intakePlanLinks.normalizeIntakeType(intakeType)}:${normalizedIntakeId}`;
+}
+
+function linkedPlanSnapshotFromLink(link = {}, planSnapshotById = new Map()) {
+  const planId = normalizePositiveInteger(link.planId ?? link.plan_id ?? link.id);
+  if (!planId) return null;
+  const plan = link.plan || {};
+  const snapshotPlan = planSnapshotById.get(planId) || null;
+  const phaseTitle = normalizeOptionalString(link.phaseTitle ?? link.phase_title) || null;
+  return {
+    link_id: normalizePositiveInteger(link.linkId ?? link.link_id),
+    intake_type: link.intakeType || link.intake_type || null,
+    intake_id: normalizePositiveInteger(link.intakeId ?? link.intake_id),
+    plan_id: planId,
+    phase_index: normalizePositiveInteger(link.phaseIndex ?? link.phase_index) || 1,
+    phase_title: phaseTitle,
+    title: snapshotPlan?.title || phaseTitle || plan.file_path || `Plan #${planId}`,
+    file_path: snapshotPlan?.file_path || plan.file_path || null,
+    status: snapshotPlan?.status || plan.status || null,
+    completed_tasks: normalizeNullableNumber(snapshotPlan?.completed_tasks ?? plan.completed_tasks),
+    total_tasks: normalizeNullableNumber(snapshotPlan?.total_tasks ?? plan.total_tasks),
+    validation_passed: snapshotPlan?.validation_passed ?? plan.validation_passed ?? null,
+    is_current: false,
+  };
+}
+
+function legacyLinkedPlanSnapshot(row = {}, planSnapshotById = new Map()) {
+  const planId = normalizePositiveInteger(row.linked_plan_id);
+  if (!planId) return null;
+  const linkedPlan = planSnapshotById.get(planId) || null;
+  return {
+    link_id: null,
+    intake_type: null,
+    intake_id: normalizePositiveInteger(row.id),
+    plan_id: planId,
+    phase_index: 1,
+    phase_title: null,
+    title: linkedPlan?.title || row.plan_title || row.plan_file_path || `Plan #${planId}`,
+    file_path: linkedPlan?.file_path || row.plan_file_path || null,
+    status: linkedPlan?.status || row.plan_status || null,
+    completed_tasks: normalizeNullableNumber(linkedPlan?.completed_tasks ?? row.plan_completed),
+    total_tasks: normalizeNullableNumber(linkedPlan?.total_tasks ?? row.plan_total),
+    validation_passed: linkedPlan?.validation_passed ?? null,
+    is_current: false,
+  };
+}
+
+function markCurrentLinkedPlanSnapshot(linkedPlans = []) {
+  const current = currentLinkedPlanSnapshot(linkedPlans);
+  return linkedPlans.map((linkedPlan) => ({
+    ...linkedPlan,
+    is_current: Boolean(
+      current
+      && Number(linkedPlan.plan_id) === Number(current.plan_id)
+      && Number(linkedPlan.phase_index || 0) === Number(current.phase_index || 0),
+    ),
+  }));
+}
+
+function currentLinkedPlanSnapshot(linkedPlans = []) {
+  if (!Array.isArray(linkedPlans) || linkedPlans.length === 0) return null;
+  return linkedPlans.find((linkedPlan) => {
+    const status = String(linkedPlan.status || '').toLowerCase();
+    return status && !['completed', 'interrupted', 'draft'].includes(status);
+  }) || linkedPlans.find((linkedPlan) => String(linkedPlan.status || '').toLowerCase() !== 'completed') || linkedPlans[0];
+}
+
+function normalizePositiveInteger(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0 ? number : null;
+}
+
+function normalizeNullableNumber(value) {
+  if (value === null || typeof value === 'undefined' || value === '') return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function intakeGenerateFailureSnapshotFields(row = {}) {
+  const failCount = Number(row.generate_fail_count ?? 0);
+  const failureProvider = normalizeOptionalAgentCliProvider(row.last_generate_agent_cli_provider);
+  return {
+    generate_fail_count: Number.isFinite(failCount) ? failCount : 0,
+    last_generate_fail_at: normalizeOptionalString(row.last_generate_fail_at) || null,
+    last_generate_error: normalizeOptionalString(row.last_generate_error) || null,
+    last_generate_log_file: normalizeOptionalString(row.last_generate_log_file) || null,
+    last_generate_agent_cli_provider: failureProvider,
+    last_generate_codex_reasoning_effort: failureProvider === DEFAULT_AGENT_CLI_PROVIDER
+      ? normalizeOptionalCodexReasoningEffort(row.last_generate_codex_reasoning_effort)
+      : null,
   };
 }
 
@@ -328,6 +516,69 @@ function readMcpLiveStatus(service) {
   }
 }
 
+function readTerminalMetadata(service, projectId) {
+  if (!service || typeof service.terminalMetadataProvider !== 'function') return [];
+  const projectKey = terminalProjectKey(projectId);
+  try {
+    const result = service.terminalMetadataProvider(projectId);
+    const sessions = Array.isArray(result) ? result : (Array.isArray(result?.sessions) ? result.sessions : []);
+    if (!Array.isArray(sessions)) return [];
+    return sessions
+      .map((session) => terminalSessionSnapshot(session))
+      .filter((session) => session && (!projectKey || terminalProjectKey(session.projectId) === projectKey));
+  } catch {
+    return [];
+  }
+}
+
+function terminalSessionSnapshot(session = {}) {
+  if (!session || typeof session !== 'object') return null;
+  const id = normalizeOptionalString(session.id);
+  if (!id) return null;
+  return {
+    id,
+    projectId: normalizeTerminalProjectId(session.projectId ?? session.project_id),
+    title: normalizeOptionalString(session.title) || '',
+    cwd: normalizeOptionalString(session.cwd) || '',
+    shell: normalizeOptionalString(session.shell) || '',
+    status: normalizeOptionalString(session.status) || '',
+    createdAt: normalizeOptionalString(session.createdAt ?? session.created_at) || '',
+    endedAt: normalizeOptionalString(session.endedAt ?? session.ended_at) || null,
+    exitCode: normalizeNullableInteger(session.exitCode ?? session.exit_code),
+    cols: normalizeNullableInteger(session.cols),
+    rows: normalizeNullableInteger(session.rows),
+    profile: terminalProfileSnapshot(session.profile),
+  };
+}
+
+function terminalProfileSnapshot(profile = {}) {
+  const source = profile && typeof profile === 'object' ? profile : {};
+  return {
+    id: normalizeOptionalString(source.id) || '',
+    name: normalizeOptionalString(source.name) || '',
+    kind: normalizeOptionalString(source.kind) || '',
+    shellPath: normalizeOptionalString(source.shellPath ?? source.shell_path) || '',
+    args: Array.isArray(source.args) ? source.args.map((arg) => String(arg ?? '')) : [],
+    env: {},
+  };
+}
+
+function normalizeTerminalProjectId(value) {
+  const text = String(value ?? '').trim();
+  const number = Number(text);
+  return text && Number.isInteger(number) ? number : text;
+}
+
+function terminalProjectKey(value) {
+  return String(value ?? '').trim();
+}
+
+function normalizeNullableInteger(value) {
+  if (value === null || typeof value === 'undefined' || value === '') return null;
+  const number = Number(value);
+  return Number.isInteger(number) ? number : null;
+}
+
 function emptySnapshot(projects, mcp = null) {
   return {
     activeProjectId: null,
@@ -342,11 +593,48 @@ function emptySnapshot(projects, mcp = null) {
     tasks: [],
     events: [],
     scans: [],
+    scanSummary: emptyScanSummary(),
     scripts: [],
+    executors: [],
+    terminals: [],
     activeOperation: null,
     activeOperations: [],
     lastOperation: null,
   };
+}
+
+function emptyScanSummary() {
+  return {
+    count: 0,
+    total_size: 0,
+    latest_scanned_at: null,
+    latest_modified_at: null,
+  };
+}
+
+function scanSummarySnapshot(db, projectId) {
+  if (!db || typeof db.get !== 'function') return emptyScanSummary();
+  const summary = db.get(
+    `SELECT
+        COUNT(*) AS count,
+        COALESCE(SUM(size), 0) AS total_size,
+        MAX(scanned_at) AS latest_scanned_at,
+        MAX(modified_at) AS latest_modified_at
+       FROM scan_files
+      WHERE project_id = ?`,
+    [projectId],
+  );
+  return {
+    count: normalizeNonNegativeInteger(summary?.count),
+    total_size: normalizeNonNegativeInteger(summary?.total_size),
+    latest_scanned_at: normalizeOptionalString(summary?.latest_scanned_at) || null,
+    latest_modified_at: normalizeOptionalString(summary?.latest_modified_at) || null,
+  };
+}
+
+function normalizeNonNegativeInteger(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
 }
 
 function eventSnapshotRow(event) {
@@ -355,6 +643,45 @@ function eventSnapshotRow(event) {
     ...event,
     meta: parseEventMeta(event.meta),
   };
+}
+
+function executorSnapshotRow(row = {}, runtime = null, projectId = null) {
+  const executor = executorFromRow(row);
+  const activeOperation = findExecutorOperation(runtime, projectId, executor.id);
+  const activeSnapshot = activeOperation ? operationSnapshotRow(activeOperation) : null;
+  const runStatus = activeSnapshot ? 'running' : (executor.lastStatus || 'idle');
+  return {
+    ...executor,
+    project_id: executor.projectId,
+    sort_order: executor.sortOrder,
+    group_kind: executor.group?.kind || null,
+    group_is_default: executor.group?.isDefault ? 1 : 0,
+    depends_order: executor.dependsOrder,
+    last_status: executor.lastStatus,
+    last_exit_code: executor.lastExitCode,
+    last_duration_ms: executor.lastDurationMs,
+    last_log: executor.lastLog,
+    last_run_at: executor.lastRunAt,
+    created_at: executor.createdAt,
+    updated_at: executor.updatedAt,
+    running: Boolean(activeSnapshot),
+    runStatus,
+    activeOperation: activeSnapshot,
+  };
+}
+
+function findExecutorOperation(runtime, projectId, executorId) {
+  if (!runtime?.activeOperations) return null;
+  for (const operation of runtime.activeOperations.values()) {
+    if (
+      Number(operation?.projectId) === Number(projectId) &&
+      operation?.operationType === 'executor' &&
+      Number(operation?.executorId) === Number(executorId)
+    ) {
+      return operation;
+    }
+  }
+  return null;
 }
 
 function parseEventMeta(meta) {
@@ -376,6 +703,7 @@ function planSnapshotRow(service, workspace, plan, concurrencySuggestion = null,
   const status = String(plan.status || 'pending');
   return {
     ...plan,
+    ...planBackendSnapshotFields(plan),
     status,
     sort_order: normalizePlanSortOrder(plan.sort_order),
     is_draft: status === 'draft',
@@ -388,6 +716,14 @@ function planSnapshotRow(service, workspace, plan, concurrencySuggestion = null,
     title: cachedPlanMarkdownTitle(service, workspace, plan),
     concurrency_suggestion: concurrencySuggestion || emptyConcurrencySuggestion(),
   };
+}
+
+function planBackendSnapshotFields(row = {}) {
+  const fields = {};
+  for (const column of PLAN_BACKEND_SNAPSHOT_COLUMNS) {
+    if (Object.prototype.hasOwnProperty.call(row || {}, column)) fields[column] = row[column];
+  }
+  return fields;
 }
 
 function normalizePlanSortOrder(value) {
@@ -425,10 +761,9 @@ function cachedPlanMarkdownTitle(service, workspace, plan) {
   const cache = service._planTitleCache;
   const version = plan?.hash || plan?.updated_at || '';
   const key = `${workspace || ''}\0${plan?.file_path || ''}\0${version}`;
-  if (cache.has(key)) return cache.get(key);
+  if (cache.has(key)) return touchCacheEntry(cache, key);
   const title = readPlanMarkdownTitle(workspace, plan?.file_path);
-  cache.set(key, title);
-  if (cache.size > 200) cache.delete(cache.keys().next().value);
+  setBoundedCacheEntry(cache, key, title, 200);
   return title;
 }
 
@@ -442,14 +777,13 @@ function cachedPlanConcurrencySuggestion(service, workspace, plan, tasks) {
       task.status,
       task.scope,
       task.raw_line,
-      task.updated_at,
+      task.title,
     ].join(':'))
     .join('|');
   const key = `${workspace || ''}\0${plan?.id || ''}\0${taskFingerprint}`;
-  if (cache.has(key)) return cache.get(key);
+  if (cache.has(key)) return touchCacheEntry(cache, key);
   const suggestion = planConcurrencySuggestion(workspace, tasks);
-  cache.set(key, suggestion);
-  if (cache.size > 200) cache.delete(cache.keys().next().value);
+  setBoundedCacheEntry(cache, key, suggestion, 200);
   return suggestion;
 }
 
@@ -463,13 +797,23 @@ function cachedTaskScopeFileInfos(service, workspace, task) {
     task?.scope || '',
     task?.raw_line || '',
     task?.title || '',
-    task?.updated_at || '',
   ].join('\0');
-  if (cache.has(key)) return cache.get(key);
+  if (cache.has(key)) return touchCacheEntry(cache, key);
   const infos = taskScopeFileInfos(workspace, task);
-  cache.set(key, infos);
-  if (cache.size > 500) cache.delete(cache.keys().next().value);
+  setBoundedCacheEntry(cache, key, infos, 500);
   return infos;
+}
+
+function touchCacheEntry(cache, key) {
+  const value = cache.get(key);
+  cache.delete(key);
+  cache.set(key, value);
+  return value;
+}
+
+function setBoundedCacheEntry(cache, key, value, limit) {
+  cache.set(key, value);
+  while (cache.size > limit) cache.delete(cache.keys().next().value);
 }
 
 module.exports = {

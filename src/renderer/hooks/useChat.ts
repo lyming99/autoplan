@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AiConfig,
   ChatConfig,
+  ChatKnownToolResult,
   ChatMessage,
   ChatStreamPhase,
   ChatToolCall,
@@ -426,7 +427,7 @@ export function useChat(projectId: number): WorkspaceChatState {
 
         /* -------- tool_result -------- */
         case 'tool_result': {
-          const result = (event.data?.result || {}) as Record<string, unknown>;
+          const result = (event.data?.result || {}) as ChatKnownToolResult;
           cur.streamingToolCall = null;
           setStreamingToolCall(null);
 

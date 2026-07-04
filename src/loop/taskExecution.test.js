@@ -3,9 +3,14 @@ const assert = require('node:assert/strict');
 
 const {
   processPlan,
+  executeTask,
   executeTaskBatch,
   TASK_RETRY_BACKOFF_SECONDS,
 } = require('./taskExecution');
+const {
+  BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR,
+  planAgentCliConfig,
+} = require('./planAgentCli');
 
 // ---------------------------------------------------------------------------
 // 加速 sleep：将 setTimeout 替换为 0ms 延迟，避免测试等待 5s/10s/... 真时
@@ -461,3 +466,162 @@ describe('executeTaskBatch 退避重试', () => {
     }
   });
 });
+
+describe('executeTask execution backend config routing（P011）', () => {
+  it('uses plan execution snapshot before legacy plan CLI fields', async () => {
+    const task = makeTask();
+    const plan = makePlan({
+      agent_cli_provider: 'codex',
+      codex_reasoning_effort: 'low',
+      plan_generation_strategy: 'external-cli-structured',
+      plan_generation_provider: 'opencode',
+      plan_execution_strategy: 'external-cli',
+      plan_execution_provider: 'claude',
+      plan_execution_command: 'claude-exec',
+    });
+    const service = makeExecutionConfigService();
+
+    const result = await executeTask(service, HELPERS, WORKSPACE, plan, task);
+
+    assert.equal(result.exitCode, 0);
+    assert.equal(service._calls.runCodexWithPlanGuard.length, 1);
+    const operation = service._calls.runCodexWithPlanGuard[0].operation;
+    assert.equal(operation.planExecutionProvider, 'claude');
+    assert.equal(operation.agentCliProvider, 'claude');
+    assert.equal(operation.agentCliCommand, 'claude-exec');
+    const started = service._calls.addTaskLifecycleEvent.find((event) => event.type === 'task.started');
+    assert.equal(started.meta.planExecutionProvider, 'claude');
+    assert.equal(started.meta.agentCliProvider, 'claude');
+  });
+
+  it('falls back to legacy plan CLI fields for old plans without execution snapshots', async () => {
+    const task = makeTask();
+    const plan = makePlan({
+      plan_generation_strategy: 'external-cli-structured',
+      plan_generation_provider: 'claude',
+      agent_cli_provider: 'opencode',
+      agent_cli_command: 'opencode-run',
+    });
+    const service = makeExecutionConfigService({
+      status: {
+        plan_execution_strategy: 'external-cli',
+        plan_execution_provider: 'codex',
+        plan_execution_codex_reasoning_effort: 'high',
+      },
+    });
+
+    const result = await executeTask(service, HELPERS, WORKSPACE, plan, task);
+
+    assert.equal(result.exitCode, 0);
+    const operation = service._calls.runCodexWithPlanGuard[0].operation;
+    assert.equal(operation.planExecutionProvider, 'opencode');
+    assert.equal(operation.agentCliProvider, 'opencode');
+    assert.equal(operation.agentCliCommand, 'opencode-run');
+    const started = service._calls.addTaskLifecycleEvent.find((event) => event.type === 'task.started');
+    assert.equal(started.meta.planExecutionProvider, 'opencode');
+    assert.equal(started.meta.agentCliProvider, 'opencode');
+  });
+
+  it('returns a clear unsupported error for builtin-llm execution without invoking external CLI', async () => {
+    const task = makeTask();
+    const plan = makePlan({
+      plan_generation_strategy: 'builtin-llm-structured',
+      plan_generation_provider: 'openai',
+      plan_execution_strategy: 'builtin-llm',
+      plan_execution_provider: 'openai',
+      plan_execution_model: 'gpt-4o',
+    });
+    const service = makeExecutionConfigService();
+
+    const result = await executeTask(service, HELPERS, WORKSPACE, plan, task);
+
+    assert.equal(result.exitCode, -1);
+    assert.equal(result.errorMessage, BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR);
+    assert.equal(service._calls.runCodexWithPlanGuard.length, 0);
+    assert.equal(service._calls.recordTaskFailure.length, 1);
+    assert.equal(service._calls.recordTaskFailure[0].meta.planExecutionProvider, 'openai');
+    assert.equal(service._calls.recordTaskFailure[0].meta.planExecutionModel, 'gpt-4o');
+    assert.ok(service._calls.runHookScripts.some((hook) => hook.hook === 'on:fail'));
+    const started = service._calls.addTaskLifecycleEvent.find((event) => event.type === 'task.started');
+    assert.equal(started.meta.planExecutionProvider, 'openai');
+    assert.equal(started.meta.planExecutionStrategy, 'builtin-llm');
+  });
+
+  it('emits task event metadata from execution provider, not generation provider', async () => {
+    const task = makeTask();
+    const plan = makePlan({
+      plan_generation_strategy: 'external-cli-structured',
+      plan_generation_provider: 'claude',
+      plan_execution_strategy: 'external-cli',
+      plan_execution_provider: 'codex',
+      plan_execution_codex_reasoning_effort: 'xhigh',
+    });
+    const service = makeExecutionConfigService();
+
+    await executeTask(service, HELPERS, WORKSPACE, plan, task);
+
+    const started = service._calls.addTaskLifecycleEvent.find((event) => event.type === 'task.started');
+    assert.equal(started.meta.planExecutionProvider, 'codex');
+    assert.equal(started.meta.agentCliProvider, 'codex');
+    assert.equal(started.meta.codexReasoningEffort, 'xhigh');
+    assert.notEqual(started.meta.agentCliProvider, plan.plan_generation_provider);
+  });
+});
+
+function makeExecutionConfigService(overrides = {}) {
+  const calls = {
+    setPhase: [],
+    addTaskLifecycleEvent: [],
+    runCodexWithPlanGuard: [],
+    recordTaskFailure: [],
+    runHookScripts: [],
+  };
+  const service = {
+    _calls: calls,
+    status: () => overrides.status || {},
+    planExists: () => true,
+    taskExists: () => true,
+    startTaskRun: (_taskId, startedAt) => ({ ...makeTask(), status: 'running', started_at: startedAt }),
+    setPhase(projectId, phase) {
+      calls.setPhase.push({ projectId, phase });
+    },
+    addTaskLifecycleEvent(projectId, type, task, meta) {
+      calls.addTaskLifecycleEvent.push({ projectId, type, task, meta });
+    },
+    async runCodexWithPlanGuard(workspace, prompt, label, operation, planFile) {
+      calls.runCodexWithPlanGuard.push({ workspace, prompt, label, operation, planFile });
+      return {
+        exitCode: 0,
+        output: '',
+        logFile: '/tmp/autoplan-execute-ok.log',
+        agentCliProvider: operation.agentCliProvider,
+        agentCliCommand: operation.agentCliCommand,
+        codexReasoningEffort: operation.codexReasoningEffort,
+      };
+    },
+    recordTaskFailure(projectId, plan, task, finishedAt, meta) {
+      calls.recordTaskFailure.push({ projectId, planId: plan.id, taskId: task.id, finishedAt, meta });
+      return { ...task, status: 'failed' };
+    },
+    async runHookScripts(projectId, hook, payload) {
+      calls.runHookScripts.push({ projectId, hook, payload });
+    },
+    previousPlanCodexSessionId: () => '',
+    previousPlanAgentCliSessionId: () => '',
+    planAgentCliSessionId: () => '',
+    updateTaskCodexSession: () => {},
+    updateTaskAgentCliSession: () => {},
+    planAgentCliConfig(plan) {
+      return planAgentCliConfig(service, plan);
+    },
+    db: {
+      all() {
+        return [];
+      },
+      get() {
+        return null;
+      },
+    },
+  };
+  return service;
+}

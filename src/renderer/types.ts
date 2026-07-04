@@ -1,8 +1,57 @@
 export type IntakeType = 'requirement' | 'feedback';
-export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'acceptance' | 'tasks' | 'scripts' | 'events' | 'settings' | 'chat';
+export type WorkspaceTab = 'overview' | 'requirement' | 'feedback' | 'acceptance' | 'tasks' | 'terminal' | 'executors' | 'scripts' | 'events' | 'settings' | 'chat';
 export const DEFAULT_WORKSPACE_TAB: WorkspaceTab = 'requirement';
 export type AgentCliProvider = 'codex' | 'claude' | 'opencode' | 'oh-my-pi' | string;
 export type CodexReasoningEffort = 'low' | 'medium' | 'high' | 'xhigh' | string;
+
+export const PLAN_GENERATION_STRATEGIES = {
+  EXTERNAL_CLI_MARKDOWN: 'external-cli-markdown',
+  EXTERNAL_CLI_STRUCTURED: 'external-cli-structured',
+  BUILTIN_LLM_STRUCTURED: 'builtin-llm-structured',
+} as const;
+
+export const PLAN_EXECUTION_STRATEGIES = {
+  EXTERNAL_CLI: 'external-cli',
+  BUILTIN_LLM: 'builtin-llm',
+} as const;
+
+export type PlanGenerationStrategy =
+  (typeof PLAN_GENERATION_STRATEGIES)[keyof typeof PLAN_GENERATION_STRATEGIES];
+export type PlanExecutionStrategy =
+  (typeof PLAN_EXECUTION_STRATEGIES)[keyof typeof PLAN_EXECUTION_STRATEGIES];
+export type PlanBackendProvider = AgentCliProvider | 'openai' | 'deepseek' | 'anthropic' | string;
+
+export interface PlanGenerationSnapshotFields {
+  plan_generation_strategy?: PlanGenerationStrategy | null;
+  plan_generation_provider?: PlanBackendProvider | null;
+  plan_generation_command?: string | null;
+  plan_generation_model?: string | null;
+  plan_generation_codex_reasoning_effort?: CodexReasoningEffort | null;
+}
+
+export interface PlanExecutionSnapshotFields {
+  plan_execution_strategy?: PlanExecutionStrategy | null;
+  plan_execution_provider?: PlanBackendProvider | null;
+  plan_execution_command?: string | null;
+  plan_execution_model?: string | null;
+  plan_execution_codex_reasoning_effort?: CodexReasoningEffort | null;
+}
+
+export interface PlanGenerationInputFields {
+  planGenerationStrategy?: PlanGenerationStrategy | null;
+  planGenerationProvider?: PlanBackendProvider | null;
+  planGenerationCommand?: string | null;
+  planGenerationModel?: string | null;
+  planGenerationCodexReasoningEffort?: CodexReasoningEffort | null;
+}
+
+export interface PlanExecutionInputFields {
+  planExecutionStrategy?: PlanExecutionStrategy | null;
+  planExecutionProvider?: PlanBackendProvider | null;
+  planExecutionCommand?: string | null;
+  planExecutionModel?: string | null;
+  planExecutionCodexReasoningEffort?: CodexReasoningEffort | null;
+}
 
 export const PLAN_STATUS = {
   PENDING: 'pending',
@@ -155,7 +204,7 @@ export interface WorkspaceSearchState {
   groups: WorkspaceSearchGroup[];
 }
 
-export interface Project {
+export interface Project extends PlanGenerationSnapshotFields, PlanExecutionSnapshotFields {
   id: number;
   name: string;
   workspace_path: string;
@@ -172,7 +221,7 @@ export interface Project {
   env_vars?: string;
 }
 
-export interface ProjectState {
+export interface ProjectState extends PlanGenerationSnapshotFields, PlanExecutionSnapshotFields {
   project_id: number;
   running: number;
   phase: string;
@@ -189,7 +238,53 @@ export interface ProjectState {
   workspace_path?: string;
 }
 
-export interface Requirement {
+export interface IntakeGenerateFailureState {
+  generate_fail_count?: number;
+  last_generate_fail_at?: string | null;
+  last_generate_error?: string | null;
+  last_generate_log_file?: string | null;
+  last_generate_agent_cli_provider?: AgentCliProvider | null;
+  last_generate_codex_reasoning_effort?: CodexReasoningEffort | null;
+}
+
+export interface LinkedPlanSummary {
+  link_id?: number | null;
+  linkId?: number | null;
+  intake_type?: IntakeType | string | null;
+  intake_id?: number | null;
+  plan_id?: number | string | null;
+  planId?: number | string | null;
+  id?: number | string | null;
+  phase_index?: number | null;
+  phaseIndex?: number | null;
+  phase_title?: string | null;
+  phaseTitle?: string | null;
+  title?: string | null;
+  file_path?: string | null;
+  filePath?: string | null;
+  status?: PlanStatus | string | null;
+  completed_tasks?: number | string | null;
+  completedTasks?: number | string | null;
+  completed?: number | string | null;
+  total_tasks?: number | string | null;
+  totalTasks?: number | string | null;
+  total?: number | string | null;
+  validation_passed?: number | boolean | null;
+  validationPassed?: number | boolean | null;
+  is_current?: boolean;
+  current?: boolean;
+}
+
+export interface IntakeLinkedPlanSnapshotFields {
+  linked_plans?: LinkedPlanSummary[];
+  linked_plan_title?: string | null;
+  linked_plan_file_path?: string | null;
+  linked_plan_status?: string | null;
+  linked_plan_completed_tasks?: number | null;
+  linked_plan_total_tasks?: number | null;
+}
+
+export interface Requirement extends IntakeGenerateFailureState, IntakeLinkedPlanSnapshotFields, PlanGenerationSnapshotFields {
   id: number;
   project_id: number;
   title: string;
@@ -210,7 +305,7 @@ export interface Requirement {
   updated_at: string;
 }
 
-export interface Feedback extends AgentCliSessionInfo {
+export interface Feedback extends AgentCliSessionInfo, IntakeGenerateFailureState, IntakeLinkedPlanSnapshotFields, PlanGenerationSnapshotFields {
   id: number;
   project_id: number;
   requirement_id?: number | null;
@@ -244,7 +339,7 @@ export interface Attachment {
   created_at: string;
 }
 
-export interface Plan extends AgentCliSessionInfo {
+export interface Plan extends AgentCliSessionInfo, PlanGenerationSnapshotFields, PlanExecutionSnapshotFields {
   id: number;
   project_id: number;
   issue_hash: string;
@@ -536,6 +631,13 @@ export interface ScanFile {
   scanned_at: string;
 }
 
+export interface ScanSummary {
+  count: number;
+  total_size: number;
+  latest_scanned_at: string | null;
+  latest_modified_at: string | null;
+}
+
 export type ScriptRuntime = 'node' | 'bash' | 'ps' | 'cmd';
 export type ScriptSourceType = 'inline' | 'file';
 export type ScriptTriggerMode = 'hook' | 'manual' | 'schedule';
@@ -631,6 +733,211 @@ export interface ScriptRunResult {
   error?: string | null;
 }
 
+export type ExecutorType = 'shell' | 'process' | 'plugin';
+export type ExecutorDependsOrder = 'parallel' | 'sequence';
+export type ExecutorLastStatus = 'idle' | 'ok' | 'bad' | 'running' | 'stopped';
+export type ExecutorArg = string | { value: string; quoting?: 'escape' | 'strong' | 'weak' };
+export type ExecutorProblemMatcher = string | string[] | Record<string, unknown> | Record<string, unknown>[] | null;
+
+/**
+ * Plugin 执行器（需求 #64）
+ *
+ * 与 shell/process 的「一次性命令」不同，plugin 表示一个长期运行的开发工具进程
+ * （如 flutter run / npm run dev / vite），支持 start → running → stop 三态生命周期，
+ * 并可在运行中通过 reload action 触发热刷新（向 stdin 发送文本或执行独立命令）。
+ */
+
+/** 单个 action 的执行方式：'command' 执行独立命令；'input' 向运行中进程 stdin 发送文本 */
+export type ExecutorActionType = 'command' | 'input';
+
+/** plugin 三态生命周期动作名 */
+export type ExecutorPluginActionName = 'start' | 'reload' | 'stop';
+
+/** plugin 执行器某个生命周期动作的命令定义，复用 ExecutorArg 形态 */
+export interface ExecutorAction {
+  /** 执行方式，缺省按 'command' 处理；reload 在 'input' 模式下发送 stdin 文本 */
+  type?: ExecutorActionType;
+  /** 命令名（如 'flutter'、'npm'）；command 模式下必填 */
+  command?: string;
+  /** 命令参数，复用 ExecutorArg 形态 */
+  args?: ExecutorArg[];
+  /** input 模式下发送给运行中进程 stdin 的文本（如 'r' 触发 Flutter 热刷新） */
+  input?: string;
+}
+
+/**
+ * plugin 执行器的动作配置块。
+ * - start：启动命令（必填），定义长驻进程的启动命令
+ * - reload：热刷新（可选），向运行中进程发送 stdin 输入或执行独立命令
+ * - stop：停止命令（可选），留空时使用默认信号（SIGTERM）终止
+ */
+export interface ExecutorActions {
+  start?: ExecutorAction;
+  reload?: ExecutorAction;
+  stop?: ExecutorAction;
+}
+
+/** plugin 执行器运行时状态（持久化于 plugin_state_json，进程退出后 pid 置空） */
+export interface ExecutorPluginState {
+  /** 持久子进程 PID，进程未启动/已退出时为 null */
+  pid: number | null;
+  /** 是否运行中 */
+  running: boolean;
+  /** 最近一次执行的 action */
+  lastAction?: ExecutorPluginActionName | null;
+  /** 最近一次 action 时间（ISO 字符串） */
+  lastActionAt?: string | null;
+  /** 最近一次启动时间（ISO 字符串） */
+  startedAt?: string | null;
+  /** 最近一次退出码 */
+  exitCode?: number | null;
+  /** 最近一次错误信息 */
+  error?: string | null;
+}
+
+export interface ExecutorOptions { cwd: string; env: Record<string, string>; timeoutMs?: number; timeout_ms?: number; }
+export interface ExecutorGroup { kind: string | null; isDefault: boolean; }
+export interface ExecutorPresentation {
+  reveal?: 'always' | 'silent' | 'never';
+  panel?: 'shared' | 'dedicated' | 'new';
+  revealProblems?: 'never' | 'onProblem' | 'always';
+  echo?: boolean;
+  focus?: boolean;
+  showReuseMessage?: boolean;
+  clear?: boolean;
+  close?: boolean;
+}
+
+export interface Executor {
+  id: number;
+  projectId: number;
+  project_id?: number;
+  label: string;
+  type: ExecutorType;
+  command: string;
+  args: ExecutorArg[];
+  options: ExecutorOptions;
+  group: ExecutorGroup;
+  group_kind?: string | null;
+  group_is_default?: number;
+  presentation: ExecutorPresentation;
+  problemMatcher: ExecutorProblemMatcher;
+  /** plugin 执行器的动作配置（start/reload/stop）；仅 type === 'plugin' 时使用 */
+  actions?: ExecutorActions;
+  /** plugin 执行器运行时状态（pid/running/lastAction 等）；仅 type === 'plugin' 时使用 */
+  pluginState?: ExecutorPluginState;
+  dependsOn: string[];
+  dependsOrder: ExecutorDependsOrder;
+  depends_order?: ExecutorDependsOrder;
+  enabled: boolean;
+  sortOrder: number;
+  sort_order?: number;
+  lastStatus: ExecutorLastStatus | null;
+  last_status?: ExecutorLastStatus | null;
+  lastExitCode: number | null;
+  last_exit_code?: number | null;
+  lastDurationMs: number | null;
+  last_duration_ms?: number | null;
+  lastLog: string | null;
+  last_log?: string | null;
+  lastRunAt: string | null;
+  last_run_at?: string | null;
+  createdAt: string | null;
+  created_at?: string | null;
+  updatedAt: string | null;
+  updated_at?: string | null;
+  running: boolean;
+  runStatus: ExecutorLastStatus;
+  activeOperation?: ActiveOperation | null;
+}
+
+export interface ExecutorInput {
+  projectId: number;
+  label: string;
+  type?: ExecutorType;
+  command: string;
+  args?: ExecutorArg[];
+  options?: Partial<ExecutorOptions>;
+  group?: string | Partial<ExecutorGroup> | null;
+  dependsOn?: string | string[];
+  dependsOrder?: ExecutorDependsOrder;
+  presentation?: ExecutorPresentation;
+  problemMatcher?: ExecutorProblemMatcher;
+  /** plugin 执行器的动作配置；type === 'plugin' 时构造，其余类型忽略 */
+  actions?: ExecutorActions;
+  enabled?: boolean | number;
+  sortOrder?: number;
+}
+
+export interface UpdateExecutorInput extends Partial<ExecutorInput> {
+  projectId: number;
+  executorId: number;
+}
+
+export interface ExecutorIdInput { projectId: number; executorId: number; }
+
+/** 触发 plugin 执行器生命周期动作（start/reload/stop）的入参 */
+export interface RunExecutorPluginActionInput {
+  projectId: number;
+  executorId: number;
+  action: ExecutorPluginActionName;
+}
+
+export interface ExecutorDependencyRunResult {
+  executorId: number | null;
+  label: string | null;
+  status: ExecutorLastStatus | string;
+  exitCode: number | null;
+  durationMs: number | null;
+  errorMessage?: string;
+}
+
+export interface ExecutorRunResult {
+  snapshot: AppSnapshot;
+  executorId: number;
+  label: string;
+  status: ExecutorLastStatus | string;
+  exitCode: number | null;
+  durationMs: number | null;
+  log: string | null;
+  logFile?: string | null;
+  timedOut?: boolean;
+  error?: string | null;
+  dependencyResults?: ExecutorDependencyRunResult[];
+}
+
+export interface ExecutorImportTasksJsonInput {
+  projectId: number;
+  content?: string;
+  tasksJson?: string;
+  json?: string;
+  filePath?: string;
+  path?: string;
+  version?: string;
+  tasks?: Record<string, unknown>[];
+}
+
+export interface ExecutorImportMessage {
+  index: number | null;
+  label: string | null;
+  code: string;
+  field?: string | null;
+  message: string;
+  fields?: string[];
+  details?: Record<string, unknown>;
+}
+
+export interface ExecutorImportTasksJsonResult {
+  version: string | null;
+  importedCount: number;
+  skippedCount: number;
+  errorCount: number;
+  executors: Executor[];
+  skipped: ExecutorImportMessage[];
+  errors: ExecutorImportMessage[];
+  snapshot: AppSnapshot;
+}
+
 export interface AppSnapshot {
   activeProjectId: number | null;
   activeProject: Project | null;
@@ -644,10 +951,24 @@ export interface AppSnapshot {
   tasks: PlanTask[];
   events: AppEvent<AppEventMeta | null>[];
   scans: ScanFile[];
+  scanSummary?: ScanSummary;
   scripts: Script[];
+  executors: Executor[];
+  terminals: TerminalSession[];
   activeOperation: ActiveOperation | null;
   activeOperations: ActiveOperation[];
   lastOperation: ActiveOperation | null;
+}
+
+export interface WorkspaceSnapshotPatch {
+  projectId: number | null;
+  activeProjectId?: number | null;
+  state?: ProjectState | null;
+  tasks?: PlanTask[];
+  events?: AppEvent<AppEventMeta | null>[];
+  activeOperation?: ActiveOperation | null;
+  activeOperations?: ActiveOperation[];
+  lastOperation?: ActiveOperation | null;
 }
 
 export interface ActivityLine { role: string; text: string; at: string; }
@@ -657,6 +978,13 @@ export interface ActiveOperation extends AgentCliSessionInfo, CodexSessionInfo {
   projectId: number | null;
   planId: number | null;
   taskId: number | null;
+  operationType?: 'executor' | string | null;
+  executorId?: number | null;
+  executorLabel?: string | null;
+  rootExecutorId?: number | null;
+  rootExecutorLabel?: string | null;
+  parentExecutorId?: number | null;
+  executorRunId?: string | null;
   agentCliProvider?: string;
   agentCliCommand?: string;
   codexReasoningEffort?: CodexReasoningEffort | null;
@@ -702,7 +1030,7 @@ export interface PendingClipboardImageAttachment extends PendingAttachmentBase {
 
 export type PendingAttachment = PendingPathAttachment | PendingClipboardImageAttachment;
 
-export interface CreateIntakeInput {
+export interface CreateIntakeInput extends PlanGenerationInputFields {
   projectId: number;
   body: string;
   attachments: PendingAttachment[];
@@ -715,7 +1043,7 @@ export interface CreateIntakeInput {
   codexReasoningEffort?: CodexReasoningEffort;
 }
 
-export interface CreateProjectInput {
+export interface CreateProjectInput extends PlanGenerationInputFields, PlanExecutionInputFields {
   name: string;
   workspacePath: string;
   description?: string;
@@ -871,7 +1199,7 @@ export interface UpdateProjectInput extends CreateProjectInput {
 /** 环境变量键值对（设置面板与表单共用），序列化为 project_states.env_vars 的 JSON 数组 */
 export interface EnvVarEntry { name: string; value: string; }
 
-export interface LoopConfigInput {
+export interface LoopConfigInput extends PlanGenerationInputFields, PlanExecutionInputFields {
   projectId: number;
   workspacePath?: string;
   intervalSeconds?: number;
@@ -902,9 +1230,11 @@ export interface TaskIdInput extends ProjectIdInput {
   taskId: number;
 }
 
-export interface ReadPlanInput extends ProjectIdInput {
+export interface PlanIdInput extends ProjectIdInput {
   planId: number;
 }
+
+export interface ReadPlanInput extends PlanIdInput {}
 
 export interface IntakeActionInput extends ProjectIdInput {
   type: IntakeType;
@@ -912,7 +1242,15 @@ export interface IntakeActionInput extends ProjectIdInput {
   title?: string;
 }
 
-export interface UpdateRequirementInput extends RecordIdInput {
+export interface RetryIntakePlanGenerationOptions extends PlanGenerationInputFields {
+  agentCliProvider?: AgentCliProvider;
+  agentCliCommand?: string;
+  codexReasoningEffort?: CodexReasoningEffort | null;
+}
+
+export interface RetryIntakePlanGenerationInput extends IntakeActionInput, RetryIntakePlanGenerationOptions {}
+
+export interface UpdateRequirementInput extends RecordIdInput, PlanGenerationInputFields {
   title?: string;
   body?: string;
   status?: string;
@@ -1033,11 +1371,30 @@ export interface ChatMessage {
 
 export interface ChatToolCall { name: string; args: Record<string, unknown>; }
 
+export interface ChatToolErrorResult {
+  error?: string;
+  errorCode?: string;
+  [key: string]: unknown;
+}
+
+export interface ChatPlanToolResult extends ChatToolErrorResult {
+  type: 'plan';
+  id: number | null;
+  title: string;
+  status: string;
+  totalTasks: number;
+  filePath: string;
+  projectId?: number | null;
+  openable?: boolean;
+}
+
+export type ChatKnownToolResult = ChatPlanToolResult | ChatToolErrorResult | Record<string, unknown>;
+
 export type ChatStreamPhase = 'idle' | 'thinking' | 'replying';
 
 /**
  * 对话中「打开需求/反馈」的可打开引用。
- * 工具结果富化（create_*/open_* 的 type/projectId/id）与「打开需求 #N」意图直达共用此契约。
+ * 工具结果富化（create 与 open 系列工具的 type/projectId/id）与「打开需求 #N」意图直达共用此契约。
  */
 export type ChatIntakeOpenRef = {
   type: IntakeType;
@@ -1084,7 +1441,7 @@ export type ChatChunkEvent =
   | { type: 'thinking_end' }
   | { type: 'text_delta'; content: string }
   | { type: 'tool_start'; name: string; args: Record<string, unknown> }
-  | { type: 'tool_result'; name: string; result: Record<string, unknown> }
+  | { type: 'tool_result'; name: string; result: ChatKnownToolResult }
   | { type: 'error'; message: string }
   | { type: 'status'; status: string };
 
@@ -1184,6 +1541,31 @@ export interface FileAccessSaveInput { scope?: FileAccessScope; allowCrossProjec
 /** file-access:save 返回：warned 表示已保存为 all 范围（高风险） */
 export interface FileAccessSaveResult { saved: boolean; warned?: boolean; }
 
+/** 终端模块（需求 #55）：仅描述 renderer 可见的可序列化对象，不包含 PTY/进程句柄 */
+export type TerminalStatus = 'starting' | 'running' | 'exited' | 'killed' | 'error' | string;
+export type TerminalProfileKind = 'default' | 'custom' | string;
+export type TerminalEnvInput = Record<string, string | number | boolean | null | undefined>;
+export interface TerminalProfile { id: string; name: string; kind: TerminalProfileKind; shellPath: string; args: string[]; env: Record<string, string>; }
+export interface TerminalSession { id: string; projectId: number | string; title: string; cwd: string; shell: string; status: TerminalStatus; createdAt: string; endedAt: string | null; exitCode: number | null; cols: number | null; rows: number | null; profile: TerminalProfile; }
+export interface TerminalProfileInput { id?: string; profileId?: string; name?: string; label?: string; kind?: TerminalProfileKind; shellPath?: string; shell?: string; path?: string; args?: string[]; env?: TerminalEnvInput; }
+export interface TerminalCreateInput { projectId: number; cwd?: string; profileId?: string; profile?: string | TerminalProfileInput; title?: string; cols?: number; rows?: number; env?: TerminalEnvInput; }
+export interface TerminalSessionIdInput { sessionId: string; }
+export interface TerminalWriteInput extends TerminalSessionIdInput { data: string; }
+export interface TerminalResizeInput extends TerminalSessionIdInput { cols: number; rows: number; }
+export interface TerminalRenameInput extends TerminalSessionIdInput { title: string; }
+export interface TerminalErrorResult { ok: false; code: string; message: string; details?: string; }
+export type TerminalSessionResult = { ok: true; session: TerminalSession } | TerminalErrorResult;
+export type TerminalListResult = { ok: true; sessions: TerminalSession[] } | TerminalErrorResult;
+export type TerminalReplayResult = { ok: true; session: TerminalSession; chunks: string[]; data: string } | TerminalErrorResult;
+export interface TerminalEvent {
+  sessionId: string;
+  projectId: number | string;
+  session: TerminalSession;
+  data?: string;
+  exitCode?: number | null;
+  signal?: string | null;
+}
+
 export interface AutoplanApi {
   mcpToolNames: McpToolName[];
   snapshot: (projectId?: number | null) => Promise<AppSnapshot>;
@@ -1199,6 +1581,8 @@ export interface AutoplanApi {
   mcpStatus: (input?: ProjectIdInput | null) => Promise<AppSnapshot>;
   saveMcpConfig: (config: McpConfigInput) => Promise<AppSnapshot>;
   readPlan: (input: ReadPlanInput) => Promise<ReadPlanResult>;
+  stopPlan: (input: PlanIdInput) => Promise<AppSnapshot>;
+  deletePlan: (input: PlanIdInput) => Promise<AppSnapshot>;
   runTask: (input: TaskIdInput) => Promise<AppSnapshot>;
   stopTask: (input: TaskIdInput) => Promise<AppSnapshot>;
   acceptItem: (input: AcceptanceItemInput) => Promise<AppSnapshot>;
@@ -1214,6 +1598,7 @@ export interface AutoplanApi {
   interruptIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
   resumeIntake: (input: IntakeActionInput) => Promise<AppSnapshot>;
   appendIntakeTask: (input: IntakeActionInput) => Promise<AppSnapshot>;
+  retryIntakePlanGeneration: (input: RetryIntakePlanGenerationInput) => Promise<AppSnapshot>;
   createScript: (input: CreateScriptInput) => Promise<AppSnapshot>;
   updateScript: (input: UpdateScriptInput) => Promise<AppSnapshot>;
   deleteScript: (input: ScriptIdInput) => Promise<AppSnapshot>;
@@ -1221,9 +1606,29 @@ export interface AutoplanApi {
   runScript: (input: ScriptIdInput) => Promise<ScriptRunResult>;
   stopScript: (input: ScriptIdInput) => Promise<AppSnapshot>;
   pickScriptFile: (input?: { runtime?: ScriptRuntime }) => Promise<string | null>;
+  pickTasksJson: () => Promise<string | null>;
+  createExecutor: (input: ExecutorInput) => Promise<AppSnapshot>;
+  updateExecutor: (input: UpdateExecutorInput) => Promise<AppSnapshot>;
+  deleteExecutor: (input: ExecutorIdInput) => Promise<AppSnapshot>;
+  toggleExecutor: (input: ExecutorIdInput) => Promise<AppSnapshot>;
+  runExecutor: (input: ExecutorIdInput) => Promise<ExecutorRunResult>;
+  stopExecutor: (input: ExecutorIdInput) => Promise<AppSnapshot>;
+  /** 触发 plugin 执行器生命周期动作（start/reload/stop） */
+  runExecutorAction: (input: RunExecutorPluginActionInput) => Promise<ExecutorRunResult>;
+  importTasksJson: (input: ExecutorImportTasksJsonInput) => Promise<ExecutorImportTasksJsonResult>;
+  createTerminal: (input: TerminalCreateInput) => Promise<TerminalSessionResult>;
+  listTerminals: (input: ProjectIdInput) => Promise<TerminalListResult>;
+  writeTerminal: (input: TerminalWriteInput) => Promise<TerminalSessionResult>;
+  resizeTerminal: (input: TerminalResizeInput) => Promise<TerminalSessionResult>;
+  killTerminal: (input: TerminalSessionIdInput) => Promise<TerminalSessionResult>;
+  closeTerminal: (input: TerminalSessionIdInput) => Promise<TerminalSessionResult>;
+  renameTerminal: (input: TerminalRenameInput) => Promise<TerminalSessionResult>;
+  replayTerminal: (input: TerminalSessionIdInput) => Promise<TerminalReplayResult>;
+  clearTerminal: (input: TerminalSessionIdInput) => Promise<TerminalSessionResult>;
   getDroppedFilePath: (file: File) => string;
   toFileUrl: (filePath: string) => string;
   onLoopUpdate: (handler: (snapshot: AppSnapshot) => void) => () => void;
+  onLoopPatch: (handler: (patch: WorkspaceSnapshotPatch) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   openProjectFolder: (input: ProjectIdInput) => Promise<{ ok: boolean; error: string | null }>;
   updateStatus: () => Promise<UpdateStatus>;
@@ -1232,6 +1637,9 @@ export interface AutoplanApi {
   setAutoUpdateCheck: (enabled: boolean) => Promise<UpdateStatus>;
   onUpdateStatus: (handler: (status: UpdateStatus) => void) => () => void;
   openExternal: (url: string) => Promise<{ ok: boolean; error: string | null }>;
+  onTerminalData: (handler: (event: TerminalEvent & { data: string }) => void) => () => void;
+  onTerminalExit: (handler: (event: TerminalEvent) => void) => () => void;
+  onTerminalStatus: (handler: (event: TerminalEvent) => void) => () => void;
   // Chat 对话模块（需求 #26 / #28）
   chatSend: (payload: ChatSendPayload) => Promise<{ accepted: boolean; conversationId?: number; error?: string }>;
   chatStop: (payload: ChatStopPayload) => Promise<{ stopped: boolean; error?: string }>;

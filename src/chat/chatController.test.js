@@ -555,6 +555,50 @@ const testTools = [
   },
 ];
 
+const strictCreatePlanTool = {
+  name: 'create_plan',
+  description: 'Create a structured AutoPlan plan',
+  strict: true,
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      title: { type: 'string' },
+      summary: { type: 'string' },
+      tasks: {
+        type: 'array',
+        minItems: 1,
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            title: { type: 'string' },
+            scope: { type: 'string' },
+            acceptancePoints: {
+              type: 'array',
+              minItems: 1,
+              items: { type: 'string' },
+            },
+          },
+          required: ['title', 'scope', 'acceptancePoints'],
+        },
+      },
+      overallAcceptance: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          commands: { type: 'array', items: { type: 'string' }, minItems: 1 },
+          scope: { type: 'string' },
+          passCriteria: { type: 'array', items: { type: 'string' }, minItems: 1 },
+        },
+        required: ['commands', 'scope', 'passCriteria'],
+      },
+    },
+    required: ['title', 'summary', 'tasks', 'overallAcceptance'],
+  },
+  handler: async () => ({ type: 'plan', id: 1, title: 'Plan', status: 'pending', totalTasks: 2, filePath: 'docs/plan/plan.md' }),
+};
+
 
 describe('单轮纯文本对话', () => {
   it('send → LLM 返回文本 → assistant 落库 → onDone done', async () => {
@@ -761,6 +805,53 @@ describe('单轮纯文本对话', () => {
     assert.equal(cfg.tools.length, 1);
     assert.equal(cfg.tools[0].function.name, 'read_file');
     assert.ok(cfg.signal, '应传入 AbortSignal');
+  });
+
+  it('OpenAI 工具格式保留 strict 与严格 JSON Schema 约束', async () => {
+    const db = createMemoryDb();
+    const llm = textResponseStub('ok');
+    const col = createCollector();
+    const ctrl = createChatController({
+      db, llmClient: llm, chatTools: [strictCreatePlanTool], projectId: 1, workspacePath: '/tmp',
+      onEvent: col.onEvent, onDone: col.onDone,
+    });
+
+    ctrl.send('create plan');
+    await col.waitForDone();
+
+    const tool = llm.lastConfig.tools[0];
+    assert.equal(tool.type, 'function');
+    assert.equal(tool.function.name, 'create_plan');
+    assert.equal(tool.function.strict, true);
+    assert.equal(tool.function.parameters.additionalProperties, false);
+    assert.deepEqual(tool.function.parameters.required, ['title', 'summary', 'tasks', 'overallAcceptance']);
+    assert.equal(tool.function.parameters.properties.tasks.minItems, 1);
+    assert.equal(tool.function.parameters.properties.tasks.items.additionalProperties, false);
+    assert.deepEqual(tool.function.parameters.properties.tasks.items.required, ['title', 'scope', 'acceptancePoints']);
+  });
+
+  it('Anthropic 工具格式继续使用 input_schema，不转成 OpenAI function 包装', async () => {
+    const db = createMemoryDb(chatSettings({
+      'chat.provider': 'anthropic',
+      'chat.baseUrl': 'https://api.anthropic.com',
+      'chat.model': 'claude-sonnet-4-6',
+    }));
+    const llm = textResponseStub('ok');
+    const col = createCollector();
+    const ctrl = createChatController({
+      db, llmClient: llm, chatTools: [strictCreatePlanTool], projectId: 1, workspacePath: '/tmp',
+      onEvent: col.onEvent, onDone: col.onDone,
+    });
+
+    ctrl.send('create plan');
+    await col.waitForDone();
+
+    const tool = llm.lastConfig.tools[0];
+    assert.equal(tool.name, 'create_plan');
+    assert.equal(tool.function, undefined);
+    assert.equal(tool.type, undefined);
+    assert.equal(tool.input_schema.additionalProperties, false);
+    assert.equal(tool.input_schema.properties.tasks.items.additionalProperties, false);
   });
 });
 

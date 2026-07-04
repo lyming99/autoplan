@@ -1,15 +1,48 @@
-import { FormEvent, useMemo, useState } from 'react';
+import { FormEvent, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import type { CreateProjectInput, Project } from '../types';
 import { useSnapshot } from '../hooks/useSnapshot';
-import { agentCliProviderLabel } from '../components/shared';
+import { planExecutionSummaryLabel, planGenerationSummaryLabel } from '../components/shared';
+import {
+  codexReasoningOptionDetails,
+  defaultCodexReasoningEffort,
+  isBuiltinPlanExecutionStrategy,
+  isBuiltinPlanGenerationStrategy,
+  isCodexPlanBackendProvider,
+  normalizeCodexReasoningEffort,
+  normalizePlanBackendProvider,
+  normalizePlanExecutionStrategy,
+  normalizePlanGenerationStrategy,
+  planBackendDefaultCommand,
+  planBackendDefaultModel,
+  planBackendProviderOptionsForStrategy,
+  planExecutionStrategyOptions,
+  planGenerationStrategyOptions,
+} from '../utils/workspaceForms';
 import { formatChinaDateTime } from '../utils/time';
 import { UpdateNotice } from '../components/UpdateNotice';
 
 type Draft = CreateProjectInput & { id?: number };
 
-const emptyDraft: Draft = { name: '', workspacePath: '', description: '', agentCliProvider: 'codex' };
+const emptyDraft: Draft = {
+  name: '',
+  workspacePath: '',
+  description: '',
+  agentCliProvider: 'codex',
+  agentCliCommand: '',
+  codexReasoningEffort: defaultCodexReasoningEffort,
+  planGenerationStrategy: 'external-cli-markdown',
+  planGenerationProvider: 'codex',
+  planGenerationCommand: '',
+  planGenerationModel: '',
+  planGenerationCodexReasoningEffort: defaultCodexReasoningEffort,
+  planExecutionStrategy: 'external-cli',
+  planExecutionProvider: 'codex',
+  planExecutionCommand: '',
+  planExecutionModel: '',
+  planExecutionCodexReasoningEffort: defaultCodexReasoningEffort,
+};
 
 export function ProjectsPage() {
   const navigate = useNavigate();
@@ -37,19 +70,12 @@ export function ProjectsPage() {
   };
 
   const openCreate = () => {
-    setDraft(emptyDraft);
+    setDraft({ ...emptyDraft });
     setModalOpen(true);
   };
 
   const openEdit = (project: Project) => {
-    setDraft({
-      id: project.id,
-      name: project.name,
-      workspacePath: project.workspace_path,
-      description: project.description,
-      agentCliProvider: project.agent_cli_provider || 'codex',
-      agentCliCommand: project.agent_cli_command || '',
-    });
+    setDraft(projectDraftFromProject(project));
     setModalOpen(true);
   };
 
@@ -81,24 +107,13 @@ export function ProjectsPage() {
     if (!draft.name.trim()) return;
     try {
       const description = (draft.description || '').trim();
-      const agentCliProvider = draft.agentCliProvider || 'codex';
-      const agentCliCommand = (draft.agentCliCommand || '').trim();
+      const projectPayload = projectInputFromDraft(draft, description);
       const next = draft.id
         ? await window.autoplan.updateProject({
             id: draft.id,
-            name: draft.name.trim(),
-            workspacePath: draft.workspacePath.trim(),
-            description,
-            agentCliProvider,
-            agentCliCommand,
+            ...projectPayload,
           })
-        : await window.autoplan.createProject({
-            name: draft.name.trim(),
-            workspacePath: draft.workspacePath.trim(),
-            description,
-            agentCliProvider,
-            agentCliCommand,
-          });
+        : await window.autoplan.createProject(projectPayload);
       setSnapshot(next);
       setModalOpen(false);
       setError(null);
@@ -238,7 +253,12 @@ export function ProjectsPage() {
                 <div className="project-loop-status">
                   <span className={`led ${project.running ? 'running' : 'stopped'}`} />
                   <span>{projectStatusText(project)}</span>
-                  <span className="project-cli-badge">{agentCliProviderLabel(project.agent_cli_provider)}</span>
+                  <span className="project-cli-badge" title={planGenerationSummaryLabel(project)}>
+                    生成 · {planGenerationSummaryLabel(project)}
+                  </span>
+                  <span className="project-cli-badge" title={planExecutionSummaryLabel(project)}>
+                    执行 · {planExecutionSummaryLabel(project)}
+                  </span>
                   <span className="project-loop-interval">{project.interval_seconds || 5}s</span>
                 </div>
                 <div className="project-meta">#{project.id} · 更新于 {formatChinaDateTime(project.updated_at)}</div>
@@ -292,19 +312,10 @@ export function ProjectsPage() {
                   placeholder="一句话描述这个项目"
                 />
               </label>
-              <label className="field">
-                CLI 后端
-                <select
-                  value={draft.agentCliProvider}
-                  onChange={(event) => setDraft((current) => ({ ...current, agentCliProvider: event.target.value }))}
-                >
-                  <option value="codex">Codex CLI</option>
-                  <option value="claude">Claude CLI</option>
-                </select>
-                {draft.agentCliProvider === 'claude' ? (
-                  <small className="field-hint">需本机已安装 claude CLI 并完成认证</small>
-                ) : null}
-              </label>
+              <div className="project-backend-form-grid">
+                <ProjectBackendDraftFields kind="generation" draft={draft} setDraft={setDraft} />
+                <ProjectBackendDraftFields kind="execution" draft={draft} setDraft={setDraft} />
+              </div>
               <div className="modal-foot">
                 <button type="button" className="btn" onClick={() => setModalOpen(false)}>
                   取消
@@ -343,6 +354,235 @@ export function ProjectsPage() {
       ) : null}
     </>
   );
+}
+
+function projectDraftFromProject(project: Project): Draft {
+  const legacyProvider = String(project.agent_cli_provider || 'codex');
+  const legacyCommand = project.agent_cli_command || '';
+  const legacyReasoning = normalizeCodexReasoningEffort(project.codex_reasoning_effort);
+  const planGenerationStrategy = normalizePlanGenerationStrategy(project.plan_generation_strategy);
+  const planGenerationProvider = normalizePlanBackendProvider(
+    project.plan_generation_provider || legacyProvider,
+    planGenerationStrategy,
+  );
+  const planExecutionStrategy = normalizePlanExecutionStrategy(project.plan_execution_strategy);
+  const planExecutionProvider = normalizePlanBackendProvider(
+    project.plan_execution_provider || legacyProvider,
+    planExecutionStrategy,
+  );
+  return {
+    ...emptyDraft,
+    id: project.id,
+    name: project.name,
+    workspacePath: project.workspace_path,
+    description: project.description,
+    agentCliProvider: legacyProvider,
+    agentCliCommand: legacyCommand,
+    codexReasoningEffort: legacyReasoning,
+    planGenerationStrategy,
+    planGenerationProvider,
+    planGenerationCommand: project.plan_generation_command || legacyCommand,
+    planGenerationModel: project.plan_generation_model || (isBuiltinPlanGenerationStrategy(planGenerationStrategy) ? planBackendDefaultModel(planGenerationProvider) : ''),
+    planGenerationCodexReasoningEffort: normalizeCodexReasoningEffort(
+      project.plan_generation_codex_reasoning_effort || legacyReasoning,
+    ),
+    planExecutionStrategy,
+    planExecutionProvider,
+    planExecutionCommand: project.plan_execution_command || legacyCommand,
+    planExecutionModel: project.plan_execution_model || (isBuiltinPlanExecutionStrategy(planExecutionStrategy) ? planBackendDefaultModel(planExecutionProvider) : ''),
+    planExecutionCodexReasoningEffort: normalizeCodexReasoningEffort(
+      project.plan_execution_codex_reasoning_effort || legacyReasoning,
+    ),
+  };
+}
+
+function projectInputFromDraft(draft: Draft, description: string): CreateProjectInput {
+  const planGenerationStrategy = normalizePlanGenerationStrategy(draft.planGenerationStrategy);
+  const planGenerationProvider = normalizePlanBackendProvider(draft.planGenerationProvider, planGenerationStrategy);
+  const planExecutionStrategy = normalizePlanExecutionStrategy(draft.planExecutionStrategy);
+  const planExecutionProvider = normalizePlanBackendProvider(draft.planExecutionProvider, planExecutionStrategy);
+  const legacyProvider = planExecutionStrategy === 'external-cli' ? planExecutionProvider : 'codex';
+  const legacyCommand = planExecutionStrategy === 'external-cli' ? String(draft.planExecutionCommand || '').trim() : '';
+  const legacyReasoning = legacyProvider === 'codex'
+    ? normalizeCodexReasoningEffort(draft.planExecutionCodexReasoningEffort)
+    : undefined;
+  return {
+    name: draft.name.trim(),
+    workspacePath: draft.workspacePath.trim(),
+    description,
+    agentCliProvider: legacyProvider,
+    agentCliCommand: legacyCommand,
+    ...(legacyReasoning ? { codexReasoningEffort: legacyReasoning } : {}),
+    planGenerationStrategy,
+    planGenerationProvider,
+    planGenerationCommand: isBuiltinPlanGenerationStrategy(planGenerationStrategy)
+      ? ''
+      : String(draft.planGenerationCommand || '').trim(),
+    planGenerationModel: isBuiltinPlanGenerationStrategy(planGenerationStrategy)
+      ? (String(draft.planGenerationModel || '').trim() || planBackendDefaultModel(planGenerationProvider))
+      : '',
+    planGenerationCodexReasoningEffort: isCodexPlanBackendProvider(planGenerationProvider)
+      ? normalizeCodexReasoningEffort(draft.planGenerationCodexReasoningEffort)
+      : null,
+    planExecutionStrategy,
+    planExecutionProvider,
+    planExecutionCommand: isBuiltinPlanExecutionStrategy(planExecutionStrategy)
+      ? ''
+      : String(draft.planExecutionCommand || '').trim(),
+    planExecutionModel: isBuiltinPlanExecutionStrategy(planExecutionStrategy)
+      ? (String(draft.planExecutionModel || '').trim() || planBackendDefaultModel(planExecutionProvider))
+      : '',
+    planExecutionCodexReasoningEffort: isCodexPlanBackendProvider(planExecutionProvider)
+      ? normalizeCodexReasoningEffort(draft.planExecutionCodexReasoningEffort)
+      : null,
+  };
+}
+
+function ProjectBackendDraftFields({
+  kind,
+  draft,
+  setDraft,
+}: {
+  kind: 'generation' | 'execution';
+  draft: Draft;
+  setDraft: Dispatch<SetStateAction<Draft>>;
+}) {
+  const isGeneration = kind === 'generation';
+  const strategy = isGeneration
+    ? normalizePlanGenerationStrategy(draft.planGenerationStrategy)
+    : normalizePlanExecutionStrategy(draft.planExecutionStrategy);
+  const provider = normalizePlanBackendProvider(
+    isGeneration ? draft.planGenerationProvider : draft.planExecutionProvider,
+    strategy,
+  );
+  const isBuiltin = isGeneration ? isBuiltinPlanGenerationStrategy(strategy) : isBuiltinPlanExecutionStrategy(strategy);
+  const providerOptions = planBackendProviderOptionsForStrategy(strategy);
+  const title = isGeneration ? '计划生成默认' : '计划执行默认';
+  const command = isGeneration ? draft.planGenerationCommand || '' : draft.planExecutionCommand || '';
+  const model = isGeneration ? draft.planGenerationModel || '' : draft.planExecutionModel || '';
+  const reasoning = normalizeCodexReasoningEffort(
+    isGeneration ? draft.planGenerationCodexReasoningEffort : draft.planExecutionCodexReasoningEffort,
+  );
+
+  const setStrategy = (value: string) => {
+    setDraft((current) => {
+      if (isGeneration) {
+        const nextStrategy = normalizePlanGenerationStrategy(value);
+        const nextProvider = normalizePlanBackendProvider(current.planGenerationProvider, nextStrategy);
+        return {
+          ...current,
+          planGenerationStrategy: nextStrategy,
+          planGenerationProvider: nextProvider,
+          planGenerationModel: isBuiltinPlanGenerationStrategy(nextStrategy)
+            ? current.planGenerationModel || planBackendDefaultModel(nextProvider)
+            : current.planGenerationModel,
+        };
+      }
+      const nextStrategy = normalizePlanExecutionStrategy(value);
+      const nextProvider = normalizePlanBackendProvider(current.planExecutionProvider, nextStrategy);
+      return {
+        ...current,
+        planExecutionStrategy: nextStrategy,
+        planExecutionProvider: nextProvider,
+        planExecutionModel: isBuiltinPlanExecutionStrategy(nextStrategy)
+          ? current.planExecutionModel || planBackendDefaultModel(nextProvider)
+          : current.planExecutionModel,
+      };
+    });
+  };
+
+  const setProvider = (value: string) => {
+    setDraft((current) => {
+      if (isGeneration) {
+        const nextProvider = normalizePlanBackendProvider(value, current.planGenerationStrategy);
+        return {
+          ...current,
+          planGenerationProvider: nextProvider,
+          planGenerationModel: isBuiltinPlanGenerationStrategy(current.planGenerationStrategy)
+            ? nextModelForProvider(current.planGenerationModel || '', String(current.planGenerationProvider || ''), nextProvider)
+            : current.planGenerationModel,
+        };
+      }
+      const nextProvider = normalizePlanBackendProvider(value, current.planExecutionStrategy);
+      return {
+        ...current,
+        planExecutionProvider: nextProvider,
+        planExecutionModel: isBuiltinPlanExecutionStrategy(current.planExecutionStrategy)
+          ? nextModelForProvider(current.planExecutionModel || '', String(current.planExecutionProvider || ''), nextProvider)
+          : current.planExecutionModel,
+      };
+    });
+  };
+
+  return (
+    <div className="project-backend-form">
+      <div className="project-backend-form-title">{title}</div>
+      <label className="field">
+        策略
+        <select value={strategy} onChange={(event) => setStrategy(event.target.value)}>
+          {(isGeneration ? planGenerationStrategyOptions : planExecutionStrategyOptions).map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        Provider
+        <select value={provider} onChange={(event) => setProvider(event.target.value)}>
+          {providerOptions.map((option) => (
+            <option key={option.value} value={option.value}>{option.label}</option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        {isBuiltin ? '模型名称' : 'CLI 命令路径'}
+        <input
+          className="field-input mono"
+          value={isBuiltin ? model : command}
+          onChange={(event) =>
+            setDraft((current) => {
+              if (isGeneration) {
+                return isBuiltin
+                  ? { ...current, planGenerationModel: event.target.value }
+                  : { ...current, planGenerationCommand: event.target.value };
+              }
+              return isBuiltin
+                ? { ...current, planExecutionModel: event.target.value }
+                : { ...current, planExecutionCommand: event.target.value };
+            })
+          }
+          placeholder={isBuiltin ? planBackendDefaultModel(provider) : planBackendDefaultCommand(provider)}
+        />
+        {!isGeneration && isBuiltin ? (
+          <span className="field-hint">阶段一仅保存配置；执行任务时后端会明确提示暂不支持。</span>
+        ) : null}
+      </label>
+      {isCodexPlanBackendProvider(provider) ? (
+        <label className="field">
+          Codex 思考深度
+          <select
+            value={reasoning}
+            onChange={(event) =>
+              setDraft((current) => (
+                isGeneration
+                  ? { ...current, planGenerationCodexReasoningEffort: normalizeCodexReasoningEffort(event.target.value) }
+                  : { ...current, planExecutionCodexReasoningEffort: normalizeCodexReasoningEffort(event.target.value) }
+              ))
+            }
+          >
+            {codexReasoningOptionDetails.map((option) => (
+              <option key={option.value} value={option.value}>{option.label}</option>
+            ))}
+          </select>
+        </label>
+      ) : null}
+    </div>
+  );
+}
+
+function nextModelForProvider(currentModel: string, currentProvider: string, nextProvider: string) {
+  const current = String(currentModel || '').trim();
+  if (!current || current === planBackendDefaultModel(currentProvider)) return planBackendDefaultModel(nextProvider);
+  return currentModel;
 }
 
 function projectStatusText(project: Project) {

@@ -6,10 +6,13 @@ const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } = requ
 const { saveAttachments } = require('./attachments');
 const { AppDatabase, nowIso } = require('./database');
 const { createIntakeService, titleFromBody } = require('./intakeService');
-const { LoopService, nextIntakeAgentCliConfig } = require('./loopService');
+const { LoopService, nextIntakeAgentCliConfig, nextIntakePlanGenerationConfig } = require('./loopService');
 const { parseCron } = require('./loop/scriptHooks');
+const { createExecutorStore } = require('./executors/executorStore');
 const { mcpServerConfig, saveMcpSettings } = require('./mcpConfig');
 const { createMcpServer } = require('./mcpServer');
+const { registerTerminalIpc } = require('./terminal/terminalIpc');
+const { TerminalService } = require('./terminal/terminalService');
 const { createUpdateChecker } = require('./updateChecker');
 const { createLlmClient } = require('./chat/llmClient');
 const { getChatToolDefinitions } = require('./chat/chatTools');
@@ -51,6 +54,7 @@ let loop;
 let mcpServer;
 let updateChecker;
 let chatControllers;
+let terminalService;
 let fileProtocolRegistered = false;
 const UPDATE_REPO = 'lyming99/autoplan';
 
@@ -61,9 +65,21 @@ async function createApp() {
   registerFileProtocol();
   loop = new LoopService(db);
   chatControllers = new Map();
+  terminalService = new TerminalService();
+  registerTerminalIpc({
+    ipcMain,
+    terminalService,
+    getProject: (projectId) => loop.project(projectId),
+    sendToRenderer: sendToRendererWindow,
+  });
   loop.on('update', (snapshot) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       mainWindow.webContents.send('loop:update', snapshot);
+    }
+  });
+  loop.on('patch', (patch) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('loop:patch', patch);
     }
   });
   // 模块级 mcpServer 在启停过程中被重新赋值，故以闭包懒读取其最新状态注入快照。
@@ -97,6 +113,7 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
+  if (terminalService) terminalService.disposeAll();
   if (loop) loop.stop();
   if (updateChecker) updateChecker.stop();
 });
@@ -152,9 +169,11 @@ function defaultUpdateStatus() {
 }
 
 function broadcastUpdateStatus() {
-  if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('updates:status', updateChecker ? updateChecker.status() : defaultUpdateStatus());
-  }
+  sendToRendererWindow('updates:status', updateChecker ? updateChecker.status() : defaultUpdateStatus());
+}
+
+function sendToRendererWindow(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
 }
 
 function scheduleUpdateCheck() {
@@ -179,6 +198,16 @@ ipcMain.handle('plans:reorder', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const planIds = Array.isArray(input.planIds) ? input.planIds : input.plan_ids;
   return loop.reorderPlans(projectId, planIds);
+});
+
+ipcMain.handle('plans:stop', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return loop.stopPlan(projectId, requiredRecordId(input, 'planId'));
+});
+
+ipcMain.handle('plans:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return loop.deletePlan(projectId, requiredRecordId(input, 'planId'), input.options || {});
 });
 
 ipcMain.handle('workspace:openFile', async (_event, input = {}) => openWorkspaceFile(input));
@@ -212,6 +241,7 @@ ipcMain.handle('projects:delete', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   const state = loop.status(projectId);
   if (state && state.running) throw new Error('请先停止该项目循环再删除');
+  if (terminalService) terminalService.disposeProject(projectId);
   loop.stop(projectId);
   const taskIds = db
     .all('SELECT id FROM plans WHERE project_id = ?', [projectId])
@@ -334,9 +364,21 @@ ipcMain.handle('requirements:update', (_event, input = {}) => {
   if (!current) throw new Error('需求不存在');
   const body = input.body ?? current.body ?? '';
   const agentCliConfig = nextIntakeAgentCliConfig(current, input);
+  const planGenerationConfig = nextIntakePlanGenerationConfig(current, input);
   db.run(
     `UPDATE requirements
-     SET title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+     SET title = ?,
+         body = ?,
+         status = ?,
+         agent_cli_provider = ?,
+         agent_cli_command = ?,
+         codex_reasoning_effort = ?,
+         plan_generation_strategy = ?,
+         plan_generation_provider = ?,
+         plan_generation_command = ?,
+         plan_generation_model = ?,
+         plan_generation_codex_reasoning_effort = ?,
+         updated_at = ?
      WHERE id = ? AND project_id = ?`,
     [
       input.title ?? titleFromBody(body, '未命名需求'),
@@ -345,6 +387,11 @@ ipcMain.handle('requirements:update', (_event, input = {}) => {
       agentCliConfig.provider,
       agentCliConfig.command,
       agentCliConfig.codexReasoningEffort,
+      planGenerationConfig.strategy,
+      planGenerationConfig.provider,
+      planGenerationConfig.command,
+      planGenerationConfig.model,
+      planGenerationConfig.codexReasoningEffort,
       nowIso(),
       id,
       projectId,
@@ -371,9 +418,22 @@ ipcMain.handle('feedback:update', (_event, input = {}) => {
   if (!current) throw new Error('反馈不存在');
   const body = input.body ?? current.body ?? '';
   const agentCliConfig = nextIntakeAgentCliConfig(current, input);
+  const planGenerationConfig = nextIntakePlanGenerationConfig(current, input);
   db.run(
     `UPDATE feedback
-     SET requirement_id = ?, title = ?, body = ?, status = ?, agent_cli_provider = ?, agent_cli_command = ?, codex_reasoning_effort = ?, updated_at = ?
+     SET requirement_id = ?,
+         title = ?,
+         body = ?,
+         status = ?,
+         agent_cli_provider = ?,
+         agent_cli_command = ?,
+         codex_reasoning_effort = ?,
+         plan_generation_strategy = ?,
+         plan_generation_provider = ?,
+         plan_generation_command = ?,
+         plan_generation_model = ?,
+         plan_generation_codex_reasoning_effort = ?,
+         updated_at = ?
      WHERE id = ? AND project_id = ?`,
     [
       input.requirementId === undefined ? current.requirement_id || null : input.requirementId || null,
@@ -383,6 +443,11 @@ ipcMain.handle('feedback:update', (_event, input = {}) => {
       agentCliConfig.provider,
       agentCliConfig.command,
       agentCliConfig.codexReasoningEffort,
+      planGenerationConfig.strategy,
+      planGenerationConfig.provider,
+      planGenerationConfig.command,
+      planGenerationConfig.model,
+      planGenerationConfig.codexReasoningEffort,
       nowIso(),
       id,
       projectId,
@@ -401,37 +466,27 @@ ipcMain.handle('feedback:delete', (_event, input = {}) => {
 // 中断需求/反馈关联的计划任务
 ipcMain.handle('intake:interrupt', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  const table = input.type === 'feedback' ? 'feedback' : 'requirements';
-  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
-    requiredRecordId(input),
-    projectId,
-  ]);
-  if (rec?.linked_plan_id) loop.interruptPlan(projectId, rec.linked_plan_id);
+  loop.interruptIntakePlans(projectId, normalizeIntakeType(input.type), requiredRecordId(input));
   return loop.snapshot(projectId);
 });
 
 // 恢复被中断的计划
 ipcMain.handle('intake:resume', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  const table = input.type === 'feedback' ? 'feedback' : 'requirements';
-  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
-    requiredRecordId(input),
-    projectId,
-  ]);
-  if (rec?.linked_plan_id) loop.resumePlan(projectId, rec.linked_plan_id);
+  loop.resumeIntakePlans(projectId, normalizeIntakeType(input.type), requiredRecordId(input));
   return loop.snapshot(projectId);
 });
 
 // 追加任务到需求/反馈关联的计划
 ipcMain.handle('intake:appendTask', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  const table = input.type === 'feedback' ? 'feedback' : 'requirements';
-  const rec = db.get(`SELECT linked_plan_id FROM ${table} WHERE id = ? AND project_id = ?`, [
-    requiredRecordId(input),
-    projectId,
-  ]);
-  if (!rec?.linked_plan_id) throw new Error('该需求/反馈尚未生成计划');
-  loop.appendTask(projectId, rec.linked_plan_id, input.title);
+  loop.appendTaskToIntakePlan(projectId, normalizeIntakeType(input.type), requiredRecordId(input), input.title);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('intake:retryGeneratePlan', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  await loop.retryIntakePlanGeneration(projectId, normalizeIntakeType(input.type), requiredRecordId(input), input);
   return loop.snapshot(projectId);
 });
 
@@ -554,6 +609,61 @@ ipcMain.handle('scripts:stop', (_event, input = {}) => {
   const scriptId = requiredRecordId(input, 'scriptId');
   loop.stopScript(projectId, scriptId);
   return loop.snapshot(projectId);
+});
+
+ipcMain.handle('executors:pickTasksJson', async () => (await dialog.showOpenDialog(mainWindow, {
+  properties: ['openFile'],
+  filters: [{ name: 'VS Code Tasks JSON', extensions: ['json'] }, { name: '所有文件', extensions: ['*'] }],
+}))?.filePaths?.[0] || null);
+
+ipcMain.handle('executors:create', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  executorStore().create(projectId, input);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('executors:update', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const executorId = requiredRecordId(input, 'executorId');
+  executorStore().update(projectId, executorId, input);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('executors:delete', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const executorId = requiredRecordId(input, 'executorId');
+  executorStore().delete(projectId, executorId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('executors:toggle', (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const executorId = requiredRecordId(input, 'executorId');
+  executorStore().toggle(projectId, executorId);
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('executors:run', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return loop.runExecutor(projectId, requiredRecordId(input, 'executorId'));
+});
+
+ipcMain.handle('executors:stop', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  await loop.stopExecutor(projectId, requiredRecordId(input, 'executorId'));
+  return loop.snapshot(projectId);
+});
+
+ipcMain.handle('executors:runAction', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  return loop.runExecutorAction(projectId, requiredRecordId(input, 'executorId'), input && input.action);
+});
+
+ipcMain.handle('executors:importTasksJson', async (_event, input = {}) => {
+  const projectId = requiredProjectId(input);
+  const tasksJson = await readExecutorTasksJsonInput(input);
+  const result = executorStore().importTasksJson(projectId, tasksJson);
+  return { ...result, snapshot: loop.snapshot(projectId) };
 });
 
 // ------------------------------------------------------- chat:* IPC（需求 #26）----------------------------------------------
@@ -764,7 +874,14 @@ function getOrCreateChatController(conversationId, projectId) {
   if (!project) throw new Error('项目不存在');
   const workspacePath = String(project.workspace_path || '').trim();
   if (!workspacePath) throw new Error('项目工作区路径为空');
-  const tools = getChatToolDefinitions({ db, projectId, workspacePath, intakeService: intakeService() });
+  const tools = getChatToolDefinitions({
+    db,
+    projectId,
+    workspacePath,
+    intakeService: intakeService(),
+    loopService: loop,
+    conversationId,
+  });
   // 局部广播闭包：复用 onEvent/onQueue/onDone，消除重复 mainWindow 守卫
   const send = (channel, data) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, data); };
   const controller = createChatController({
@@ -882,6 +999,25 @@ function attachmentsRoot() {
 
 function intakeService() {
   return createIntakeService({ db, loop, attachmentsRoot });
+}
+
+function executorStore() {
+  return createExecutorStore(db);
+}
+
+async function readExecutorTasksJsonInput(input = {}) {
+  const source = input && typeof input === 'object' ? input : {};
+  if (typeof source.content === 'string') return source.content;
+  if (typeof source.tasksJson === 'string') return source.tasksJson;
+  if (typeof source.json === 'string') return source.json;
+  if (Array.isArray(source.tasks)) return { version: source.version || '', tasks: source.tasks };
+
+  const filePath = String(source.filePath || source.path || '').trim();
+  if (!filePath) throw new Error('请选择 .vscode/tasks.json 文件或提供 tasks.json 内容');
+  const fileName = path.basename(filePath).toLowerCase();
+  if (fileName === 'launch.json') throw new Error('不支持导入 launch.json');
+  if (fileName !== 'tasks.json') throw new Error('仅支持导入 .vscode/tasks.json');
+  return fs.promises.readFile(filePath, 'utf8');
 }
 
 function scheduleMcpServerStart() { setTimeout(() => startMcpServer().catch((error) => recordMcpStartupError(error)), 0); }
@@ -1282,6 +1418,10 @@ function requiredRecordId(input = {}, key = 'id') {
   const id = Number(input[key] || input.id || 0);
   if (!id) throw new Error('记录不存在');
   return id;
+}
+
+function normalizeIntakeType(value) {
+  return value === 'feedback' ? 'feedback' : 'requirement';
 }
 
 function normalizeDraftIntakeInput(input = {}) {

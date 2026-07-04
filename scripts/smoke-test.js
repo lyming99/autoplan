@@ -7,6 +7,7 @@ const { saveAttachments } = require('../src/attachments');
 const { AppDatabase, nowIso } = require('../src/database');
 const { createIntakeService } = require('../src/intakeService');
 const { LoopService } = require('../src/loopService');
+const { renderPlanSpecMarkdown } = require('../src/loop/planRenderer');
 const { MCP_TOOL_NAMES, callMcpTool } = require('../src/mcpTools');
 const { createUpdateChecker } = require('../src/updateChecker');
 const {
@@ -75,6 +76,7 @@ async function main() {
     await assertAttachmentPersistenceSmoke(db, loop, tempRoot);
     await assertLoopConfigPersistenceSmoke(db, loop, tempRoot);
     await assertMcpToolsSmoke(db, loop, tempRoot);
+    await assertStructuredPlanBackendSmoke(db, loop, tempRoot);
     await assertIntakeLinkedPlanPreviewSmoke(db, loop, tempRoot);
     await assertIntakeCascadeDeletionSmoke(db, loop, tempRoot);
     assertAiConfigIpcSmoke(db, loop, projectId);
@@ -315,6 +317,7 @@ async function main() {
     assertScriptsModuleSourceSmoke();
     assertMcpControlSourceSmoke();
     assertAcceptanceModuleSourceSmoke();
+    assertTerminalModuleSourceSmoke();
     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
 
     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
@@ -932,6 +935,121 @@ function assertAcceptanceModuleSourceSmoke() {
   assert.match(acceptanceViewSource, /onUnacceptItems/, '验收视图应接收 onUnacceptItems 批量 props');
 }
 
+function assertTerminalModuleSourceSmoke() {
+  const packageManifest = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+  const packageLock = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package-lock.json'), 'utf8'));
+  const viteConfigSource = fs.readFileSync(path.join(__dirname, '..', 'vite.config.ts'), 'utf8');
+  const databaseSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'database.js'), 'utf8');
+  const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8');
+  const preloadSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'preload.js'), 'utf8');
+  const typeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'types.ts'), 'utf8');
+  const terminalTypesSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'terminal', 'terminalTypes.js'), 'utf8');
+  const terminalConfigSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'terminal', 'terminalConfig.js'), 'utf8');
+  const terminalIpcSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'terminal', 'terminalIpc.js'), 'utf8');
+  const terminalServiceSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'terminal', 'terminalService.js'), 'utf8');
+  const workspaceFormsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'utils', 'workspaceForms.ts'), 'utf8');
+  const terminalViewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceTerminalView.tsx'),
+    'utf8',
+  );
+  const terminalHookSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'hooks', 'useTerminalSessions.ts'), 'utf8');
+  const workspacePageSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'pages', 'WorkspacePage.tsx'), 'utf8');
+  const executorStoreSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'executors', 'executorStore.js'), 'utf8');
+
+  // 模块边界：终端常量、错误码和默认值集中在 terminalTypes，服务层不暴露 PTY 对象。
+  assert.match(terminalTypesSource, /CREATE: 'terminal:create'[\s\S]*STATUS: 'terminal:status'/, 'terminalTypes 应定义终端 IPC 与事件通道');
+  assert.match(terminalTypesSource, /PTY_UNAVAILABLE[\s\S]*CWD_OUTSIDE_WORKSPACE[\s\S]*SESSION_NOT_FOUND/, 'terminalTypes 应定义结构化错误码');
+  assert.match(terminalServiceSource, /class TerminalService extends EventEmitter/, 'terminalService 应提供事件化终端会话服务');
+  assert.match(terminalServiceSource, /function resolveTerminalCwd[\s\S]*isInsidePath\(workspace, cwd\)/, 'terminalService 应限制 cwd 位于项目工作区内');
+  assert.match(terminalServiceSource, /function appendScrollback\(session, text\)[\s\S]*while \(session\.scrollback\.length > session\.scrollbackLimit\)/, 'terminalService 应限制 scrollback 增长');
+  const publicSessionBody = terminalServiceSource.slice(
+    terminalServiceSource.indexOf('function publicSession'),
+    terminalServiceSource.indexOf('function appendScrollback'),
+  );
+  assert.doesNotMatch(publicSessionBody, /pty/, 'publicSession 不应暴露 PTY 对象');
+
+  // 主进程与 preload：IPC 注册、事件推送和 renderer API 暴露完整。
+  assert.match(mainSource, /const \{ registerTerminalIpc \} = require\('\.\/terminal\/terminalIpc'\);/, 'main 应导入终端 IPC 注册器');
+  assert.match(mainSource, /terminalService = new TerminalService\(\);[\s\S]*registerTerminalIpc\(\{[\s\S]*terminalService,[\s\S]*sendToRenderer: sendToRendererWindow/, 'main 应创建终端服务并注册 IPC');
+  assert.match(mainSource, /if \(terminalService\) terminalService\.disposeAll\(\);/, '应用退出应清理所有终端会话');
+  assert.match(mainSource, /if \(terminalService\) terminalService\.disposeProject\(projectId\);/, '删除项目应清理项目终端会话');
+  assert.match(terminalIpcSource, /ipcMain\.handle\(TERMINAL_CHANNELS\.CREATE[\s\S]*terminalService\.createSession/, 'terminalIpc 应注册 create 并调用服务层');
+  assert.match(terminalIpcSource, /terminalService\.on\(TERMINAL_CHANNELS\.DATA[\s\S]*send\(TERMINAL_CHANNELS\.DATA/, 'terminalIpc 应转发 data 事件');
+  assert.match(terminalIpcSource, /function safeTerminalSession[\s\S]*profile: safeTerminalProfile/, 'terminalIpc 应清洗 session 快照');
+  assert.match(preloadSource, /createTerminal: \(input\) => ipcRenderer\.invoke\('terminal:create', terminalCreatePayload\(input\)\)/, 'preload 应暴露 createTerminal');
+  assert.match(preloadSource, /writeTerminal: \(input\) => ipcRenderer\.invoke\('terminal:write', terminalWritePayload\(input\)\)/, 'preload 应暴露 writeTerminal');
+  assert.match(preloadSource, /onTerminalData: \(handler\) => \{[\s\S]*ipcRenderer\.on\('terminal:data'[\s\S]*removeListener\('terminal:data'/, 'preload 应暴露可清理的 terminal:data 订阅');
+  assert.match(preloadSource, /onTerminalExit: \(handler\) => \{[\s\S]*ipcRenderer\.on\('terminal:exit'[\s\S]*removeListener\('terminal:exit'/, 'preload 应暴露可清理的 terminal:exit 订阅');
+  assert.match(preloadSource, /onTerminalStatus: \(handler\) => \{[\s\S]*ipcRenderer\.on\('terminal:status'[\s\S]*removeListener\('terminal:status'/, 'preload 应暴露可清理的 terminal:status 订阅');
+
+  // 类型与快照：renderer API 和 AppSnapshot 带终端会话列表。
+  assert.match(typeSource, /export interface TerminalSession \{[\s\S]*profile: TerminalProfile;/, 'types 应定义 TerminalSession');
+  assert.match(typeSource, /interface AppSnapshot[\s\S]*terminals: TerminalSession\[\]/, 'AppSnapshot 应包含 terminals');
+  assert.match(typeSource, /createTerminal: \(input: TerminalCreateInput\) => Promise<TerminalSessionResult>;/, 'AutoplanApi 应声明 createTerminal');
+  assert.match(typeSource, /onTerminalStatus: \(handler: \(event: TerminalEvent\) => void\) => \(\) => void;/, 'AutoplanApi 应声明终端状态订阅');
+
+  // 配置：默认 profile、cwd、字号、scrollback、保留退出和停止确认通过 settings/config helper 管理。
+  assert.match(databaseSource, /'terminal\.defaultProfile': 'default'[\s\S]*'terminal\.confirmBeforeKill': 'true'/, 'database 应写入终端默认 settings');
+  assert.match(terminalConfigSource, /const DEFAULT_TERMINAL_SETTINGS = Object\.freeze\(\{[\s\S]*fontSize: 13[\s\S]*confirmBeforeKill: true/, 'terminalConfig 应定义最小终端设置默认值');
+  assert.match(terminalConfigSource, /function normalizeTerminalSettings/, 'terminalConfig 应提供终端设置归一化');
+  assert.match(terminalConfigSource, /function terminalSettingsFromDb/, 'terminalConfig 应提供 settings 表读取 helper');
+  assert.match(terminalConfigSource, /function saveTerminalSettingsToDb/, 'terminalConfig 应提供 settings 表保存 helper');
+  assert.match(terminalConfigSource, /function terminalCreateInputFromSettings/, 'terminalConfig 应提供 create input 合并 helper');
+
+  // 依赖解析：真实 xterm 渲染链路必须有运行时依赖、锁文件条目和 Vite 预构建配置。
+  const xtermRuntimeDependencies = {
+    '@xterm/addon-fit': { range: '^0.11.0', lockedVersion: '0.11.0' },
+    '@xterm/xterm': { range: '^6.0.0', lockedVersion: '6.0.0' },
+  };
+  for (const [dependencyName, expected] of Object.entries(xtermRuntimeDependencies)) {
+    assert.equal(packageManifest.dependencies?.[dependencyName], expected.range, `${dependencyName} 应保留在 dependencies 中`);
+    assert.equal(packageManifest.devDependencies?.[dependencyName], undefined, `${dependencyName} 不应移动到 devDependencies`);
+    assert.equal(packageLock.packages?.['']?.dependencies?.[dependencyName], expected.range, `${dependencyName} package-lock 根依赖应与 package.json 一致`);
+    const lockEntry = packageLock.packages?.[`node_modules/${dependencyName}`];
+    assert.ok(lockEntry, `${dependencyName} package-lock 应包含 node_modules 条目`);
+    assert.equal(lockEntry.version, expected.lockedVersion, `${dependencyName} package-lock 版本应与声明范围一致`);
+    assert.notEqual(lockEntry.dev, true, `${dependencyName} package-lock 条目不应标记为 dev-only`);
+  }
+  assert.match(
+    viteConfigSource,
+    /optimizeDeps:\s*\{[\s\S]*include:\s*\[[^\]]*'@xterm\/xterm'[^\]]*'@xterm\/addon-fit'[^\]]*\]/,
+    'vite.config.ts 应把 xterm runtime 包纳入 optimizeDeps.include',
+  );
+
+  // Renderer hook 与视图：xterm 渲染、事件订阅、设置持久化和快捷命令插入。
+  assert.match(terminalHookSource, /window\.autoplan\.listTerminals\(\{ projectId: requestProjectId \}\)/, 'useTerminalSessions 应通过 preload 读取终端列表');
+  assert.match(terminalHookSource, /window\.autoplan\.onTerminalData[\s\S]*handlers\.forEach\(\(handler\) => handler\(data, event\.session\)\)/, 'useTerminalSessions 应把 data 事件分发给订阅者');
+  assert.match(terminalHookSource, /return \(\) => \{[\s\S]*unsubscribeData\(\);[\s\S]*unsubscribeExit\(\);[\s\S]*unsubscribeStatus\(\);[\s\S]*\};/, 'useTerminalSessions 应清理终端事件订阅');
+  assert.match(terminalViewSource, /import \{ FitAddon \} from '@xterm\/addon-fit';/, 'WorkspaceTerminalView 应导入 xterm fit addon');
+  assert.match(terminalViewSource, /import \{ Terminal as XTerm \} from '@xterm\/xterm';/, 'WorkspaceTerminalView 应导入 xterm runtime');
+  assert.match(terminalViewSource, /import type \{ IDisposable \} from '@xterm\/xterm';/, 'WorkspaceTerminalView 应保持 xterm 类型导入为 type-only');
+  assert.match(terminalViewSource, /import '@xterm\/xterm\/css\/xterm\.css';/, 'WorkspaceTerminalView 应导入 xterm CSS');
+  assert.match(terminalViewSource, /new XTerm\(\{[\s\S]*fontSize: Number\(settings\.fontSize \|\| 13\)[\s\S]*scrollback: Number\(settings\.scrollbackLimit \|\| 10000\)/, 'WorkspaceTerminalView 应把设置应用到 xterm');
+  assert.match(terminalViewSource, /<div className="terminal-tabs" role="tablist" aria-label="终端会话">/, 'WorkspaceTerminalView 应提供会话 tab bar');
+  assert.match(terminalViewSource, /<div className="terminal-error" role="status">/, 'WorkspaceTerminalView 应承载终端错误提示');
+  assert.match(terminalViewSource, /<div className=\{`terminal-pane\$\{empty \? ' is-empty' : ''\}`\}>[\s\S]*<div className="terminal-screen" ref=\{hostRef\} aria-label="终端输出" \/>/, 'WorkspaceTerminalView 应提供 xterm pane 与输出挂载点');
+  assert.match(terminalViewSource, /<div className="terminal-controlbar">/, 'WorkspaceTerminalView 应提供终端控制栏');
+  assert.match(terminalViewSource, /buildTerminalCommandShortcuts\(\{[\s\S]*packageScripts,[\s\S]*scripts,[\s\S]*executors/, 'WorkspaceTerminalView 应从 package/scripts/executors 构建快捷入口');
+  assert.match(terminalViewSource, /await terminal\.write\(target\.id, command\);/, 'WorkspaceTerminalView 快捷入口应只插入可见命令文本');
+  assert.doesNotMatch(terminalViewSource, /runExecutor|runScript|lastStatus/, 'WorkspaceTerminalView 不应直接执行执行器/脚本或修改最近状态');
+  assert.match(workspaceFormsSource, /TERMINAL_SETTINGS_STORAGE_PREFIX = 'autoplan\.terminalSettings\.'/, 'workspaceForms 应隔离终端设置本地存储前缀');
+  assert.match(workspaceFormsSource, /function scriptFileCommand[\s\S]*if \(runtime === 'bash'\)[\s\S]*return `node \$\{quotedPath\}`/, 'workspaceForms 应把文件脚本转换为可见命令');
+  assert.match(workspaceFormsSource, /export function terminalCommandShortcutsFromExecutors[\s\S]*command: \[command, argsText\]\.filter\(Boolean\)\.join\(' '\)/, 'workspaceForms 应把执行器转换为可见命令');
+  assert.match(executorStoreSource, /function terminalCommandShortcutsFromExecutors[\s\S]*terminalCommandShortcutFromExecutor/, 'executorStore 应提供执行器到终端快捷命令的纯映射');
+
+  // 工作区导航：终端页可路由，侧栏计数来自当前项目活动终端。
+  assert.match(workspacePageSource, /import \{ WorkspaceTerminalView \} from '\.\.\/components\/workspace\/WorkspaceTerminalView';/, 'WorkspacePage 应导入完整终端视图');
+  assert.match(workspacePageSource, /tabParam === 'executors' \|\| tabParam === 'terminal'/, 'WorkspacePage 应支持 URL tab=terminal');
+  assert.match(workspacePageSource, /terminalCount=\{activeTerminalCount\}/, 'WorkspacePage 应把活动终端数量传给侧栏');
+  assert.match(workspacePageSource, /window\.autoplan\.listTerminals\(\{ projectId \}\)/, 'WorkspacePage 应通过 IPC 刷新终端列表');
+  assert.match(workspacePageSource, /window\.autoplan\.onTerminalStatus[\s\S]*window\.autoplan\.onTerminalExit/, 'WorkspacePage 应订阅终端状态与退出事件');
+  assert.match(workspacePageSource, /const workspacePath = activeSnapshot\.activeProject\?\.workspace_path \|\| routeProject\?\.workspace_path \|\| '';/, 'WorkspacePage 应为终端视图解析 workspacePath');
+  assert.match(workspacePageSource, /<WorkspaceTerminalView[\s\S]*executors=\{activeSnapshot\.executors \|\| \[\]\}[\s\S]*projectId=\{projectId\}[\s\S]*scripts=\{activeSnapshot\.scripts\}[\s\S]*terminals=\{currentTerminalSessions\}[\s\S]*workspacePath=\{workspacePath\}[\s\S]*\/>/, 'WorkspacePage 终端页应接入完整终端视图并传入当前项目数据');
+  assert.doesNotMatch(workspacePageSource, /function WorkspaceTerminalMetadataSection/, 'WorkspacePage 不应保留终端元数据伪页面');
+  assert.doesNotMatch(workspacePageSource, /window\.autoplan\.createTerminal\(\{ projectId \}\)/, 'WorkspacePage 不应在页面层直接创建终端');
+  assert.doesNotMatch(workspacePageSource, /function terminalStatusTone|function terminalStatusLabel|function terminalSessionMeta|event-badge-\$\{terminalStatusTone/, 'WorkspacePage 不应保留 metadata-only 状态展示逻辑');
+}
+
 function assertMarkdownPlanReaderSourceSmoke() {
   const markdownReaderSource = fs.readFileSync(
     path.join(__dirname, '..', 'src', 'renderer', 'components', 'MarkdownReader.tsx'),
@@ -1435,6 +1553,213 @@ async function assertMcpToolsSmoke(db, loop, tempRoot) {
     autoRun: 'yes',
   }, context);
   assertMcpToolError(invalidAutoRunError, /autoRun must be a boolean/, '非法 autoRun 应返回可修正错误');
+}
+
+async function assertStructuredPlanBackendSmoke(db, loop, tempRoot) {
+  const workspace = path.join(tempRoot, 'structured-plan-backend-workspace');
+  const projectId = insertProject(db, loop, 'Structured Plan Backend Smoke Project', workspace);
+  loop.configure(projectId, {
+    workspacePath: workspace,
+    validationCommand: 'npm run smoke:structured',
+  });
+  loop.ensureWorkspaceDirs(workspace);
+
+  const defaultStatus = loop.status(projectId);
+  const defaultGeneration = loop.planGenerationConfig(defaultStatus);
+  const defaultExecution = loop.planExecutionConfig(defaultStatus);
+  assert.equal(defaultGeneration.strategy, 'external-cli-markdown', '旧默认计划生成策略应保持 external-cli-markdown');
+  assert.equal(defaultGeneration.provider, 'codex', '旧默认计划生成 provider 应归一为 codex');
+  assert.equal(defaultExecution.strategy, 'external-cli', '旧默认任务执行策略应保持 external-cli');
+  assert.equal(defaultExecution.provider, 'codex', '旧默认任务执行 provider 应归一为 codex');
+  assert.equal(
+    loop.planGenerationAgentCliOperationFields(defaultGeneration).agentCliProvider,
+    'codex',
+    '旧默认 Markdown 生成路径应继续路由到 Codex CLI',
+  );
+  assert.equal(
+    loop.planExecutionAgentCliOperationFields(defaultExecution).agentCliProvider,
+    'codex',
+    '旧默认任务执行路径应继续路由到 Codex CLI',
+  );
+
+  const external = writeStructuredPlanSpecSmokePlan(db, loop, workspace, projectId, {
+    key: 'external-cli-structured',
+    title: 'External Structured PlanSpec Smoke',
+    planGenerationConfig: {
+      strategy: 'external-cli-structured',
+      provider: 'codex',
+      command: 'codex-plan',
+      codexReasoningEffort: 'high',
+    },
+    planExecutionConfig: {
+      strategy: 'external-cli',
+      provider: 'claude',
+      command: 'claude-exec',
+    },
+  });
+  assert.equal(external.plan.plan_generation_strategy, 'external-cli-structured', '外部结构化计划应记录生成策略');
+  assert.equal(external.plan.plan_execution_provider, 'claude', '外部结构化计划应记录执行 provider');
+  assert.deepEqual(external.tasks.map((task) => task.task_key), ['P001', 'P002', 'P003'], '外部结构化 Markdown 应被 syncPlanTasks 解析为连续任务');
+  assert.equal(external.tasks[2].scope, 'validation', '外部结构化 Markdown 应包含最终验收任务');
+
+  const builtin = writeStructuredPlanSpecSmokePlan(db, loop, workspace, projectId, {
+    key: 'builtin-llm-structured',
+    title: 'Builtin Structured PlanSpec Smoke',
+    planGenerationConfig: {
+      strategy: 'builtin-llm-structured',
+      provider: 'openai',
+      model: 'gpt-4o',
+    },
+    planExecutionConfig: {
+      strategy: 'external-cli',
+      provider: 'codex',
+      command: 'codex',
+      codexReasoningEffort: 'medium',
+    },
+  });
+  assert.equal(builtin.plan.plan_generation_strategy, 'builtin-llm-structured', '内置结构化计划应记录生成策略');
+  assert.equal(builtin.plan.plan_generation_provider, 'openai', '内置结构化计划应记录 LLM provider');
+  assert.deepEqual(builtin.tasks.map((task) => task.task_key), ['P001', 'P002', 'P003'], '内置结构化 Markdown 应被 syncPlanTasks 解析为连续任务');
+  assert.equal(builtin.tasks[2].scope, 'validation', '内置结构化 Markdown 应包含最终验收任务');
+
+  await assertPlanExecutionProviderSmoke(db, loop, workspace, projectId, external.planId);
+  await assertMalformedPlanSpecSmoke(db, loop, workspace, projectId);
+}
+
+function writeStructuredPlanSpecSmokePlan(db, loop, workspace, projectId, options) {
+  const planDir = path.join(workspace, 'docs', 'plan');
+  fs.mkdirSync(planDir, { recursive: true });
+  const planRel = path.join('docs', 'plan', `${options.key}-smoke.md`);
+  const planFile = path.join(workspace, planRel);
+  fs.writeFileSync(planFile, renderPlanSpecMarkdown(structuredPlanSpecFixture(options.title)), 'utf8');
+  const planId = loop.insertPlan({
+    projectId,
+    issueHash: `${options.key}-smoke`,
+    filePath: planRel,
+    hash: `${options.key}-hash`,
+    status: 'pending',
+    planGenerationConfig: options.planGenerationConfig,
+    planExecutionConfig: options.planExecutionConfig,
+  });
+  loop.syncPlanTasks(planId, planFile);
+  return {
+    planId,
+    planFile,
+    plan: db.get('SELECT * FROM plans WHERE id = ?', [planId]),
+    tasks: db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC', [planId]),
+  };
+}
+
+function structuredPlanSpecFixture(title) {
+  return {
+    title,
+    summary: '覆盖结构化 PlanSpec 渲染、任务同步与最终验收任务归一化。',
+    tasks: [
+      {
+        title: '扩展结构化计划生成路径',
+        scope: ['src/loop/planGeneration.js'],
+        acceptance: ['结构化生成路径能产生确定性 Markdown。'],
+      },
+      {
+        title: '保存执行后端快照',
+        scope: ['src/loop/planLifecycle.js', 'src/loop/taskExecution.js'],
+        acceptance: ['任务执行读取 planExecutionProvider 而不是误用生成 provider。'],
+      },
+    ],
+    finalValidation: {
+      command: 'npm test',
+      criteria: ['结构化生成和执行配置快照通过最终验收。'],
+    },
+  };
+}
+
+async function assertPlanExecutionProviderSmoke(db, loop, workspace, projectId, planId) {
+  const plan = db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+  const task = db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+  const originalRunCodex = loop.runCodex.bind(loop);
+  try {
+    loop.runCodex = async (_workspace, prompt, label, operation = {}) => {
+      assert.equal(_workspace, workspace, '执行 provider smoke 应使用目标工作区');
+      assert.match(prompt, /只执行指定任务 P001/, '执行 provider smoke prompt 应锁定 P001');
+      assert.equal(label, 'execute-P001', '执行 provider smoke label 应包含任务 key');
+      assert.equal(operation.planExecutionStrategy, 'external-cli', '任务执行 operation 应记录执行策略');
+      assert.equal(operation.planExecutionProvider, 'claude', '任务执行 operation 应记录 planExecutionProvider');
+      assert.equal(operation.planExecutionCommand, 'claude-exec', '任务执行 operation 应记录 planExecutionCommand');
+      assert.equal(operation.agentCliProvider, 'claude', '任务执行应使用执行 provider 映射出的 agentCliProvider');
+      assert.equal(operation.agentCliCommand, 'claude-exec', '任务执行应使用执行 command 映射出的 agentCliCommand');
+      assert.equal(operation.codexReasoningEffort ?? null, null, 'Claude 执行 provider 不应携带 Codex 思考深度');
+      return { exitCode: 0, logFile: null, lastFile: path.join(workspace, 'structured-provider-last.txt') };
+    };
+    const result = await loop.executeTask(workspace, plan, task);
+    assert.equal(result.exitCode, 0, '执行 provider smoke 应通过 stub 成功');
+    await loop.completeTask(workspace, plan, task, result);
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+
+  const startedEvent = db.get(
+    `SELECT * FROM events
+     WHERE project_id = ? AND type = 'task.started'
+     ORDER BY id DESC LIMIT 1`,
+    [projectId],
+  );
+  assert.ok(startedEvent, '执行 provider smoke 应记录 task.started 事件');
+  const meta = JSON.parse(startedEvent.meta || '{}');
+  assert.equal(meta.planExecutionProvider, 'claude', 'task.started meta 应记录 planExecutionProvider');
+  assert.equal(meta.agentCliProvider, 'claude', 'task.started meta 应记录实际执行 provider');
+}
+
+async function assertMalformedPlanSpecSmoke(db, loop, workspace, projectId) {
+  loop.configure(projectId, {
+    planGenerationStrategy: 'external-cli-structured',
+    planGenerationProvider: 'codex',
+    planGenerationCommand: 'codex',
+    planGenerationCodexReasoningEffort: 'medium',
+  });
+  const requirementId = insertRequirement(db, projectId);
+  const requirement = db.get('SELECT * FROM requirements WHERE id = ?', [requirementId]);
+  const beforeCount = db.get('SELECT COUNT(*) AS count FROM plans WHERE project_id = ?', [projectId]).count;
+  const originalRunCodex = loop.runCodex.bind(loop);
+  try {
+    loop.runCodex = async (_workspace, prompt) => {
+      const match = prompt.match(/PlanSpec JSON 输出文件：([^\r\n]+)/);
+      assert.ok(match, '结构化生成 prompt 应提供 PlanSpec JSON 输出文件路径');
+      const planSpecFile = match[1].trim();
+      const logFile = path.join(workspace, 'docs', 'progress', 'logs', 'malformed-plan-spec.log');
+      fs.mkdirSync(path.dirname(planSpecFile), { recursive: true });
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fs.writeFileSync(
+        planSpecFile,
+        JSON.stringify({ title: '', summary: '', tasks: [], finalValidation: { command: '', criteria: [] } }),
+        'utf8',
+      );
+      fs.writeFileSync(logFile, 'malformed PlanSpec smoke', 'utf8');
+      return { exitCode: 0, output: '', logFile, agentCliProvider: 'codex', agentCliCommand: 'codex' };
+    };
+    const generated = await loop.generatePlanForIntake(projectId, workspace, {
+      ...requirement,
+      __type: 'requirement',
+    });
+    assert.equal(generated, null, '畸形 PlanSpec 不应返回新 plan id');
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+
+  const afterCount = db.get('SELECT COUNT(*) AS count FROM plans WHERE project_id = ?', [projectId]).count;
+  assert.equal(afterCount, beforeCount, '畸形 PlanSpec 不应插入 plans 记录');
+  const failedRequirement = db.get('SELECT * FROM requirements WHERE id = ?', [requirementId]);
+  assert.equal(failedRequirement.generate_fail_count, 1, '畸形 PlanSpec 应累计生成失败次数');
+  assert.match(failedRequirement.last_generate_error, /PlanSpec 不合规/, '畸形 PlanSpec 应写入可定位失败原因');
+  const invalidEvent = db.get(
+    `SELECT * FROM events
+     WHERE project_id = ? AND type = 'plan.format.invalid'
+     ORDER BY id DESC LIMIT 1`,
+    [projectId],
+  );
+  assert.ok(invalidEvent, '畸形 PlanSpec 应记录 plan.format.invalid 事件');
+  assert.match(invalidEvent.message, /PlanSpec 不合规/, '畸形 PlanSpec 事件文案应说明格式不合规');
+  const meta = JSON.parse(invalidEvent.meta || '{}');
+  assert.match(meta.reason || '', /title|summary|tasks|finalValidation/, '畸形 PlanSpec 事件 meta 应携带 schema 失败原因');
 }
 
 function assertMcpToolSuccess(result, label) {
@@ -3411,16 +3736,30 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
 
 function assertRendererAgentCliTypeSmoke() {
   const typeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'types.ts'), 'utf8');
+  const createIntakeInputSource = typeSource.slice(
+    typeSource.indexOf('export interface CreateIntakeInput'),
+    typeSource.indexOf('export interface CreateProjectInput'),
+  );
   assert.match(typeSource, /interface Project[\s\S]*agent_cli_provider\?: AgentCliProvider;/, 'Project 类型应包含后端字段');
   assert.match(typeSource, /interface Project[\s\S]*codex_reasoning_effort\?: CodexReasoningEffort \| null;/, 'Project 类型应包含 Codex 思考深度字段');
   assert.match(typeSource, /interface ProjectState[\s\S]*agent_cli_provider\?: AgentCliProvider;/, 'ProjectState 类型应包含后端字段');
   assert.match(typeSource, /interface Plan[\s\S]*agent_cli_provider\?: AgentCliProvider \| null;/, 'Plan 类型应包含计划级后端字段');
   assert.match(typeSource, /interface Plan[\s\S]*codex_reasoning_effort\?: CodexReasoningEffort \| null;/, 'Plan 类型应包含计划级 Codex 思考深度字段');
+  assert.match(typeSource, /export type PlanGenerationStrategy =[\s\S]*typeof PLAN_GENERATION_STRATEGIES/, '类型应导出计划生成策略');
+  assert.match(typeSource, /export type PlanExecutionStrategy =[\s\S]*typeof PLAN_EXECUTION_STRATEGIES/, '类型应导出计划执行策略');
+  assert.match(typeSource, /export type PlanBackendProvider = AgentCliProvider \| 'openai' \| 'deepseek' \| 'anthropic' \| string;/, '类型应包含内置 LLM provider');
+  assert.match(typeSource, /interface Project extends PlanGenerationSnapshotFields, PlanExecutionSnapshotFields/, 'Project 类型应混入生成与执行快照字段');
+  assert.match(typeSource, /interface ProjectState extends PlanGenerationSnapshotFields, PlanExecutionSnapshotFields/, 'ProjectState 类型应混入生成与执行快照字段');
+  assert.match(typeSource, /interface Plan extends AgentCliSessionInfo, PlanGenerationSnapshotFields, PlanExecutionSnapshotFields/, 'Plan 类型应混入生成与执行快照字段');
   assert.match(typeSource, /interface AgentCliDisplaySource[\s\S]*agentCliProvider\?: AgentCliProvider \| null;/, '展示格式化输入类型应兼容驼峰字段');
-  assert.match(typeSource, /interface CreateIntakeInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '创建需求/反馈输入类型应允许选择后端');
+  assert.match(typeSource, /interface CreateIntakeInput extends PlanGenerationInputFields/, '创建需求/反馈输入类型应只扩展计划生成覆盖字段');
+  assert.doesNotMatch(createIntakeInputSource, /PlanExecutionInputFields|planExecution/, '创建需求/反馈输入类型不应允许执行覆盖字段');
+  assert.match(typeSource, /interface CreateIntakeInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '创建需求/反馈输入类型应兼容旧后端字段');
   assert.match(typeSource, /interface CreateIntakeInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '创建需求/反馈输入类型应允许设置 Codex 思考深度');
-  assert.match(typeSource, /interface CreateProjectInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '创建项目输入类型应允许选择后端');
-  assert.match(typeSource, /interface LoopConfigInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '循环配置输入类型应允许选择后端');
+  assert.match(typeSource, /interface CreateProjectInput extends PlanGenerationInputFields, PlanExecutionInputFields/, '创建项目输入类型应同时允许生成与执行默认配置');
+  assert.match(typeSource, /interface CreateProjectInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '创建项目输入类型应兼容旧后端字段');
+  assert.match(typeSource, /interface LoopConfigInput extends PlanGenerationInputFields, PlanExecutionInputFields/, '循环配置输入类型应同时允许生成与执行配置');
+  assert.match(typeSource, /interface LoopConfigInput[\s\S]*agentCliProvider\?: AgentCliProvider;/, '循环配置输入类型应兼容旧后端字段');
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*validation_command\?: string;/, '循环配置输入类型应兼容下划线验收命令字段');
   assert.match(typeSource, /interface LoopConfigInput[\s\S]*codexReasoningEffort\?: CodexReasoningEffort;/, '循环配置输入类型应允许设置 Codex 思考深度');
   assert.match(typeSource, /export type AgentCliProvider = [^;]*'codex'[^;]*'claude'/, 'AgentCliProvider 类型应包含 codex 与 claude');

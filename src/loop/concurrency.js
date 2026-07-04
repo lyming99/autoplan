@@ -46,7 +46,7 @@ function isAcceptanceTask(task) {
 }
 
 function taskScopeFileInfos(workspace, task) {
-  const scopes = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
+  const scopes = Array.from(new Set(taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false })));
   if (!scopes.length) return [taskScopeFileInfo(workspace, 'unknown')];
   return scopes.map((scope) => taskScopeFileInfo(workspace, scope));
 }
@@ -77,17 +77,21 @@ function taskScopeFileInfo(workspace, scope) {
     return result;
   }
   try {
-    const stat = fs.existsSync(fullPath) ? fs.statSync(fullPath) : null;
-    result.exists = Boolean(stat);
-    result.isDirectory = Boolean(stat?.isDirectory());
-    result.canOpen = Boolean(stat?.isFile());
+    const stat = fs.statSync(fullPath);
+    result.exists = true;
+    result.isDirectory = stat.isDirectory();
+    result.canOpen = stat.isFile();
     result.reason = result.canOpen
       ? ''
       : result.isDirectory
         ? 'scope 指向目录，不能作为文件打开'
         : '文件不存在，后续任务可能会创建';
   } catch (error) {
-    result.reason = error?.message || '无法读取文件状态';
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+      result.reason = '文件不存在，后续任务可能会创建';
+    } else {
+      result.reason = error?.message || '无法读取文件状态';
+    }
   }
   return result;
 }

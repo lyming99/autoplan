@@ -34,7 +34,7 @@ export type TaskPlanGroup = TaskPlanGroupIdentity & {
   title: string;
   tasks: PlanTask[];
   firstIndex: number;
-  sortTime: number | null;
+  sortSequence: number | null;
   stats: TaskPlanGroupStats;
   hasRunningTask: boolean;
 };
@@ -97,6 +97,45 @@ function taskSortTime(task: TimedPlanTask) {
   return readTaskTime(task.finished_at) ?? readTaskTime(task.started_at) ?? readTaskTime(task.updated_at);
 }
 
+type TaskSequenceCandidate = {
+  task_key?: unknown;
+  sort_order?: unknown;
+};
+
+function readPositiveTaskSequence(value: unknown) {
+  const sequence = Number(value);
+  return Number.isFinite(sequence) && sequence > 0 ? sequence : null;
+}
+
+function readTaskSortOrderSequence(task: TaskSequenceCandidate) {
+  return readPositiveTaskSequence(task.sort_order);
+}
+
+function readTaskKeySequence(task: TaskSequenceCandidate) {
+  const match = String(task.task_key || '').match(/\d+/);
+  return match ? readPositiveTaskSequence(match[0]) : null;
+}
+
+export function readTaskSequence(task: TaskSequenceCandidate) {
+  return readTaskSortOrderSequence(task) ?? readTaskKeySequence(task);
+}
+
+export function compareTasksBySequence(
+  left: TaskSequenceCandidate,
+  right: TaskSequenceCandidate,
+  leftIndex: number,
+  rightIndex: number,
+) {
+  const leftSequence = readTaskSequence(left);
+  const rightSequence = readTaskSequence(right);
+  if (leftSequence !== null && rightSequence !== null && leftSequence !== rightSequence) {
+    return leftSequence - rightSequence;
+  }
+  if (leftSequence !== null && rightSequence === null) return -1;
+  if (leftSequence === null && rightSequence !== null) return 1;
+  return leftIndex - rightIndex;
+}
+
 function latestTaskTime(tasks: TimedPlanTask[]) {
   const fieldGroups: Array<Array<keyof TimedPlanTask>> = [['finished_at'], ['started_at'], ['updated_at']];
   for (const fields of fieldGroups) {
@@ -141,6 +180,13 @@ function getTaskPlanGroupStats(tasks: PlanTask[]): TaskPlanGroupStats {
   );
 }
 
+function taskPlanGroupSortSequence(tasks: PlanTask[]) {
+  const sequences = tasks
+    .map((task) => readTaskSequence(task))
+    .filter((sequence): sequence is number => sequence !== null);
+  return sequences.length ? Math.min(...sequences) : null;
+}
+
 export function groupTasksByPlan(tasks: PlanTask[]): TaskPlanGroup[] {
   const groups = new Map<string, TaskPlanGroup>();
   tasks.forEach((task, index) => {
@@ -161,7 +207,7 @@ export function groupTasksByPlan(tasks: PlanTask[]): TaskPlanGroup[] {
       title: taskPlanGroupTitle(task),
       tasks: [task],
       firstIndex: index,
-      sortTime: null,
+      sortSequence: null,
       stats: { total: 0, running: 0, queued: 0, completed: 0 },
       hasRunningTask: false,
     });
@@ -171,29 +217,22 @@ export function groupTasksByPlan(tasks: PlanTask[]): TaskPlanGroup[] {
     .map((group) => {
       const indexedTasks = group.tasks.map((task, index) => ({ task, index }));
       const sortedTasks = indexedTasks
-        .sort((left, right) => {
-          const leftTime = taskSortTime(left.task as TimedPlanTask);
-          const rightTime = taskSortTime(right.task as TimedPlanTask);
-          if (leftTime !== null && rightTime !== null && leftTime !== rightTime) return rightTime - leftTime;
-          if (leftTime !== null && rightTime === null) return -1;
-          if (leftTime === null && rightTime !== null) return 1;
-          return left.index - right.index;
-        })
+        .sort((left, right) => compareTasksBySequence(left.task, right.task, left.index, right.index))
         .map(({ task }) => task);
       return {
         ...group,
         tasks: sortedTasks,
-        sortTime: latestTaskTime(group.tasks as TimedPlanTask[]),
+        sortSequence: taskPlanGroupSortSequence(sortedTasks),
         stats: getTaskPlanGroupStats(sortedTasks),
         hasRunningTask: sortedTasks.some((task) => matchesTaskStatusFilter(task, 'running')),
       };
     })
     .sort((left, right) => {
-      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
-        return right.sortTime - left.sortTime;
+      if (left.sortSequence !== null && right.sortSequence !== null && left.sortSequence !== right.sortSequence) {
+        return left.sortSequence - right.sortSequence;
       }
-      if (left.sortTime !== null && right.sortTime === null) return -1;
-      if (left.sortTime === null && right.sortTime !== null) return 1;
+      if (left.sortSequence !== null && right.sortSequence === null) return -1;
+      if (left.sortSequence === null && right.sortSequence !== null) return 1;
       return left.firstIndex - right.firstIndex;
     });
 }
@@ -269,11 +308,11 @@ export function acceptanceSelectionKey(targetType: 'plan' | 'task', id: number):
 
 export interface AcceptanceGroup {
   plan: Plan;
-  /** 该计划内「已完成且未验收」的任务，按 groupTasksByPlan 的排序语义排列。 */
+  /** 该计划内「已完成且未验收」的任务，按待验收视图的时间排序语义排列。 */
   tasks: PlanTask[];
 }
 
-// 与 groupTasksByPlan 内任务排序一致：finished_at → started_at → updated_at（均降序），再回退原序。
+// 待验收/已验收列表保留时间降序：finished_at → started_at → updated_at，再回退原序。
 function compareTasksBySortTime(left: TimedPlanTask, right: TimedPlanTask, leftIndex: number, rightIndex: number) {
   const leftTime = taskSortTime(left);
   const rightTime = taskSortTime(right);
@@ -289,7 +328,7 @@ function planSortTime(plan: Plan): number | null {
 
 /**
  * 按计划分组的「待验收」结构：每个待验收计划（已完成且 accepted_at 为空）挂其下待验收任务。
- * 保持 groupTasksByPlan 的分组/任务排序语义；不含已完成但已验收项，也不含未完成项。
+ * 保持待验收视图自己的时间排序语义；不含已完成但已验收项，也不含未完成项。
  */
 export function buildAcceptanceGroups(plans: Plan[], tasks: PlanTask[]): AcceptanceGroup[] {
   const pendingTasks = tasks.filter(isAcceptancePendingTask);

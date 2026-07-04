@@ -273,6 +273,48 @@ export function WorkspacePage() {
 
 目前 6 个 tab 都依赖同一个工作区快照，保持在同一页面内更合适。
 
+### 3.4 计划后端配置架构
+
+计划后端配置已经从旧的单组 `agentCliProvider` / `agentCliCommand` / `codexReasoningEffort` 拆成两条独立链路：
+
+- **计划生成配置**：`planGenerationStrategy`、`planGenerationProvider`、`planGenerationCommand`、`planGenerationModel`、`planGenerationCodexReasoningEffort`。
+- **计划执行配置**：`planExecutionStrategy`、`planExecutionProvider`、`planExecutionCommand`、`planExecutionModel`、`planExecutionCodexReasoningEffort`。
+
+数据流按层保存快照：
+
+- `project_states` 保存项目默认生成配置和执行配置，同时保留旧 `agent_cli_*` 字段作为兼容输入。
+- `requirements` / `feedback` 只保存 intake 级计划生成覆盖，不保存单条 intake 的执行覆盖。单条需求/反馈只能影响这次生成什么计划，不能改变任务由谁执行。
+- `plans` 在计划生成成功时同时保存生成配置快照和执行配置快照。执行快照来自项目默认执行配置，不从生成 provider 反推。
+- 快照、MCP 返回值和 UI 展示会带出新字段；旧字段继续存在，便于旧客户端、旧日志和旧 plan 回退。
+
+三种计划生成策略由 `src/loop/planGeneration.js` 分派：
+
+| 策略 | 产物 | 后续处理 |
+| --- | --- | --- |
+| `external-cli-markdown` | 外置 CLI 写 Markdown plan。 | 保持旧 prompt、stdout 兜底、格式校验、失败事件和 `syncPlanTasks` 流程。 |
+| `external-cli-structured` | 外置 CLI 写 `PlanSpec` JSON，或从 stdout 兜底提取 JSON。 | `structuredPlanSpec` 校验/规范化，`planRenderer` 确定性渲染 Markdown，再走现有 Markdown 校验和任务同步。 |
+| `builtin-llm-structured` | 内置 LLM 返回 `PlanSpec`。 | 复用同一套 PlanSpec 校验、规范化、渲染和 Markdown 校验。该路径依赖 `ai_configs` 中可用的 provider、模型和 API key。 |
+
+两种计划执行策略由 `src/loop/taskExecution.js`、`src/loop/validation.js` 通过 `src/loop/planAgentCli.js` 和 `src/loop/planBackendConfig.js` 读取：
+
+- `external-cli` 是当前支持的执行路径，会转换为现有 agent CLI operation fields，继续复用 `runCodexWithPlanGuard`、CLI 会话、OpenCode 串行化、plan guard 和事件记录。
+- `builtin-llm` 是第一阶段预留执行策略。任务执行或执行型修复遇到它时必须返回明确错误 `builtin-llm execution is not supported yet`，不能静默 fallback 到外置 CLI。
+
+兼容映射规则：
+
+- 未提供新字段时，生成策略默认 `external-cli-markdown`，执行策略默认 `external-cli`。
+- provider 优先读取新字段，其次读取旧 `agentCliProvider`，最后回退 `codex`。
+- command 优先读取对应的新 command 字段，其次读取旧 `agentCliCommand`。
+- Codex reasoning 优先读取对应的新 reasoning 字段，其次读取旧 `codexReasoningEffort`，最后回退 `medium`；非 Codex provider 的 reasoning 归一为空。
+- 项目级旧字段会同时作为生成默认值和执行默认值；intake 级旧字段只兼容映射为计划生成覆盖。
+- 老 plan 没有 `plan_execution_*` 快照时，`planAgentCliConfig` 仍会按旧 plan 行、`plan.generated` 事件、来源 intake 和项目默认值回退。
+
+推荐组合：
+
+- 默认兼容：`external-cli-markdown` 生成 + `external-cli` 执行，provider 为 `codex`。
+- 外置结构化生成：`external-cli-structured` 生成 + `external-cli` 执行，生成和执行 provider 可以不同。
+- 内置结构化生成：`builtin-llm-structured` 生成 + `external-cli` 执行，用内置 AI 配置稳定产出 PlanSpec，再交给 Codex/Claude/OpenCode/oh-my-pi 执行。
+
 ---
 
 ## 四、迁移优先级

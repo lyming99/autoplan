@@ -19,6 +19,12 @@ const BUILTIN_DEFAULT_CONFIG = {
   temperature: '0.3',
 };
 
+const PROVIDER_DEFAULT_BASE_URLS = Object.freeze({
+  openai: 'https://api.openai.com/v1',
+  deepseek: 'https://api.deepseek.com',
+  anthropic: 'https://api.anthropic.com',
+});
+
 const AI_CONFIG_PROVIDERS = new Set(['openai', 'deepseek', 'anthropic']);
 const THINKING_DEPTHS = new Set(['low', 'medium', 'high']);
 
@@ -151,6 +157,36 @@ function resolveAiConfigForConversation(db, conversation) {
   return { ...BUILTIN_DEFAULT_CONFIG };
 }
 
+/**
+ * 解析内置计划生成使用的 AI 配置。
+ * 优先复用全局首条 ai_configs，planGenerationProvider/Model 仅覆盖生成调用本身。
+ */
+function resolveAiConfigForPlanGeneration(db, planGenerationConfig = {}) {
+  const first = db.get('SELECT * FROM ai_configs WHERE project_id IS NULL ORDER BY id ASC LIMIT 1');
+  const base = first ? rowToConfig(first) : { ...BUILTIN_DEFAULT_CONFIG };
+  const baseProvider = normalizeProvider(base.provider);
+  const providerOverride = normalizePlanGenerationProviderOverride(
+    planGenerationConfig.provider ?? planGenerationConfig.planGenerationProvider,
+  );
+  const provider = providerOverride || baseProvider;
+  const providerChanged = Boolean(providerOverride && providerOverride !== baseProvider);
+  const modelOverride = normalizeText(planGenerationConfig.model ?? planGenerationConfig.planGenerationModel);
+  const baseUrl = (providerChanged ? '' : normalizeText(base.baseUrl)) || defaultBaseUrlForProvider(provider);
+
+  return {
+    ...base,
+    provider,
+    baseUrl,
+    apiKey: normalizeText(base.apiKey),
+    model: modelOverride || normalizeText(base.model),
+    temperature: normalizeTemperature(base.temperature),
+    thinkingDepth: supportsThinkingDepth(provider) ? normalizeThinkingDepth(base.thinkingDepth) : null,
+    thinkingBudgetTokens: supportsThinkingBudget(provider)
+      ? normalizeThinkingBudgetTokens(base.thinkingBudgetTokens)
+      : null,
+  };
+}
+
 /* ------------------------------------------------------------------ 工具函数 ------------------------------------------------------------------ */
 
 function normalizeCreateAiConfigInput(input = {}) {
@@ -180,6 +216,15 @@ function normalizeText(value) {
 function normalizeProvider(value) {
   const provider = normalizeText(value).toLowerCase();
   return AI_CONFIG_PROVIDERS.has(provider) ? provider : BUILTIN_DEFAULT_CONFIG.provider;
+}
+
+function normalizePlanGenerationProviderOverride(value) {
+  const provider = normalizeText(value).toLowerCase();
+  return AI_CONFIG_PROVIDERS.has(provider) ? provider : null;
+}
+
+function defaultBaseUrlForProvider(provider) {
+  return PROVIDER_DEFAULT_BASE_URLS[provider] || PROVIDER_DEFAULT_BASE_URLS[BUILTIN_DEFAULT_CONFIG.provider];
 }
 
 function normalizeTemperature(value) {
@@ -266,6 +311,7 @@ module.exports = {
   getAiConfig,
   getLegacyChatConfig,
   resolveAiConfigForConversation,
+  resolveAiConfigForPlanGeneration,
   maskApiKey,
   sanitizeAiConfig,
   BUILTIN_DEFAULT_CONFIG,

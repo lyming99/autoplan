@@ -35,6 +35,14 @@ function expectCountExactly(sourceText: string, snippet: string, expected: numbe
   expect(count === expected, `${message} (expected ${expected}, got ${count})`);
 }
 
+function sliceBetween(sourceText: string, startNeedle: string, endNeedle: string, message: string) {
+  const start = sourceText.indexOf(startNeedle);
+  expect(start >= 0, message);
+  const end = sourceText.indexOf(endNeedle, start);
+  expect(end >= 0, message);
+  return sourceText.slice(start, end + endNeedle.length);
+}
+
 function cssRuleBody(sourceText: string, selector: string) {
   const selectorStart = sourceText.indexOf(`${selector} {`);
   expect(selectorStart >= 0, `应能定位到 ${selector} CSS 规则`);
@@ -93,6 +101,46 @@ describe('Workspace task page structure', () => {
     expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
   });
 
+  it('wires Plan card stop/delete popup menu actions without hijacking card selection', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+    const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
+    const wrappedPlanList = source('src', 'renderer', 'components', 'PlanLists.tsx');
+
+    expectIncludes(planList, 'className="plan-action-menu-button"', 'Plan cards should render a dedicated more-actions button');
+    expectIncludes(planList, 'aria-haspopup="menu"', 'Plan card more-actions button should expose menu semantics');
+    expectIncludes(planList, 'aria-expanded={menuOpen}', 'Plan card more-actions button should expose expanded state');
+    expectIncludes(planList, 'aria-label={`更多操作：${title || plan.file_path || `Plan #${plan.id}`}`}', 'Plan card more-actions button should have a readable label');
+    expectIncludes(planList, '<div className="plan-action-menu ctx-menu" id={menuId} role="menu">', 'Plan card popup should render as a menu');
+    expectCountAtLeast(planList, 'role="menuitem"', 2, 'Plan card popup should expose stop and delete menu items');
+    expectIncludes(planList, '<span>停止</span>', 'Plan card menu should include the stop item');
+    expectIncludes(planList, '<span>删除</span>', 'Plan card menu should include the delete item');
+    expectIncludes(planList, 'className="plan-action-menu-item danger"', 'Plan card delete menu item should use danger styling');
+    expectIncludes(planList, '<Icon name="stop" size={15} aria-hidden />', 'Plan card stop menu item should use the stop icon');
+    expectIncludes(planList, '<Icon name="trash" size={15} aria-hidden />', 'Plan card delete menu item should use the trash icon');
+    expectIncludes(planList, "canStopPlan(plan, runningInPlan)", 'Plan card stop item should only enable for running plans');
+    expectIncludes(planList, "title={stopDisabledReason || '停止该计划'}", 'Disabled stop item should explain why it is unavailable');
+    expectIncludes(planList, 'void onStopPlan?.(plan);', 'Stop menu item should call the parent stop callback');
+    expectIncludes(planList, 'void onDeletePlan?.(plan);', 'Delete confirmation should call the parent delete callback');
+    expectIncludes(planList, 'data-plan-action-menu="true"', 'Plan action menu should be marked as an interactive card region');
+    expectIncludes(planList, "'[role=\"menuitem\"]'", 'Plan card interactive selector should include menu items');
+    expectIncludes(planList, 'event.stopPropagation();', 'Plan menu interactions should not bubble into card selection');
+    expectIncludes(planList, "event.key === 'Escape'", 'Plan menu should close on Escape');
+    expectIncludes(planList, 'setOpenMenuPlanId((current) => (current === plan.id ? null : plan.id))', 'Plan menu trigger should toggle a single open menu');
+    expectIncludes(planList, '删除后会先停止该计划运行，并删除计划文件和任务记录。', 'Delete confirmation should warn about stopping execution and deleting files/tasks');
+    expectIncludes(planList, '关联的需求和反馈记录会保留，不会被删除。', 'Delete confirmation should clarify that intake records are retained');
+
+    expectIncludes(wrappedPlanList, 'onStopPlan?: (plan: Plan) => Promise<void> | void;', 'Wrapped PlanList should type the stop callback');
+    expectIncludes(wrappedPlanList, 'onDeletePlan?: (plan: Plan) => Promise<void> | void;', 'Wrapped PlanList should type the delete callback');
+    expectIncludes(wrappedPlanList, 'onStopPlan={onStopPlan}', 'Wrapped PlanList should pass the stop callback through');
+    expectIncludes(wrappedPlanList, 'onDeletePlan={onDeletePlan}', 'Wrapped PlanList should pass the delete callback through');
+    expectIncludes(page, 'onStopPlan={stopPlan}', 'WorkspacePage should pass the stopPlan action into PlanList');
+    expectIncludes(page, 'onDeletePlan={deletePlan}', 'WorkspacePage should pass the deletePlan action into PlanList');
+    expectIncludes(controller, 'await runLoopAction(() => window.autoplan.stopPlan({ projectId: targetProjectId, planId }))', 'Controller stopPlan should call the plan-level preload API');
+    expectIncludes(controller, 'const next = await window.autoplan.deletePlan({ projectId: targetProjectId, planId });', 'Controller deletePlan should call the plan-level preload API');
+    expectIncludes(controller, 'clearDeletedPlanReader(next);', 'Controller deletePlan should clear deleted Plan reader state after the returned snapshot');
+  });
+
   it('routes draft execution through the parent snapshot refresh action', () => {
     const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
     const wrappedPlanList = source('src', 'renderer', 'components', 'PlanLists.tsx');
@@ -127,8 +175,8 @@ describe('Workspace intake Plan preview binding', () => {
     const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
     const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
 
-    expectIncludes(page, 'const intakePlanPreviewProps = {', 'intake panels should share preview props');
-    expectIncludes(page, 'plans: snapshot.plans', 'intake preview props should carry current Plan snapshots');
+    expectIncludes(page, "const intakePlanPreviewProps: Pick<ComponentProps<typeof IntakePanel>, 'plans' | 'onPreviewPlan'> = {", 'intake panels should share typed preview props');
+    expectIncludes(page, 'plans: activeSnapshot.plans', 'intake preview props should carry current guarded Plan snapshots');
     expectAnyIncludes(
       page,
       ['onOpenPlan: openIntakePlanReader', 'onPreviewPlan: openIntakePlanReader'],
@@ -139,7 +187,8 @@ describe('Workspace intake Plan preview binding', () => {
     expectIncludes(page, 'readerState={planReadState}', 'intake preview should reuse the workspace Plan reader state');
 
     expectIncludes(controller, 'const openIntakePlanReader = useCallback', 'controller should expose an intake Plan reader opener');
-    expectIncludes(controller, 'findLinkedPlanInSnapshot(snapshot?.plans || [], planId, projectId)', 'intake preview should locate plans from the current snapshot first');
+    expectIncludes(controller, 'findPreviewableLinkedPlan(item, snapshot?.plans || [], projectId, targetLinkedPlan)', 'intake preview should locate target phase plans from the current snapshot first');
+    expectIncludes(controller, 'createUnavailableLinkedPlanFromSummary(projectId, linkedPlan)', 'missing phase snapshots should build fallback reader data from the linked plan summary');
     expectIncludes(controller, 'showUnavailableLinkedPlanReader', 'controller should provide unavailable Plan fallback state');
     expectIncludes(controller, '绑定 Plan ID 无效，暂无法预览。', 'invalid linked Plan IDs should produce a readable error');
     expectIncludes(controller, '绑定 Plan #${planId} 当前不可用', 'missing linked Plan snapshots should produce a readable error');
@@ -155,23 +204,104 @@ describe('Workspace intake Plan preview binding', () => {
     const intakeAcceptsPreviewPlan = intakePanel.includes('onPreviewPlan');
 
     expectIncludes(intakePanel, 'function PlanBindingCard', 'intake panel should render a dedicated bound Plan card');
-    expectIncludes(intakePanel, 'if (linkedPlanId === null) return null;', 'unbound intake items should not show Plan preview UI');
+    expectIncludes(intakePanel, 'const linkedPlans = linkedPlansOf(item);', 'bound cards should read normalized linked plan arrays');
+    expectIncludes(intakePanel, 'if (linkedPlans.length === 0) return null;', 'unbound intake items should not show Plan preview UI');
+    expectIncludes(intakePanel, 'function PlanPhaseRow', 'multi-stage intakes should render one row per phase plan');
+    expectIncludes(intakePanel, 'className="intake-plan-phase-list"', 'multi-stage plan rows should use a stable list hook');
+    expectIncludes(intakePanel, 'onPreviewPlan?.(item, linkedPlan);', 'phase preview should pass the target linked plan summary');
+    expectIncludes(intakePanel, 'normalizeLinkedPlans(item as unknown as LinkedPlanIntakeItem)', 'intake panel should normalize linked_plans and legacy linked_plan_id consistently');
     expectIncludes(intakePanel, "readStringField(item, ['plan_title', 'linked_plan_title'])", 'bound cards should read Plan title snapshots');
     expectIncludes(intakePanel, "readStringField(item, ['plan_file_path', 'linked_plan_file_path', 'plan_path', 'linked_plan_path'])", 'bound cards should read Plan path snapshots');
     expectIncludes(intakePanel, 'Plan ID <b>#{linkedPlanId}</b>', 'bound cards should display Plan ID');
     expectIncludes(intakePanel, '任务进度 <b>{progressLabel}</b>', 'bound cards should display task progress text');
     expectIncludes(intakePanel, 'className="intake-plan-progress"', 'bound cards should display task progress bars');
     expectIncludes(intakePanel, 'disabled={!canPreview}', 'unavailable Plan previews should be disabled');
-    expectIncludes(intakePanel, '绑定 Plan 快照缺失，暂不能预览全文。', 'missing Plan snapshots should show fallback copy');
+    expectIncludes(intakePanel, '绑定 Plan 当前不可用，点击预览可查看占位详情。', 'missing Plan snapshots should show fallback copy');
+    expectIncludes(intakePanel, '该阶段 Plan 当前缺失或已删除。', 'missing phase Plan snapshots should show row-level fallback copy');
     expect(
       (pageUsesOpenPlan && intakeAcceptsOpenPlan) || (pageUsesPreviewPlan && intakeAcceptsPreviewPlan),
       'WorkspacePage and IntakePanel should use the same intake preview callback prop name',
     );
 
     expectIncludes(styles, '.intake-plan-card', 'bound Plan card styles should be scoped to intake cards');
+    expectIncludes(styles, '.intake-plan-phase', 'phase rows should have scoped styles');
+    expectIncludes(styles, '.intake-plan-current', 'current phase badge should have scoped styles');
     expectIncludes(styles, '.intake-plan-name', 'long Plan titles should have dedicated text styling');
     expectIncludes(styles, '.intake-plan-path', 'long Plan paths should have dedicated truncation styling');
     expectIncludes(styles, '.intake-plan-side', 'preview actions should be able to wrap without squeezing intake actions');
+    expectIncludes(styles, '@media (max-width: 520px)', 'phase preview controls should keep mobile wrapping rules');
+  });
+});
+
+describe('Workspace intake plan generation failure retry UI', () => {
+  it('passes retry callbacks and CLI option data from WorkspacePage to both intake panels', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+    const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
+
+    expectIncludes(controller, 'const retryIntakePlanGeneration = useCallback', 'controller 应暴露手动重试生成计划回调');
+    expectIncludes(controller, 'window.autoplan.retryIntakePlanGeneration({ projectId, type, id, ...options })', 'controller 应调用 preload 重试入口并传递 options');
+    expectIncludes(page, 'retryIntakePlanGeneration,', 'WorkspacePage 应从 controller 解构重试回调');
+    expectIncludes(page, 'onRetryGeneratePlan={retryIntakePlanGeneration}', '需求/反馈面板应接收重试回调');
+    expectCountAtLeast(page, 'onRetryGeneratePlan={retryIntakePlanGeneration}', 2, '需求和反馈两个 IntakePanel 都应接收重试回调');
+    expectCountAtLeast(page, 'retryAgentCliOptions={composerCliSelection.options}', 2, '需求和反馈两个 IntakePanel 都应接收 CLI provider 选项');
+    expectCountAtLeast(page, 'retryCodexReasoningOptions={composerCliSelection.reasoningOptions}', 2, '需求和反馈两个 IntakePanel 都应接收 Codex 思考深度选项');
+
+    expectIncludes(intakePanel, 'onRetryGeneratePlan?: (type: IntakeType, id: number, options?: RetryIntakePlanGenerationOptions) => Promise<void> | void;', 'IntakePanel props 应声明重试回调');
+    expectIncludes(intakePanel, 'retryAgentCliOptions?: AgentCliOption[];', 'IntakePanel props 应声明 retry CLI provider 选项');
+    expectIncludes(intakePanel, 'retryCodexReasoningOptions?: AgentCliOption[];', 'IntakePanel props 应声明 retry Codex 思考深度选项');
+  });
+
+  it('renders failure state only for unbound intake records and submits per-intake retry options', () => {
+    const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
+    const forms = source('src', 'renderer', 'utils', 'workspaceForms.ts');
+
+    expectIncludes(intakePanel, 'const failure = hasPlan ? null : intakeGenerationFailure(item);', '失败卡应与绑定 Plan 卡互斥');
+    expectIncludes(intakePanel, '<IntakeGenerateFailureCard', '失败状态应渲染专用卡片');
+    expectIncludes(intakePanel, "readStringField(item, ['last_generate_error'])", '失败卡应读取 last_generate_error');
+    expectIncludes(intakePanel, "readNumberField(item, ['generate_fail_count'])", '失败卡应读取 generate_fail_count');
+    expectIncludes(intakePanel, "readStringField(item, ['last_generate_fail_at'])", '失败卡应读取失败时间');
+    expectIncludes(intakePanel, "readStringField(item, ['last_generate_log_file'])", '失败卡应读取日志路径');
+    expectIncludes(intakePanel, '<strong>计划生成失败</strong>', '失败卡应显示计划生成失败状态');
+    expectIncludes(intakePanel, '失败时间 <b>{failure.failedAt ? formatChinaDateTime(failure.failedAt) : \'未记录\'}</b>', '失败卡应显示失败时间');
+    expectIncludes(intakePanel, '失败次数 <b>{failure.failCount > 0 ? `${failure.failCount} 次` : \'未记录\'}</b>', '失败卡应显示失败次数');
+    expectIncludes(intakePanel, '<code title={failure.logFile || undefined}>{failure.logFile || \'未记录\'}</code>', '失败卡应显示日志路径');
+
+    expectIncludes(intakePanel, 'agentCliProvider: normalizeAgentCliProvider(readAgentCliProvider(item))', '重试默认 provider 应来自当前卡片生效 CLI');
+    expectIncludes(intakePanel, 'await onRetryGeneratePlan(type, item.id, retryOptionsFromDraft(draft));', '点击重试应携带当前 intake 和本卡片 options');
+    expectIncludes(intakePanel, 'setRetryingKey(key);', '重试请求中应进入禁用/处理中状态');
+    expectIncludes(intakePanel, "retrying ? '正在重试...' : '重试生成计划'", '重试按钮应显示进行中状态');
+    expectIncludes(intakePanel, 'codexReasoningEffort: isCodexAgentCliProvider(agentCliProvider)', 'Codex 重试应提交思考深度');
+    expectIncludes(intakePanel, ': null,', '非 Codex 重试应提交 null 思考深度');
+
+    expectIncludes(forms, "{ value: 'codex', label: 'Codex CLI' },", '重试 provider 选项应覆盖 Codex');
+    expectIncludes(forms, "{ value: 'claude', label: 'Claude CLI' },", '重试 provider 选项应覆盖 Claude');
+    expectIncludes(forms, "{ value: 'opencode', label: 'OpenCode CLI' },", '重试 provider 选项应覆盖 OpenCode');
+    expectIncludes(forms, "{ value: 'oh-my-pi', label: 'Oh My Pi CLI' },", '重试 provider 选项应覆盖 Oh My Pi');
+    expectIncludes(forms, "export function normalizeAgentCliProvider(value?: string | null): AgentCliProvider", 'workspaceForms 应提供重试 provider 归一化函数');
+  });
+
+  it('keeps Codex-only reasoning selector conditional and failure card layout responsive', () => {
+    const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
+    const styles = source('src', 'renderer', 'styles', 'components.css');
+    const failureReasonRule = cssRuleBody(styles, '.intake-failure-reason');
+    const failureLogCodeRule = cssRuleBody(styles, '.intake-failure-log code');
+    const retryControlsRule = cssRuleBody(styles, '.intake-retry-controls');
+
+    expectIncludes(intakePanel, 'const showCodexReasoning = isCodexAgentCliProvider(agentCliProvider);', 'Codex 思考深度控件应只在 Codex provider 下展示');
+    expectIncludes(intakePanel, '{showCodexReasoning ? (', '非 Codex provider 应隐藏思考深度 select');
+    expectIncludes(intakePanel, '<span>思考深度</span>', 'Codex provider 应显示思考深度字段');
+    expectIncludes(intakePanel, 'const providerOptions = retryAgentCliOptions.length ? retryAgentCliOptions : agentCliOptions;', 'CLI provider 选项应有本地兜底');
+    expectIncludes(intakePanel, 'const reasoningOptions = retryCodexReasoningOptions.length ? retryCodexReasoningOptions : codexReasoningOptions;', 'Codex 思考深度选项应有本地兜底');
+
+    expectIncludes(styles, '.intake-failure-card', '失败卡应有独立样式 hook');
+    expectIncludes(failureReasonRule, 'overflow-wrap: anywhere;', '失败原因长文本不应撑破卡片');
+    expectIncludes(failureReasonRule, 'word-break: break-word;', '失败原因应允许断词换行');
+    expectIncludes(failureLogCodeRule, 'overflow-wrap: anywhere;', '日志路径长文本不应撑破卡片');
+    expectIncludes(retryControlsRule, 'flex-wrap: wrap;', '重试控件应支持横向换行');
+    expectIncludes(styles, '@media (max-width: 520px)', '窄屏应保留响应式规则');
+    expectIncludes(styles, '.intake-retry-field, .intake-retry-actions { width: 100%; min-width: 0; }', '窄屏 select 和按钮应占满卡片宽度');
+    expectIncludes(styles, '.intake-retry-actions .btn { width: 100%; }', '窄屏重试按钮不应溢出');
   });
 });
 
@@ -179,8 +309,14 @@ describe('Workspace intake cascade delete wiring', () => {
   it('keeps the delete confirmation explicit about linked plans, tasks, and running executions', () => {
     const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
 
-    expectIncludes(intakePanel, 'const linkedPlanId = linkedPlanIdOf(item);', 'delete confirmation should inspect the linked Plan ID');
-    expectIncludes(intakePanel, 'const cascadeWarning = linkedPlanId === null', 'delete confirmation should branch on linked Plan presence');
+    expectIncludes(intakePanel, 'const linkedPlans = linkedPlansOf(item);', 'delete confirmation should inspect linked phase plans');
+    expectIncludes(intakePanel, 'const linkedPlanId = linkedPlanIdOf(item, linkedPlans);', 'delete confirmation should keep single-plan compatibility');
+    expectIncludes(intakePanel, 'const cascadeWarning = linkedPlans.length > 1', 'delete confirmation should branch on multiple linked Plans');
+    expectIncludes(
+      intakePanel,
+      '关联的 ${linkedPlans.length} 个阶段 Plan、全部任务和运行中执行会一并停止并删除。',
+      'multi-stage intake delete confirmation should warn that every phase Plan is stopped and deleted',
+    );
     expectIncludes(
       intakePanel,
       '关联 Plan #${linkedPlanId}、全部任务和运行中执行会一并停止并删除。',
@@ -555,6 +691,39 @@ describe('Workspace composer draft persistence', () => {
     expectCountAtLeast(page, 'draftValue={composerDrafts.', 2, 'both intake panels should bind a draft value');
   });
 
+  it('passes project and intake identity keys through the feedback composer draft chain', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
+    const composer = source('src', 'renderer', 'components', 'Composer.tsx');
+    const requirementPanel = sliceBetween(
+      page,
+      'heading="需求记录"',
+      "onDraftChange={(next) => updateComposerDraft('requirement', next)}",
+      'requirement panel should be locatable in WorkspacePage',
+    );
+    const feedbackPanel = sliceBetween(
+      page,
+      'heading="反馈记录"',
+      "onDraftChange={(next) => updateComposerDraft('feedback', next)}",
+      'feedback panel should be locatable in WorkspacePage',
+    );
+
+    expectIncludes(requirementPanel, 'composerIdentityKey={`project:${projectId}:requirement`}', 'requirement Composer identity should include project and intake type');
+    expectIncludes(requirementPanel, 'draftValue={composerDrafts.requirement}', 'requirement identity should stay on the same draft value chain');
+    expectIncludes(feedbackPanel, 'composerIdentityKey={`project:${projectId}:feedback`}', 'feedback Composer identity should include project and intake type');
+    expectIncludes(feedbackPanel, 'draftValue={composerDrafts.feedback}', 'feedback identity should stay on the same draft value chain');
+    expectIncludes(feedbackPanel, "onDraftChange={(next) => updateComposerDraft('feedback', next)}", 'feedback identity should stay on the same draft update chain');
+
+    expectIncludes(intakePanel, 'composerIdentityKey?: string;', 'IntakePanel should accept a stable Composer identity key');
+    expectIncludes(intakePanel, 'key={composerIdentityKey || type}', 'IntakePanel should remount Composer when identity changes');
+    expectIncludes(intakePanel, 'identityKey={composerIdentityKey || type}', 'IntakePanel should pass the identity key into Composer');
+    expectIncludes(composer, 'identityKey?: string;', 'Composer should accept a stable identity key');
+    expectIncludes(composer, 'const composerIdentityKey = identityKey || type;', 'Composer should derive an explicit identity boundary');
+    expectIncludes(composer, 'key={composerIdentityKey}', 'Composer textarea should be recreated when identity changes');
+    expectIncludes(composer, 'setCreateAsDraft(false);', 'Composer identity changes should reset transient draft-submit state');
+    expectIncludes(composer, 'setDragOver(false);', 'Composer identity changes should reset transient drag state');
+  });
+
   it('clears the composer after a successful submit through the draft chain', () => {
     const composer = source('src', 'renderer', 'components', 'Composer.tsx');
     const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
@@ -615,13 +784,13 @@ describe('Feedback #27 source-level regression', () => {
     const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
 
     // 场景二：预览接线——intakePlanPreviewProps 使用 onPreviewPlan（与 IntakePanel/PlanBindingCard 读取的 prop 名一致）。
-    expectIncludes(page, 'const intakePlanPreviewProps = {', 'intake 面板应共享预览 props');
+    expectIncludes(page, "const intakePlanPreviewProps: Pick<ComponentProps<typeof IntakePanel>, 'plans' | 'onPreviewPlan'> = {", 'intake 面板应共享类型化预览 props');
     expectIncludes(page, 'onPreviewPlan: openIntakePlanReader', 'intakePlanPreviewProps 应使用 onPreviewPlan，与 IntakePanel 一致');
     expectIncludes(intakePanel, 'onPreviewPlan?: PlanPreviewHandler;', 'IntakePanel 应声明 onPreviewPlan 回调 prop');
     expectIncludes(intakePanel, '<PlanBindingCard item={item}', 'IntakePanel 应将预览回调透传给 PlanBindingCard');
     expectIncludes(intakePanel, 'onPreviewPlan={onPreviewPlan}', 'PlanBindingCard 应接收 onPreviewPlan');
-    expectIncludes(intakePanel, 'onPreviewPlan?.(item)', '点击「预览 Plan」应以 intake item 触发，调用签名与 openIntakePlanReader 对齐');
-    expectIncludes(controller, '(item: LinkedPlanIntakeItem, fallbackPlan?', 'openIntakePlanReader 应以 intake item 为首参，对齐预览调用签名');
+    expectIncludes(intakePanel, 'onPreviewPlan?.(item, linkedPlan)', '点击「预览 Plan」应携带目标阶段 summary，调用签名与 openIntakePlanReader 对齐');
+    expectIncludes(controller, '(item: LinkedPlanIntakeItem, linkedPlan?: LinkedPlanSummary | null, fallbackPlan?: Plan | null)', 'openIntakePlanReader 应以 intake item 和可选阶段 summary 为参数');
   });
 
   it('renders the event list with incremental batches and a load-more control', () => {
@@ -724,13 +893,12 @@ describe('Feedback #21 chat bubble alignment regression', () => {
 describe('Feedback #24 chat message simplification regression', () => {
   it('keeps tool call details in the shared dialog instead of inline message-flow expansion', () => {
     const chatView = source('src', 'renderer', 'components', 'workspace', 'ChatView.tsx');
+    const toolCard = source('src', 'renderer', 'components', 'workspace', 'ChatToolCard.tsx');
     const modal = source('src', 'renderer', 'components', 'Modal.tsx');
-    const toolCardStart = chatView.indexOf('/** 工具调用摘要与详情弹窗 */');
-    const toolCardEnd = chatView.indexOf('function hasDisplayableToolValue', toolCardStart);
-    const toolCard = chatView.slice(toolCardStart, toolCardEnd);
 
-    expect(toolCardStart >= 0 && toolCardEnd > toolCardStart, '应能定位到 ChatToolCard 源码块');
-    expectIncludes(chatView, "import { Modal } from '../Modal';", '工具调用详情应复用共享 Modal 组件');
+    expectIncludes(chatView, "import { ChatToolCard } from './ChatToolCard';", '聊天消息应继续通过独立 ChatToolCard 渲染工具调用');
+    expectIncludes(chatView, 'return <ChatToolCard message={message} onOpenIntake={onOpenIntake} />;', 'ChatView 应把工具消息转交 ChatToolCard');
+    expectIncludes(toolCard, "import { Modal } from '../Modal';", '工具调用详情应复用共享 Modal 组件');
     expectIncludes(toolCard, 'const [detailOpen, setDetailOpen] = useState(false);', '工具调用摘要点击应只控制详情 dialog 开关');
     expectIncludes(toolCard, "const statusKind = isLoading ? 'loading' : isError ? 'error' : 'success';", '工具调用应区分加载中、失败、成功三类状态');
     expectIncludes(toolCard, "const statusLabel = isLoading ? '执行中' : isError ? '执行失败' : '已完成';", '工具调用应保留加载中、失败、成功状态文案');
@@ -816,10 +984,68 @@ describe('Feedback #24 chat message simplification regression', () => {
   });
 });
 
-// 反馈 #31 回归测试：任务列表「分组之间」排序改为纯时间倒序（移除 hasRunningTask 运行中置顶优先键），
-// 分组内任务排序保持时间倒序，计划列表倒序不变；运行中分组仍可默认展开（hasRunningTask 字段与排序解耦）。
-describe('Feedback #31 task group sort regression', () => {
-  it('sorts task plan groups purely by latest activity time descending without a running-on-top override', () => {
+// 需求 #51 P006 回归测试：create_plan 工具结果应显示为计划卡片，不走需求/反馈 intake 打开分支。
+describe('create_plan chat tool card regression', () => {
+  it('routes create_plan results to the plan result card instead of intake open-card routing', () => {
+    const toolCard = source('src', 'renderer', 'components', 'workspace', 'ChatToolCard.tsx');
+    const openableSetStart = toolCard.indexOf('const OPENABLE_INTAKE_TOOLS');
+    const openableSetEnd = toolCard.indexOf('/** 由工具 name 映射出 intake 类型', openableSetStart);
+    const openableSet = toolCard.slice(openableSetStart, openableSetEnd);
+    const intakeTypeStart = toolCard.indexOf('function intakeTypeFromToolName');
+    const intakeTypeEnd = toolCard.indexOf('function toPositiveInt', intakeTypeStart);
+    const intakeTypeBody = toolCard.slice(intakeTypeStart, intakeTypeEnd);
+
+    expect(openableSetStart >= 0 && openableSetEnd > openableSetStart, '应能定位到可打开 intake 工具白名单');
+    expect(intakeTypeStart >= 0 && intakeTypeEnd > intakeTypeStart, '应能定位到工具名到 intake 类型的映射');
+    expectIncludes(toolCard, 'const planResult = planToolResultFromResult(name, toolResultRecord);', '工具卡片应先从工具结果识别 plan 结果');
+    expectIncludes(toolCard, '<PlanResultCard result={planResult} />', 'create_plan 成功结果应渲染计划结果卡片');
+    expectIncludes(toolCard, "if (result.type !== 'plan' && name !== 'create_plan') return null;", 'create_plan 结果应由计划结果解析器识别');
+    expectIncludes(toolCard, 'const hasOpenableIntake = intakeType !== null && intakeId !== null && OPENABLE_INTAKE_TOOLS.has(name);', 'intake 打开动作应只允许白名单工具');
+    expect(!openableSet.includes('create_plan'), 'create_plan 不应进入可打开 requirement/feedback 工具白名单');
+    expect(!intakeTypeBody.includes('create_plan'), 'create_plan 不应映射为 requirement 或 feedback intake 类型');
+  });
+
+  it('renders the plan title, status, task count, file path, and id in the visible card', () => {
+    const toolCard = source('src', 'renderer', 'components', 'workspace', 'ChatToolCard.tsx');
+    const planCardStart = toolCard.indexOf('function PlanResultCard');
+    const planCardEnd = toolCard.indexOf('/** 应用内定位深链', planCardStart);
+    const planCard = toolCard.slice(planCardStart, planCardEnd);
+
+    expect(planCardStart >= 0 && planCardEnd > planCardStart, '应能定位到计划结果卡片组件');
+    expectIncludes(planCard, '<span className="chat-tool-card__intake-type">计划</span>', '计划卡片应显示计划类型标签');
+    expectIncludes(planCard, '<span className="chat-tool-card__intake-title" title={result.title}>{result.title}</span>', '计划卡片应显示计划标题');
+    expectIncludes(planCard, '<span className="chat-tool-card__intake-status">{result.status}</span>', '计划卡片应显示计划状态');
+    expectIncludes(planCard, "const taskText = result.totalTasks > 0 ? `${result.totalTasks} 个任务` : '任务数未返回';", '计划卡片应把任务数量格式化为可见文本');
+    expectIncludes(planCard, '<span className="chat-tool-card__intake-plan-title" title={result.filePath || idText}>', '计划卡片应为文件路径提供可见容器');
+    expectIncludes(planCard, "{result.filePath || '计划文件已创建'}", '计划卡片应显示文件路径或创建成功兜底文案');
+    expectIncludes(planCard, '<span className="chat-tool-card__intake-plan-progress">{taskText}</span>', '计划卡片应显示任务数量文本');
+    expectIncludes(planCard, 'Plan {idText}', '计划卡片应显示 plan id');
+    expect(!planCard.includes('chat-tool-card__intake-actions'), '计划结果卡片不应展示打开需求/反馈动作区');
+  });
+
+  it('shows create_plan error text without rendering requirement or feedback open actions', () => {
+    const toolCard = source('src', 'renderer', 'components', 'workspace', 'ChatToolCard.tsx');
+    const planErrorStart = toolCard.indexOf('{planErrorText ? (');
+    const planErrorEnd = toolCard.indexOf('{!hasOpenableIntake && intakeType', planErrorStart);
+    const planErrorBranch = toolCard.slice(planErrorStart, planErrorEnd);
+
+    expect(planErrorStart >= 0 && planErrorEnd > planErrorStart, '应能定位到 create_plan 错误展示分支');
+    expectIncludes(toolCard, "const planErrorText = name === 'create_plan' && !planResult ? toolErrorText : '';", 'create_plan 无有效计划结果时应使用工具错误文本');
+    expectIncludes(toolCard, "if (typeof result.error === 'string' && result.error.trim()) return null;", '带错误的 create_plan 结果不应渲染成功计划卡片');
+    expectIncludes(toolCard, 'function formatToolErrorText', '工具卡片应保留结构化错误文本格式化函数');
+    expectIncludes(toolCard, 'if (error) return error;', '工具卡片应优先显示结构化 error 文本');
+    expectIncludes(toolCard, "return errorCode ? `工具返回错误：${errorCode}` : '';", '工具卡片应在只有 errorCode 时显示可读错误');
+    expectIncludes(planErrorBranch, 'className="chat-tool-card__intake-error"', 'create_plan 错误应显示错误提示样式');
+    expectIncludes(planErrorBranch, '<span>{planErrorText}</span>', 'create_plan 错误应把错误文本渲染到可见内容');
+    expect(!planErrorBranch.includes('IntakeOpenCard'), 'create_plan 错误分支不应渲染需求/反馈打开卡片');
+    expect(!planErrorBranch.includes('chat-tool-card__intake-actions'), 'create_plan 错误分支不应展示打开需求/反馈动作');
+  });
+});
+
+// 需求 #52 回归测试：任务列表分组排序按任务序号稳定展示，计划列表排序语义不变；
+// 运行中分组仍可默认展开（hasRunningTask 字段与排序解耦）。
+describe('Requirement #52 task group sequence sort regression', () => {
+  it('sorts task plan groups by task sequence without time or running-on-top overrides', () => {
     const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
 
     // 截取 groupTasksByPlan 函数体（自 `export function groupTasksByPlan(` 起到下一个 `export function` 止）。
@@ -829,24 +1055,37 @@ describe('Feedback #31 task group sort regression', () => {
     );
     expect(groupTasksByPlanBody.length > 0, '应能定位到 groupTasksByPlan 函数体');
 
-    // 场景一：分组之间排序不再以 hasRunningTask 为优先键——较早创建但「运行中」的分组不再强制置顶，顺序由纯时间倒序决定。
+    // 场景一：分组之间排序不再以 hasRunningTask 为优先键，运行中状态只保留为默认展开依据。
     expect(
       !groupTasksByPlanBody.includes('left.hasRunningTask !== right.hasRunningTask'),
       '任务分组排序不应再以 hasRunningTask 为优先键（运行中置顶已移除）',
     );
 
-    // 场景二：分组之间排序以 sortTime（latestTaskTime，分组内最新活动时间）倒序为主键，firstIndex 兜底保证稳定。
+    // 场景二：分组之间排序以组内最小任务序号 sortSequence 升序为主键，firstIndex 兜底保证稳定。
     expectIncludes(
       groupTasksByPlanBody,
-      'right.sortTime - left.sortTime',
-      '任务分组排序应以 sortTime 倒序（最新活动在前）为主键',
+      'left.sortSequence - right.sortSequence',
+      '任务分组排序应以 sortSequence 升序（较小任务序号在前）为主键',
+    );
+    expectIncludes(
+      groupTasksByPlanBody,
+      'taskPlanGroupSortSequence(sortedTasks)',
+      '任务分组排序应使用当前可见任务的最小序号',
+    );
+    expect(
+      !groupTasksByPlanBody.includes('right.sortTime - left.sortTime'),
+      '任务分组排序不应再以最新活动时间倒序为主键',
     );
 
-    // 场景三：分组内任务排序仍以 taskSortTime（finished_at ?? started_at ?? updated_at）倒序为主键。
+    // 场景三：分组内任务排序使用 compareTasksBySequence，避免完成/开始/更新时间较新的大序号任务前置。
     expectIncludes(
       groupTasksByPlanBody,
-      'rightTime - leftTime',
-      '分组内任务排序仍应以 taskSortTime 倒序为主键',
+      'compareTasksBySequence(left.task, right.task, left.index, right.index)',
+      '分组内任务排序应使用任务序号比较器',
+    );
+    expect(
+      !groupTasksByPlanBody.includes('rightTime - leftTime'),
+      '分组内任务排序不应再以 taskSortTime 倒序为主键',
     );
 
     // 场景四：hasRunningTask 字段本身保留——仅供 getDefaultExpandedTaskGroupKeys 默认展开运行中分组，与排序解耦。
@@ -914,5 +1153,164 @@ describe('Feedback #26 search popup Portal wiring', () => {
 
     // 场景四：点击左侧导航 / 主区空白会关闭；Esc 仍会关闭。
     expectIncludes(page, 'if (event.key === \'Escape\') {', '应保留 Esc 关闭逻辑');
+  });
+});
+
+describe('Workspace executor page regression', () => {
+  it('wires the executors tab, sidebar count, and snapshot sync into the workspace page', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+
+    expectIncludes(page, "import { WorkspaceExecutorsView } from '../components/workspace/WorkspaceExecutorsView';", 'WorkspacePage 应导入执行器工作区视图');
+    expectIncludes(page, "if ((tabParam === 'executors' || tabParam === 'terminal') && activeTab !== tabParam) {", 'URL tab=executors 应能选中执行器页签');
+    expectIncludes(page, 'selectTab(tabParam);', 'URL tab=executors 应调用 selectTab 切换执行器页签');
+    expectIncludes(page, 'executorCount={(activeSnapshot.executors || []).length}', '侧栏执行器数量应来自受保护的 activeSnapshot.executors');
+    expectIncludes(page, 'const syncExecutors = (next: AppSnapshot) => {', '执行器视图应通过共享 snapshot 同步函数回灌状态');
+    expectIncludes(page, 'runLoopAction(async () => next);', '执行器同步应复用 workspace 快照刷新通道');
+    expectIncludes(page, "<section className={`view ${activeTab === 'executors' ? 'active' : ''}`}>", 'WorkspacePage 应保留执行器页 section');
+    expectIncludes(page, "activeTab === 'executors' ? (", '执行器视图应只在执行器页签激活时渲染');
+    expectIncludes(page, '<WorkspaceExecutorsView', '执行器页签应渲染 WorkspaceExecutorsView');
+    expectIncludes(page, 'executors={activeSnapshot.executors || []}', '执行器视图应接收受保护的 activeSnapshot.executors 并兼容旧快照缺省值');
+    expectIncludes(page, 'projectId={projectId}', '执行器视图应接收当前项目 ID');
+    expectIncludes(page, 'onSync={syncExecutors}', '执行器视图保存/导入/运行后应回灌 workspace snapshot');
+  });
+
+  it('keeps executor routing separate from debug or launch contracts', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const executorSectionStart = page.indexOf("<section className={`view ${activeTab === 'executors' ? 'active' : ''}`}>");
+    const executorSectionEnd = page.indexOf("<section className={`view ${activeTab === 'chat' ? 'active' : ''}`}>", executorSectionStart);
+    const executorSection = page.slice(executorSectionStart, executorSectionEnd);
+
+    expect(executorSectionStart >= 0 && executorSectionEnd > executorSectionStart, '应能定位到执行器页 section');
+    expect(!page.toLowerCase().includes('debug'), 'WorkspacePage 不应接入 debug 字段或调试入口');
+    expect(!page.toLowerCase().includes('launch'), 'WorkspacePage 不应接入 launch.json 契约');
+    expect(!page.toLowerCase().includes('breakpoint'), 'WorkspacePage 不应接入断点契约');
+    expect(!executorSection.toLowerCase().includes('debug'), '执行器页 section 不应暴露 debug 文案或控件');
+    expect(!executorSection.toLowerCase().includes('launch'), '执行器页 section 不应暴露 launch 文案或控件');
+    expect(!executorSection.toLowerCase().includes('breakpoint'), '执行器页 section 不应暴露断点能力');
+  });
+});
+
+describe('Workspace terminal page regression', () => {
+  it('keeps the terminal tab routable and reflects active terminal count in the sidebar', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+
+    expectIncludes(page, "if ((tabParam === 'executors' || tabParam === 'terminal') && activeTab !== tabParam) {", 'URL tab=terminal 应能切换到终端页');
+    expectIncludes(page, 'terminalCount={activeTerminalCount}', '侧栏终端徽标应来自活动终端数量');
+    expectIncludes(page, 'const currentTerminalSessions = normalizeTerminalSessions(', 'WorkspacePage 应构造当前项目终端列表');
+    expectIncludes(page, 'terminalListLoaded ? terminalSessions : (activeSnapshot.terminals || terminalSessions)', '首次加载前应使用受保护的 activeSnapshot.terminals 兜底');
+    expectIncludes(page, 'const activeTerminalCount = currentTerminalSessions.filter(isTerminalActive).length;', '活动终端数量应只统计运行中会话');
+    expectIncludes(page, "terminal: '终端'", '页头标题应包含终端模块');
+    expectIncludes(page, "terminal: '当前项目的交互终端会话'", '页头副标题应描述当前项目终端会话');
+  });
+
+  it('loads terminal sessions through IPC and keeps status/exit events project-scoped', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+
+    expectIncludes(page, 'const refreshTerminalSessions = useCallback(async () => {', 'WorkspacePage 应提供终端列表刷新函数');
+    expectIncludes(page, 'const result = await window.autoplan.listTerminals({ projectId });', '终端列表刷新应调用 preload listTerminals');
+    expectIncludes(page, 'setTerminalSessions(result.ok ? normalizeTerminalSessions(result.sessions, requestProjectId) : []);', '读取终端列表应按项目归一化');
+    expectIncludes(page, 'const unsubscribeStatus = window.autoplan.onTerminalStatus((event) => upsert(event.session));', 'WorkspacePage 应订阅终端 status 事件');
+    expectIncludes(page, 'const unsubscribeExit = window.autoplan.onTerminalExit((event) => upsert(event.session));', 'WorkspacePage 应订阅终端 exit 事件');
+    expectIncludes(page, 'if (!terminalBelongsToProject(session, projectId)) return;', '终端事件应过滤其它项目');
+    expectIncludes(page, 'setTerminalSessions((current) => upsertTerminalSession(current, session, projectId));', '终端事件应按 session id upsert');
+    expectIncludes(page, 'unsubscribeStatus();', '卸载时应清理 status 监听');
+    expectIncludes(page, 'unsubscribeExit();', '卸载时应清理 exit 监听');
+  });
+
+  it('wires the terminal tab to the full WorkspaceTerminalView contract', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const terminalSectionStart = page.indexOf("<section className={`view ${activeTab === 'terminal' ? 'active' : ''}`}>");
+    const terminalSectionEnd = page.indexOf("<section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>", terminalSectionStart);
+    const terminalSection = page.slice(terminalSectionStart, terminalSectionEnd);
+
+    expect(terminalSectionStart >= 0 && terminalSectionEnd > terminalSectionStart, '应能定位终端页 section');
+    expectIncludes(page, "import { WorkspaceTerminalView } from '../components/workspace/WorkspaceTerminalView';", 'WorkspacePage 应导入完整终端视图');
+    expectIncludes(page, "const workspacePath = activeSnapshot.activeProject?.workspace_path || routeProject?.workspace_path || '';", 'WorkspacePage 应优先从 activeProject 解析 workspacePath 并兼容路由项目');
+    expectIncludes(terminalSection, '<WorkspaceTerminalView', '终端页应渲染完整 WorkspaceTerminalView');
+    expectIncludes(terminalSection, 'projectId={projectId}', 'WorkspaceTerminalView 应接收当前项目 ID');
+    expectIncludes(terminalSection, 'terminals={currentTerminalSessions}', 'WorkspaceTerminalView 应接收当前项目终端会话列表');
+    expectIncludes(terminalSection, 'scripts={activeSnapshot.scripts}', 'WorkspaceTerminalView 应接收当前项目脚本');
+    expectIncludes(terminalSection, 'executors={activeSnapshot.executors || []}', 'WorkspaceTerminalView 应接收当前项目执行器并兼容旧快照缺省值');
+    expectIncludes(terminalSection, 'workspacePath={workspacePath}', 'WorkspaceTerminalView 应接收解析后的工作区路径');
+  });
+
+  it('does not keep the metadata-only terminal page or page-level terminal creation', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const terminalSectionStart = page.indexOf("<section className={`view ${activeTab === 'terminal' ? 'active' : ''}`}>");
+    const terminalSectionEnd = page.indexOf("<section className={`view ${activeTab === 'settings' ? 'active' : ''}`}>", terminalSectionStart);
+    const terminalSection = page.slice(terminalSectionStart, terminalSectionEnd);
+
+    expect(terminalSectionStart >= 0 && terminalSectionEnd > terminalSectionStart, '应能定位终端页 section');
+    expect(!page.includes('function WorkspaceTerminalMetadataSection'), 'WorkspacePage 不应继续定义元数据伪终端页');
+    expect(!page.includes('window.autoplan.createTerminal({ projectId })'), 'WorkspacePage 不应在页面层直接创建终端');
+    expect(!page.includes('function terminalStatusTone'), 'WorkspacePage 不应保留 metadata-only 状态色辅助函数');
+    expect(!page.includes('function terminalStatusLabel'), 'WorkspacePage 不应保留 metadata-only 状态文案辅助函数');
+    expect(!page.includes('function terminalSessionMeta'), 'WorkspacePage 不应保留 metadata-only 会话摘要辅助函数');
+    expect(!terminalSection.includes('event-badge'), '终端页 section 不应保留 metadata 状态 badge 列表');
+    expect(!terminalSection.includes('terminalStatusLabel'), '终端页 section 不应渲染 metadata-only 状态标签');
+    expect(!terminalSection.includes('terminalSessionMeta'), '终端页 section 不应渲染 metadata-only 会话摘要');
+  });
+});
+
+describe('P009 workspace derived performance guards', () => {
+  it('keeps expensive derived collections gated by active tab and relevant inputs', () => {
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+
+    expectIncludes(controller, 'const searchableSnapshot = searchQuery.trim() ? snapshot : null;', 'empty search should avoid building workspace search candidates from the snapshot');
+    expectIncludes(controller, '() => searchWorkspaceSnapshot(searchableSnapshot, searchQuery)', 'workspace search should be memoized through the searchable snapshot');
+    expectIncludes(controller, '[searchableSnapshot, searchQuery]', 'workspace search should only recompute when the searchable input changes');
+    expectIncludes(controller, "const requirementItems = activeTab === 'requirement'", 'requirements should only feed filtering on the requirement tab');
+    expectIncludes(controller, "const feedbackItems = activeTab === 'feedback'", 'feedback should only feed filtering on the feedback tab');
+    expectIncludes(controller, "const planItems = activeTab === 'tasks'", 'plans should only feed task filtering on the tasks tab');
+    expectIncludes(controller, "const taskItems = activeTab === 'tasks'", 'tasks should only feed task filtering on the tasks tab');
+    expectIncludes(controller, "const eventItems = activeTab === 'events'", 'events should only feed filtering on the events tab');
+    expectIncludes(controller, "const acceptancePlanItems = activeTab === 'acceptance'", 'acceptance plan input should stay gated to the acceptance tab');
+    expectIncludes(controller, "const acceptanceTaskItems = activeTab === 'acceptance'", 'acceptance task input should stay gated to the acceptance tab');
+    expectIncludes(controller, "const taskCliProvider = activeTab === 'tasks' ? state?.agent_cli_provider : null;", 'task title decoration should not react to runtime state outside the tasks tab');
+  });
+
+  it('memoizes acceptance grouping and task display derivation on the gated inputs', () => {
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+
+    expectIncludes(controller, '[activeTab, filteredTasks, taskCliProvider]', 'displayTasks should depend on active tab, filtered tasks, and task CLI provider only');
+    expectIncludes(controller, '[acceptancePlanItems, activeTab, projectId]', 'acceptance project plans should depend on the gated plan list');
+    expectIncludes(controller, '[acceptanceProjectPlans, acceptanceTaskItems, activeTab]', 'pending acceptance groups should depend on gated acceptance inputs');
+    expectCountAtLeast(controller, '[acceptanceProjectPlans, acceptanceTaskItems, activeTab]', 3, 'pending, recent, and accepted acceptance derivations should share the same gated dependencies');
+    expectIncludes(controller, "? buildAcceptanceGroups(acceptanceProjectPlans, acceptanceTaskItems)", 'pending acceptance groups should only build on the acceptance tab');
+    expectIncludes(controller, '? buildRecentAccepted(acceptanceProjectPlans, acceptanceTaskItems)', 'recent accepted records should only build on the acceptance tab');
+    expectIncludes(controller, '? buildAcceptedGroups(acceptanceProjectPlans, acceptanceTaskItems)', 'accepted groups should only build on the acceptance tab');
+  });
+});
+
+describe('P012 plan backend settings UI contracts', () => {
+  it('splits workspace settings into generation and execution backend panels', () => {
+    const settings = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+
+    expectIncludes(settings, "{ id: 'cli', label: '计划后端', hint: '生成与执行方案', icon: 'cli' }", '设置导航应把计划后端描述为生成与执行方案');
+    expectIncludes(settings, '<PlanBackendConfigCard kind="generation" loopForm={loopForm} setLoopForm={setLoopForm} />', '设置页应渲染计划生成配置面板');
+    expectIncludes(settings, '<PlanBackendConfigCard kind="execution" loopForm={loopForm} setLoopForm={setLoopForm} />', '设置页应渲染计划执行配置面板');
+    expectIncludes(settings, "kind: 'generation' | 'execution';", 'PlanBackendConfigCard 应通过 kind 区分生成/执行');
+    expectIncludes(settings, "const isGeneration = kind === 'generation';", '配置卡片应显式判断生成模式');
+    expectIncludes(settings, "const title = isGeneration ? '计划生成' : '计划执行';", '配置卡片标题应区分计划生成和计划执行');
+    expectIncludes(settings, 'const strategyOptions = isGeneration ? planGenerationStrategyOptions : planExecutionStrategyOptions;', '生成与执行应使用各自策略选项');
+    expectIncludes(settings, 'const isBuiltin = isGeneration ? isBuiltinPlanGenerationStrategy(strategy) : isBuiltinPlanExecutionStrategy(strategy);', '内置策略判断应按生成/执行分别处理');
+  });
+
+  it('keeps builtin model and external CLI command fields mutually exclusive in settings', () => {
+    const settings = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');
+    const card = sliceBetween(settings, 'function PlanBackendConfigCard({', 'function nextModelForProvider', '应能定位计划后端配置卡片源码');
+
+    expectIncludes(card, 'const command = isGeneration ? loopForm.planGenerationCommand : loopForm.planExecutionCommand;', '配置卡片应为 CLI 命令读取生成或执行字段');
+    expectIncludes(card, 'const model = isGeneration ? loopForm.planGenerationModel : loopForm.planExecutionModel;', '配置卡片应为内置 LLM 模型读取生成或执行字段');
+    expectIncludes(card, '{isBuiltin ? (', '内置 LLM 与外部 CLI 字段应通过同一 isBuiltin 分支互斥渲染');
+    expectIncludes(card, '<span className="field-label">模型名称</span>', '内置 LLM 分支应显示模型名称字段');
+    expectIncludes(card, 'value={model}', '内置 LLM 分支应绑定 model 值');
+    expectIncludes(card, '? { ...current, planGenerationModel: event.target.value }', '内置生成应只更新 planGenerationModel');
+    expectIncludes(card, ': { ...current, planExecutionModel: event.target.value }', '内置执行应只更新 planExecutionModel');
+    expectIncludes(card, '<span className="field-label">CLI 命令路径 <span className="tag">可选</span></span>', '外部 CLI 分支应显示命令路径字段');
+    expectIncludes(card, 'value={command}', '外部 CLI 分支应绑定 command 值');
+    expectIncludes(card, '? { ...current, planGenerationCommand: event.target.value }', '外部生成应只更新 planGenerationCommand');
+    expectIncludes(card, ': { ...current, planExecutionCommand: event.target.value }', '外部执行应只更新 planExecutionCommand');
+    expectIncludes(card, '<span>{isGeneration ? planGenerationStrategyLabel(strategy) : planExecutionStrategyLabel(strategy)}</span>', '配置摘要应按生成/执行显示策略标签');
   });
 });

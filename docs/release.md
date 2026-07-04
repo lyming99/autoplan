@@ -13,6 +13,42 @@ AutoPlan 使用 GitHub Actions + electron-builder 发布桌面端安装包。当
 - GitHub 仓库的 Actions 权限允许 workflow 读写 `contents`，以便内置 `GITHUB_TOKEN` 创建或更新 Release。
 - tag 使用 `v` 前缀，例如 `v0.2.0`。
 
+### 运行时配置兼容检查
+
+涉及计划后端配置的版本发布前，请在 Release notes 中明确以下兼容边界：
+
+- 旧安装和旧 MCP/UI 调用默认保持 `external-cli-markdown` 计划生成 + `external-cli` 任务执行 + `codex` provider。
+- 项目级旧字段 `agentCliProvider`、`agentCliCommand`、`codexReasoningEffort` 继续兼容，并在未填写新字段时映射为生成默认值和执行默认值。
+- 单条需求/反馈的旧字段只兼容映射为计划生成覆盖；`create_requirement`、`create_feedback` 和 Composer 都不接受也不提交 `planExecution*` 覆盖。
+- 新文档和新示例应优先使用 `planGeneration*` 与 `planExecution*` 拆分字段，避免继续把生成 provider 和执行 provider 混在一起。
+- `builtin-llm-structured` 计划生成依赖应用内 AI 配置、模型和 API key；没有可用配置时会走计划生成失败链路，不会写入 plan。
+- `builtin-llm` 任务执行第一阶段未支持。配置可以保存，但执行任务时应明确报 `builtin-llm execution is not supported yet`，不能宣传为可用执行后端。
+
+推荐在版本说明里给出新字段示例：
+
+```json
+{
+  "planGenerationStrategy": "external-cli-structured",
+  "planGenerationProvider": "claude",
+  "planExecutionStrategy": "external-cli",
+  "planExecutionProvider": "codex",
+  "planExecutionCodexReasoningEffort": "medium"
+}
+```
+
+单条需求/反馈示例只放生成覆盖：
+
+```json
+{
+  "projectId": 1,
+  "title": "反馈标题",
+  "body": "反馈正文",
+  "planGenerationStrategy": "builtin-llm-structured",
+  "planGenerationProvider": "openai",
+  "planGenerationModel": "model-from-ai-config"
+}
+```
+
 ## GitHub Actions 触发方式
 
 Release workflow 位于 `.github/workflows/release.yml`，触发方式如下：

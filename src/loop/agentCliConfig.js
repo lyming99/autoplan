@@ -3,6 +3,7 @@
   normalizeAgentCliCommand,
   normalizeAgentCliProvider,
 } = require('../agentCli');
+const { PLAN_BACKEND_CONFIG_INPUT_KEYS } = require('./planBackendConfig');
 
 const AGENT_CLI_PROVIDER_COLUMNS = Object.freeze(['agent_cli_provider', 'cli_provider', 'cli_backend']);
 const AGENT_CLI_COMMAND_COLUMNS = Object.freeze(['agent_cli_command', 'cli_command', 'cli_path']);
@@ -99,6 +100,7 @@ const LOOP_CONFIG_INPUT_KEYS = Object.freeze([
   ...AGENT_CLI_PROVIDER_INPUT_KEYS,
   ...AGENT_CLI_COMMAND_INPUT_KEYS,
   ...CODEX_REASONING_EFFORT_COLUMNS,
+  ...PLAN_BACKEND_CONFIG_INPUT_KEYS,
 ]);
 const VALIDATION_COMMAND_INPUT_KEYS = Object.freeze(['validationCommand', 'validation_command']);
 const CODEX_SESSION_UUID_RE_SOURCE = '[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}';
@@ -653,6 +655,7 @@ module.exports = {
   DEFAULT_AGENT_CLI_PROVIDER,
   DEFAULT_CODEX_REASONING_EFFORT,
   LOOP_CONFIG_INPUT_KEYS,
+  PLAN_BACKEND_CONFIG_INPUT_KEYS,
   VALIDATION_COMMAND_INPUT_KEYS,
   agentCliContextFields,
   agentCliOperationFields,

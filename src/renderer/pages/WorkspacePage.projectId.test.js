@@ -71,6 +71,47 @@ describe('Workspace chat project boundary regression', () => {
   });
 });
 
+describe('Feedback #36 project switch focus regression', () => {
+  it('blurs the native project select before switching projects', () => {
+    const sidebar = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSidebar.tsx');
+    const projectSelect = sliceBetween(
+      sidebar,
+      'className="project-select"',
+      '</select>',
+      'WorkspaceSidebar should render the project select',
+    );
+    const blurIndex = projectSelect.indexOf('event.currentTarget.blur();');
+    const switchIndex = projectSelect.indexOf('onSwitchProject(Number(event.target.value));');
+
+    expectIncludes(projectSelect, 'onChange={(event) => {', 'project select should use an explicit onChange block');
+    expect(blurIndex >= 0, 'project select should release native focus before routing');
+    expect(switchIndex >= 0, 'project select should keep the existing onSwitchProject(Number(event.target.value)) path');
+    expect(blurIndex < switchIndex, 'project select should blur before invoking the switch callback');
+  });
+
+  it('guards workspace rendering from stale project snapshots during route changes', () => {
+    const hook = source('src', 'renderer', 'hooks', 'useSnapshot.ts');
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const guardStart = page.indexOf('if (!activeSnapshot) {');
+    const feedbackPanelStart = page.indexOf('heading="反馈记录"');
+
+    expectIncludes(hook, 'if (projectId === null || !current || isSnapshotForProject(current, projectId)) return current;', 'useSnapshot should detect when the current snapshot already belongs to the route project');
+    expectIncludes(hook, 'return createProjectListSnapshot(current);', 'useSnapshot should strip stale project content immediately on projectId changes');
+    expectIncludes(hook, 'if (isSnapshotForProject(next, projectId)) return next;', 'useSnapshot should only accept full snapshots for the requested project');
+    expectIncludes(hook, 'return createProjectListSnapshot(current || next, next.projects);', 'useSnapshot should keep only safe project-list data from mismatched snapshots');
+    expectIncludes(hook, 'activeProjectId: null,', 'stale snapshot fallback should clear activeProjectId');
+    expectIncludes(hook, 'activeProject: null,', 'stale snapshot fallback should clear activeProject');
+    expectIncludes(hook, 'requirements: [],', 'stale snapshot fallback should clear requirement records');
+    expectIncludes(hook, 'feedback: [],', 'stale snapshot fallback should clear feedback records');
+
+    expectIncludes(page, 'const activeSnapshot = isWorkspaceSnapshotForProject(snapshot, projectId) ? snapshot : null;', 'WorkspacePage should derive a route-matched active snapshot');
+    expectIncludes(page, '&& Number(snapshot?.activeProjectId) === Number(projectId)', 'WorkspacePage snapshot guard should compare activeProjectId with the route projectId');
+    expectIncludes(page, 'if (!activeSnapshot) {', 'WorkspacePage should render a loading boundary while the route snapshot is unavailable');
+    expectIncludes(page, '<div className="empty">加载中...</div>', 'WorkspacePage should show loading instead of stale workspace content');
+    expect(guardStart >= 0 && feedbackPanelStart > guardStart, 'feedback Composer should only appear after the activeSnapshot guard');
+  });
+});
+
 describe('Workspace global AI config boundary regression', () => {
   it('keeps settings AI config CRUD global and independent of project context', () => {
     const settingsView = source('src', 'renderer', 'components', 'workspace', 'WorkspaceSettingsView.tsx');

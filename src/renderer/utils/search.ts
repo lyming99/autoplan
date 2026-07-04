@@ -488,8 +488,12 @@ function createAttachmentLookup(attachments: readonly AttachmentRecord[]) {
 
   attachments.forEach((attachment) => {
     const key = createAttachmentLookupKey(attachment.owner_type, attachment.owner_id);
-    const ownerAttachments = lookup.get(key) ?? [];
-    lookup.set(key, [...ownerAttachments, attachment]);
+    const ownerAttachments = lookup.get(key);
+    if (ownerAttachments) {
+      ownerAttachments.push(attachment);
+    } else {
+      lookup.set(key, [attachment]);
+    }
   });
 
   return lookup;

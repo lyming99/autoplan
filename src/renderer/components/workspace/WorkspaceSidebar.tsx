@@ -26,6 +26,8 @@ const WORKSPACE_NAV: NavItem[] = [
 
 const EXEC_NAV: NavItem[] = [
   { id: 'tasks', label: '计划与任务', icon: 'tasks' },
+  { id: 'terminal', label: '终端', icon: 'terminal' },
+  { id: 'executors', label: '执行器', icon: 'executor' },
   { id: 'scripts', label: '脚本', icon: 'script' },
   { id: 'events', label: '事件流', icon: 'events' },
 ];
@@ -53,6 +55,8 @@ export function WorkspaceSidebar({
   projects,
   currentProject,
   state,
+  terminalCount = 0,
+  executorCount = 0,
   scriptCount = 0,
   onSwitchProject,
   chatState,
@@ -67,6 +71,8 @@ export function WorkspaceSidebar({
   projects: Project[];
   currentProject: Project | null;
   state: ProjectState | null;
+  terminalCount?: number;
+  executorCount?: number;
   scriptCount?: number;
   onSwitchProject: (id: number) => void;
   chatState?: WorkspaceChatState;
@@ -249,7 +255,10 @@ export function WorkspaceSidebar({
         <select
           className="project-select"
           value={projectId}
-          onChange={(event) => onSwitchProject(Number(event.target.value))}
+          onChange={(event) => {
+            event.currentTarget.blur();
+            onSwitchProject(Number(event.target.value));
+          }}
         >
           {projects.map((project) => (
             <option key={project.id} value={project.id}>
@@ -277,7 +286,13 @@ export function WorkspaceSidebar({
         <Fragment key={group.label}>
           <div className="nav-group-label">{group.label}</div>
           {group.items.map((tab) => {
-            const badge = tab.id === 'scripts' && scriptCount > 0 ? scriptCount : undefined;
+            const badge = tab.id === 'terminal' && terminalCount > 0
+              ? terminalCount
+              : tab.id === 'executors' && executorCount > 0
+                ? executorCount
+                : tab.id === 'scripts' && scriptCount > 0
+                  ? scriptCount
+                  : undefined;
             if (tab.id === 'chat') {
               return (
                 <div className="nav-chat-block" key={tab.id}>

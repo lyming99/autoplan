@@ -17,8 +17,15 @@ function toolMarkdown(tool) {
     '',
     `**功能**：${tool.description || tool.title || tool.name}`,
     '',
+    executorToolNote(tool.name),
+    '',
     parameterSection(tool.inputSchema),
   ].filter(Boolean).join('\n');
+}
+
+function executorToolNote(name) {
+  if (!String(name || '').includes('executor')) return '';
+  return '**执行器约束**：仅操作当前项目内已保存的执行器；run/stop 不接受临时 command、launch 或 debug 参数；运行结果只返回状态、退出码、耗时和日志尾部。';
 }
 
 function parameterSection(schema = {}) {

@@ -4,6 +4,8 @@ const path = require('node:path');
 const { Worker } = require('node:worker_threads');
 
 const WORKSPACE_RUNTIME_DIR = '.autoplan-runtime';
+const FILE_HASH_CACHE_LIMIT = 1000;
+const fileHashCache = new Map();
 
 function ensureWorkspaceDirs(service, helpers, workspace) {
     for (const dir of ['docs/issues', 'docs/plan', 'docs/progress', 'docs/progress/logs']) {
@@ -27,7 +29,7 @@ function scanDirectorySync(root, workspace, extensions) {
           const stat = fs.statSync(full);
           files.push({
             path: normalizeRelative(workspace, full),
-            hash: hashFile(full),
+            hash: hashFile(full, stat),
             size: stat.size,
             modifiedAt: stat.mtime.toISOString(),
           });
@@ -79,13 +81,15 @@ function resolveScanWorkerPath() {
 
 function saveScan(service, helpers, projectId, type, scan) {
     const { nowIso } = require('../database');
+    const files = Array.isArray(scan?.files) ? scan.files : [];
+    if (scanFilesUnchanged(service, projectId, type, files)) return false;
     const scannedAt = nowIso();
     const statements = [
       {
         sql: 'DELETE FROM scan_files WHERE project_id = ? AND scan_type = ?',
         params: [projectId, type],
       },
-      ...scan.files.map((file) => ({
+      ...files.map((file) => ({
         sql: `INSERT OR REPLACE INTO scan_files
               (project_id, scan_type, file_path, hash, size, modified_at, scanned_at)
               VALUES (?, ?, ?, ?, ?, ?, ?)`,
@@ -94,12 +98,42 @@ function saveScan(service, helpers, projectId, type, scan) {
     ];
     if (typeof service.db.runBatch === 'function') {
       service.db.runBatch(statements);
-      return;
+      return true;
     }
     for (const statement of statements) {
       service.db.run(statement.sql, statement.params);
     }
+    return true;
   }
+
+function scanFilesUnchanged(service, projectId, type, files) {
+  if (!service?.db?.all) return false;
+  const existing = service.db.all(
+    `SELECT file_path, hash, size, modified_at
+       FROM scan_files
+      WHERE project_id = ? AND scan_type = ?
+      ORDER BY file_path ASC`,
+    [projectId, type],
+  );
+  if (existing.length !== files.length) return false;
+  const byPath = new Map(existing.map((file) => [String(file.file_path || ''), file]));
+  const seenPaths = new Set();
+  for (const file of files) {
+    const filePath = String(file.path || '');
+    if (seenPaths.has(filePath)) return false;
+    seenPaths.add(filePath);
+    const current = byPath.get(filePath);
+    if (!current) return false;
+    if (
+      String(current.hash || '') !== String(file.hash || '') ||
+      Number(current.size || 0) !== Number(file.size || 0) ||
+      String(current.modified_at || '') !== String(file.modifiedAt || '')
+    ) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function workspaceToolEnv(workspace, baseEnv = process.env) {
   const root = path.join(path.resolve(workspace), WORKSPACE_RUNTIME_DIR);
@@ -128,8 +162,19 @@ function workspaceToolEnv(workspace, baseEnv = process.env) {
   return env;
 }
 
-function hashFile(filePath) {
-  return crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+function hashFile(filePath, statHint = null) {
+  const stat = statHint || fs.statSync(filePath);
+  const key = `${path.resolve(filePath)}\0${stat.size}\0${stat.mtimeMs}`;
+  if (fileHashCache.has(key)) {
+    const cached = fileHashCache.get(key);
+    fileHashCache.delete(key);
+    fileHashCache.set(key, cached);
+    return cached;
+  }
+  const hash = crypto.createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+  fileHashCache.set(key, hash);
+  trimMap(fileHashCache, FILE_HASH_CACHE_LIMIT);
+  return hash;
 }
 
 function hashText(text) {
@@ -148,6 +193,42 @@ function resolveWorkspaceChildPath(workspace, filePath) {
     return requestedPath;
   }
   return '';
+}
+
+function resolveWorkspaceCwd(workspace, cwd = '') {
+  const workspaceValue = String(workspace || '').trim();
+  const rawCwd = String(cwd || '').trim();
+  const result = {
+    safe: false,
+    reason: '',
+    cwd: '',
+    relativePath: '',
+  };
+  if (!workspaceValue) return { ...result, reason: 'workspace_empty' };
+
+  const workspaceRoot = path.resolve(workspaceValue);
+  const expanded = rawCwd
+    ? rawCwd
+      .replace(/\$\{workspace\}/g, workspaceRoot)
+      .replace(/\$\{workspaceFolder\}/g, workspaceRoot)
+    : workspaceRoot;
+  const resolvedCwd = path.isAbsolute(expanded)
+    ? path.resolve(expanded)
+    : path.resolve(workspaceRoot, expanded);
+  const relativePath = path.relative(workspaceRoot, resolvedCwd);
+  const relativeForCompare = normalizePathForCompare(relativePath);
+  const parentPrefix = `..${path.sep}`;
+  const insideWorkspace =
+    relativeForCompare === '' ||
+    (!!relativeForCompare &&
+      relativeForCompare !== '..' &&
+      !relativeForCompare.startsWith(parentPrefix) &&
+      !path.isAbsolute(relativePath));
+
+  result.cwd = resolvedCwd;
+  result.relativePath = relativeForCompare === '' ? '' : normalizeRelative(workspaceRoot, resolvedCwd);
+  if (!insideWorkspace) return { ...result, reason: 'outside_workspace' };
+  return { ...result, safe: true, reason: '' };
 }
 
 function resolveSafeAutoPlanIntakePlanPath(workspace, filePath, intakeType, intakeId) {
@@ -189,6 +270,113 @@ function resolveSafeAutoPlanIntakePlanPath(workspace, filePath, intakeType, inta
   return { ...result, safe: true, reason: '' };
 }
 
+function resolveSafePlanMarkdownPath(workspace, filePath) {
+  const workspaceValue = String(workspace || '').trim();
+  const filePathValue = String(filePath || '').trim();
+  const result = {
+    safe: false,
+    reason: '',
+    filePath: '',
+    relativePath: filePathValue,
+    planDir: '',
+  };
+  if (!workspaceValue) return { ...result, reason: 'workspace_empty' };
+  if (!filePathValue) return { ...result, reason: 'file_path_empty' };
+
+  const workspaceRoot = path.resolve(workspaceValue);
+  const planDir = path.resolve(workspaceRoot, 'docs', 'plan');
+  const resolvedPath = path.resolve(workspaceRoot, filePathValue);
+  const relativeToPlanDir = path.relative(planDir, resolvedPath);
+  const relativeToPlanDirForCompare = normalizePathForCompare(relativeToPlanDir);
+  const insidePlanDir =
+    relativeToPlanDirForCompare !== '' &&
+    !relativeToPlanDirForCompare.startsWith('..') &&
+    !path.isAbsolute(relativeToPlanDirForCompare);
+
+  result.filePath = resolvedPath;
+  result.relativePath = normalizeRelative(workspaceRoot, resolvedPath);
+  result.planDir = planDir;
+  if (!insidePlanDir) return { ...result, reason: 'outside_docs_plan' };
+  if (path.extname(resolvedPath).toLowerCase() !== '.md') {
+    return { ...result, reason: 'not_markdown' };
+  }
+  return { ...result, safe: true, reason: '' };
+}
+
+function resolveSafePlanManifestPath(workspace, filePath) {
+  const workspaceValue = String(workspace || '').trim();
+  const filePathValue = String(filePath || '').trim();
+  const result = {
+    safe: false,
+    reason: '',
+    filePath: '',
+    relativePath: filePathValue,
+    planDir: '',
+  };
+  if (!workspaceValue) return { ...result, reason: 'workspace_empty' };
+  if (!filePathValue) return { ...result, reason: 'file_path_empty' };
+
+  const workspaceRoot = path.resolve(workspaceValue);
+  const planDir = path.resolve(workspaceRoot, 'docs', 'plan');
+  const resolvedPath = path.resolve(workspaceRoot, filePathValue);
+  const relativeToPlanDir = path.relative(planDir, resolvedPath);
+  const relativeToPlanDirForCompare = normalizePathForCompare(relativeToPlanDir);
+  const insidePlanDir =
+    relativeToPlanDirForCompare !== '' &&
+    !relativeToPlanDirForCompare.startsWith('..') &&
+    !path.isAbsolute(relativeToPlanDirForCompare);
+
+  result.filePath = resolvedPath;
+  result.relativePath = normalizeRelative(workspaceRoot, resolvedPath);
+  result.planDir = planDir;
+  if (!insidePlanDir) return { ...result, reason: 'outside_docs_plan' };
+  if (path.extname(resolvedPath).toLowerCase() !== '.json') {
+    return { ...result, reason: 'not_json' };
+  }
+  return { ...result, safe: true, reason: '' };
+}
+
+function resolveSafePlanSpecPath(workspace, filePath) {
+  const workspaceValue = String(workspace || '').trim();
+  const filePathValue = String(filePath || '').trim();
+  const result = {
+    safe: false,
+    reason: '',
+    filePath: '',
+    relativePath: filePathValue,
+    planDir: '',
+    logsDir: '',
+  };
+  if (!workspaceValue) return { ...result, reason: 'workspace_empty' };
+  if (!filePathValue) return { ...result, reason: 'file_path_empty' };
+
+  const workspaceRoot = path.resolve(workspaceValue);
+  const planDir = path.resolve(workspaceRoot, 'docs', 'plan');
+  const logsDir = path.resolve(workspaceRoot, 'docs', 'progress', 'logs');
+  const resolvedPath = path.resolve(workspaceRoot, filePathValue);
+
+  result.filePath = resolvedPath;
+  result.relativePath = normalizeRelative(workspaceRoot, resolvedPath);
+  result.planDir = planDir;
+  result.logsDir = logsDir;
+
+  if (!isResolvedPathInsideDir(planDir, resolvedPath) && !isResolvedPathInsideDir(logsDir, resolvedPath)) {
+    return { ...result, reason: 'outside_allowed_plan_spec_dirs' };
+  }
+  if (path.extname(resolvedPath).toLowerCase() !== '.json') {
+    return { ...result, reason: 'not_json' };
+  }
+  return { ...result, safe: true, reason: '' };
+}
+
+function isResolvedPathInsideDir(baseDir, filePath) {
+  const relativePath = path.relative(baseDir, filePath);
+  const relativeForCompare = normalizePathForCompare(relativePath);
+  return relativeForCompare !== '' &&
+    !relativeForCompare.startsWith('..') &&
+    !path.isAbsolute(relativeForCompare);
+}
+
 function normalizeRelative(root, fullPath) {
   return path.relative(root, fullPath).replaceAll(path.sep, '/');
 }
@@ -209,8 +397,20 @@ function workspaceKey(workspace) {
 }
 
 function readSnippet(filePath, maxChars) {
-  const text = fs.readFileSync(filePath, 'utf8');
-  return text.length > maxChars ? `${text.slice(0, maxChars)}\n...[truncated]` : text;
+  const limit = Number(maxChars);
+  if (!Number.isFinite(limit) || limit <= 0) return '';
+  const stat = fs.statSync(filePath);
+  const maxBytes = Math.min(stat.size, Math.max(Math.ceil(limit * 4), limit));
+  const fd = fs.openSync(filePath, 'r');
+  let bytesRead = 0;
+  try {
+    const buffer = Buffer.allocUnsafe(maxBytes);
+    bytesRead = fs.readSync(fd, buffer, 0, maxBytes, 0);
+    const text = buffer.subarray(0, bytesRead).toString('utf8');
+    return text.length > limit ? `${text.slice(0, limit)}\n...[truncated]` : text;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function tailText(text, maxChars) {
@@ -243,6 +443,10 @@ function normalizeEnvVarsJson(envVars) {
   return JSON.stringify(entries);
 }
 
+function trimMap(map, limit) {
+  while (map.size > limit) map.delete(map.keys().next().value);
+}
+
 module.exports = {
   ensureWorkspaceDirs,
   hashFile,
@@ -251,6 +455,10 @@ module.exports = {
   normalizeRelative,
   readSnippet,
   resolveSafeAutoPlanIntakePlanPath,
+  resolveSafePlanMarkdownPath,
+  resolveSafePlanManifestPath,
+  resolveSafePlanSpecPath,
+  resolveWorkspaceCwd,
   resolveWorkspaceChildPath,
   safePart,
   saveScan,
