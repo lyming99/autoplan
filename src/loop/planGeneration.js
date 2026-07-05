@@ -1915,7 +1915,16 @@ async function recordIntakePlanGenerationFailure(service, input) {
   );
   const logFile = normalizeNullableString(result?.logFile);
   const failedAt = nowIso();
+  // agentContext 可能为空（agentCliContextFields 不再默认 'codex'），所以从 agentCliConfig 兜底补 provider/command，
+  // 让事件 meta 始终带 agentCliProvider 字段供下游消费。
+  const cliFallback = agentCliConfig && (agentCliConfig.agentCliProvider || agentCliConfig.provider)
+    ? {
+        agentCliProvider: agentCliConfig.agentCliProvider ?? agentCliConfig.provider,
+        agentCliCommand: agentCliConfig.agentCliCommand ?? agentCliConfig.command,
+      }
+    : {};
   service.addEvent(projectId, eventType || 'plan.generate.failed', message, {
+    ...cliFallback,
     ...agentContext,
     ...(meta || {}),
     error: failureError,

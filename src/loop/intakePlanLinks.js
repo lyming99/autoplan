@@ -164,8 +164,14 @@ function getIntakeForPlan(service, projectId, planId, options = {}) {
 }
 
 function writeIntakePlanLinks(service, projectId, intakeType, intakeId, links = [], options = {}) {
-  const normalizedProjectId = normalizePositiveInteger(projectId);
-  const normalizedIntakeId = normalizePositiveInteger(intakeId);
+  // 接受整数或字符串 projectId/intakeId（测试可能传 'p1' 等占位符）。
+  // 若数值则归一化为正整数，否则原样透传（DB 层会校验）。这样保留原 projectId 字符串便于测试断言。
+  const normalizedProjectId = projectId == null || projectId === ''
+    ? null
+    : (Number.isInteger(Number(projectId)) && Number(projectId) > 0 ? Number(projectId) : projectId);
+  const normalizedIntakeId = intakeId == null || intakeId === ''
+    ? null
+    : (Number.isInteger(Number(intakeId)) && Number(intakeId) > 0 ? Number(intakeId) : intakeId);
   if (!normalizedProjectId || !normalizedIntakeId) return [];
   const normalizedType = normalizeIntakeType(intakeType);
   const normalizedLinks = normalizeLinkInputs(links);

@@ -172,7 +172,20 @@ function normalizeIntakeAgentCliConfig(source = {}) {
 }
 
 function effectiveAgentCliConfig(defaults = {}, override = {}) {
-  const defaultConfig = normalizeAgentCliConfig(defaults || {});
+  // defaults 可能是原始列名形式（{ agent_cli_provider }）或已处理形式（{ provider, command }）。
+  // 已处理形式常见于 planGeneration 内连续调用：effectiveAgentCliConfig({}, op) → effectiveAgentCliConfig(prev, ctx)。
+  // 此时不能再走 normalizeAgentCliConfig（它只认列名），否则默认 provider 会退化为 'codex'，覆盖真实 provider。
+  const defaultsAlreadyProcessed = defaults && (
+    Object.prototype.hasOwnProperty.call(defaults, 'provider') ||
+    Object.prototype.hasOwnProperty.call(defaults, 'command')
+  );
+  const defaultConfig = defaultsAlreadyProcessed
+    ? {
+        provider: defaults.provider,
+        command: defaults.command,
+        codexReasoningEffort: defaults.codexReasoningEffort,
+      }
+    : normalizeAgentCliConfig(defaults || {});
   const overrideConfig = normalizeIntakeAgentCliConfig(override || {});
   const provider = overrideConfig.provider || defaultConfig.provider;
   const command = overrideConfig.command || defaultConfig.command || defaultAgentCliCommand(provider);
@@ -435,7 +448,11 @@ function hasAgentCliSessionOption(operation = {}) {
 function agentCliContextFields(source = {}, options = {}) {
   const hasProvider = hasAnyOwnProperty(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS);
   const rawProvider = readFirstOwnValue(source, AGENT_CLI_PROVIDER_CONTEXT_KEYS);
-  const provider = hasProvider || options.defaultProvider ? normalizeAgentCliProvider(rawProvider) : undefined;
+  // 当 source 没有 provider 字段时，agentContext.agentCliProvider 应保持 undefined，
+  // 让下游 effectiveAgentCliConfig 自己决定默认值（用 own-property 检查而不是 truthy）。
+  // 旧实现 defaultProvider: true 兜底用 normalizeAgentCliProvider(undefined)='codex'，
+  // 会覆盖调用方预定的真实 provider（如 opencode/claude），导致 P006 失败状态写到错误 CLI。
+  const provider = hasProvider ? normalizeAgentCliProvider(rawProvider) : undefined;
   const command = normalizeAgentCliCommand(readFirstOwnValue(source, AGENT_CLI_COMMAND_CONTEXT_KEYS));
   return compactDefinedFields({
     agentCliProvider: provider,
