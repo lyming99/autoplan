@@ -19,7 +19,7 @@
  * - {type:'error', message:string, status?:number, aborted?:boolean} 错误
  */
 
-const OpenAI = require('openai').OpenAI;
+// const OpenAI = require('openai').OpenAI; // 移除 openai SDK 依赖，改回手写 fetch + SSE
 
 /**
  * @param {object} opts
@@ -101,99 +101,120 @@ async function* streamOpenAiCompat({
   signal,
   thinkingDepth,
 }) {
-  const client = new OpenAI({
-    baseURL: baseUrl.replace(/\/+$/, ''),
-    apiKey: apiKey || 'sk-placeholder',
-    dangerouslyAllowBrowser: true,
-    fetch: fetchFn,
-  });
+  const url = `${baseUrl.replace(/\/+$/, '')}/chat/completions`;
+  const body = buildOpenAiBody({ model, temperature, messages, tools, toolChoice, thinkingDepth });
 
-  /** @type {import('openai').Chat.Completions.ChatCompletionCreateParams} */
-  const params = {
-    model,
-    messages,
-    stream: true,
-    stream_options: { include_usage: false },
-  };
-  if (Number.isFinite(temperature)) params.temperature = temperature;
-  if (tools && tools.length > 0) {
-    params.tools = tools.map(normalizeToolForOpenAiSdk);
-  }
-  if (toolChoice !== undefined && toolChoice !== null) {
-    params.tool_choice = toolChoice;
-  }
-  if (thinkingDepth) {
-    params.reasoning_effort = thinkingDepth;
-  }
-
-  let stream;
+  let response;
   try {
-    // @ts-ignore - reasoning_effort 非官方类型但在实际请求体中有效
-    stream = await client.chat.completions.create(params, { signal });
+    response = await fetchFn(url, {
+      method: 'POST',
+      headers: buildOpenAiHeaders(apiKey),
+      body: JSON.stringify(body),
+      signal,
+    });
   } catch (error) {
     yield errorEvent(error);
     return;
   }
 
+  if (!response.ok) {
+    const errorBody = await readTextSafe(response);
+    yield { type: 'error', message: errorBody || `HTTP ${response.status}`, status: response.status };
+    return;
+  }
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    yield { type: 'error', message: 'response body is not readable' };
+    return;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = '';
   const toolCalls = {}; // keyed by index
   let inThinking = false;
 
   try {
-    for await (const chunk of stream) {
-      const delta = chunk.choices?.[0]?.delta;
-      if (!delta) continue;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
 
-      // reasoning_content（DeepSeek R1 等推理模型的思考内容）
-      const reasoningContent = delta.reasoning_content;
-      if (reasoningContent) {
-        if (!inThinking) {
-          inThinking = true;
-          yield { type: 'thinking_start' };
-        }
-        yield { type: 'thinking_delta', content: reasoningContent };
-      }
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() || '';
 
-      // 正式文本内容
-      if (delta.content) {
-        if (inThinking) {
-          inThinking = false;
-          yield { type: 'thinking_end' };
-        }
-        yield { type: 'text_delta', content: delta.content };
-      }
-
-      // 工具调用增量拼接
-      if (delta.tool_calls) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index ?? 0;
-          if (!toolCalls[idx]) {
-            toolCalls[idx] = { id: '', name: '', arguments: '' };
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith('data:')) continue;
+        const data = trimmed.slice(5).trim();
+        if (data === '[DONE]') {
+          if (inThinking) {
+            inThinking = false;
+            yield { type: 'thinking_end' };
           }
-          if (tc.id) toolCalls[idx].id = tc.id;
-          if (tc.function?.name) toolCalls[idx].name += tc.function.name;
-          if (tc.function?.arguments) toolCalls[idx].arguments += tc.function.arguments;
+          for (const tc of Object.values(toolCalls).filter(Boolean)) {
+            yield { type: 'tool_call', id: tc.id, name: tc.name, arguments: tc.arguments };
+          }
+          yield { type: 'done' };
+          return;
         }
-      }
+        const parsed = parseJsonSafe(data);
+        if (!parsed || !Array.isArray(parsed.choices) || parsed.choices.length === 0) continue;
+        const choice = parsed.choices[0];
+        const delta = choice?.delta;
+        if (!delta) continue;
 
-      const finishReason = chunk.choices?.[0]?.finish_reason;
-      if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'content_filter') {
-        if (inThinking) {
-          inThinking = false;
-          yield { type: 'thinking_end' };
+        // reasoning_content（DeepSeek R1 等推理模型的思考内容）
+        if (delta.reasoning_content) {
+          if (!inThinking) {
+            inThinking = true;
+            yield { type: 'thinking_start' };
+          }
+          yield { type: 'thinking_delta', content: delta.reasoning_content };
         }
-        yield { type: 'done', finishReason };
-        return;
-      }
-      if (finishReason === 'tool_calls') {
-        if (inThinking) {
-          inThinking = false;
-          yield { type: 'thinking_end' };
+
+        // 正式文本内容
+        if (delta.content) {
+          if (inThinking) {
+            inThinking = false;
+            yield { type: 'thinking_end' };
+          }
+          yield { type: 'text_delta', content: delta.content };
         }
-        for (const tc of Object.values(toolCalls).filter(Boolean)) {
-          yield { type: 'tool_call', id: tc.id, name: tc.name, arguments: tc.arguments };
+
+        // 工具调用增量拼接
+        if (Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            if (!toolCalls[idx]) {
+              toolCalls[idx] = { id: '', name: '', arguments: '' };
+            }
+            if (tc.id) toolCalls[idx].id = tc.id;
+            if (tc.function?.name) toolCalls[idx].name += tc.function.name;
+            if (tc.function?.arguments) toolCalls[idx].arguments += tc.function.arguments;
+          }
         }
-        yield { type: 'done', finishReason: 'tool_calls' };
-        return;
+
+        const finishReason = choice.finish_reason;
+        if (finishReason === 'stop' || finishReason === 'length' || finishReason === 'content_filter') {
+          if (inThinking) {
+            inThinking = false;
+            yield { type: 'thinking_end' };
+          }
+          yield { type: 'done', finishReason };
+          return;
+        }
+        if (finishReason === 'tool_calls') {
+          if (inThinking) {
+            inThinking = false;
+            yield { type: 'thinking_end' };
+          }
+          for (const tc of Object.values(toolCalls).filter(Boolean)) {
+            yield { type: 'tool_call', id: tc.id, name: tc.name, arguments: tc.arguments };
+          }
+          yield { type: 'done', finishReason: 'tool_calls' };
+          return;
+        }
       }
     }
 
@@ -205,10 +226,9 @@ async function* streamOpenAiCompat({
     yield errorEvent(error);
   } finally {
     try {
-      // @ts-ignore - controller 为 SDK 内部属性，用于释放连接
-      stream?.controller?.abort();
+      reader.cancel();
     } catch {
-      /* 清理失败不阻塞 */
+      /* cancel 失败不阻塞 */
     }
   }
 }
@@ -423,6 +443,51 @@ function buildAnthropicHeaders(apiKey) {
     'x-api-key': apiKey,
     'anthropic-version': '2023-06-01',
   };
+}
+
+function buildOpenAiBody({ model, temperature, messages, tools, toolChoice, thinkingDepth }) {
+  const body = {
+    model,
+    messages,
+    stream: true,
+    stream_options: { include_usage: false },
+  };
+  if (Number.isFinite(temperature)) body.temperature = temperature;
+  if (tools && tools.length > 0) {
+    body.tools = tools.map(normalizeToolForOpenAiSdk);
+  }
+  if (toolChoice !== undefined && toolChoice !== null) {
+    body.tool_choice = toolChoice;
+  }
+  if (thinkingDepth) {
+    // reasoning_effort 非官方类型但在实际请求体中有效（OpenAI o-series / DeepSeek R1）
+    body.reasoning_effort = thinkingDepth;
+  }
+  return body;
+}
+
+function buildOpenAiHeaders(apiKey) {
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${apiKey || 'sk-placeholder'}`,
+  };
+}
+
+function parseJsonSafe(data) {
+  if (!data) return null;
+  try {
+    return JSON.parse(data);
+  } catch {
+    return null;
+  }
+}
+
+async function readTextSafe(response) {
+  try {
+    return await response.text();
+  } catch {
+    return '';
+  }
 }
 
 /* ------------------------------------------------------------------ 工具函数 ------------------------------------------------------------------ */

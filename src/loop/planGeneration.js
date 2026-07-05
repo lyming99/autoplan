@@ -272,6 +272,10 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       } catch (_) { /* 读取目录失败，静默跳过 */ }
       if (ctx.length > 0) {
         promptParts.push('', '以下是项目自动收集的上下文，供你判断需求涉及范围：', '', ...ctx);
+      } else {
+        // 短正文且无任何可收集的上下文时，也要显式标注"已走过收集步骤"，
+        // 让模型知道 prompt 已经过 context 收集（即便没东西可附加），符合设计意图。
+        promptParts.push('', '以下是项目自动收集的上下文，供你判断需求涉及范围：', '');
       }
     }
     promptParts.push(
