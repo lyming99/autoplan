@@ -818,6 +818,7 @@ module.exports = {
   codexNewSessionArgs,
   codexResumeSessionArgs,
   createChunkDecoder,
+  defaultAgentCliCommand,
   ompCliArgs,
   normalizeCodexReasoningEffort,
   normalizeAgentCliCommand,

@@ -1,5 +1,6 @@
 ﻿const {
   DEFAULT_AGENT_CLI_PROVIDER,
+  defaultAgentCliCommand,
   normalizeAgentCliCommand,
   normalizeAgentCliProvider,
 } = require('../agentCli');
@@ -174,7 +175,7 @@ function effectiveAgentCliConfig(defaults = {}, override = {}) {
   const defaultConfig = normalizeAgentCliConfig(defaults || {});
   const overrideConfig = normalizeIntakeAgentCliConfig(override || {});
   const provider = overrideConfig.provider || defaultConfig.provider;
-  const command = overrideConfig.command || defaultConfig.command;
+  const command = overrideConfig.command || defaultConfig.command || defaultAgentCliCommand(provider);
   const codexReasoningEffort = provider === DEFAULT_AGENT_CLI_PROVIDER
     ? overrideConfig.codexReasoningEffort || defaultConfig.codexReasoningEffort || DEFAULT_CODEX_REASONING_EFFORT
     : null;

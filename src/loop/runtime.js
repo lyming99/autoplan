@@ -529,7 +529,7 @@ function waitForChild(child, timeoutMs) {
 }
 
 function killChildProcess(child) {
-  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  if (!child || child.exitCode != null || child.signalCode != null) return;
   if (process.platform === 'win32' && child.pid) {
     const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
     killer.on('error', () => child.kill());

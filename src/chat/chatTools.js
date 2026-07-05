@@ -47,7 +47,8 @@ function getChatToolDefinitions({ db, projectId, workspacePath, intakeService, p
   }
   const planLifecycleService = planService || loopService || null;
 
-  return Object.freeze([
+  return Object.freeze(
+    [
     {
       name: 'read_file',
       description:
@@ -225,7 +226,7 @@ function getChatToolDefinitions({ db, projectId, workspacePath, intakeService, p
       },
       handler: (args) => handleOpenFeedback(projectId, db, workspacePath, args),
     },
-  ]);
+  ].map(Object.freeze));
 }
 
 /* ------------------------------------------------------------------ read_file ------------------------------------------------------------------ */

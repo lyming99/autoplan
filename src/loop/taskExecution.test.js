@@ -65,6 +65,8 @@ function makeService(overrides = {}) {
       calls.recordTaskFailure.push({ projectId, planId: plan.id, taskId: task.id, taskKey: task.task_key, meta });
     },
     planAgentCliConfig: () => ({ agentCliProvider: 'claude' }),
+    status: () => ({}),
+    planExists: () => true,
     ...overrides,
   };
   return svc;

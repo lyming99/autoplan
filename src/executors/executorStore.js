@@ -343,10 +343,12 @@ function stringifyJson(value, fallback) {
 function normalizeStoredOptions(options) {
   if (!options || typeof options !== 'object' || Array.isArray(options)) return { cwd: '', env: {} };
   const env = options.env && typeof options.env === 'object' && !Array.isArray(options.env) ? options.env : {};
-  return {
+  const result = {
     cwd: typeof options.cwd === 'string' ? options.cwd : '',
     env,
   };
+  if (Number.isFinite(options.timeoutMs)) result.timeoutMs = options.timeoutMs;
+  return result;
 }
 
 function truncateLog(value) {
