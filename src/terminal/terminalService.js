@@ -306,15 +306,15 @@ function resolveTerminalCwd(workspacePath, cwdInput, fileSystem = fs) {
   const workspace = realpathSafe(path.resolve(workspacePath));
   const raw = String(cwdInput || '').trim();
   if (raw.length > TERMINAL_LIMITS.maxCwdLength) {
-    return { ok: false, error: terminalError(TERMINAL_ERROR_CODES.INVALID_PAYLOAD, '终端工作目录过长') };
+    return terminalError(TERMINAL_ERROR_CODES.INVALID_PAYLOAD, '终端工作目录过长');
   }
   const requested = raw ? (path.isAbsolute(raw) ? path.resolve(raw) : path.resolve(workspace, raw)) : workspace;
   const cwd = realpathSafe(requested);
   if (!isInsidePath(workspace, cwd)) {
-    return { ok: false, error: terminalError(TERMINAL_ERROR_CODES.CWD_OUTSIDE_WORKSPACE, '终端工作目录必须位于当前项目工作区内') };
+    return terminalError(TERMINAL_ERROR_CODES.CWD_OUTSIDE_WORKSPACE, '终端工作目录必须位于当前项目工作区内');
   }
   if (!isDirectory(cwd, fileSystem)) {
-    return { ok: false, error: terminalError(TERMINAL_ERROR_CODES.INVALID_PAYLOAD, '终端工作目录不存在或不是目录') };
+    return terminalError(TERMINAL_ERROR_CODES.INVALID_PAYLOAD, '终端工作目录不存在或不是目录');
   }
   return { ok: true, cwd };
 }

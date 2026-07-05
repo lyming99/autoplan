@@ -18,7 +18,7 @@ const path = require('node:path');
 const crypto = require('node:crypto');
 const { nowIso } = require('../database');
 const { executorFromRow } = require('../executors/executorStore');
-const { resolveFileAccessPolicy, isPathAllowed, assertPathAllowed } = require('../fileAccess/policy');
+const { resolveFileAccessPolicy, isPathAllowed, assertPathAllowed, realpathSafe } = require('../fileAccess/policy');
 const { isPlanContentValid } = require('../loop/planGeneration');
 const intakePlanLinks = require('../loop/intakePlanLinks');
 const {
@@ -237,7 +237,7 @@ function handleReadFile(db, workspacePath, args) {
     return { error: '缺少 filePath 参数', errorCode: 'MISSING_PARAM' };
   }
 
-  const workspaceRoot = path.resolve(workspacePath);
+  const workspaceRoot = realpathSafe(path.resolve(workspacePath));
   let resolvedPath;
   try {
     resolvedPath = path.resolve(workspaceRoot, filePath);
@@ -692,8 +692,8 @@ function handleCreateScript(db, projectId, args) {
     const id = db.insert(
       `INSERT INTO scripts
        (project_id, name, path, runtime, body, description, trigger_mode, enabled, work_dir, timeout_seconds, fail_aborts, context_inject, sort_order, source_type, created_at, updated_at)
-       VALUES (?, ?, '', ?, ?, ?, 'manual', 1, '', 60, 0, 'none', 0, 'inline', ?, ?)`,
-      [projectId, name, runtime, body, description, now, now],
+       VALUES (?, ?, ?, ?, ?, ?, 'manual', 1, '', 60, 0, 'none', 0, 'inline', ?, ?)`,
+      [projectId, name, '', runtime, body, description, now, now],
     );
     return { id, name, runtime };
   } catch (err) {
@@ -744,7 +744,7 @@ function handleListExecutors(db, projectId, loopService, args = {}) {
   };
 }
 
-async function handleRunExecutor(projectId, db, loopService, args = {}) {
+function handleRunExecutor(projectId, db, loopService, args = {}) {
   const invalid = validateExecutorToolArgs(args, ['id', 'executorId', 'label']);
   if (invalid) return invalid;
   if (!loopService || typeof loopService.runExecutor !== 'function') {
@@ -754,17 +754,19 @@ async function handleRunExecutor(projectId, db, loopService, args = {}) {
   const resolved = resolveChatExecutor(db, projectId, args);
   if (!resolved.executor) return resolved.unavailable;
 
-  try {
-    const result = await loopService.runExecutor(projectId, resolved.executor.id);
-    return chatExecutorRunResult(result, resolved.executor, loopService);
-  } catch (err) {
-    return {
-      ...chatExecutorSummary(resolved.executor, loopService),
-      action: 'run',
-      error: `运行执行器失败：${err.message}`,
-      errorCode: 'EXECUTOR_RUN_FAILED',
-    };
-  }
+  return (async () => {
+    try {
+      const result = await loopService.runExecutor(projectId, resolved.executor.id);
+      return chatExecutorRunResult(result, resolved.executor, loopService);
+    } catch (err) {
+      return {
+        ...chatExecutorSummary(resolved.executor, loopService),
+        action: 'run',
+        error: `运行执行器失败：${err.message}`,
+        errorCode: 'EXECUTOR_RUN_FAILED',
+      };
+    }
+  })();
 }
 
 function handleStopExecutor(projectId, db, loopService, args = {}) {
