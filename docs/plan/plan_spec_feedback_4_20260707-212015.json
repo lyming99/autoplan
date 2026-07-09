@@ -1,0 +1,50 @@
+{
+  "title": "进度区仅显示执行日志",
+  "summary": "修复 AutoPlan 渲染和更新 plan 时在进度区同时出现任务进度表与完成日志的问题。进度区应保留为日志追加区域，不再预置或展示任务、状态、备注表格，同时保持任务拆解章节的标准 checkbox 格式不变。",
+  "tasks": [
+    {
+      "title": "调整 PlanSpec Markdown 渲染的进度区输出",
+      "scope": [
+        "src/loop/planRenderer.js"
+      ],
+      "acceptance": [
+        "结构化 PlanSpec 渲染出的 Markdown 仍包含 `## 进度区` 二级标题。",
+        "新生成计划的进度区不再包含 `任务/状态/备注` 表头、分隔线或按任务预置的未开始表格行。",
+        "任务拆解章节仍由 AutoPlan 自动渲染为独占一行的 `- [ ] P001: 标题 <!-- scope: ... -->` 格式。"
+      ]
+    },
+    {
+      "title": "保证任务完成写回只追加进度日志",
+      "scope": [
+        "src/loop/taskExecution.js"
+      ],
+      "acceptance": [
+        "任务完成后系统只在进度区写入或替换 `Pxxx AutoPlan 完成` 日志行。",
+        "已有 `## 进度区` 但内容为空时，日志直接追加在该标题下，不生成进度表。",
+        "重复完成或重试写回同一任务时更新对应日志行，不产生重复日志。"
+      ]
+    },
+    {
+      "title": "补充进度区渲染与写回回归断言",
+      "scope": [
+        "src/loop/structuredPlanSpec.test.js",
+        "src/loop/taskExecution.test.js",
+        "scripts/smoke-test.js"
+      ],
+      "acceptance": [
+        "PlanSpec 渲染测试覆盖进度区只保留日志容器、不含任务状态表。",
+        "任务执行写回测试覆盖完成日志可写入进度区且不会生成表格。",
+        "烟测或关键回归断言覆盖新生成计划完成任务后的进度区只出现日志记录。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test && npm run smoke",
+    "criteria": [
+      "静态检查、单元测试和烟测全部通过，命令退出码为 0。",
+      "新生成的 Markdown plan 在 `## 进度区` 下不包含 `任务/状态/备注` 进度表。",
+      "任务执行完成后，进度区只展示 `Pxxx AutoPlan 完成` 日志及日志文件路径，不再混排任务状态表。",
+      "任务拆解章节仍符合 AutoPlan 硬性格式要求，任务编号连续且完整验收任务由 PlanSpec 规范化追加。"
+    ]
+  }
+}

@@ -8,6 +8,7 @@ import {
   formatTaskDuration,
   formatTaskPlanGroupProgress,
   groupTasksByPlan,
+  hasRunningTaskForPlan,
   isTaskPlanGroupCompleted,
   matchesTaskStatusFilter,
   scopeFileLabel,
@@ -71,6 +72,7 @@ export function TaskList({
   emptyText = '暂无任务。',
   tasks,
   onOpenPlan,
+  onOpenScopeFile,
   onRun,
   onStop,
   locateTarget,
@@ -79,6 +81,7 @@ export function TaskList({
   emptyText?: string;
   tasks: PlanTask[];
   onOpenPlan?: (task: PlanTask) => void;
+  onOpenScopeFile?: (filePath: string) => void;
   onRun?: (task: PlanTask) => void;
   onStop?: (task: PlanTask) => void;
   locateTarget?: WorkspaceSearchResult | null;
@@ -238,16 +241,39 @@ export function TaskList({
                               ) : null}
                               {task.scope_files?.length ? (
                                 <div className="task-scope-files" aria-label="任务相关文件">
-                                  {task.scope_files.map((file) => (
-                                    <span
-                                      key={`${task.id}-${file.path}`}
-                                      className={`task-scope-chip${file.canOpen ? ' openable' : ''}${file.isUnknown || file.isValidation ? ' special' : ''}`}
-                                      title={scopeFileStatus(file)}
-                                    >
-                                      <span className="mono">{scopeFileLabel(file)}</span>
-                                      <small>{scopeFileStatus(file)}</small>
-                                    </span>
-                                  ))}
+                                  {task.scope_files.map((file) => {
+                                    const className = `task-scope-chip${file.canOpen ? ' openable' : ''}${file.isUnknown || file.isValidation ? ' special' : ''}`;
+                                    const status = scopeFileStatus(file);
+                                    const label = scopeFileLabel(file);
+                                    if (file.canOpen && onOpenScopeFile) {
+                                      return (
+                                        <button
+                                          key={`${task.id}-${file.path}`}
+                                          type="button"
+                                          className={className}
+                                          title={status}
+                                          aria-label={`打开 ${file.path}`}
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            onOpenScopeFile(file.path);
+                                          }}
+                                        >
+                                          <span className="mono">{label}</span>
+                                          <small>{status}</small>
+                                        </button>
+                                      );
+                                    }
+                                    return (
+                                      <span
+                                        key={`${task.id}-${file.path}`}
+                                        className={className}
+                                        title={status}
+                                      >
+                                        <span className="mono">{label}</span>
+                                        <small>{status}</small>
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               ) : null}
                             </div>
@@ -351,13 +377,19 @@ export function PlanList({
   onDeletePlan,
   selectedPlanId,
   onSelectPlan,
+  tasks = [],
+  totalPlanCount,
   ...props
 }: PlanListProps) {
   const [activeStatus, setActiveStatus] = useState<PlanStatusTab>('all');
   const [draftRunningPlanId, setDraftRunningPlanId] = useState<number | null>(null);
   const [draftRunError, setDraftRunError] = useState('');
   const [localSelectedPlanId, setLocalSelectedPlanId] = useState<number | null>(null);
-  const orderedPlans = useMemo(() => [...plans].sort(comparePlanOrder), [plans]);
+  const effectiveTotalPlanCount = totalPlanCount ?? plans.length;
+  const orderedPlans = useMemo(
+    () => orderPlansByRunningTaskPriority(plans, tasks, effectiveTotalPlanCount),
+    [effectiveTotalPlanCount, plans, tasks],
+  );
   const counts = useMemo(() => planStatusCounts(orderedPlans), [orderedPlans]);
   const visiblePlans = orderedPlans.filter((plan) => planMatchesStatusTab(plan, activeStatus));
   const hasControlledSelection = typeof selectedPlanId !== 'undefined';
@@ -397,7 +429,7 @@ export function PlanList({
       return;
     }
 
-    const task = firstPendingTaskForPlan(plan, props.tasks || []);
+    const task = firstPendingTaskForPlan(plan, tasks);
     if (!task) {
       setDraftRunningPlanId(null);
       setDraftRunError('草稿计划暂无可执行任务');
@@ -420,7 +452,7 @@ export function PlanList({
 
   function renderPlanControls(plan: Plan) {
     const draftRunDisabledReason = isDraftPlan(plan)
-      ? draftPlanRunDisabledReason(plan, props.tasks || [], Boolean(onRunDraft), Boolean(onRunParallel))
+      ? draftPlanRunDisabledReason(plan, tasks, Boolean(onRunDraft), Boolean(onRunParallel))
       : '';
     const selected = effectiveSelectedPlanId === plan.id;
 
@@ -480,14 +512,37 @@ export function PlanList({
         plans={visiblePlans}
         renderPlanControls={renderPlanControls}
         selectedPlanId={effectiveSelectedPlanId}
-        totalPlanCount={props.totalPlanCount ?? plans.length}
+        tasks={tasks}
+        totalPlanCount={effectiveTotalPlanCount}
       />
     </>
   );
 }
 
+type OrderedPlan = {
+  plan: Plan;
+  index: number;
+  hasRunningTask: boolean;
+};
+
+function orderPlansByRunningTaskPriority(plans: Plan[], tasks: PlanTask[], planCount: number) {
+  return plans
+    .map<OrderedPlan>((plan, index) => ({
+      plan,
+      index,
+      hasRunningTask: hasRunningTaskForPlan(tasks, plan, planCount),
+    }))
+    .sort(compareOrderedPlan)
+    .map(({ plan }) => plan);
+}
+
+function compareOrderedPlan(left: OrderedPlan, right: OrderedPlan) {
+  if (left.hasRunningTask !== right.hasRunningTask) return left.hasRunningTask ? -1 : 1;
+  return comparePlanOrder(left.plan, right.plan) || left.index - right.index;
+}
+
 function comparePlanOrder(left: Plan, right: Plan) {
-  // 主排序键：创建时间 created_at 倒序（最新在前）；id 倒序兜底保证稳定。
+  // 同一优先级内按创建时间 created_at 倒序（最新在前）；id 倒序保证确定性。
   return (
     String(right.created_at || '').localeCompare(String(left.created_at || '')) ||
     Number(right.id || 0) - Number(left.id || 0)

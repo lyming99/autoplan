@@ -1,0 +1,55 @@
+{
+  "title": "反馈 #10 开发计划：新生成 Plan 不应抢占前序 Plan 执行队列",
+  "summary": "当前循环在生成新 plan 后会优先选择本轮 generatedPlan 执行，可能绕过已有未完成的前序 plan，导致新 plan 的第一个任务立即开始。需要把任务执行恢复为严格按 plans 队列顺序推进：生成计划只负责入队，执行阶段始终选择最早可运行且未完成的 plan；只有前序 plan 完成、验收通过或进入明确不可自动继续的终态后，后续新 plan 才能执行任务。",
+  "tasks": [
+    {
+      "title": "修正循环调度中 generatedPlan 抢占队列的问题",
+      "scope": [
+        "src/loopService.js"
+      ],
+      "acceptance": [
+        "runOnce 在生成新 plan 后不再直接把本轮 generatedPlan 作为优先执行目标，而是统一通过队列选择逻辑决定 nextPlan。",
+        "当项目中已有更早的 pending、running、ready_for_validation 或 validation_failed 等可运行 plan 时，新生成 plan 只入队等待，不会立即执行其第一个任务。",
+        "当队列中不存在前序未完成 plan 时，新生成且非 draft 的 plan 仍可在同一轮被选为可运行 plan，保持空队列场景的自动推进能力。",
+        "draft plan 保持等待显式执行的语义，不因本次调度修正被自动激活。"
+      ]
+    },
+    {
+      "title": "统一 Plan 队列可运行判定与前序阻塞语义",
+      "scope": [
+        "src/loop/planLifecycle.js",
+        "src/loopService.js"
+      ],
+      "acceptance": [
+        "nextRunnablePlan 或等价队列选择逻辑按 sort_order、created_at、id 稳定排序，只返回当前项目最早的可自动运行 plan。",
+        "completed、interrupted、draft 等不可自动继续状态不会阻塞后续 plan；未完成且可继续的前序 plan 会阻止后续 plan 抢跑。",
+        "ready_for_validation 计划优先完成最终验收任务或自动验收流程，再允许后续 plan 执行普通任务。",
+        "validation_failed 仅在既有语义允许自动或人工恢复后进入队列，不因新生成 plan 绕过其状态处理。"
+      ]
+    },
+    {
+      "title": "补充调度回归测试覆盖新 Plan 入队等待",
+      "scope": [
+        "src/loopService.test.js",
+        "src/loop/planLifecycle.test.js",
+        "scripts/smoke-test.js"
+      ],
+      "acceptance": [
+        "覆盖已有前序 plan 未完成时，runOnce 即使生成了新 plan，也执行前序 plan 的下一项任务而不是新 plan 的第一个任务。",
+        "覆盖前序 plan 完成后，下一轮循环才会推进后续新 plan 的任务。",
+        "覆盖无前序未完成 plan 时，新生成 plan 仍能正常进入执行流程，避免修复后队列空转。",
+        "覆盖 draft plan、completed plan、interrupted plan 与 ready_for_validation plan 对后续 plan 调度的影响，防止状态过滤回归。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test && npm run smoke",
+    "criteria": [
+      "静态检查、单元测试和 smoke 测试全部通过。",
+      "生成新 plan 后，任务执行严格遵循 plans 队列顺序，不会抢占已有前序未完成 plan。",
+      "前序 plan 完成或进入不可自动继续终态后，后续 plan 才会被选择执行。",
+      "需求/反馈生成 plan、draft plan 显式执行、最终验收任务、事件流和快照刷新等既有流程无回归。",
+      "AutoPlan 渲染出的最终 Markdown 保持 `## 任务拆解` 章节和连续 `- [ ] P001: ... <!-- scope: ... -->` 任务行格式。"
+    ]
+  }
+}

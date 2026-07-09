@@ -3,13 +3,15 @@ const { nowIso } = require('../database');
 const { hashFile } = require('./workspaceFiles');
 const { syncedTaskStatus, TASK_EVENT_STATUS } = require('./taskEvents');
 
-const PLAN_TASK_LINE_RE = /^\uFEFF?\s*[-*+]\s+\[([ xX])\]\s+(.+?)\s*$/;
+const PLAN_TASK_LINE_RE = /^\uFEFF?- \[([ xX])\]\s+(.+?)\s*$/;
 const PLAN_TASK_KEY_RE = /^([A-Za-z]+[-_]?\d+|P\d+)\s*(?::|：|[-–—]+|\.|．|、|\)|）|\s+)\s*(.*)$/;
 const PLAN_TASK_SCOPE_LABEL_RE = '(?:scope|scopes|files?|影响范围|并发键)';
 const PLAN_TASK_SCOPE_RE = new RegExp(`${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>\\]\\n]+)`, 'i');
 const PLAN_TASK_SCOPE_COMMENT_RE = new RegExp(`\\s*<!--\\s*${PLAN_TASK_SCOPE_LABEL_RE}\\s*[:=：]\\s*([^>]*?)\\s*-->\\s*`, 'i');
 const PLAN_TASK_SCOPE_SPLIT_RE = /[,，、;；]+/;
 const PLAN_TASK_PATH_RE = /[\w./\\-]+\.(?:dart|js|jsx|ts|tsx|css|scss|html|md|json|ya?ml)/gi;
+const PLAN_TASK_SECTION_HEADING_RE = /^\uFEFF?##[ \t]+任务拆解[ \t]*$/;
+const PLAN_TASK_NEXT_SECTION_HEADING_RE = /^\uFEFF?##[ \t]+\S.*$/;
 
 function syncPlanTasksFromMarkdown(service, planId, planFile) {
   if (!fs.existsSync(planFile)) return;
@@ -121,8 +123,15 @@ function uniquePlanTasksByKey(tasks) {
 
 function parsePlanTasksFromMarkdown(markdown) {
   const tasks = [];
-  const lines = String(markdown || '').split(/\r?\n/);
+  const lines = planTaskSectionLinesFromMarkdown(markdown);
+  let inFence = false;
   for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^(?:```|~~~)/.test(trimmed)) {
+      inFence = !inFence;
+      continue;
+    }
+    if (inFence || /^[>|]/.test(line.trimStart())) continue;
     const match = line.match(PLAN_TASK_LINE_RE);
     if (!match) continue;
     const sortOrder = tasks.length + 1;
@@ -134,12 +143,27 @@ function parsePlanTasksFromMarkdown(markdown) {
       key: parsedTitle.key,
       title: parsedTitle.title || titleWithoutScope || rawTitle,
       rawLine,
-      scope: planTaskScopeText({ raw_line: rawLine, title: rawTitle }, parsedTitle.validationLike ? 'validation' : 'unknown'),
+      scope: parsedTitle.validationLike
+        ? 'validation'
+        : planTaskScopeText({ raw_line: rawLine, title: rawTitle }, 'unknown'),
       status: match[1].toLowerCase() === 'x' ? TASK_EVENT_STATUS.COMPLETED : TASK_EVENT_STATUS.PENDING,
       sortOrder,
     });
   }
   return tasks;
+}
+
+function planTaskSectionLinesFromMarkdown(markdown) {
+  const lines = String(markdown || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => PLAN_TASK_SECTION_HEADING_RE.test(line));
+  if (start === -1) return [];
+  const sectionLines = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (PLAN_TASK_NEXT_SECTION_HEADING_RE.test(line)) break;
+    sectionLines.push(line);
+  }
+  return sectionLines;
 }
 
 function parsePlanTaskTitle(title, sortOrder) {

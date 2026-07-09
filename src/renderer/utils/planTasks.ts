@@ -35,6 +35,7 @@ export type TaskPlanGroup = TaskPlanGroupIdentity & {
   tasks: PlanTask[];
   firstIndex: number;
   sortSequence: number | null;
+  sortTime: number | null;
   stats: TaskPlanGroupStats;
   hasRunningTask: boolean;
 };
@@ -79,13 +80,17 @@ function normalizeTaskStatus(status: string | null | undefined) {
   return String(status || '').trim().toLowerCase();
 }
 
-export function matchesTaskStatusFilter(task: PlanTask, filter: TaskStatusFilter) {
+export function matchesTaskStatusFilter(task: PlanTask | TimedPlanTask, filter: TaskStatusFilter) {
   const status = normalizeTaskStatus(task.status);
   if (filter === 'all') return true;
   if (filter === 'running') return ['running', 'processing', 'stopping'].includes(status);
   if (filter === 'queued') return ['pending', 'queued', 'waiting'].includes(status);
   if (filter === 'completed') return ['completed', 'done', 'passed', 'accepted'].includes(status);
   return true;
+}
+
+export function isTaskRunning(task: PlanTask | TimedPlanTask) {
+  return matchesTaskStatusFilter(task, 'running');
 }
 
 function readTaskTime(value: string | null | undefined) {
@@ -144,6 +149,15 @@ function latestTaskTime(tasks: TimedPlanTask[]) {
     if (validTimes.length) return Math.max(...validTimes);
   }
   return null;
+}
+
+function latestTaskActivityTime(tasks: TimedPlanTask[]) {
+  const timeFields: Array<keyof TimedPlanTask> = ['finished_at', 'started_at', 'updated_at'];
+  const times = tasks.flatMap((task) =>
+    timeFields.map((field) => readTaskTime(task[field] as string | null | undefined)),
+  );
+  const validTimes = times.filter((time): time is number => time !== null);
+  return validTimes.length ? Math.max(...validTimes) : null;
 }
 
 export function isTaskPlanGroupCompleted(group: TaskPlanGroup) {
@@ -208,6 +222,7 @@ export function groupTasksByPlan(tasks: PlanTask[]): TaskPlanGroup[] {
       tasks: [task],
       firstIndex: index,
       sortSequence: null,
+      sortTime: null,
       stats: { total: 0, running: 0, queued: 0, completed: 0 },
       hasRunningTask: false,
     });
@@ -223,16 +238,18 @@ export function groupTasksByPlan(tasks: PlanTask[]): TaskPlanGroup[] {
         ...group,
         tasks: sortedTasks,
         sortSequence: taskPlanGroupSortSequence(sortedTasks),
+        sortTime: latestTaskActivityTime(sortedTasks),
         stats: getTaskPlanGroupStats(sortedTasks),
-        hasRunningTask: sortedTasks.some((task) => matchesTaskStatusFilter(task, 'running')),
+        hasRunningTask: sortedTasks.some(isTaskRunning),
       };
     })
     .sort((left, right) => {
-      if (left.sortSequence !== null && right.sortSequence !== null && left.sortSequence !== right.sortSequence) {
-        return left.sortSequence - right.sortSequence;
+      if (left.hasRunningTask !== right.hasRunningTask) return left.hasRunningTask ? -1 : 1;
+      if (left.sortTime !== null && right.sortTime !== null && left.sortTime !== right.sortTime) {
+        return right.sortTime - left.sortTime;
       }
-      if (left.sortSequence !== null && right.sortSequence === null) return -1;
-      if (left.sortSequence === null && right.sortSequence !== null) return 1;
+      if (left.sortTime !== null && right.sortTime === null) return -1;
+      if (left.sortTime === null && right.sortTime !== null) return 1;
       return left.firstIndex - right.firstIndex;
     });
 }
@@ -245,6 +262,10 @@ export function tasksForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
   );
   if (!linkedTasks.length && !hasTaskAssociations && planCount === 1) return timedTasks;
   return linkedTasks;
+}
+
+export function hasRunningTaskForPlan(tasks: PlanTask[], plan: Plan, planCount: number) {
+  return tasksForPlan(tasks, plan, planCount).some(isTaskRunning);
 }
 
 export function formatPlanDurationSummary(tasks: TimedPlanTask[]) {

@@ -1,0 +1,89 @@
+{
+  "title": "任务执行超时后自动重新开启上下文窗口",
+  "summary": "需求 #46 要解决部分任务长时间卡住的问题：当单个开发任务执行超过 30 分钟仍未完成时，AutoPlan 应主动终止本次 Agent CLI 调用，并在后续重试中为同一任务开启新的上下文窗口，避免继续复用已经卡住的 Codex/Claude/OpenCode 会话。影响范围集中在任务执行调度、Agent CLI 超时参数、任务会话继承与失败事件记录，计划生成、最终验收和普通 shell 验证命令不应被这条 30 分钟任务超时策略误伤。",
+  "tasks": [
+    {
+      "title": "为开发任务执行引入 30 分钟超时策略",
+      "scope": [
+        "src/loop/taskExecution.js",
+        "src/agentCli.js",
+        "src/loop/runtime.js"
+      ],
+      "acceptance": [
+        "单个普通开发任务调用 Agent CLI 时使用 30 分钟超时，而不是沿用通用 Agent CLI 默认超时。",
+        "30 分钟超时只作用于任务执行阶段，不改变计划生成、最终验收、修复验收命令和普通 shell 命令的现有超时策略。",
+        "Codex、Claude、OpenCode 和 Oh My Pi 执行后端都能接收到一致的任务级 timeoutMs 配置。",
+        "超时终止仍通过既有 runtime 子进程终止能力清理进程树，避免留下孤儿进程或占用 activeOperation。"
+      ]
+    },
+    {
+      "title": "超时重试时强制开启新上下文窗口",
+      "scope": [
+        "src/loop/taskExecution.js",
+        "src/loop/taskSessionContext.js",
+        "src/loop/agentCliRunner.js"
+      ],
+      "acceptance": [
+        "任务因 30 分钟超时失败后，后续自动重试同一任务时不复用本任务已捕获的 session id。",
+        "任务因 30 分钟超时失败后，后续自动重试同一任务时不继承同一 plan 前序任务的 session id。",
+        "超时后的重试在事件元数据和 Agent CLI operation 中体现为新上下文模式，例如 sessionMode 为 new 或等价字段。",
+        "非超时的普通失败仍保留现有退避重试和会话继承行为，不扩大行为变更。"
+      ]
+    },
+    {
+      "title": "清理超时任务的会话状态与失败记录",
+      "scope": [
+        "src/loop/taskExecution.js",
+        "src/loopService.js",
+        "src/loop/taskEvents.js"
+      ],
+      "acceptance": [
+        "任务执行结果为 timedOut 时，不把本次已卡住或未完成的 session id 写回 plan_tasks 作为后续恢复来源。",
+        "如果任务行已存在旧的 codex_session_id 或 agent_cli_session_id，超时后重试应能绕过或清理该会话，避免恢复到同一个卡住上下文。",
+        "超时失败记录包含 timedOut、timeoutMs、timeoutMinutes 或等价字段，便于快照和日志定位。",
+        "任务状态在超时失败后保持可重试路径，最终耗尽重试后按现有失败流程记录，不误标记 completed。"
+      ]
+    },
+    {
+      "title": "补充任务超时与新上下文的运行事件可观测性",
+      "scope": [
+        "src/loop/taskExecution.js",
+        "src/loop/runtime.js",
+        "src/loop/snapshots.js",
+        "src/renderer/utils/planEvents.ts"
+      ],
+      "acceptance": [
+        "任务超过 30 分钟被终止时，事件流能看到清晰的任务超时事件或失败事件说明。",
+        "事件元数据包含 planId、taskId、taskKey、timeoutMs、agentCliProvider 和是否将重开上下文等信息。",
+        "任务详情或运行快照能展示最近一次超时原因，不影响已有 task.started、task.failed、task.retry、task.stopped 事件语义。",
+        "手动停止任务或删除任务导致的取消，不应被误报为 30 分钟超时。"
+      ]
+    },
+    {
+      "title": "补充任务超时重开上下文的回归测试",
+      "scope": [
+        "src/loop/taskExecution.test.js",
+        "src/agentCli.test.js",
+        "src/loop/runtime.test.js",
+        "src/loopService.test.js"
+      ],
+      "acceptance": [
+        "覆盖任务执行向 Agent CLI 传入 30 分钟 timeoutMs 的场景。",
+        "覆盖任务首次 timedOut 后再次执行时不传入旧 session id、previousPlan session id 或 plan-resume 状态的场景。",
+        "覆盖普通失败重试仍沿用既有 session 继承规则，证明新逻辑只影响超时路径。",
+        "覆盖并行任务批次中某个任务超时后只影响该任务的新上下文重试，不污染其它并行任务。",
+        "覆盖 runtime 超时终止后 activeOperation 归档、timedOut 标记和日志尾部信息仍可被读取。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "普通开发任务执行超过 30 分钟未完成时会被主动终止，并进入既有自动重试流程。",
+      "超时后的同一任务重试必须开启新的上下文窗口，不复用已卡住任务会话，也不继承前序 plan 会话。",
+      "非超时失败、环境阻塞、手动停止、任务删除、计划生成和最终验收流程保持原有行为。",
+      "事件、日志和快照能明确区分任务超时、普通失败、手动停止和目标删除。",
+      "AutoPlan 渲染出的最终 Markdown 保持 `## 任务拆解` 章节和连续 `- [ ] P001: ... <!-- scope: ... -->` 任务行格式。"
+    ]
+  }
+}

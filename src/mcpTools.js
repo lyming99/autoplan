@@ -200,7 +200,7 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
   {
     name: MCP_TOOL_NAMES.CREATE_REQUIREMENT,
     title: 'Create AutoPlan requirement',
-    description: 'Create a requirement, optionally save attachments and start the project loop.',
+    description: 'Create a requirement, optionally save attachments and start the project loop. Duplicate non-closed requirements with the same normalized title and body in the project are rejected with code DUPLICATE_INTAKE and existingRequirementId.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -226,7 +226,7 @@ const MCP_TOOL_DEFINITIONS = Object.freeze([
   {
     name: MCP_TOOL_NAMES.CREATE_FEEDBACK,
     title: 'Create AutoPlan feedback',
-    description: 'Create feedback, optionally associate it with a requirement and start the project loop.',
+    description: 'Create feedback, optionally associate it with a requirement and start the project loop. Duplicate non-closed feedback with the same normalized title and body in the same project and requirement association is rejected with code DUPLICATE_INTAKE and existingFeedbackId.',
     inputSchema: {
       type: 'object',
       additionalProperties: false,
@@ -1399,11 +1399,46 @@ function toolResult(result) {
 }
 
 function toolError(error) {
+  if (isDuplicateIntakeError(error)) return duplicateIntakeToolError(error);
   const message = error?.message || String(error || 'Unknown error');
   return {
     isError: true,
     content: [{ type: 'text', text: message }],
     structuredContent: { error: message },
+  };
+}
+
+function isDuplicateIntakeError(error) {
+  return error?.code === 'DUPLICATE_INTAKE';
+}
+
+function duplicateIntakeToolError(error) {
+  const intakeType = error.intakeType === 'feedback' ? 'feedback' : 'requirement';
+  const existingId = Number(error.existingId || error.existing?.id || 0) || null;
+  const typeLabel = intakeType === 'feedback' ? 'Feedback' : 'Requirement';
+  const idField = intakeType === 'feedback' ? 'existingFeedbackId' : 'existingRequirementId';
+  const message = existingId
+    ? `${typeLabel} already exists: ${intakeType} #${existingId}.`
+    : `${typeLabel} already exists.`;
+  const duplicate = stripUndefined({
+    code: error.code,
+    intakeType,
+    existingId,
+    [idField]: existingId,
+  });
+  return {
+    isError: true,
+    content: [{ type: 'text', text: message }],
+    structuredContent: stripUndefined({
+      error: message,
+      code: error.code,
+      errorCode: error.code,
+      intakeType,
+      existingId,
+      [idField]: existingId,
+      duplicate,
+      detail: error.message,
+    }),
   };
 }
 

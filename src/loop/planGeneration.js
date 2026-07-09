@@ -17,6 +17,7 @@ const { PlanRenderError, renderPlanSpecMarkdown } = require('./planRenderer');
 const {
   PLAN_SPEC_SCHEMA,
   PlanSpecValidationError,
+  normalizePlanSpec,
   parsePlanSpecJson,
 } = require('./structuredPlanSpec');
 const workspaceFiles = require('./workspaceFiles');
@@ -31,9 +32,17 @@ const INTAKE_PLAN_GENERATE_ERROR_MAX_LENGTH = 2000;
 const PLAN_GENERATION_STRATEGY_EXTERNAL_CLI_MARKDOWN = 'external-cli-markdown';
 const PLAN_GENERATION_STRATEGY_EXTERNAL_CLI_STRUCTURED = 'external-cli-structured';
 const PLAN_GENERATION_STRATEGY_BUILTIN_LLM_STRUCTURED = 'builtin-llm-structured';
+const STRUCTURED_PLAN_FAILURE_CLI_EXIT = 'cli_exit_failed';
+const STRUCTURED_PLAN_FAILURE_SPEC_MISSING = 'plan_spec_missing';
+const STRUCTURED_PLAN_FAILURE_JSON_INVALID = 'plan_spec_json_invalid';
+const STRUCTURED_PLAN_FAILURE_SCHEMA_INVALID = 'plan_spec_schema_invalid';
+const STRUCTURED_PLAN_FAILURE_MARKDOWN_INVALID = 'rendered_markdown_invalid';
 const PHASED_PLAN_SIGNAL_RE = /分阶段|阶段化|阶段性计划|阶段性\s*plan|多阶段|多个计划|多计划|拆成多个计划|拆分为多个计划|拆分成多个|按阶段推进|phase(?:d|s)?|multi[-\s]?plan/i;
-const PLAN_TASK_CHECKBOX_LINE_RE = /^[^\S\r\n]*[-*]\s*\[\s*[ xX]?\s*\]\s+(.+)$/;
-const PLAN_TASK_LINE_RE = /^[^\S\r\n]*[-*]\s*\[\s*[ xX]?\s*\]\s+P0*(\d+)\s*[:：]\s*(.*?)\s*<!--\s*scope\s*[:=：]\s*([^>]*?)\s*-->\s*$/i;
+const PLAN_TASK_CHECKBOX_LINE_RE = /^- \[ \]\s+(.+)$/;
+const PLAN_TASK_LINE_RE = /^- \[ \]\s+P(\d{3})\s*:\s*(.*?)\s+<!--\s*scope\s*[:=：]\s*([^>]+?)\s*-->\s*$/i;
+const PLAN_TASK_ANY_CHECKBOX_LINE_RE = /^[^\S\r\n]*[-*+]\s*\[\s*[ xX]?\s*\]\s+(.+)$/;
+const PLAN_TASK_SECTION_HEADING_RE = /^##[ \t]+任务拆解[ \t]*$/;
+const PLAN_TASK_NEXT_SECTION_HEADING_RE = /^##[ \t]+\S.*$/;
 const FINAL_ACCEPTANCE_RE = /完整验收|整体验收|总体验收|最终验收|完整验证|最终验证|acceptance|validation/i;
 // markdown plan 三个必需二级标题的硬性约束（反馈 #95）：LLM 偶发添加编号前缀或错误层级（如
 // `## 2. 任务拆解` / `### 任务拆解`）会被 validatePlanContent 判为格式不合规、整份 plan 不落库。
@@ -44,7 +53,34 @@ const PLAN_HEADING_HARD_CONSTRAINT_LINES = [
   '- 错误：`## 2. 任务拆解`、`## 2、任务拆解`、`## 二、任务拆解`、`### 任务拆解` 等带编号前缀或错误层级的形式一律禁止',
   '- 上述三个二级标题缺一不可，标题文本必须与“正确”示例逐字一致。',
 ];
-
+const MARKDOWN_PLAN_TASK_FORMAT_CONSTRAINT_LINES = [
+  '- 必须包含精确二级标题 `## 任务拆解`；所有可执行任务只能写在该章节内。',
+  '- 可执行任务只能使用顶层未完成 checkbox 行，固定格式：`- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->`；行首不得缩进，不得使用 `*`/`+` 列表标记，不得写成嵌套 checkbox。',
+  '- 禁止用普通段落、代码块、表格、引用块或嵌套 checkbox 表达任务；任务验收要点只能写成该任务下方的缩进普通 bullet，不能写成 checkbox、表格、引用块或代码块。',
+];
+const MARKDOWN_PLAN_PROGRESS_CONSTRAINT_LINES = [
+  '- 必须包含精确二级标题 `## 进度区`。',
+  '- `## 进度区` 初始内容不要预置任务状态表格；禁止写 `| 任务 | 状态 | 备注 |`、表格分隔线或任何按任务预置的表格行。',
+  '- `## 进度区` 只保留给执行过程追加进度 bullet；后续记录采用 `- P001 AutoPlan 完成...；日志：docs/progress/logs/...` 模式。',
+];
+const STRUCTURED_PLAN_RENDER_CONSTRAINT_LINES = [
+  '- AutoPlan 渲染出的最终 Markdown 必须包含精确二级标题 `## 任务拆解`。',
+  '- 最终 Markdown 中所有开发任务必须是 `## 任务拆解` 章节下的顶层 checkbox 行，任务行必须独占一行。',
+  '- 最终 Markdown 任务行必须由 AutoPlan 连续编号为 `- [ ] P001: ... <!-- scope: ... -->`、`- [ ] P002: ... <!-- scope: ... -->`，不能跳号或重复。',
+  '- 最终 Markdown 不得用普通段落、代码块、表格、引用块或嵌套 checkbox 表达任务；任务 acceptance 由 AutoPlan 渲染为缩进普通 bullet。',
+  '- 每个任务都必须提供 scope；无法判断时在 PlanSpec scope 写 ["unknown"]，由 AutoPlan 渲染为 scope 注释。',
+  '- 最后一个任务必须是完整验收任务，scope 必须包含 validation；不要把运行测试/构建/验收拆成普通开发任务。',
+  '- 最终 Markdown 必须包含 `## 进度区`，初始进度区不得预置任务状态表格；只保留执行过程追加 `- P001 AutoPlan 完成...；日志：docs/progress/logs/...` bullet 的位置。',
+];
+const OPENCODE_STRUCTURED_PLAN_CONSTRAINT_LINES = [
+  'OpenCode 结构化 PlanSpec 硬性约束：',
+  '- 只写 PlanSpec JSON 输出文件；禁止写最终 Markdown plan 文件，禁止创建或修改业务代码、配置文件、测试文件。',
+  '- 回复正文不能替代文件写入；只有把合法 JSON 对象写入指定 PlanSpec JSON 输出文件才算完成。',
+  '- 不要输出 Markdown、代码块、寒暄、说明文字或“需要补充信息”；JSON 文件内容必须可直接 JSON.parse。',
+  '- 需求正文不明确时，必须基于需求/反馈正文、附件说明和少量必要代码上下文自行推断任务与 scope。',
+  '- 仅可为推断 scope 读取少量明确相关文件；禁止通读整仓、主动读取 README/目录树后发散主题、主动联网检索或派生子代理。',
+];
+const PROJECT_PROMPT_CONSTRAINT_HEADING = '项目级 Prompt（补充约束，不能覆盖 AutoPlan 系统级格式、PlanSpec、文件写入和验收要求）：';
 function planGenerationTimerStart() {
   return Date.now();
 }
@@ -108,15 +144,17 @@ async function generatePlan(service, helpers, projectId, workspace, issueScan) {
       `输出文件：${planFile}`,
       '',
       '格式要求：',
-      '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+      ...MARKDOWN_PLAN_TASK_FORMAT_CONSTRAINT_LINES,
       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
       '- 每个任务要有验收要点',
       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
       '- 必须包含总体验收标准和进度区',
+      ...MARKDOWN_PLAN_PROGRESS_CONSTRAINT_LINES,
       ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
       '- 只写 plan 文件，不要改业务代码',
+      ...projectPromptConstraintLines(projectStatus),
       '',
       '需求快照：',
       issueBundle,
@@ -234,7 +272,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
         planExecutionConfig,
         planAgentCliOperation,
         planAgentCliConfig,
-        isOpenCodeProvider,
+      isOpenCodeProvider,
         phasing,
         planGenerationStartedAt,
       });
@@ -266,15 +304,17 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       '你必须使用文件写入工具把完整 plan 内容写入上面指定的输出文件路径；不要只把 plan 内容打印在回复里。只有写入该文件才算成功。',
       '',
       '格式要求：',
-      '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+      ...MARKDOWN_PLAN_TASK_FORMAT_CONSTRAINT_LINES,
       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
       '- 每个任务要有验收要点',
       '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；每个 plan 的最后一个任务必须是“完整验收”节点，负责对整个 plan 做最终验收',
       '- 最后一个任务必须严格放在任务列表最后，标题建议“完整验收”，scope 写 validation；总体验收标准写明最终验收命令、范围和通过标准',
       '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试',
       '- 必须包含总体验收标准和进度区',
+      ...MARKDOWN_PLAN_PROGRESS_CONSTRAINT_LINES,
       ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
       '- 只写 plan 文件，不要改业务代码',
+      ...projectPromptConstraintLines(projectStatus),
       '',
       ...explorationGuidance,
       '',
@@ -469,6 +509,7 @@ async function generatePhasedPlansForIntake(service, helpers, projectId, workspa
     attachmentPrompt,
     readSnippet,
     isOpenCodeProvider,
+    projectStatus,
   });
 
   const result = await service.runCodex(workspace, prompt, `gen-${intake.__type}-${intake.id}`, {
@@ -632,6 +673,7 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
   const planGenerationStartedAt = contextPlanGenerationStartedAt ?? planGenerationTimerStart();
   const planAgentCliOperation = planGenerationAgentCliOperationFieldsForService(service, planGenerationConfig);
   const planAgentCliConfig = effectiveAgentCliConfig({}, planAgentCliOperation);
+  const isOpenCodeProvider = planAgentCliConfig.provider === 'opencode';
   const timestamp = timestampForPath();
   const suffix = issueScan.aggregateHash.slice(0, 8);
   const planSpecFile = path.join(workspace, 'docs', 'plan', `plan_spec_${timestamp}_${suffix}.json`);
@@ -647,6 +689,7 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
     planFile,
     issueBundle,
     projectStatus,
+    isOpenCodeProvider,
   });
 
   const result = await service.runCodex(workspace, prompt, 'generate-plan', {
@@ -663,13 +706,21 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
   );
   const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
   const backendMeta = planBackendEventMeta(planGenerationSnapshot, planExecutionConfig);
+  const cliResultMeta = structuredPlanCliResultMeta(result);
 
+  let stdoutPlanSpecRecovery = null;
   if (result.exitCode === 0 && !fs.existsSync(planSpecFile)) {
-    if (recoverPlanSpecFromStdout(planSpecFile, result.output)) {
-      service.addEvent(projectId, 'plan.spec.stdout.recovered', `已从 stdout 兜底落盘 PlanSpec：${normalizeRelative(workspace, planSpecFile)}`, {
+    stdoutPlanSpecRecovery = recoverPlanSpecFromStdoutResult(planSpecFile, result.output, {
+      workspace,
+      helpers,
+    });
+    if (stdoutPlanSpecRecovery.recovered) {
+      service.addEvent(projectId, 'plan.spec.stdout.recovered', `Recovered PlanSpec JSON from stdout fallback: ${normalizeRelative(workspace, planSpecFile)}`, {
         ...agentContext,
         ...backendMeta,
+        ...cliResultMeta,
         planSpecFilePath: normalizeRelative(workspace, planSpecFile),
+        ...structuredPlanRecoveryMeta(stdoutPlanSpecRecovery, result.output),
       });
     }
   }
@@ -677,13 +728,19 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
     const missingArtifactPath = result.exitCode === 0 && !fs.existsSync(planSpecFile)
       ? normalizeRelative(workspace, planSpecFile)
       : '';
+    const failureDiagnostic = structuredPlanArtifactFailureDiagnostic({
+      result,
+      missingArtifactPath,
+      stdout: result.output,
+      recovery: stdoutPlanSpecRecovery,
+    });
     return recordIssuePlanGenerationFailure(service, {
       projectId,
       agentLabel,
       agentContext,
       result,
       planGenerationStartedAt,
-      eventType: 'plan.generate.failed',
+      eventType: failureDiagnostic.eventType,
       message: `${agentLabel} 结构化计划生成失败：${result.logFile}`,
       error: planGenerationFailureError({
         result,
@@ -693,8 +750,12 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
       }),
       meta: {
         ...backendMeta,
+        ...cliResultMeta,
         planSpecFilePath: normalizeRelative(workspace, planSpecFile),
+        planSpecTargetPath: normalizeRelative(workspace, planSpecFile),
+        planFilePath: normalizeRelative(workspace, planFile),
         planSpecFileExists: fs.existsSync(planSpecFile),
+        ...failureDiagnostic.meta,
       },
     });
   }
@@ -708,20 +769,27 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
       helpers,
     });
   } catch (error) {
+    const failureDiagnostic = structuredPlanRenderFailureDiagnostic(error);
     return recordIssuePlanGenerationFailure(service, {
       projectId,
       agentLabel,
       agentContext,
       result,
       planGenerationStartedAt,
-      eventType: 'plan.format.invalid',
+      eventType: failureDiagnostic.eventType,
       message: `${agentLabel} 生成的 PlanSpec 不合规（${structuredPlanErrorMessage(error)}）：${result.logFile}`,
       error: `生成的 PlanSpec 不合规：${structuredPlanErrorMessage(error)}`,
       meta: {
         ...backendMeta,
+        ...cliResultMeta,
         planSpecFilePath: normalizeRelative(workspace, planSpecFile),
+        planSpecTargetPath: normalizeRelative(workspace, planSpecFile),
         planFilePath: normalizeRelative(workspace, planFile),
+        planFileExists: fs.existsSync(planFile),
+        planInsertSkipped: true,
+        planTaskSyncSkipped: true,
         reason: structuredPlanErrorMessage(error),
+        ...failureDiagnostic.meta,
       },
     });
   }
@@ -747,6 +815,7 @@ async function generateStructuredPlan(service, helpers, projectId, workspace, is
   service.addEvent(projectId, 'plan.generated', `${agentLabel} 生成结构化计划：${rendered.planFileRelativePath}`, {
     ...agentContext,
     ...backendMeta,
+    ...cliResultMeta,
     durationMs: planGenerationDurationMs,
     planId: id,
     planSpecFilePath: rendered.planSpecRelativePath,
@@ -805,13 +874,21 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
   );
   const agentLabel = agentCliProviderDisplayName(agentContext.agentCliProvider);
   const backendMeta = planBackendEventMeta(planGenerationSnapshot, planExecutionConfig);
+  const cliResultMeta = structuredPlanCliResultMeta(result);
 
+  let stdoutPlanSpecRecovery = null;
   if (result.exitCode === 0 && !fs.existsSync(planSpecFile)) {
-    if (recoverPlanSpecFromStdout(planSpecFile, result.output)) {
-      service.addEvent(projectId, 'plan.spec.stdout.recovered', `已从 stdout 兜底落盘 PlanSpec：${normalizeRelative(workspace, planSpecFile)}`, {
+    stdoutPlanSpecRecovery = recoverPlanSpecFromStdoutResult(planSpecFile, result.output, {
+      workspace,
+      helpers,
+    });
+    if (stdoutPlanSpecRecovery.recovered) {
+      service.addEvent(projectId, 'plan.spec.stdout.recovered', `Recovered PlanSpec JSON from stdout fallback: ${normalizeRelative(workspace, planSpecFile)}`, {
         ...agentContext,
         ...backendMeta,
+        ...cliResultMeta,
         planSpecFilePath: normalizeRelative(workspace, planSpecFile),
+        ...structuredPlanRecoveryMeta(stdoutPlanSpecRecovery, result.output),
         intakeType: intake.__type,
         intakeId: intake.id,
       });
@@ -821,6 +898,12 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
     const missingArtifactPath = result.exitCode === 0 && !fs.existsSync(planSpecFile)
       ? normalizeRelative(workspace, planSpecFile)
       : '';
+    const failureDiagnostic = structuredPlanArtifactFailureDiagnostic({
+      result,
+      missingArtifactPath,
+      stdout: result.output,
+      recovery: stdoutPlanSpecRecovery,
+    });
     return recordIntakePlanGenerationFailure(service, {
       projectId,
       table,
@@ -831,7 +914,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
       agentCliConfig: planAgentCliSnapshot,
       result,
       planGenerationStartedAt,
-      eventType: 'plan.generate.failed',
+      eventType: failureDiagnostic.eventType,
       message: `${agentLabel} 生成${sourceName} #${intake.id} 结构化计划失败：${result.logFile}`,
       error: intakePlanGenerationFailureError({
         result,
@@ -843,8 +926,12 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
       }),
       meta: {
         ...backendMeta,
+        ...cliResultMeta,
         planSpecFilePath: normalizeRelative(workspace, planSpecFile),
+        planSpecTargetPath: normalizeRelative(workspace, planSpecFile),
+        planFilePath: normalizeRelative(workspace, planFile),
         planSpecFileExists: fs.existsSync(planSpecFile),
+        ...failureDiagnostic.meta,
       },
     });
   }
@@ -858,6 +945,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
       helpers,
     });
   } catch (error) {
+    const failureDiagnostic = structuredPlanRenderFailureDiagnostic(error);
     return recordIntakePlanGenerationFailure(service, {
       projectId,
       table,
@@ -868,14 +956,20 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
       agentCliConfig: planAgentCliSnapshot,
       result,
       planGenerationStartedAt,
-      eventType: 'plan.format.invalid',
+      eventType: failureDiagnostic.eventType,
       message: `${agentLabel} 生成${sourceName} #${intake.id} 的 PlanSpec 不合规（${structuredPlanErrorMessage(error)}）：${result.logFile}`,
       error: `生成${sourceName} #${intake.id} 的 PlanSpec 不合规：${structuredPlanErrorMessage(error)}`,
       meta: {
         ...backendMeta,
+        ...cliResultMeta,
         planSpecFilePath: normalizeRelative(workspace, planSpecFile),
+        planSpecTargetPath: normalizeRelative(workspace, planSpecFile),
         planFilePath: normalizeRelative(workspace, planFile),
+        planFileExists: fs.existsSync(planFile),
+        planInsertSkipped: true,
+        planTaskSyncSkipped: true,
         reason: structuredPlanErrorMessage(error),
+        ...failureDiagnostic.meta,
       },
     });
   }
@@ -903,6 +997,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
   service.addEvent(projectId, 'plan.generated', `${agentLabel} 为${sourceName} #${intake.id} 生成结构化计划：${rendered.planFileRelativePath}`, {
     ...agentContext,
     ...backendMeta,
+    ...cliResultMeta,
     durationMs: planGenerationDurationMs,
     planId: id,
     intakeType: intake.__type,
@@ -1028,7 +1123,11 @@ async function generateBuiltinStructuredPlan(service, helpers, projectId, worksp
       meta: {
         ...successContext.backendMeta,
         planSpecFilePath: normalizeRelative(workspace, planSpecFile),
+        planSpecTargetPath: normalizeRelative(workspace, planSpecFile),
         planFilePath: normalizeRelative(workspace, planFile),
+        planFileExists: fs.existsSync(planFile),
+        planInsertSkipped: true,
+        planTaskSyncSkipped: true,
         reason: structuredPlanErrorMessage(error),
       },
     });
@@ -1189,7 +1288,11 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
       meta: {
         ...successContext.backendMeta,
         planSpecFilePath: normalizeRelative(workspace, planSpecFile),
+        planSpecTargetPath: normalizeRelative(workspace, planSpecFile),
         planFilePath: normalizeRelative(workspace, planFile),
+        planFileExists: fs.existsSync(planFile),
+        planInsertSkipped: true,
+        planTaskSyncSkipped: true,
         reason: structuredPlanErrorMessage(error),
       },
     });
@@ -1443,12 +1546,14 @@ function buildStructuredIssuePlanPrompt(input) {
     planFile,
     issueBundle,
     projectStatus,
+    isOpenCodeProvider,
   } = input;
   return [
     '你是需求整理与开发计划生成者。',
     '请根据 docs/issues 收集到的反馈和需求，生成结构化 PlanSpec JSON。',
     '',
-    ...structuredPlanSpecPromptContract({ planSpecFile, planFile, projectStatus }),
+    ...structuredPlanSpecPromptContract({ planSpecFile, planFile, projectStatus, isOpenCodeProvider }),
+    ...projectPromptConstraintLines(projectStatus),
     '',
     '需求快照：',
     issueBundle,
@@ -1469,7 +1574,9 @@ function buildStructuredIntakePlanPrompt(input) {
   } = input;
   const explorationGuidance = isOpenCodeProvider
     ? [
-        '必须优先依据给定需求/反馈正文生成 PlanSpec；仅可为推断 scope 读取少量明确文件，禁止通读整仓后自行发挥，也不要主动联网检索。',
+        '必须优先依据给定需求/反馈正文生成 PlanSpec；需求不明确时必须自行按最合理工程解释拆解任务并推断 scope，禁止反问、禁止请求补充信息、禁止输出“请告诉我/需要更多信息”。',
+        '仅可为推断 scope 读取少量明确相关文件；禁止通读整仓、主动读取 README/目录树后发散主题，也不要主动联网检索或派生子代理。',
+        '只写指定 PlanSpec JSON 输出文件；不要写最终 Markdown plan 文件，不要修改业务代码、配置或测试文件。',
       ]
     : [
         '必须基于需求/反馈正文和项目实际代码生成 PlanSpec；需求不明确时自行从代码推断影响范围，不要反问或请求补充信息。',
@@ -1478,7 +1585,8 @@ function buildStructuredIntakePlanPrompt(input) {
     '你是需求整理与开发计划生成者。',
     `请根据以下${sourceName}，生成结构化 PlanSpec JSON。`,
     '',
-    ...structuredPlanSpecPromptContract({ planSpecFile, planFile, projectStatus }),
+    ...structuredPlanSpecPromptContract({ planSpecFile, planFile, projectStatus, isOpenCodeProvider }),
+    ...projectPromptConstraintLines(projectStatus),
     '',
     ...explorationGuidance,
     '',
@@ -1502,6 +1610,7 @@ function buildBuiltinStructuredIssuePlanPrompt(input) {
     '请根据 docs/issues 收集到的反馈和需求，生成结构化 PlanSpec。',
     '',
     ...builtinPlanSpecPromptContract({ projectStatus }),
+    ...projectPromptConstraintLines(projectStatus),
     '',
     '需求快照：',
     issueBundle,
@@ -1522,6 +1631,7 @@ function buildBuiltinStructuredIntakePlanPrompt(input) {
     `请根据以下${sourceName}，生成结构化 PlanSpec。`,
     '',
     ...builtinPlanSpecPromptContract({ projectStatus }),
+    ...projectPromptConstraintLines(projectStatus),
     '',
     '只能依据下方需求/反馈正文、附件说明和自动收集的项目上下文推断任务与 scope；无法判断影响范围时使用 ["unknown"]，不要反问或要求补充信息。',
     '',
@@ -1552,18 +1662,22 @@ function builtinPlanSpecPromptContract({ projectStatus }) {
     '- finalValidation.criteria 必须列出最终验收范围和通过标准。',
     ...(validationCommand ? [`- 当前项目配置的最终验收命令：${validationCommand}`] : []),
     '',
+    '最终 Markdown 渲染约束（最终 Markdown 由 AutoPlan 根据 PlanSpec 确定性生成，模型仍只提交 PlanSpec）：',
+    ...STRUCTURED_PLAN_RENDER_CONSTRAINT_LINES,
+    '',
     'JSON Schema：',
     JSON.stringify(PLAN_SPEC_SCHEMA, null, 2),
   ];
 }
 
-function structuredPlanSpecPromptContract({ planSpecFile, planFile, projectStatus }) {
+function structuredPlanSpecPromptContract({ planSpecFile, planFile, projectStatus, isOpenCodeProvider = false }) {
   const validationCommand = normalizeNullableString(projectStatus?.validation_command);
   return [
     `PlanSpec JSON 输出文件：${planSpecFile}`,
     `最终 Markdown plan 文件将由 AutoPlan 渲染为：${planFile}`,
     '你必须使用文件写入工具把完整 PlanSpec JSON 写入上面的 JSON 输出文件；不要只把 JSON 打印在回复里。',
     '只写 PlanSpec JSON 文件，不要写最终 Markdown plan 文件，不要改业务代码。',
+    ...(isOpenCodeProvider ? OPENCODE_STRUCTURED_PLAN_CONSTRAINT_LINES : []),
     '',
     'PlanSpec 契约：',
     '- 输出必须是合法 JSON 对象，不要使用 Markdown 代码块。',
@@ -1575,6 +1689,9 @@ function structuredPlanSpecPromptContract({ planSpecFile, planFile, projectStatu
     '- finalValidation.command 必须是最终验收命令字符串；如果项目中无法明确判断，请根据技术栈推断合理命令。',
     '- finalValidation.criteria 必须列出最终验收范围和通过标准。',
     ...(validationCommand ? [`- 当前项目配置的最终验收命令：${validationCommand}`] : []),
+    '',
+    '最终 Markdown 渲染约束（最终 Markdown 由 AutoPlan 根据 PlanSpec 生成，你必须通过 PlanSpec 字段保证这些信息完整）：',
+    ...STRUCTURED_PLAN_RENDER_CONSTRAINT_LINES,
     '',
     'JSON Schema：',
     JSON.stringify(PLAN_SPEC_SCHEMA, null, 2),
@@ -1595,15 +1712,40 @@ function renderPlanSpecFileToMarkdown(input) {
   const markdownSafety = resolveSafePlanMarkdownPath(workspace, planFile);
   if (!markdownSafety.safe) throw new Error(`plan Markdown 路径不安全：${markdownSafety.reason}`);
 
-  const planSpec = parsePlanSpecJson(fs.readFileSync(specSafety.filePath, 'utf8'));
-  const markdown = renderPlanSpecMarkdown(planSpec);
+  let planSpec;
+  try {
+    planSpec = parsePlanSpecJson(fs.readFileSync(specSafety.filePath, 'utf8'));
+  } catch (error) {
+    throw markStructuredPlanFailure(error, {
+      stage: 'plan_spec_json',
+      reason: STRUCTURED_PLAN_FAILURE_JSON_INVALID,
+    });
+  }
+
+  let markdown;
+  try {
+    markdown = renderPlanSpecMarkdown(normalizeRenderedPlanSpec(planSpec), { normalized: true, validate: false });
+  } catch (error) {
+    throw markStructuredPlanFailure(error, {
+      stage: error instanceof PlanSpecValidationError ? 'plan_spec_schema' : 'plan_spec_render',
+      reason: error instanceof PlanSpecValidationError
+        ? STRUCTURED_PLAN_FAILURE_SCHEMA_INVALID
+        : STRUCTURED_PLAN_FAILURE_MARKDOWN_INVALID,
+    });
+  }
   const contentValidation = validatePlanContent(markdown);
   if (!contentValidation.valid) {
-    throw new PlanRenderError(`渲染后的 plan Markdown 不合规：${contentValidation.reason}`);
+    throw markStructuredPlanFailure(new PlanRenderError(`渲染后的 plan Markdown 不合规：${contentValidation.reason}`), {
+      stage: 'rendered_markdown',
+      reason: STRUCTURED_PLAN_FAILURE_MARKDOWN_INVALID,
+    });
   }
   const taskValidation = validatePlanTaskSequence(markdown);
   if (!taskValidation.valid) {
-    throw new PlanRenderError(`渲染后的任务序列不合规：${taskValidation.reason}`);
+    throw markStructuredPlanFailure(new PlanRenderError(`渲染后的任务序列不合规：${taskValidation.reason}`), {
+      stage: 'rendered_markdown',
+      reason: STRUCTURED_PLAN_FAILURE_MARKDOWN_INVALID,
+    });
   }
   fs.mkdirSync(path.dirname(markdownSafety.filePath), { recursive: true });
   fs.writeFileSync(markdownSafety.filePath, markdown, 'utf8');
@@ -1615,15 +1757,206 @@ function renderPlanSpecFileToMarkdown(input) {
   };
 }
 
-function recoverPlanSpecFromStdout(planSpecFile, stdout) {
-  if (!stdout || typeof stdout !== 'string' || stdout.trim().length === 0) return false;
+function recoverPlanSpecFromStdout(planSpecFile, stdout, options = {}) {
+  return recoverPlanSpecFromStdoutResult(planSpecFile, stdout, options).recovered;
+}
+
+function recoverPlanSpecFromStdoutResult(planSpecFile, stdout, options = {}) {
+  const text = typeof stdout === 'string' ? stdout : String(stdout || '');
+  const classification = classifyPlanSpecStdout(text);
+  const baseResult = {
+    recovered: false,
+    reason: stdoutPlanSpecRecoveryFailureReason(classification),
+    classification,
+    targetPath: String(planSpecFile || ''),
+    error: '',
+  };
+  if (!text.trim()) return { ...baseResult, reason: 'stdout_empty' };
+
+  let planSpec;
   try {
-    const planSpec = parsePlanSpecJson(stdout);
-    fs.mkdirSync(path.dirname(planSpecFile), { recursive: true });
-    fs.writeFileSync(planSpecFile, `${JSON.stringify(planSpec, null, 2)}\n`, 'utf8');
-    return true;
+    planSpec = parsePlanSpecJson(text);
+  } catch (error) {
+    return {
+      ...baseResult,
+      error: error?.message || String(error),
+    };
+  }
+
+  const { workspace, helpers = {} } = options;
+  let targetFile = planSpecFile;
+  let targetPath = String(planSpecFile || '');
+  if (workspace) {
+    const resolveSafePlanSpecPath = helpers.resolveSafePlanSpecPath || workspaceFiles.resolveSafePlanSpecPath;
+    const specSafety = resolveSafePlanSpecPath(workspace, planSpecFile);
+    targetPath = specSafety.relativePath || targetPath;
+    if (!specSafety.safe) {
+      return {
+        ...baseResult,
+        reason: 'plan_spec_target_unsafe',
+        targetPath,
+        error: specSafety.reason || 'unsafe PlanSpec target path',
+      };
+    }
+    targetFile = specSafety.filePath;
+  }
+
+  try {
+    fs.mkdirSync(path.dirname(targetFile), { recursive: true });
+    fs.writeFileSync(targetFile, `${JSON.stringify(planSpec, null, 2)}\n`, 'utf8');
+    return {
+      recovered: true,
+      reason: 'stdout_json_recovered',
+      classification: 'valid_json',
+      targetPath,
+      error: '',
+    };
+  } catch (error) {
+    return {
+      ...baseResult,
+      reason: 'plan_spec_recovery_write_failed',
+      targetPath,
+      error: error?.message || String(error),
+    };
+  }
+}
+
+function structuredPlanRecoveryMeta(recovery, stdout) {
+  const text = typeof stdout === 'string' ? stdout : String(stdout || '');
+  const meta = {
+    stdoutBytes: Buffer.byteLength(text, 'utf8'),
+  };
+  const preview = compactStdoutPreview(text);
+  if (preview) meta.stdoutPreview = preview;
+  if (recovery) {
+    meta.stdoutPlanSpecRecoveryAttempted = true;
+    meta.stdoutPlanSpecClassification = recovery.classification || classifyPlanSpecStdout(text);
+    meta.stdoutPlanSpecRecoveryReason = recovery.reason || '';
+    meta.planSpecRecoveredFromStdout = recovery.recovered === true;
+    if (recovery.targetPath) meta.planSpecRecoveryTargetPath = recovery.targetPath;
+    if (recovery.error) meta.stdoutPlanSpecRecoveryError = recovery.error;
+  } else {
+    meta.stdoutPlanSpecRecoveryAttempted = false;
+    meta.stdoutPlanSpecClassification = classifyPlanSpecStdout(text);
+  }
+  return meta;
+}
+
+function compactStdoutPreview(stdout, limit = 400) {
+  const text = String(stdout || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
+
+function stdoutPlanSpecRecoveryFailureReason(classification) {
+  if (classification === 'empty') return 'stdout_empty';
+  if (classification === 'markdown') return 'stdout_markdown_not_json';
+  if (classification === 'json_invalid') return 'stdout_json_invalid';
+  if (classification === 'non_json_text') return 'stdout_non_json_text';
+  return 'stdout_plan_spec_not_recovered';
+}
+
+function normalizeRenderedPlanSpec(planSpec) {
+  const normalized = normalizePlanSpec(planSpec);
+  if (!Array.isArray(normalized.tasks) || normalized.tasks.length === 0) return normalized;
+  const tasks = normalized.tasks.map((task, index) => (
+    index === normalized.tasks.length - 1
+      ? { ...task, scope: ['validation'] }
+      : task
+  ));
+  return { ...normalized, tasks };
+}
+
+function structuredPlanCliResultMeta(result = {}) {
+  return {
+    ...(result?.structuredPlan ? { structuredPlan: true } : {}),
+    ...(result?.opencodeAgent ? { opencodeAgent: result.opencodeAgent } : {}),
+    ...(result?.opencodePlanMode ? { opencodePlanMode: result.opencodePlanMode } : {}),
+  };
+}
+
+function markStructuredPlanFailure(error, diagnostic = {}) {
+  if (error && typeof error === 'object') {
+    error.structuredPlanFailureStage = diagnostic.stage || 'structured_plan';
+    error.structuredPlanFailureReason = diagnostic.reason || STRUCTURED_PLAN_FAILURE_MARKDOWN_INVALID;
+  }
+  return error;
+}
+
+function structuredPlanArtifactFailureDiagnostic(input = {}) {
+  const { result, missingArtifactPath, stdout, recovery } = input;
+  const recoveryMeta = structuredPlanRecoveryMeta(recovery, stdout);
+  if (result && result.exitCode !== 0) {
+    return {
+      eventType: 'plan.generate.cli.failed',
+      meta: {
+        failureStage: 'cli',
+        failureReason: STRUCTURED_PLAN_FAILURE_CLI_EXIT,
+        exitCode: result.exitCode,
+        ...recoveryMeta,
+      },
+    };
+  }
+  if (missingArtifactPath) {
+    return {
+      eventType: 'plan.spec.missing',
+      meta: {
+        failureStage: 'plan_spec_file',
+        failureReason: STRUCTURED_PLAN_FAILURE_SPEC_MISSING,
+        missingArtifactPath,
+        ...recoveryMeta,
+      },
+    };
+  }
+  return {
+    eventType: 'plan.generate.failed',
+    meta: {
+      failureStage: 'structured_plan',
+      failureReason: 'structured_plan_generation_failed',
+      ...recoveryMeta,
+    },
+  };
+}
+
+function structuredPlanRenderFailureDiagnostic(error) {
+  const failureReason = error?.structuredPlanFailureReason || (
+    error instanceof PlanSpecValidationError
+      ? STRUCTURED_PLAN_FAILURE_SCHEMA_INVALID
+      : STRUCTURED_PLAN_FAILURE_MARKDOWN_INVALID
+  );
+  const failureStage = error?.structuredPlanFailureStage || (
+    failureReason === STRUCTURED_PLAN_FAILURE_SCHEMA_INVALID ? 'plan_spec_schema' : 'rendered_markdown'
+  );
+  return {
+    eventType: structuredPlanFailureEventType(failureReason),
+    meta: {
+      failureStage,
+      failureReason,
+      planInsertSkipped: true,
+      planTaskSyncSkipped: true,
+    },
+  };
+}
+
+function structuredPlanFailureEventType(failureReason) {
+  if (failureReason === STRUCTURED_PLAN_FAILURE_JSON_INVALID) return 'plan.spec.json.invalid';
+  if (failureReason === STRUCTURED_PLAN_FAILURE_SCHEMA_INVALID) return 'plan.spec.schema.invalid';
+  if (failureReason === STRUCTURED_PLAN_FAILURE_MARKDOWN_INVALID) return 'plan.format.invalid';
+  if (failureReason === STRUCTURED_PLAN_FAILURE_SPEC_MISSING) return 'plan.spec.missing';
+  if (failureReason === STRUCTURED_PLAN_FAILURE_CLI_EXIT) return 'plan.generate.cli.failed';
+  return 'plan.generate.failed';
+}
+
+function classifyPlanSpecStdout(stdout) {
+  const text = String(stdout || '').trim();
+  if (!text) return 'empty';
+  try {
+    parsePlanSpecJson(text);
+    return 'valid_json';
   } catch (_) {
-    return false;
+    if (/^#{1,6}\s+\S/m.test(text) || /^[^\S\r\n]*[-*]\s*\[[ xX]?\]/m.test(text)) return 'markdown';
+    if (text.includes('{') || text.includes('}')) return 'json_invalid';
+    return 'non_json_text';
   }
 }
 
@@ -1745,6 +2078,7 @@ function buildPhasedPlanPrompt(input) {
     attachmentPrompt,
     readSnippet,
     isOpenCodeProvider,
+    projectStatus,
   } = input;
   const sampleFiles = [1, 2].map((index) => path.join(
     workspace,
@@ -1786,16 +2120,18 @@ function buildPhasedPlanPrompt(input) {
     '',
     '每个阶段 plan 的格式要求：',
     '- 必须包含 `## 任务拆解` 章节标题。',
-    '- 每个任务必须严格使用固定格式：- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->',
+    ...MARKDOWN_PLAN_TASK_FORMAT_CONSTRAINT_LINES,
     '- 单个阶段内任务编号必须从 P001 开始连续递增，不能跳号或重复。',
     '- scope 必填，多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->。',
     '- 每个任务要有验收要点。',
     '- 每个阶段 plan 的最后一个任务必须是“完整验收”，scope 写 validation。',
     '- 必须包含总体验收标准和进度区。',
+    ...MARKDOWN_PLAN_PROGRESS_CONSTRAINT_LINES,
     ...PLAN_HEADING_HARD_CONSTRAINT_LINES,
     '- 不要把“运行测试/回归/验收/构建”拆成普通开发任务；只在最后的完整验收节点写最终验收命令、范围和通过标准。',
     '- 如果需求明确要求新增或更新测试文件，可以生成“补充测试代码”的开发任务，但任务验收要点只描述应覆盖的场景，不要求在该任务内运行测试。',
     '- 只写 manifest 和阶段 plan 文件，不要改业务代码。',
+    ...projectPromptConstraintLines(projectStatus),
     '',
     '拆分原则：',
     '- 每个阶段必须能作为独立 AutoPlan plan 进入 plans / plan_tasks 队列。',
@@ -1943,38 +2279,62 @@ function validatePhasePlanContent(content) {
 }
 
 function validatePlanTaskSequence(content) {
-  const lines = planTaskSectionText(content).split(/\r?\n/);
-  const taskLines = lines.filter((line) => PLAN_TASK_CHECKBOX_LINE_RE.test(line));
-  if (taskLines.length === 0) return { valid: false, reason: '未找到任务行' };
+  const section = planTaskSection(content);
+  if (!section.found) return { valid: false, reason: '缺少精确的 ## 任务拆解' };
   const tasks = [];
-  for (let index = 0; index < taskLines.length; index += 1) {
-    const line = taskLines[index];
+  let inFence = false;
+  for (let lineIndex = 0; lineIndex < section.lines.length; lineIndex += 1) {
+    const line = section.lines[lineIndex];
+    const lineNumber = lineIndex + 1;
+    if (/^\s*(`{3,}|~{3,})/.test(line)) {
+      inFence = !inFence;
+      return { valid: false, reason: '任务拆解章节不能包含代码块' };
+    }
+    if (inFence) return { valid: false, reason: '任务拆解章节不能包含代码块' };
+    if (/^\s*>/.test(line)) return { valid: false, reason: '验收要点不能渲染为引用块' };
+    if (/^\s*\|/.test(line)) return { valid: false, reason: '验收要点不能渲染为表格' };
+    if (!PLAN_TASK_ANY_CHECKBOX_LINE_RE.test(line)) continue;
+    if (!PLAN_TASK_CHECKBOX_LINE_RE.test(line)) {
+      return { valid: false, reason: `第 ${lineNumber} 行 checkbox 必须是任务拆解章节下的顶层未完成任务行` };
+    }
     const match = line.match(PLAN_TASK_LINE_RE);
-    if (!match) return { valid: false, reason: `第 ${index + 1} 个任务行格式不合规` };
+    if (!match) return { valid: false, reason: `第 ${lineNumber} 行任务格式不合规` };
     const taskNumber = Number(match[1]);
-    const expectedNumber = index + 1;
+    const expectedNumber = tasks.length + 1;
     if (taskNumber !== expectedNumber) {
       return { valid: false, reason: `任务编号必须连续，期望 P${String(expectedNumber).padStart(3, '0')}` };
     }
+    const title = String(match[2] || '').trim();
+    const scope = String(match[3] || '').trim();
+    if (!title) return { valid: false, reason: `第 ${lineNumber} 行任务标题不能为空` };
+    if (!scope) return { valid: false, reason: `第 ${lineNumber} 行任务 scope 不能为空` };
     tasks.push({
       key: `P${String(taskNumber).padStart(3, '0')}`,
-      title: String(match[2] || '').trim(),
-      scope: String(match[3] || '').trim(),
+      title,
+      scope,
     });
   }
+  if (tasks.length === 0) return { valid: false, reason: '未找到任务行' };
   return { valid: true, tasks };
 }
 
 function planTaskSectionText(content) {
-  const text = String(content || '');
-  const sectionMatch = /^##\s+任务拆解.*$/m.exec(text);
-  if (!sectionMatch) return text;
-  const start = sectionMatch.index + sectionMatch[0].length;
-  const rest = text.slice(start);
-  const nextSection = /^##\s+\S.*$/m.exec(rest);
-  return nextSection ? rest.slice(0, nextSection.index) : rest;
+  const section = planTaskSection(content);
+  return section.found ? section.lines.join('\n') : '';
 }
 
+function planTaskSection(content) {
+  const lines = String(content || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => PLAN_TASK_SECTION_HEADING_RE.test(line));
+  if (start === -1) return { found: false, lines: [] };
+  const sectionLines = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (PLAN_TASK_NEXT_SECTION_HEADING_RE.test(line)) break;
+    sectionLines.push(line);
+  }
+  return { found: true, lines: sectionLines };
+}
 function parseJsonObject(content) {
   const text = String(content || '').trim();
   if (!text) throw new Error('内容为空');
@@ -2107,6 +2467,20 @@ function normalizeNullableString(value) {
   return text || null;
 }
 
+function normalizeProjectPrompt(projectStatus = {}) {
+  return normalizeNullableString(projectStatus?.project_prompt ?? projectStatus?.projectPrompt);
+}
+
+function projectPromptConstraintLines(projectStatus = {}) {
+  const projectPrompt = normalizeProjectPrompt(projectStatus);
+  if (!projectPrompt) return [];
+  return [
+    '',
+    PROJECT_PROMPT_CONSTRAINT_HEADING,
+    projectPrompt,
+  ];
+}
+
 function intakeAttachmentPrompt(service, helpers, projectId, workspace, intake, sourceName) {
   const { intakeAttachmentOwnerTypes, describeIntakeAttachment, formatIntakeAttachmentEntry } = helpers;
     const ownerTypes = intakeAttachmentOwnerTypes(intake.__type);
@@ -2178,11 +2552,42 @@ function isPlanContentValid(content) {
 function validatePlanContent(content) {
   const text = typeof content === 'string' ? content : '';
   if (!text.trim()) return { valid: false, reason: '计划内容为空' };
-  // 二级标题 `## 任务拆解`（容忍其后紧跟冒号/空白；不匹配 ### 等更深层级）
-  if (!/^##\s+任务拆解/m.test(text)) return { valid: false, reason: '缺少 ## 任务拆解' };
+  if (!text.split(/\r?\n/).some((line) => PLAN_TASK_SECTION_HEADING_RE.test(line))) {
+    return { valid: false, reason: '缺少精确的 ## 任务拆解' };
+  }
+  const outsideTaskSection = findCheckboxOutsideTaskSection(text);
+  if (outsideTaskSection) return { valid: false, reason: '任务 checkbox 只能出现在 ## 任务拆解 章节内' };
   const taskValidation = validatePlanTaskSequence(text);
   if (!taskValidation.valid) return { valid: false, reason: taskValidation.reason || '缺少合规任务行' };
+  const finalValidation = validateFinalPlanTask(taskValidation.tasks);
+  if (!finalValidation.valid) return { valid: false, reason: finalValidation.reason };
   return { valid: true, reason: '', taskCount: taskValidation.tasks.length, tasks: taskValidation.tasks };
+}
+
+function findCheckboxOutsideTaskSection(content) {
+  const lines = String(content || '').split(/\r?\n/);
+  let inTaskSection = false;
+  for (const line of lines) {
+    if (PLAN_TASK_SECTION_HEADING_RE.test(line)) {
+      inTaskSection = true;
+      continue;
+    }
+    if (PLAN_TASK_NEXT_SECTION_HEADING_RE.test(line)) {
+      inTaskSection = false;
+    }
+    if (!inTaskSection && PLAN_TASK_ANY_CHECKBOX_LINE_RE.test(line)) return true;
+  }
+  return false;
+}
+function validateFinalPlanTask(tasks) {
+  const lastTask = Array.isArray(tasks) ? tasks[tasks.length - 1] : null;
+  if (!lastTask) return { valid: false, reason: '未找到任务行' };
+  if (!FINAL_ACCEPTANCE_RE.test(lastTask.title)) return { valid: false, reason: '最后一个任务必须是完整验收' };
+  const scopes = String(lastTask.scope || '').split(/[\s,，、;；]+/).map((scope) => scope.trim().toLowerCase()).filter(Boolean);
+  if (scopes.length !== 1 || scopes[0] !== 'validation') {
+    return { valid: false, reason: '完整验收任务 scope 必须为 validation' };
+  }
+  return { valid: true };
 }
 
 function shouldGeneratePhasedPlans(intake = {}) {
@@ -2260,4 +2665,5 @@ module.exports = {
   validatePlanTaskSequence,
   recoverPlanFromStdout,
   recoverPlanSpecFromStdout,
+  recoverPlanSpecFromStdoutResult,
 };

@@ -47,13 +47,7 @@ function renderPlanSpecMarkdown(planSpec, options = {}) {
     '',
     '## 进度区',
     '',
-    '| 任务 | 状态 | 备注 |',
-    '| --- | --- | --- |',
   );
-  spec.tasks.forEach((task, index) => {
-    lines.push(`| ${taskKeyForIndex(index)} | 未开始 | ${tableCell(task.title)} |`);
-  });
-  lines.push('');
 
   const markdown = lines.join('\n');
   if (options.validate !== false) validateRenderedPlanMarkdown(markdown);
@@ -117,10 +111,6 @@ function markdownBlock(value) {
     .replace(/<!--[\s\S]*?-->/g, ' ')
     .replace(/\r\n/g, '\n')
     .trim();
-}
-
-function tableCell(value) {
-  return markdownLine(value);
 }
 
 module.exports = {

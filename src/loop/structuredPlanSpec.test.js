@@ -1,4 +1,4 @@
-const { describe, it } = require('node:test');
+﻿const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
 const { renderPlanSpecMarkdown } = require('./planRenderer');
@@ -38,11 +38,16 @@ describe('structuredPlanSpec normalization and rendering', () => {
     assert.ok(normalized.tasks[2].acceptance.some((item) => item.includes('npm test')));
 
     const markdown = renderPlanSpecMarkdown(normalized, { normalized: true });
-    assert.match(markdown, /- \[ \] P001: 编写核心实现 <!-- scope: src\/core\.js -->/);
-    assert.match(markdown, /- \[ \] P002: 接入调用方 <!-- scope: src\/service\.js,src\/controller\.js -->/);
-    assert.match(markdown, new RegExp(`- \\[ \\] P003: ${FINAL_ACCEPTANCE_TITLE} <!-- scope: ${VALIDATION_SCOPE} -->`));
+    assert.match(markdown, /^- \[ \] P001: 编写核心实现 <!-- scope: src\/core\.js -->$/m);
+    assert.match(markdown, /^- \[ \] P002: 接入调用方 <!-- scope: src\/service\.js,src\/controller\.js -->$/m);
+    assert.match(markdown, new RegExp(`^- \\[ \\] P003: ${FINAL_ACCEPTANCE_TITLE} <!-- scope: ${VALIDATION_SCOPE} -->$`, 'm'));
     assert.doesNotMatch(markdown, /P007:/);
     assert.ok(markdown.includes('npm test'), '渲染结果应包含最终验收命令');
+    assert.match(markdown, /^## 进度区$/m, '渲染结果应保留进度区标题');
+    const progressSection = markdown.slice(markdown.indexOf('## 进度区'));
+    assert.doesNotMatch(progressSection, /\|\s*任务\s*\|\s*状态\s*\|\s*备注\s*\|/, '进度区不应渲染任务状态表头');
+    assert.doesNotMatch(progressSection, /^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|/m, '进度区不应渲染表格分隔线');
+    assert.doesNotMatch(progressSection, /^\|\s*P\d+\s*\|/m, '进度区不应按任务预置表格行');
   });
 
   it('normalizes an existing final acceptance task instead of duplicating it', () => {

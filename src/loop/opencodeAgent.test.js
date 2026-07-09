@@ -86,4 +86,15 @@ describe('OpenCode 计划生成专用 agent 生成器（P001）', () => {
       fs.rmSync(workspace, { recursive: true, force: true });
     }
   });
+
+  it('PlanSpec JSON mode is constrained to the JSON artifact only', () => {
+    const content = buildOpenCodePlanAgentContent();
+
+    assert.match(content, /PlanSpec JSON/, 'agent should explicitly describe PlanSpec JSON mode');
+    assert.match(content, /JSON\.parse|合法 JSON|JSON 对象/, 'agent should require parseable JSON content');
+    assert.match(content, /finalValidation/, 'agent should require finalValidation in PlanSpec JSON');
+    assert.match(content, /AutoPlan[\s\S]*Markdown/, 'agent should delegate final Markdown rendering to AutoPlan');
+    assert.match(content, /docs\/plan\/plan_\*\.md/, 'agent should forbid creating final Markdown plan files in JSON mode');
+    assert.match(content, /业务代码|配置|测试文件/, 'agent should forbid unrelated business/config/test edits');
+  });
 });

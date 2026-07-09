@@ -1,0 +1,70 @@
+{
+  "title": "隐藏工作区终端和执行器功能入口",
+  "summary": "根据反馈 #47，需要在工作区前端隐藏“终端”和“执行器”功能。结合当前代码，终端和执行器主要通过侧边栏导航、URL tab 深链和 WorkspacePage 条件渲染暴露；本计划聚焦隐藏用户可见入口并阻断直接 tab 访问，保留既有后端服务和数据结构，降低对自动任务、脚本、历史数据的影响。",
+  "tasks": [
+    {
+      "title": "从工作区侧边栏隐藏终端和执行器导航项",
+      "scope": [
+        "src/renderer/components/workspace/WorkspaceSidebar.tsx"
+      ],
+      "acceptance": [
+        "工作区侧边栏不再显示“终端”导航项，也不显示终端活跃数量徽标。",
+        "工作区侧边栏不再显示“执行器”导航项，也不显示执行器数量徽标。",
+        "计划与任务、脚本、事件流等其它执行分组入口保持可见且排序稳定。",
+        "侧边栏点击和对话列表等现有交互不受影响。"
+      ]
+    },
+    {
+      "title": "阻断终端和执行器 tab 的直接访问与页面渲染",
+      "scope": [
+        "src/renderer/types.ts",
+        "src/renderer/utils/workspaceForms.ts",
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/renderer/pages/WorkspacePage.tsx"
+      ],
+      "acceptance": [
+        "访问带有 `?tab=terminal` 或 `?tab=executors` 的工作区 URL 时，不再进入对应功能页，而是回落到默认工作区 tab。",
+        "项目切换时不会把隐藏的 terminal/executors tab 写回到新项目 URL。",
+        "WorkspacePage 不再通过 activeTab 渲染 WorkspaceTerminalView 或 WorkspaceExecutorsView 的主功能区。",
+        "顶部标题、副标题和 tab 解析逻辑不再把隐藏功能作为可选可达页面。",
+        "隐藏功能不影响终端/执行器后端数据随 snapshot 存在，也不要求删除 IPC API 或数据库表。"
+      ]
+    },
+    {
+      "title": "调整搜索与导航相关契约以排除隐藏 tab",
+      "scope": [
+        "src/renderer/utils/workspaceForms.ts",
+        "src/renderer/utils/workspaceForms.test.ts",
+        "src/renderer/pages/WorkspacePage.test.tsx"
+      ],
+      "acceptance": [
+        "resolveWorkspaceTab 对 terminal 和 executors 返回默认 tab，而不是返回隐藏 tab。",
+        "工作区页面回归测试覆盖隐藏后的深链回退行为。",
+        "现有搜索结果跳转仍能进入需求、反馈、计划与任务、验收、脚本、事件流、设置、对话等可见 tab。",
+        "与终端页和执行器页直接渲染相关的旧断言被移除或改为断言不可达。"
+      ]
+    },
+    {
+      "title": "补充侧边栏隐藏入口回归覆盖",
+      "scope": [
+        "src/renderer/components/workspace/WorkspaceSidebar.tsx",
+        "src/renderer/pages/WorkspacePage.test.tsx"
+      ],
+      "acceptance": [
+        "测试覆盖侧边栏导航配置中不包含 terminal 和 executors。",
+        "测试覆盖终端数量和执行器数量不会再生成导航徽标入口。",
+        "测试覆盖脚本和事件流入口仍保留，避免误删整个执行分组。",
+        "隐藏入口的测试不依赖真实终端进程或执行器运行。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check",
+    "criteria": [
+      "TypeScript 类型检查通过，隐藏 terminal/executors tab 后不存在未处理的 WorkspaceTab 类型错误。",
+      "主进程和渲染端静态检查通过，未引入语法错误。",
+      "文件长度检查通过，变更保持在现有模块边界内。",
+      "工作区 UI 中终端和执行器不再可通过侧边栏或 `?tab=terminal`、`?tab=executors` 访问，其它可见工作区模块仍可正常解析和渲染。"
+    ]
+  }
+}

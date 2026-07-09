@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { AppDatabase, nowIso } = require('../database');
 const { LoopService } = require('../loopService');
+const { REDO_SUPPLEMENT_MAX_LENGTH } = require('./acceptance');
 
 /**
  * 验收模块（人工逐项验收）行为测试：内存 db + 最小 LoopService fixture。
@@ -26,6 +27,14 @@ function insertPlan(db, projectId, status = 'completed') {
        (project_id, issue_hash, file_path, hash, status, sort_order, total_tasks, completed_tasks, validation_passed, agent_cli_command, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [projectId, 'acceptance-plan', 'docs/plan/acceptance.md', '', status, 1, 4, 4, 0, '', now, now],
+  );
+}
+
+function insertProject(db, name = '其它项目') {
+  const now = nowIso();
+  return db.insert(
+    'INSERT INTO projects (name, workspace_path, description, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    [name, '', '', now, now],
   );
 }
 
@@ -87,6 +96,10 @@ function latestEvent(db, projectId, type) {
     'SELECT * FROM events WHERE project_id = ? AND type = ? ORDER BY id DESC LIMIT 1',
     [projectId, type],
   );
+}
+
+function rowCount(db, table, where = '1 = 1', params = []) {
+  return db.get(`SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`, params).count;
 }
 
 describe('acceptItem 人工验收', () => {
@@ -230,6 +243,157 @@ describe('unacceptItem 取消验收', () => {
       assert.doesNotThrow(() => fixture.loop.unacceptItem(fixture.projectId, { targetType: 'task', id: fixture.completedTaskId }));
       const task = fixture.db.get('SELECT accepted_at FROM plan_tasks WHERE id = ?', [fixture.completedTaskId]);
       assert.equal(task.accepted_at, null, '重复取消后 accepted_at 应保持 NULL');
+    } finally {
+      fixture.destroy();
+    }
+  });
+});
+
+describe('redoAcceptanceItem 验收重做', () => {
+  it('计划级重做清空 accepted_at/validation_passed，退回 pending，并记录 plan.redo 事件和补充说明', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const acceptedAt = nowIso();
+      fixture.db.run('UPDATE plans SET accepted_at = ?, validation_passed = 1 WHERE id = ?', [acceptedAt, fixture.planId]);
+      fixture.db.run('UPDATE plan_tasks SET status = ? WHERE plan_id = ?', ['completed', fixture.planId]);
+
+      const result = fixture.loop.redoAcceptanceItem(fixture.projectId, {
+        targetType: 'plan',
+        id: fixture.planId,
+        supplement: '  需要补充边界场景\r\n并重新验收  ',
+      });
+
+      const plan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [fixture.planId]);
+      const tasks = fixture.db.all('SELECT status FROM plan_tasks WHERE plan_id = ?', [fixture.planId]);
+      const event = latestEvent(fixture.db, fixture.projectId, 'plan.redo');
+      const meta = JSON.parse(event.meta);
+
+      assert.equal(result.targetType, 'plan');
+      assert.equal(result.status, 'pending');
+      assert.equal(result.accepted_at, null);
+      assert.equal(result.supplement, '需要补充边界场景\n并重新验收');
+      assert.equal(plan.status, 'pending', '计划应退回 pending');
+      assert.equal(plan.accepted_at, null, '计划重做应清空 accepted_at');
+      assert.equal(plan.validation_passed, 0, '计划重做应清空 validation_passed');
+      assert.ok(tasks.length > 0, '应存在任务');
+      tasks.forEach((task) => assert.equal(task.status, 'pending', '已完成任务应被退回 pending'));
+      assert.equal(meta.targetType, 'plan');
+      assert.equal(meta.id, fixture.planId);
+      assert.equal(meta.planId, fixture.planId);
+      assert.equal(meta.taskId, null);
+      assert.equal(meta.previousStatus, 'completed');
+      assert.equal(meta.previousAcceptedAt, acceptedAt);
+      assert.equal(meta.supplement, '需要补充边界场景\n并重新验收');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('任务级重做清空任务 accepted_at，目标任务退回 pending，所属计划回到可执行状态', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const acceptedAt = nowIso();
+      fixture.db.run('UPDATE plans SET accepted_at = ?, validation_passed = 1 WHERE id = ?', [acceptedAt, fixture.planId]);
+      fixture.db.run('UPDATE plan_tasks SET accepted_at = ? WHERE id = ?', [acceptedAt, fixture.completedTaskId]);
+
+      const result = fixture.loop.redoAcceptanceItem(fixture.projectId, {
+        targetType: 'task',
+        id: fixture.completedTaskId,
+        supplement: '',
+      });
+
+      const plan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [fixture.planId]);
+      const task = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [fixture.completedTaskId]);
+      const untouchedTask = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [fixture.doneTaskId]);
+      const event = latestEvent(fixture.db, fixture.projectId, 'task.redo');
+      const meta = JSON.parse(event.meta);
+
+      assert.equal(result.targetType, 'task');
+      assert.equal(result.status, 'pending');
+      assert.equal(result.supplement, '');
+      assert.equal(task.status, 'pending', '目标任务应退回 pending');
+      assert.equal(task.accepted_at, null, '任务重做应清空任务 accepted_at');
+      assert.equal(plan.status, 'pending', '所属计划应回到 pending');
+      assert.equal(plan.validation_passed, 0, '所属计划应清空 validation_passed');
+      assert.equal(plan.accepted_at, null, '任务重做应清空所属计划人工验收态');
+      assert.equal(untouchedTask.status, 'done', '非目标任务执行态不应被改写');
+      assert.equal(meta.targetType, 'task');
+      assert.equal(meta.id, fixture.completedTaskId);
+      assert.equal(meta.taskId, fixture.completedTaskId);
+      assert.equal(meta.planId, fixture.planId);
+      assert.equal(meta.previousStatus, 'completed');
+      assert.equal(meta.previousAcceptedAt, acceptedAt);
+      assert.equal(meta.supplement, '');
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('补充内容会被截断到上限后写入事件 meta', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const supplement = `\n${'验'.repeat(REDO_SUPPLEMENT_MAX_LENGTH + 20)}\n`;
+      fixture.loop.redoAcceptanceItem(fixture.projectId, {
+        targetType: 'task',
+        id: fixture.completedTaskId,
+        supplement,
+      });
+
+      const event = latestEvent(fixture.db, fixture.projectId, 'task.redo');
+      const meta = JSON.parse(event.meta);
+      assert.equal(Array.from(meta.supplement).length, REDO_SUPPLEMENT_MAX_LENGTH);
+      assert.equal(meta.supplement, '验'.repeat(REDO_SUPPLEMENT_MAX_LENGTH));
+    } finally {
+      fixture.destroy();
+    }
+  });
+
+  it('拒绝跨项目、未完成和运行中的重做目标，且不修改数据库', async () => {
+    const fixture = await createAcceptanceFixture();
+    try {
+      const otherProjectId = insertProject(fixture.db);
+      const otherPlanId = insertPlan(fixture.db, otherProjectId, 'completed');
+      const beforePlan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [fixture.planId]);
+      const beforePendingTask = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [fixture.pendingTaskId]);
+
+      assert.throws(
+        () => fixture.loop.redoAcceptanceItem(fixture.projectId, { targetType: 'plan', id: otherPlanId }),
+        /计划不存在/,
+        '跨项目计划应按不存在拒绝',
+      );
+      assert.throws(
+        () => fixture.loop.redoAcceptanceItem(fixture.projectId, { targetType: 'task', id: fixture.pendingTaskId }),
+        /仅可重做已完成或已验收的计划\/任务/,
+        '未完成任务不应允许重做',
+      );
+
+      fixture.db.run('UPDATE plan_tasks SET status = ? WHERE id = ?', ['running', fixture.completedTaskId]);
+      assert.throws(
+        () => fixture.loop.redoAcceptanceItem(fixture.projectId, { targetType: 'task', id: fixture.completedTaskId }),
+        /任务正在运行中，不能重做/,
+        '运行中任务不应允许重做',
+      );
+
+      fixture.db.run('UPDATE plan_tasks SET status = ? WHERE id = ?', ['completed', fixture.completedTaskId]);
+      const runtime = fixture.loop.runtime(fixture.projectId);
+      runtime.activeOperations.set('acceptance-redo-plan', {
+        projectId: fixture.projectId,
+        planId: fixture.planId,
+        label: 'active redo blocker',
+      });
+      assert.throws(
+        () => fixture.loop.redoAcceptanceItem(fixture.projectId, { targetType: 'plan', id: fixture.planId }),
+        /计划正在运行中，不能重做/,
+        '存在运行中操作的计划不应允许重做',
+      );
+
+      const afterPlan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [fixture.planId]);
+      const afterPendingTask = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [fixture.pendingTaskId]);
+      assert.equal(afterPlan.status, beforePlan.status, '拒绝重做后计划 status 不应改变');
+      assert.equal(afterPlan.accepted_at, beforePlan.accepted_at, '拒绝重做后计划 accepted_at 不应改变');
+      assert.equal(afterPendingTask.status, beforePendingTask.status, '拒绝重做后未完成任务 status 不应改变');
+      assert.equal(afterPendingTask.accepted_at, beforePendingTask.accepted_at, '拒绝重做后未完成任务 accepted_at 不应改变');
+      assert.equal(rowCount(fixture.db, 'events', 'type IN (?, ?)', ['plan.redo', 'task.redo']), 0);
     } finally {
       fixture.destroy();
     }

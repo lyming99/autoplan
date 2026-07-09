@@ -6,6 +6,7 @@ const path = require('node:path');
 
 const { AppDatabase, nowIso } = require('../database');
 const { LoopService } = require('../loopService');
+const planLifecycle = require('./planLifecycle');
 
 describe('LoopService.stopPlan lifecycle', () => {
   it('stops a running plan, interrupts unfinished tasks, and removes it from runnable selection', async () => {
@@ -78,6 +79,196 @@ describe('LoopService.stopPlan lifecycle', () => {
   });
 });
 
+describe('LoopService validation_failed queue lifecycle', () => {
+  it('skips validation_failed plans and selects the next runnable plan in the same project queue', async () => {
+    const fixture = await createFixture('validation-failed-skip-queue');
+    try {
+      const failed = createPlanWithTasks(fixture, {
+        status: 'validation_failed',
+        sortOrder: 1,
+        issueHash: 'validation-failed-first',
+        taskLines: [
+          '- [x] P001: 已完成实现 <!-- scope: src/done.js -->',
+          '- [ ] P002: 完整验收 <!-- scope: validation -->',
+        ],
+      });
+      const nextPending = createPlanWithTasks(fixture, {
+        status: 'pending',
+        sortOrder: 2,
+        issueHash: 'pending-after-validation-failed',
+        taskLines: [
+          '- [ ] P001: 后续计划任务 <!-- scope: src/next.js -->',
+          '- [ ] P002: 完整验收 <!-- scope: validation -->',
+        ],
+      });
+
+      const runnable = fixture.loop.nextRunnablePlan(fixture.projectId);
+
+      assert.ok(runnable, '同项目仍有后续可运行计划时应返回计划');
+      assert.equal(runnable.id, nextPending.planId, 'validation_failed 计划不应阻塞后续 pending 计划');
+      assert.notEqual(runnable.id, failed.planId, 'validation_failed 计划不应被自动调度选中');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('does not call validatePlan again for a validation_failed plan on the next automatic runOnce cycle', async () => {
+    const fixture = await createFixture('validation-failed-run-once-skip');
+    try {
+      const failed = createPlanWithTasks(fixture, {
+        status: 'validation_failed',
+        sortOrder: 1,
+        issueHash: 'runonce-validation-failed',
+        taskLines: [
+          '- [x] P001: 已完成实现 <!-- scope: src/done.js -->',
+          '- [ ] P002: 完整验收 <!-- scope: validation -->',
+        ],
+      });
+      const followUp = createPlanWithTasks(fixture, {
+        status: 'pending',
+        sortOrder: 2,
+        issueHash: 'runonce-follow-up',
+        taskLines: [
+          '- [x] P001: 后续已完成实现 <!-- scope: src/next.js -->',
+          '- [ ] P002: 完整验收 <!-- scope: validation -->',
+        ],
+      });
+      const validateCalls = [];
+      const originalValidatePlan = fixture.loop.validatePlan;
+      const originalScanDirectoryInWorker = fixture.loop.scanDirectoryInWorker;
+      fixture.loop.scanDirectoryInWorker = async () => ({ root: path.join(fixture.workspace, 'docs', 'plan'), aggregateHash: '', files: [] });
+      fixture.loop.validatePlan = async (_workspace, plan, options) => {
+        validateCalls.push({ planId: plan.id, taskKey: options?.task?.task_key || '' });
+        return { exitCode: 0, logFile: null, finishedAt: nowIso() };
+      };
+
+      try {
+        await fixture.loop.runOnce(fixture.projectId);
+      } finally {
+        fixture.loop.validatePlan = originalValidatePlan;
+        fixture.loop.scanDirectoryInWorker = originalScanDirectoryInWorker;
+      }
+
+      assert.deepEqual(
+        validateCalls.map((call) => call.planId),
+        [followUp.planId],
+        '自动 runOnce 应跳过历史 validation_failed 计划，只验收后续可运行计划',
+      );
+      assert.equal(validateCalls[0]?.taskKey, 'P002', '后续计划仍应走完整验收任务分支');
+      assert.equal(
+        rowCount(fixture.db, 'events', 'type = ? AND meta LIKE ?', ['task.failed', `%"planId":${failed.planId}%`]),
+        0,
+        '跳过 validation_failed 计划时不应为同一失败计划追加新的失败任务事件',
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('allows a manually restored validation_failed plan back into the queue without changing completed, interrupted, or draft plans', async () => {
+    const fixture = await createFixture('validation-failed-manual-restore');
+    try {
+      const failed = createPlanWithTasks(fixture, {
+        status: 'validation_failed',
+        sortOrder: 1,
+        issueHash: 'restore-validation-failed',
+        taskLines: [
+          '- [x] P001: 已完成实现 <!-- scope: src/done.js -->',
+          '- [ ] P002: 完整验收 <!-- scope: validation -->',
+        ],
+      });
+      const completed = createPlanWithTasks(fixture, { status: 'completed', sortOrder: 2, issueHash: 'restore-completed' });
+      const interrupted = createPlanWithTasks(fixture, { status: 'interrupted', sortOrder: 3, issueHash: 'restore-interrupted' });
+      const draft = createPlanWithTasks(fixture, { status: 'draft', sortOrder: 4, issueHash: 'restore-draft' });
+      const acceptanceTask = fixture.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [
+        failed.planId,
+        'P002',
+      ]);
+      fixture.db.run('UPDATE plans SET validation_passed = 0 WHERE id = ?', [failed.planId]);
+      fixture.db.run('UPDATE plan_tasks SET status = ?, updated_at = ? WHERE id = ?', [
+        'failed',
+        nowIso(),
+        acceptanceTask.id,
+      ]);
+
+      const restored = fixture.loop.resumePlan(fixture.projectId, failed.planId);
+      const restoredTask = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [acceptanceTask.id]);
+      const untouched = fixture.db
+        .all('SELECT id, status FROM plans WHERE id IN (?, ?, ?) ORDER BY id ASC', [
+          completed.planId,
+          interrupted.planId,
+          draft.planId,
+        ])
+        .map((plan) => [plan.id, plan.status]);
+
+      assert.equal(restored.status, 'pending', '人工恢复 validation_failed 后计划应回到 pending');
+      assert.equal(restored.validation_passed, 0, '恢复失败验收计划不应误置 validation_passed');
+      assert.equal(restoredTask.status, 'pending', '失败的完整验收任务应重置为 pending 以便显式重试');
+      assert.deepEqual(untouched, [
+        [completed.planId, 'completed'],
+        [interrupted.planId, 'interrupted'],
+        [draft.planId, 'draft'],
+      ], '恢复 validation_failed 不应改变其它终态/草稿计划语义');
+      assert.equal(fixture.loop.nextRunnablePlan(fixture.projectId)?.id, failed.planId, '恢复后的计划应重新进入执行队列');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});
+
+describe('LoopService nextRunnablePlan queue ordering', () => {
+  it('skips completed, interrupted, draft, and validation_failed plans before a ready_for_validation plan', async () => {
+    const fixture = await createFixture('next-runnable-terminal-skip-ready');
+    try {
+      createPlanWithTasks(fixture, { status: 'completed', sortOrder: 1, issueHash: 'queue-completed' });
+      createPlanWithTasks(fixture, { status: 'interrupted', sortOrder: 2, issueHash: 'queue-interrupted' });
+      createPlanWithTasks(fixture, { status: 'draft', sortOrder: 3, issueHash: 'queue-draft' });
+      createPlanWithTasks(fixture, { status: 'validation_failed', sortOrder: 4, issueHash: 'queue-validation-failed' });
+      const ready = createPlanWithTasks(fixture, {
+        status: 'ready_for_validation',
+        sortOrder: 5,
+        issueHash: 'queue-ready-for-validation',
+        taskLines: [
+          '- [x] P001: 实现已完成 <!-- scope: src/done.js -->',
+          '- [ ] P002: 完整验收 <!-- scope: validation -->',
+        ],
+      });
+      const pending = createPlanWithTasks(fixture, { status: 'pending', sortOrder: 6, issueHash: 'queue-pending-after-ready' });
+
+      const runnable = fixture.loop.nextRunnablePlan(fixture.projectId);
+
+      assert.ok(runnable, '存在 ready_for_validation 时应返回可运行计划');
+      assert.equal(runnable.id, ready.planId, 'ready_for_validation 应先于后续 pending 计划进入自动队列');
+      assert.notEqual(runnable.id, pending.planId, '后续 pending 不应越过更早的 ready_for_validation');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('keeps an earlier pending plan ahead of later ready_for_validation and pending plans', async () => {
+    const fixture = await createFixture('next-runnable-earlier-pending-blocks');
+    try {
+      const firstPending = createPlanWithTasks(fixture, { status: 'pending', sortOrder: 1, issueHash: 'queue-first-pending' });
+      createPlanWithTasks(fixture, {
+        status: 'ready_for_validation',
+        sortOrder: 2,
+        issueHash: 'queue-later-ready',
+        taskLines: [
+          '- [x] P001: 后续实现已完成 <!-- scope: src/done.js -->',
+          '- [ ] P002: 完整验收 <!-- scope: validation -->',
+        ],
+      });
+      createPlanWithTasks(fixture, { status: 'pending', sortOrder: 3, issueHash: 'queue-later-pending' });
+
+      const runnable = fixture.loop.nextRunnablePlan(fixture.projectId);
+
+      assert.ok(runnable, '存在 pending 时应返回可运行计划');
+      assert.equal(runnable.id, firstPending.planId, '更早 pending 计划应阻止后续计划抢跑');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});
 describe('LoopService linked intake multi-plan lifecycle', () => {
   it('marks an intake completed only after every linked phase plan is completed', async () => {
     const fixture = await createFixture('linked-intake-completion');
@@ -256,20 +447,29 @@ describe('LoopService.updatePlanExecutionConfig', () => {
     }
   });
 
-  it('rejects updating execution config on a running plan', async () => {
-    const fixture = await createFixture('update-exec-running');
+  it('updates execution config on unfinished runnable plans', async () => {
+    const fixture = await createFixture('update-exec-unfinished');
     try {
-      const { planId } = createPlan(fixture, 'running');
+      const statuses = ['running', 'pending', 'ready_for_validation'];
 
-      assert.throws(
-        () => fixture.loop.updatePlanExecutionConfig(fixture.projectId, planId, { provider: 'codex' }),
-        /仅可在计划中断或停止状态下修改执行配置/,
-        '运行中的计划不允许修改执行配置',
-      );
+      for (const [index, status] of statuses.entries()) {
+        const { planId } = createPlanWithTasks(fixture, {
+          status,
+          sortOrder: index + 1,
+          issueHash: `update-exec-${status}`,
+        });
 
-      const row = fixture.db.get('SELECT * FROM plans WHERE id = ?', [planId]);
-      assert.equal(row.status, 'running', '拒绝后计划状态不应改变');
-      assert.equal(rowCount(fixture.db, 'events', 'type = ?', ['plan.execution_config.updated']), 0, '拒绝后不应记录事件');
+        const updated = fixture.loop.updatePlanExecutionConfig(fixture.projectId, planId, {
+          provider: 'codex',
+          codexReasoningEffort: 'high',
+        });
+        const row = fixture.db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+
+        assert.equal(row.status, status, `${status} 计划更新配置后状态不应改变`);
+        assert.equal(row.plan_execution_provider, 'codex', `${status} 计划应允许更新 provider`);
+        assert.equal(row.plan_execution_codex_reasoning_effort, 'high', `${status} 计划应允许更新 Codex 思考深度`);
+        assert.equal(updated.plan_execution_codex_reasoning_effort, 'high', `${status} 计划返回值应包含新思考深度`);
+      }
     } finally {
       fixture.cleanup();
     }
@@ -282,9 +482,40 @@ describe('LoopService.updatePlanExecutionConfig', () => {
 
       assert.throws(
         () => fixture.loop.updatePlanExecutionConfig(fixture.projectId, planId, { provider: 'opencode' }),
-        /仅可在计划中断或停止状态下修改执行配置/,
+        /已完成计划不允许修改执行配置/,
         '已完成的计划不允许修改执行配置',
       );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('updates codex reasoning effort and records previous and next values', async () => {
+    const fixture = await createFixture('update-exec-codex-effort');
+    try {
+      const { planId } = createPlan(fixture, 'running');
+      fixture.db.run(
+        `UPDATE plans
+         SET plan_execution_provider = ?,
+             plan_execution_command = ?,
+             plan_execution_codex_reasoning_effort = ?,
+             agent_cli_session_id = ?
+         WHERE id = ?`,
+        ['codex', 'codex', 'medium', 'codex-session-123', planId],
+      );
+
+      const updated = fixture.loop.updatePlanExecutionConfig(fixture.projectId, planId, {
+        codexReasoningEffort: 'xhigh',
+      });
+
+      assert.equal(updated.plan_execution_codex_reasoning_effort, 'xhigh', '应更新计划执行 Codex 思考深度');
+      assert.equal(updated.agent_cli_session_id, 'codex-session-123', 'provider 仍为 codex 时不应清除已有 session');
+
+      const event = latestEvent(fixture, 'plan.execution_config.updated');
+      const meta = JSON.parse(event.meta);
+      assert.equal(meta.previousCodexReasoningEffort, 'medium', '事件应记录更新前思考深度');
+      assert.equal(meta.codexReasoningEffort, 'xhigh', '事件应记录更新后思考深度');
+      assert.equal(meta.agentCliSessionCleared, undefined, '仅更新 Codex 思考深度不应标记清除 session');
     } finally {
       fixture.cleanup();
     }
@@ -379,6 +610,109 @@ describe('LoopService.updatePlanExecutionConfig', () => {
   });
 });
 
+describe('LoopService.configure plan execution config sync', () => {
+  it('syncs Codex reasoning effort to unfinished plans without interrupting active work', async () => {
+    const fixture = await createFixture('configure-sync-codex-effort');
+    try {
+      const statuses = ['running', 'pending', 'ready_for_validation', 'interrupted', 'stopped'];
+      const unfinishedPlanIds = statuses.map((status, index) => {
+        const { planId } = createPlanWithTasks(fixture, {
+          status,
+          sortOrder: index + 1,
+          issueHash: `configure-sync-${status}`,
+        });
+        fixture.db.run(
+          'UPDATE plans SET plan_execution_provider = ?, plan_execution_codex_reasoning_effort = ? WHERE id = ?',
+          ['codex', 'medium', planId],
+        );
+        return planId;
+      });
+      const { planId: completedPlanId } = createPlanWithTasks(fixture, {
+        status: 'completed',
+        sortOrder: 99,
+        issueHash: 'configure-sync-completed',
+      });
+      fixture.db.run(
+        'UPDATE plans SET plan_execution_provider = ?, plan_execution_codex_reasoning_effort = ? WHERE id = ?',
+        ['codex', 'medium', completedPlanId],
+      );
+      const runtime = fixture.loop.runtime(fixture.projectId);
+      const activeOperation = { projectId: fixture.projectId, planId: unfinishedPlanIds[0], taskId: 123, label: 'active task' };
+      runtime.activeOperations.set('configure-sync-active-task', activeOperation);
+      runtime.activeOperation = activeOperation;
+
+      fixture.loop.configure(fixture.projectId, {
+        workspacePath: fixture.workspace,
+        planExecutionProvider: 'codex',
+        planExecutionCodexReasoningEffort: 'xhigh',
+      });
+
+      const state = fixture.loop.status(fixture.projectId);
+      assert.equal(state.plan_execution_provider, 'codex', '项目状态应保存 Codex 执行后端');
+      assert.equal(state.plan_execution_codex_reasoning_effort, 'xhigh', '项目状态应保存新的执行思考深度');
+      for (const planId of unfinishedPlanIds) {
+        const row = fixture.db.get('SELECT status, plan_execution_codex_reasoning_effort FROM plans WHERE id = ?', [planId]);
+        assert.equal(row.plan_execution_codex_reasoning_effort, 'xhigh', `${row.status} 计划应同步新的执行思考深度`);
+      }
+      assert.equal(
+        fixture.db.get('SELECT plan_execution_codex_reasoning_effort FROM plans WHERE id = ?', [completedPlanId]).plan_execution_codex_reasoning_effort,
+        'medium',
+        'completed 计划不应被运行期设置同步改写',
+      );
+      assert.equal(runtime.activeOperations.get('configure-sync-active-task'), activeOperation, '保存设置不应中断正在运行的任务');
+      assert.equal(runtime.activeOperation, activeOperation, '保存设置不应清理当前 activeOperation');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('clears unfinished plan Codex reasoning effort when execution provider is non-Codex', async () => {
+    const fixture = await createFixture('configure-sync-non-codex');
+    try {
+      const { planId: codexPlanId } = createPlanWithTasks(fixture, {
+        status: 'pending',
+        issueHash: 'configure-sync-non-codex-codex',
+      });
+      const { planId: claudePlanId } = createPlanWithTasks(fixture, {
+        status: 'running',
+        sortOrder: 2,
+        issueHash: 'configure-sync-non-codex-claude',
+      });
+      fixture.db.run(
+        'UPDATE plans SET plan_execution_provider = ?, plan_execution_codex_reasoning_effort = ? WHERE id = ?',
+        ['codex', 'high', codexPlanId],
+      );
+      fixture.db.run(
+        'UPDATE plans SET plan_execution_provider = ?, plan_execution_codex_reasoning_effort = ? WHERE id = ?',
+        ['claude', 'high', claudePlanId],
+      );
+
+      fixture.loop.configure(fixture.projectId, {
+        workspacePath: fixture.workspace,
+        planExecutionProvider: 'claude',
+        planExecutionCommand: 'claude-exec',
+        planExecutionCodexReasoningEffort: 'xhigh',
+      });
+
+      const state = fixture.loop.status(fixture.projectId);
+      assert.equal(state.plan_execution_provider, 'claude', '项目状态应保存非 Codex 执行后端');
+      assert.equal(state.plan_execution_codex_reasoning_effort, null, '非 Codex 执行后端不应在项目状态残留思考深度');
+      assert.equal(
+        fixture.db.get('SELECT plan_execution_codex_reasoning_effort FROM plans WHERE id = ?', [codexPlanId]).plan_execution_codex_reasoning_effort,
+        null,
+        '切换为非 Codex 执行后端时应清空未完成 Codex 计划的思考深度快照',
+      );
+      assert.equal(
+        fixture.db.get('SELECT plan_execution_codex_reasoning_effort FROM plans WHERE id = ?', [claudePlanId]).plan_execution_codex_reasoning_effort,
+        null,
+        '非 Codex 计划不应保留或误写 Codex 思考深度',
+      );
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});
+
 describe('LoopService.reExecutePlan', () => {
   it('re-executes a completed plan: resets tasks, clears validation, and allows re-selection', async () => {
     const fixture = await createFixture('reexecute-completed');
@@ -414,6 +748,79 @@ describe('LoopService.reExecutePlan', () => {
       const runnable = fixture.loop.nextRunnablePlan(fixture.projectId);
       assert.ok(runnable, '重新执行后计划应可被 nextRunnablePlan 选中');
       assert.equal(runnable.id, planId, '选中的应是重新执行的计划');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('can clear manual acceptance state and write custom redo event metadata', async () => {
+    const fixture = await createFixture('reexecute-clear-acceptance');
+    try {
+      const { planId } = createPlan(fixture, 'completed');
+      const acceptedAt = nowIso();
+      fixture.db.run('UPDATE plans SET accepted_at = ?, validation_passed = 1 WHERE id = ?', [acceptedAt, planId]);
+      fixture.db.run('UPDATE plan_tasks SET status = ? WHERE plan_id = ?', ['completed', planId]);
+
+      const updated = planLifecycle.reExecutePlan(fixture.loop, fixture.projectId, planId, {
+        clearAcceptedAt: true,
+        eventType: 'plan.redo',
+        eventMessage: `plan #${planId} 已退回重做`,
+        eventMeta: {
+          targetType: 'plan',
+          id: planId,
+          supplement: '补充说明',
+        },
+      });
+
+      const plan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+      const event = latestEvent(fixture, 'plan.redo');
+      const meta = JSON.parse(event.meta);
+
+      assert.equal(updated.status, 'pending', '返回计划应回到 pending');
+      assert.equal(plan.accepted_at, null, 'clearAcceptedAt=true 时应清空 accepted_at');
+      assert.equal(plan.validation_passed, 0, '重做应清空 validation_passed');
+      assert.equal(meta.targetType, 'plan', '自定义事件 meta 应保留 targetType');
+      assert.equal(meta.id, planId, '自定义事件 meta 应保留 id');
+      assert.equal(meta.planId, planId, '基础事件 meta 应保留 planId');
+      assert.equal(meta.supplement, '补充说明', '自定义事件 meta 应保留补充说明');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('can clear task acceptance state and write custom task redo event metadata', async () => {
+    const fixture = await createFixture('redo-task-clear-acceptance');
+    try {
+      const { planId } = createPlan(fixture, 'completed');
+      const task = fixture.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [planId, 'P001']);
+      const acceptedAt = nowIso();
+      fixture.db.run('UPDATE plans SET accepted_at = ?, validation_passed = 1 WHERE id = ?', [acceptedAt, planId]);
+      fixture.db.run('UPDATE plan_tasks SET status = ?, accepted_at = ? WHERE id = ?', ['completed', acceptedAt, task.id]);
+
+      const updated = planLifecycle.redoTask(fixture.loop, fixture.projectId, task.id, {
+        eventType: 'task.redo',
+        eventMessage: `${task.task_key} redo`,
+        eventMeta: {
+          supplement: 'task supplement',
+          previousAcceptedAt: acceptedAt,
+        },
+      });
+
+      const plan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+      const event = latestEvent(fixture, 'task.redo');
+      const meta = JSON.parse(event.meta);
+
+      assert.equal(updated.status, 'pending', 'updated task should return to pending');
+      assert.equal(updated.accepted_at, null, 'redoTask should clear task accepted_at');
+      assert.equal(plan.status, 'pending', 'task redo should return the owning plan to pending');
+      assert.equal(plan.accepted_at, null, 'task redo should clear owning plan accepted_at');
+      assert.equal(plan.validation_passed, 0, 'task redo should clear owning plan validation_passed');
+      assert.equal(meta.targetType, 'task', 'base event meta should record targetType');
+      assert.equal(meta.id, task.id, 'base event meta should record id');
+      assert.equal(meta.taskId, task.id, 'base event meta should record taskId');
+      assert.equal(meta.planId, planId, 'base event meta should record planId');
+      assert.equal(meta.previousAcceptedAt, acceptedAt, 'custom event meta should preserve previousAcceptedAt');
+      assert.equal(meta.supplement, 'task supplement', 'custom event meta should preserve supplement');
     } finally {
       fixture.cleanup();
     }
@@ -648,26 +1055,43 @@ async function createFixture(name) {
 }
 
 function createPlan(fixture, status = 'running') {
+  return createPlanWithTasks(fixture, { status });
+}
+
+function createPlanWithTasks(fixture, options = {}) {
+  const status = options.status || 'running';
   const planRel = path.join('docs', 'plan', `plan_lifecycle_${Date.now()}_${Math.random().toString(36).slice(2)}.md`);
   const planFile = path.join(fixture.workspace, planRel);
+  const taskLines = options.taskLines || [
+    '- [ ] P001: 运行中的任务 <!-- scope: src/running.js -->',
+    '- [ ] P002: 待执行任务 <!-- scope: src/pending.js -->',
+    '- [x] P003: 已完成任务 <!-- scope: src/done.js -->',
+  ];
   fs.mkdirSync(path.dirname(planFile), { recursive: true });
   fs.writeFileSync(
     planFile,
     [
       '# lifecycle plan',
       '',
-      '- [ ] P001: 运行中的任务 <!-- scope: src/running.js -->',
-      '- [ ] P002: 待执行任务 <!-- scope: src/pending.js -->',
-      '- [x] P003: 已完成任务 <!-- scope: src/done.js -->',
+      ...taskLines,
       '',
     ].join('\n'),
     'utf8',
   );
   const now = nowIso();
   const planId = fixture.db.insert(
-    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
-    [fixture.projectId, `lifecycle-${Date.now()}`, planRel, 'lifecycle-hash', status, now, now],
+    `INSERT INTO plans (project_id, issue_hash, file_path, hash, status, sort_order, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, ?, ?)`,
+    [
+      fixture.projectId,
+      options.issueHash || `lifecycle-${Date.now()}`,
+      planRel,
+      options.hash || 'lifecycle-hash',
+      status,
+      Number(options.sortOrder || 1),
+      now,
+      now,
+    ],
   );
   fixture.loop.syncPlanTasks(planId, planFile);
   fixture.db.run('UPDATE plans SET status = ?, updated_at = ? WHERE id = ?', [status, now, planId]);
@@ -743,3 +1167,4 @@ function latestEvent(fixture, type) {
 function rowCount(db, table, where = '1 = 1', params = []) {
   return db.get(`SELECT COUNT(*) AS count FROM ${table} WHERE ${where}`, params).count;
 }
+

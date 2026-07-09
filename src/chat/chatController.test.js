@@ -1778,6 +1778,7 @@ describe('Codex provider 对话路径', () => {
     await col.waitForDone();
 
     assert.equal(llm.calls, 0, 'codex 路径不应调用 llmClient');
+    assert.equal(Object.prototype.hasOwnProperty.call(mockRun.lastOpts, 'tools'), false, 'codex 路径不应向本地后端挂 chatTools');
   });
 
   it('codex reasoningEffort 来自 config.thinkingDepth 并优先于 codexBackendConfig', async () => {

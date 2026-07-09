@@ -82,10 +82,26 @@ describe('Workspace task page structure', () => {
     expectIncludes(page, 'data-testid="workspace-task-main"', 'task main test anchor should exist');
     expectIncludes(page, 'className="task-status-grid"', 'task page should use the two-column grid container');
     expectIncludes(page, '<PlanList', 'task page should render the Plan column');
-    expectIncludes(page, '<TaskList', 'task page should render the task column');
+    expectIncludes(page, '<WorkspaceTaskList', 'task page should render the task column');
     expectIncludes(page, 'selectedPlanTaskFilter', 'task column should stay connected to Plan selection filtering');
   });
 
+  it('wires task scope file opening through the workspace controller', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+    const types = source('src', 'renderer', 'types.ts');
+
+    expectIncludes(types, 'openWorkspaceFile: (input: OpenWorkspaceFileInput) => Promise<OpenWorkspaceFileResult>;', 'renderer API should expose openWorkspaceFile with typed input and result');
+    expectIncludes(controller, 'const openScopeFile = useCallback', 'controller should expose a scope file opener');
+    expectIncludes(controller, 'const result = await window.autoplan.openWorkspaceFile({', 'scope opener should call the preload openWorkspaceFile API');
+    expectIncludes(controller, 'projectId,\n          filePath,\n          mode: scopeFileOpenSettings.mode,\n          command: scopeFileOpenSettings.command,', 'scope opener should pass current project, file path, mode, and command');
+    expectIncludes(controller, "throw new Error(result.error || '打开 scope 文件失败');", 'scope opener should surface backend open errors');
+    expectIncludes(controller, 'showError(e);', 'scope opener failures should use the workspace error display path');
+    expectIncludes(controller, 'openScopeFile,', 'controller return value should include the scope opener');
+    expectIncludes(page, 'openScopeFile,', 'WorkspacePage should read the scope opener from the controller');
+    expectIncludes(page, 'type WorkspaceTaskListProps = ComponentProps<typeof TaskList> & {', 'WorkspacePage should type the task list scope-open prop without global window access');
+    expectIncludes(page, 'onOpenScopeFile={openScopeFile}', 'WorkspacePage should pass the scope opener into the task list');
+  });
   it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
     const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
     const wrappedPlanList = source('src', 'renderer', 'components', 'PlanLists.tsx');
@@ -163,7 +179,16 @@ describe('Workspace task page structure', () => {
     expectIncludes(planLists, 'task-plan-group-toggle', 'task groups should have an expand/collapse trigger');
     expectIncludes(planLists, 'formatTaskPlanGroupProgress(group)', 'task groups should render progress only');
     expectIncludes(taskList, "className={`task-item${running ? ' running' : ''}`}", 'standalone task list should render task cards');
-    expectIncludes(taskList, "className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}", 'scope chips should receive semantic classes');
+    expectIncludes(taskList, "const className = `task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`;", 'scope chips should receive semantic classes');
+    expectIncludes(planLists, "if (file.canOpen && onOpenScopeFile) {", 'wrapped task list should only make openable scope files clickable');
+    expectIncludes(taskList, "if (file.canOpen && onOpenScopeFile) {", 'standalone task list should only make openable scope files clickable');
+    expectCountAtLeast(planLists, '<button', 2, 'wrapped task list should render openable scope chips as buttons without removing task controls');
+    expectIncludes(planLists, 'type="button"', 'clickable scope chips should be non-submit buttons');
+    expectIncludes(planLists, 'aria-label={`打开 ${file.path}`}', 'clickable scope chips should expose an accessible open label');
+    expectIncludes(planLists, 'event.stopPropagation();', 'clickable scope chips should not bubble into task/group interactions');
+    expectIncludes(planLists, 'onOpenScopeFile(file.path);', 'clickable scope chips should call the parent callback with the scope path');
+    expectIncludes(planLists, 'return (\n                                      <span', 'non-openable scope chips should keep a readonly span branch');
+    expectIncludes(taskList, 'return (\n                                  <span', 'standalone non-openable scope chips should keep a readonly span branch');
     expectIncludes(planTasks, 'scopeFileClassName', 'scope file semantic class helper should exist');
     expectIncludes(planTasks, "if (file.isUnknown) return 'unknown special';", 'unknown scope should have a distinct class');
     expectIncludes(planTasks, "if (file.isValidation) return 'validation';", 'validation scope should have a distinct class');
@@ -447,7 +472,10 @@ describe('Workspace chat AI config state regression', () => {
       'resolveCurrentAiConfig(aiConfigs, conversations, activeConversationId)',
       'useChat should derive current config from conversations and global AI configs',
     );
-    expectIncludes(hook, 'configs.find((c) => c.hasApiKey) ?? configs[0] ?? null', 'global configs with API keys should be preferred');
+    expectIncludes(hook, 'function selectPreferredAiConfig(configs: AiConfig[]): AiConfig | null {', 'useChat should centralize chat config preference');
+    expectIncludes(hook, 'configs.find((config) => config.hasApiKey)', 'HTTP configs with API keys should remain the first preference');
+    expectIncludes(hook, 'configs.find((config) => isChatConfigAvailableForSend(config))', 'Codex configs without API keys should remain selectable');
+    expectIncludes(hook, 'const selectedConfig = selectPreferredAiConfig(cfgs);', 'new conversations should bind the preferred sendable config');
     expectIncludes(hook, 'return window.autoplan.onAiConfigChanged((event) => {', 'useChat should subscribe to global AI config change events');
     expectIncludes(hook, 'void refreshAiConfigState(Array.isArray(event.configs) ? event.configs : undefined);', 'AI config changes should refresh chat config state');
     expect(!hook.includes('aiConfigList({ projectId })'), 'useChat should not request project-scoped AI configs');
@@ -595,11 +623,17 @@ describe('Workspace chat AI config state regression', () => {
       chatView.indexOf('export default ChatView'),
     );
 
-    expectIncludes(chatViewBody, 'const hasAiApiKey = currentAiConfig?.hasApiKey ?? (config?.hasApiKey === true);', 'ChatView should use global config availability');
-    expectIncludes(chatViewBody, 'const emptyStateKind: ChatEmptyStateKind = !hasAiApiKey', 'missing API key should select a scoped empty state');
+    expectIncludes(chatViewBody, 'const canSendWithCurrentConfig = isChatConfigAvailableForSend(currentAiConfig ?? config);', 'ChatView should use provider-aware send availability');
+    expectIncludes(chatViewBody, 'const missingRequiredApiKey = chatProviderRequiresApiKey(selectedProvider) && !canSendWithCurrentConfig;', 'missing-key UI should only apply to providers that require keys');
+    expectIncludes(chatViewBody, 'const inputDisabled = !activeConversationId || !canSendWithCurrentConfig;', 'Codex configs without API keys should not disable input');
+    expectIncludes(chatViewBody, 'if (!text || !activeConversationId || !canSendWithCurrentConfig) return;', 'Codex configs without API keys should not be blocked in handleSend');
+    expectIncludes(chatViewBody, 'const emptyStateKind: ChatEmptyStateKind = missingRequiredApiKey', 'missing API key should select a scoped empty state only for HTTP providers');
     expectIncludes(chatViewBody, 'kind={emptyStateKind}', 'ChatView should render the missing-key state inside the message area');
-    expectIncludes(chatViewBody, '请先在设置中配置全局 AI 接口', 'composer should show a global missing-key placeholder');
+    expectIncludes(chatViewBody, '请先在设置中配置全局 AI 接口', 'composer should show a global missing-key placeholder for HTTP providers');
     expectIncludes(chatView, '在设置的 AI 对话面板中配置全局 API Key 后即可发送消息。', 'missing-key empty state should mention the global API key');
+    expectIncludes(chatView, "return config.model || 'Codex CLI 本地后端';", 'Codex config labels should describe the local backend instead of a missing HTTP model');
+    expectIncludes(chatView, 'chatConfigKeySuffix(item)', 'config options should hide missing-key suffixes for Codex configs');
+    expect(!chatViewBody.includes('const hasAiApiKey'), 'ChatView should not use API-key-only availability');
     expectIncludes(sidebar, 'className="nav-add-btn"', 'missing-key UI should not remove the sidebar new-conversation entry');
     expectIncludes(sidebar, 'aria-label="新建对话"', 'sidebar new-conversation entry should remain accessible');
     expect(!chatViewBody.includes('if (config && !config.hasApiKey)'), 'ChatView should not early-return on missing legacy config');
@@ -759,23 +793,42 @@ describe('Script editor name input discoverability', () => {
 
 // 反馈 #27 回归测试：覆盖计划倒序、预览 Plan 接线、事件增量加载、文件夹路径链接、脚本导航稳定性五项改动。
 describe('Feedback #27 source-level regression', () => {
-  it('sorts the plan list by created_at descending in comparePlanOrder (newest first)', () => {
+  it('sorts plans with running child tasks before non-running plans, then by created_at descending', () => {
     const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
 
-    // 场景一：计划倒序——comparePlanOrder 主键为 created_at 倒序（最新在前），id 倒序兜底保证稳定。
+    expectIncludes(
+      planLists,
+      'orderPlansByRunningTaskPriority(plans, tasks, effectiveTotalPlanCount)',
+      'PlanList 应先按子任务执行态重排计划列表',
+    );
+    expectIncludes(
+      planLists,
+      'hasRunningTask: hasRunningTaskForPlan(tasks, plan, planCount)',
+      '计划置顶优先级应来自关联子任务状态，而不是 plan.status',
+    );
+    expectIncludes(
+      planLists,
+      'if (left.hasRunningTask !== right.hasRunningTask) return left.hasRunningTask ? -1 : 1;',
+      '含执行中子任务的计划应排在无执行中子任务的计划之前',
+    );
     expectIncludes(
       planLists,
       "String(right.created_at || '').localeCompare(String(left.created_at || ''))",
-      'comparePlanOrder 主排序键应为 created_at 倒序（最新在前）',
+      '同一执行优先级内仍应按 created_at 倒序（最新在前）',
     );
-    expectIncludes(planLists, 'Number(right.id || 0) - Number(left.id || 0)', 'comparePlanOrder 应以 id 倒序兜底，保证相同 created_at 时排序稳定');
-    // 不再以 sort_order 升序作为 comparePlanOrder 主键：截取该函数体确认不含 sort_order 比较。
-    const comparePlanOrderBody = planLists.slice(
+    expectIncludes(
+      planLists,
+      'comparePlanOrder(left.plan, right.plan) || left.index - right.index',
+      '同一优先级内应保留计划时间排序和输入顺序稳定兜底',
+    );
+
+    const orderedPlanBody = planLists.slice(
+      planLists.indexOf('function orderPlansByRunningTaskPriority('),
       planLists.indexOf('function comparePlanOrder('),
-      planLists.indexOf('function planStatusCounts('),
     );
-    expect(comparePlanOrderBody.length > 0, '应能定位到 comparePlanOrder 函数体');
-    expect(!comparePlanOrderBody.includes('sort_order'), 'comparePlanOrder 不应以 sort_order 升序作为主键');
+    expect(orderedPlanBody.length > 0, '应能定位到运行中任务优先排序函数体');
+    expect(!orderedPlanBody.includes("plan.status === 'running'"), '仅 plan.status=running 不应被误判为含执行中任务的最高优先级计划');
+    expect(!orderedPlanBody.includes('sort_order'), '计划列表排序不应回退到 sort_order 升序主导展示');
   });
 
   it('wires intake Plan preview through the onPreviewPlan prop with an aligned call signature', () => {
@@ -1042,74 +1095,90 @@ describe('create_plan chat tool card regression', () => {
   });
 });
 
-// 需求 #52 回归测试：任务列表分组排序按任务序号稳定展示，计划列表排序语义不变；
-// 运行中分组仍可默认展开（hasRunningTask 字段与排序解耦）。
-describe('Requirement #52 task group sequence sort regression', () => {
-  it('sorts task plan groups by task sequence without time or running-on-top overrides', () => {
+// 需求 #52 / 需求 #24 P003 回归测试：任务列表分组按执行中优先与最新活动时间展示，组内任务继续按序号稳定排列；
+// 计划列表按「含执行中子任务」优先，不能把仅 plan.status=running 的计划误判为最高优先级。
+describe('Requirement #52 task group running/activity sort regression', () => {
+  it('sorts task plan groups by running state and latest activity while preserving sequence inside groups', () => {
     const planTasks = source('src', 'renderer', 'utils', 'planTasks.ts');
 
-    // 截取 groupTasksByPlan 函数体（自 `export function groupTasksByPlan(` 起到下一个 `export function` 止）。
     const groupTasksByPlanBody = planTasks.slice(
       planTasks.indexOf('export function groupTasksByPlan('),
       planTasks.indexOf('export function tasksForPlan('),
     );
     expect(groupTasksByPlanBody.length > 0, '应能定位到 groupTasksByPlan 函数体');
 
-    // 场景一：分组之间排序不再以 hasRunningTask 为优先键，运行中状态只保留为默认展开依据。
-    expect(
-      !groupTasksByPlanBody.includes('left.hasRunningTask !== right.hasRunningTask'),
-      '任务分组排序不应再以 hasRunningTask 为优先键（运行中置顶已移除）',
-    );
-
-    // 场景二：分组之间排序以组内最小任务序号 sortSequence 升序为主键，firstIndex 兜底保证稳定。
     expectIncludes(
       groupTasksByPlanBody,
-      'left.sortSequence - right.sortSequence',
-      '任务分组排序应以 sortSequence 升序（较小任务序号在前）为主键',
+      'hasRunningTask: sortedTasks.some(isTaskRunning)',
+      '任务分组应复用 running/processing/stopping 的执行中状态语义',
     );
     expectIncludes(
       groupTasksByPlanBody,
-      'taskPlanGroupSortSequence(sortedTasks)',
-      '任务分组排序应使用当前可见任务的最小序号',
+      'if (left.hasRunningTask !== right.hasRunningTask) return left.hasRunningTask ? -1 : 1;',
+      '包含执行中任务的分组应排在不含执行中任务的分组之前',
+    );
+    expectIncludes(
+      groupTasksByPlanBody,
+      'sortTime: latestTaskActivityTime(sortedTasks)',
+      '分组应记录组内任务的最新活动时间或更新时间',
+    );
+    expectIncludes(
+      groupTasksByPlanBody,
+      'return right.sortTime - left.sortTime;',
+      '同一执行优先级内，分组应按最新活动时间倒序排列',
     );
     expect(
-      !groupTasksByPlanBody.includes('right.sortTime - left.sortTime'),
-      '任务分组排序不应再以最新活动时间倒序为主键',
+      !groupTasksByPlanBody.includes('left.sortSequence - right.sortSequence'),
+      '组间排序不应再由最小任务序号 sortSequence 主导',
     );
 
-    // 场景三：分组内任务排序使用 compareTasksBySequence，避免完成/开始/更新时间较新的大序号任务前置。
     expectIncludes(
       groupTasksByPlanBody,
       'compareTasksBySequence(left.task, right.task, left.index, right.index)',
-      '分组内任务排序应使用任务序号比较器',
+      '分组内任务排序应继续使用任务序号比较器',
     );
     expect(
       !groupTasksByPlanBody.includes('rightTime - leftTime'),
-      '分组内任务排序不应再以 taskSortTime 倒序为主键',
-    );
-
-    // 场景四：hasRunningTask 字段本身保留——仅供 getDefaultExpandedTaskGroupKeys 默认展开运行中分组，与排序解耦。
-    expectIncludes(
-      groupTasksByPlanBody,
-      'hasRunningTask: sortedTasks.some(',
-      'hasRunningTask 字段应保留，仅用于默认展开运行中分组，不再影响排序',
+      '分组内任务排序不应以 taskSortTime 倒序替代任务序号',
     );
   });
 
-  it('keeps the plan list sorted by created_at descending after the task-side sort change', () => {
-    // 复述「计划侧」既有断言：本次改动仅调整任务分组排序，计划列表 comparePlanOrder 仍以 created_at 倒序、不以 sort_order 升序为主键。
+  it('keeps plan running-task priority separate from plan.status and then falls back to newest plans', () => {
     const planLists = source('src', 'renderer', 'components', 'PlanLists.tsx');
-    expectIncludes(
-      planLists,
-      "String(right.created_at || '').localeCompare(String(left.created_at || ''))",
-      'comparePlanOrder 主排序键应仍为 created_at 倒序（最新在前），未被任务侧改动破坏',
+
+    const orderedPlanBody = planLists.slice(
+      planLists.indexOf('function orderPlansByRunningTaskPriority('),
+      planLists.indexOf('function comparePlanOrder('),
     );
+    expect(orderedPlanBody.length > 0, '应能定位到 orderPlansByRunningTaskPriority 函数体');
+    expectIncludes(
+      orderedPlanBody,
+      'hasRunningTask: hasRunningTaskForPlan(tasks, plan, planCount)',
+      '计划运行中优先级应只来自关联子任务状态',
+    );
+    expectIncludes(
+      orderedPlanBody,
+      'if (left.hasRunningTask !== right.hasRunningTask) return left.hasRunningTask ? -1 : 1;',
+      '含执行中任务的计划应优先展示',
+    );
+    expect(!orderedPlanBody.includes("plan.status === 'running'"), '仅 plan.status=running 的计划不应被当作含执行中任务置顶');
+    expectIncludes(
+      orderedPlanBody,
+      'comparePlanOrder(left.plan, right.plan) || left.index - right.index',
+      '同一优先级内应按计划新旧排序，并保留稳定兜底顺序',
+    );
+
     const comparePlanOrderBody = planLists.slice(
       planLists.indexOf('function comparePlanOrder('),
       planLists.indexOf('function planStatusCounts('),
     );
     expect(comparePlanOrderBody.length > 0, '应能定位到 comparePlanOrder 函数体');
-    expect(!comparePlanOrderBody.includes('sort_order'), 'comparePlanOrder 不应仍以 sort_order 升序作为主键');
+    expectIncludes(
+      comparePlanOrderBody,
+      "String(right.created_at || '').localeCompare(String(left.created_at || ''))",
+      '同一优先级内计划应按 created_at 倒序（最新在前）',
+    );
+    expect(!comparePlanOrderBody.includes('sort_order'), '计划排序不应回退到 sort_order 升序作为主键');
   });
 });
 
@@ -1334,3 +1403,50 @@ describe('P012 plan backend settings UI contracts', () => {
     expectIncludes(card, '<span>{isGeneration ? planGenerationStrategyLabel(strategy) : planExecutionStrategyLabel(strategy)}</span>', '配置摘要应按生成/执行显示策略标签');
   });
 });
+describe('P004 new project default CLI regression contracts', () => {
+  it('keeps the project creation modal wired to persisted CLI defaults only for create mode', () => {
+    const projectsPage = source('src', 'renderer', 'pages', 'ProjectsPage.tsx');
+
+    expectIncludes(projectsPage, 'loadNewProjectDefaultCliPreferences,', 'ProjectsPage should import the new-project default CLI loader');
+    expectIncludes(projectsPage, 'saveNewProjectDefaultCliPreferences,', 'ProjectsPage should import the new-project default CLI saver');
+    expectIncludes(projectsPage, 'const [defaultSaved, setDefaultSaved] = useState(false);', 'create modal should track default-save state');
+    expectIncludes(projectsPage, 'const openCreate = () => {\n    setDraft(createDraftFromNewProjectDefaults());', 'create flow should build its draft from persisted CLI defaults');
+    expectIncludes(projectsPage, 'const openEdit = (project: Project) => {\n    setDraft(projectDraftFromProject(project));', 'edit flow should build its draft from the selected project, not new-project defaults');
+    expectIncludes(projectsPage, '!draft.id ? (', 'default CLI controls should be gated to create mode');
+    expectIncludes(projectsPage, 'onClick={saveCurrentCliAsDefault}', 'create modal should expose a save-default action');
+    expectIncludes(projectsPage, 'function createDraftFromNewProjectDefaults(): Draft {', 'new-project default draft helper should exist');
+    expectIncludes(projectsPage, '...draftCliFieldsFromNewProjectDefaults(loadNewProjectDefaultCliPreferences()),', 'new-project draft helper should apply persisted CLI defaults');
+    expectIncludes(projectsPage, 'function projectDraftFromProject(project: Project): Draft {', 'edit draft helper should remain separate from persisted new-project defaults');
+    expectIncludes(projectsPage, 'return {\n    ...emptyDraft,\n    id: project.id,', 'edit draft should preserve project-derived values before default CLI fallback can apply');
+  });
+
+  it('keeps create-project payloads and saved defaults provider-specific', () => {
+    const projectsPage = source('src', 'renderer', 'pages', 'ProjectsPage.tsx');
+
+    expectIncludes(projectsPage, 'const saved = saveNewProjectDefaultCliPreferences(newProjectDefaultCliPreferencesFromDraft(draft));', 'save-default action should persist normalized draft CLI settings');
+    expectIncludes(projectsPage, 'setDraft((current) => current.id ? current : { ...current, ...draftCliFieldsFromNewProjectDefaults(saved) });', 'save-default action should not rewrite edit drafts');
+    expectIncludes(projectsPage, 'function newProjectDefaultCliPreferencesFromDraft(draft: Draft): ReturnType<typeof loadNewProjectDefaultCliPreferences> {', 'saved defaults should be derived from the same project payload normalization path');
+    expectIncludes(projectsPage, 'const payload = projectInputFromDraft(draft, draft.description || \'\');', 'saved defaults should reuse create-project payload normalization');
+    expectIncludes(projectsPage, 'planGenerationCodexReasoningEffort: payload.planGenerationCodexReasoningEffort ?? null,', 'saved generation defaults should preserve null reasoning for non-Codex providers');
+    expectIncludes(projectsPage, 'planExecutionCodexReasoningEffort: payload.planExecutionCodexReasoningEffort ?? null,', 'saved execution defaults should preserve null reasoning for non-Codex providers');
+    expectIncludes(projectsPage, 'planGenerationCodexReasoningEffort: isCodexPlanBackendProvider(planGenerationProvider)\n      ? normalizeCodexReasoningEffort(draft.planGenerationCodexReasoningEffort)\n      : null,', 'create-project payload should only submit generation reasoning for Codex');
+    expectIncludes(projectsPage, 'planExecutionCodexReasoningEffort: isCodexPlanBackendProvider(planExecutionProvider)\n      ? normalizeCodexReasoningEffort(draft.planExecutionCodexReasoningEffort)\n      : null,', 'create-project payload should only submit execution reasoning for Codex');
+  });
+
+  it('keeps workspace composer and intake creation aligned with project generation defaults', () => {
+    const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+    const forms = source('src', 'renderer', 'utils', 'workspaceForms.ts');
+    const intakeService = source('src', 'intakeService.js');
+    const loopService = source('src', 'loopService.js');
+
+    expectIncludes(controller, 'if (!state || Number(state.project_id) !== Number(projectId)) return;', 'workspace composer initialization should ignore stale project state');
+    expectIncludes(controller, 'requirement: composerPlanGenerationSelectionFromProjectState(state),', 'requirement composer should inherit the project generation defaults');
+    expectIncludes(controller, 'feedback: composerPlanGenerationSelectionFromProjectState(state),', 'feedback composer should inherit the project generation defaults');
+    expectIncludes(controller, 'const selectedPlanGeneration = planGenerationInputFromComposerSelection(composerPlanGeneration[type]);', 'intake creation should derive payload fields from the composer selection');
+    expectIncludes(forms, 'planGenerationCodexReasoningEffort: isCodexPlanBackendProvider(provider)\n      ? normalizeCodexReasoningEffort(selection.codexReasoningEffort)\n      : null,', 'composer payload normalization should drop Codex reasoning for non-Codex providers');
+    expectCountAtLeast(intakeService, 'const projectState = this.loop.status(projectId) || {};', 2, 'requirement and feedback creation should read current project state before defaulting generation config');
+    expectCountAtLeast(intakeService, 'nextIntakePlanGenerationConfig(projectState, input)', 2, 'requirement and feedback creation should default generation config from project state');
+    expectIncludes(loopService, 'const projectStatus = this.status(normalizedProjectId) || {};\n    const planGenerationConfig = nextIntakePlanGenerationConfig(projectStatus, { ...intake, ...input });', 'retry path should preserve project generation defaults when no explicit override is submitted');
+  });
+});
+

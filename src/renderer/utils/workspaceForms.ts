@@ -10,8 +10,10 @@ import type {
   AgentCliOption,
   AgentCliProvider,
   AiConfigCreateInput,
+  AiConfig,
   AiThinkingDepth,
   ChatConfig,
+  ChatProvider,
   ClaudeCliConfigListItem,
   CodexReasoningEffort,
   CreateScriptInput,
@@ -31,6 +33,7 @@ import type {
   McpConfigInput,
   McpStatus,
   McpTransport,
+  NewProjectDefaultCliPreferences,
   PendingAttachment,
   PlanBackendProvider,
   PlanExecutionStrategy,
@@ -184,10 +187,29 @@ export const defaultComposerPlanGenerationSelections: Record<IntakeType, Compose
   feedback: createDefaultPlanGenerationSelection(),
 };
 
+export const NEW_PROJECT_DEFAULT_CLI_PREFERENCES_STORAGE_KEY = 'autoplan.newProjectDefaultCliPreferences';
+
+export const defaultNewProjectDefaultCliPreferences: NewProjectDefaultCliPreferences = {
+  agentCliProvider: 'codex',
+  agentCliCommand: '',
+  codexReasoningEffort: defaultCodexReasoningEffort,
+  planGenerationStrategy: PLAN_GENERATION_STRATEGIES.EXTERNAL_CLI_MARKDOWN,
+  planGenerationProvider: 'codex',
+  planGenerationCommand: '',
+  planGenerationModel: '',
+  planGenerationCodexReasoningEffort: defaultCodexReasoningEffort,
+  planExecutionStrategy: PLAN_EXECUTION_STRATEGIES.EXTERNAL_CLI,
+  planExecutionProvider: 'codex',
+  planExecutionCommand: '',
+  planExecutionModel: '',
+  planExecutionCodexReasoningEffort: defaultCodexReasoningEffort,
+};
+
 export type LoopFormState = {
   workspacePath: string;
   intervalSeconds: string;
   validationCommand: string;
+  projectPrompt: string;
   agentCliProvider: string;
   agentCliCommand: string;
   codexReasoningEffort: CodexReasoningEffort;
@@ -791,6 +813,155 @@ export function planBackendProviderLabel(provider?: string | null) {
   return option?.label || agentCliOptionDetails.find((item) => item.value === normalizeAgentCliProvider(value))?.label || 'Codex CLI';
 }
 
+export function normalizeNewProjectDefaultCliPreferences(
+  input?: Partial<NewProjectDefaultCliPreferences> | Record<string, unknown> | null,
+): NewProjectDefaultCliPreferences {
+  const source = isRecord(input) ? input : {};
+  const planGenerationStrategy = normalizePlanGenerationStrategy(readNewProjectDefaultString(
+    source,
+    'planGenerationStrategy',
+    'plan_generation_strategy',
+  ));
+  const planGenerationProvider = normalizePlanBackendProvider(
+    readNewProjectDefaultString(source, 'planGenerationProvider', 'plan_generation_provider'),
+    planGenerationStrategy,
+  );
+  const planExecutionStrategy = normalizePlanExecutionStrategy(readNewProjectDefaultString(
+    source,
+    'planExecutionStrategy',
+    'plan_execution_strategy',
+  ));
+  const planExecutionProvider = normalizePlanBackendProvider(
+    readNewProjectDefaultString(source, 'planExecutionProvider', 'plan_execution_provider'),
+    planExecutionStrategy,
+  );
+  const planGenerationCodexReasoningEffort = isCodexPlanBackendProvider(planGenerationProvider)
+    ? normalizeCodexReasoningEffort(firstNonEmptyString(
+        readNewProjectDefaultString(source, 'planGenerationCodexReasoningEffort', 'plan_generation_codex_reasoning_effort'),
+        readNewProjectDefaultString(source, 'codexReasoningEffort', 'codex_reasoning_effort'),
+      ))
+    : null;
+  const planExecutionCodexReasoningEffort = isCodexPlanBackendProvider(planExecutionProvider)
+    ? normalizeCodexReasoningEffort(firstNonEmptyString(
+        readNewProjectDefaultString(source, 'planExecutionCodexReasoningEffort', 'plan_execution_codex_reasoning_effort'),
+        readNewProjectDefaultString(source, 'codexReasoningEffort', 'codex_reasoning_effort'),
+      ))
+    : null;
+  const agentCliProvider = normalizeAgentCliProvider(firstNonEmptyString(
+    readNewProjectDefaultString(source, 'agentCliProvider', 'agent_cli_provider'),
+    isExternalPlanExecutionStrategy(planExecutionStrategy) ? planExecutionProvider : '',
+  ));
+  const agentCliCommand = firstNonEmptyString(
+    readNewProjectDefaultString(source, 'agentCliCommand', 'agent_cli_command'),
+    isExternalPlanExecutionStrategy(planExecutionStrategy)
+      ? readNewProjectDefaultString(source, 'planExecutionCommand', 'plan_execution_command')
+      : '',
+  ).trim();
+  const codexReasoningEffort = agentCliProvider === 'codex'
+    ? normalizeCodexReasoningEffort(firstNonEmptyString(
+        readNewProjectDefaultString(source, 'codexReasoningEffort', 'codex_reasoning_effort'),
+        planExecutionCodexReasoningEffort || '',
+        planGenerationCodexReasoningEffort || '',
+      ))
+    : null;
+
+  return {
+    agentCliProvider,
+    agentCliCommand,
+    codexReasoningEffort,
+    planGenerationStrategy,
+    planGenerationProvider,
+    planGenerationCommand: isExternalPlanGenerationStrategy(planGenerationStrategy)
+      ? readNewProjectDefaultString(source, 'planGenerationCommand', 'plan_generation_command').trim()
+      : '',
+    planGenerationModel: isBuiltinPlanGenerationStrategy(planGenerationStrategy)
+      ? firstNonEmptyString(
+          readNewProjectDefaultString(source, 'planGenerationModel', 'plan_generation_model'),
+          planBackendDefaultModel(planGenerationProvider),
+        )
+      : '',
+    planGenerationCodexReasoningEffort,
+    planExecutionStrategy,
+    planExecutionProvider,
+    planExecutionCommand: isExternalPlanExecutionStrategy(planExecutionStrategy)
+      ? readNewProjectDefaultString(source, 'planExecutionCommand', 'plan_execution_command').trim()
+      : '',
+    planExecutionModel: isBuiltinPlanExecutionStrategy(planExecutionStrategy)
+      ? firstNonEmptyString(
+          readNewProjectDefaultString(source, 'planExecutionModel', 'plan_execution_model'),
+          planBackendDefaultModel(planExecutionProvider),
+        )
+      : '',
+    planExecutionCodexReasoningEffort,
+  };
+}
+
+export function newProjectDefaultCliPreferencesStorageKey(): string {
+  return NEW_PROJECT_DEFAULT_CLI_PREFERENCES_STORAGE_KEY;
+}
+
+export function loadNewProjectDefaultCliPreferences(): NewProjectDefaultCliPreferences {
+  if (typeof window === 'undefined') return { ...defaultNewProjectDefaultCliPreferences };
+  try {
+    const stored = window.localStorage.getItem(NEW_PROJECT_DEFAULT_CLI_PREFERENCES_STORAGE_KEY);
+    return normalizeNewProjectDefaultCliPreferences(stored ? JSON.parse(stored) : null);
+  } catch {
+    return { ...defaultNewProjectDefaultCliPreferences };
+  }
+}
+
+export function saveNewProjectDefaultCliPreferences(
+  preferences: Partial<NewProjectDefaultCliPreferences> | Record<string, unknown>,
+): NewProjectDefaultCliPreferences {
+  const normalized = normalizeNewProjectDefaultCliPreferences(preferences);
+  if (typeof window !== 'undefined') {
+    try {
+      window.localStorage.setItem(
+        NEW_PROJECT_DEFAULT_CLI_PREFERENCES_STORAGE_KEY,
+        JSON.stringify(newProjectDefaultCliPreferencesForStorage(normalized)),
+      );
+    } catch { /* localStorage 不可用时仅保留当前会话状态 */ }
+  }
+  return normalized;
+}
+
+export function newProjectDefaultCliPreferencesForStorage(
+  preferences: Partial<NewProjectDefaultCliPreferences> | Record<string, unknown>,
+): Record<string, string> {
+  const normalized = normalizeNewProjectDefaultCliPreferences(preferences);
+  const stored: Record<string, string> = {
+    agentCliProvider: normalized.agentCliProvider,
+    agentCliCommand: normalized.agentCliCommand,
+    planGenerationStrategy: normalized.planGenerationStrategy,
+    planGenerationProvider: normalized.planGenerationProvider,
+    planGenerationCommand: normalized.planGenerationCommand,
+    planGenerationModel: normalized.planGenerationModel,
+    planExecutionStrategy: normalized.planExecutionStrategy,
+    planExecutionProvider: normalized.planExecutionProvider,
+    planExecutionCommand: normalized.planExecutionCommand,
+    planExecutionModel: normalized.planExecutionModel,
+  };
+  if (normalized.codexReasoningEffort) stored.codexReasoningEffort = normalized.codexReasoningEffort;
+  if (normalized.planGenerationCodexReasoningEffort) {
+    stored.planGenerationCodexReasoningEffort = normalized.planGenerationCodexReasoningEffort;
+  }
+  if (normalized.planExecutionCodexReasoningEffort) {
+    stored.planExecutionCodexReasoningEffort = normalized.planExecutionCodexReasoningEffort;
+  }
+  return stored;
+}
+
+function readNewProjectDefaultValue(source: Record<string, unknown>, ...keys: string[]): unknown {
+  for (const key of keys) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) return source[key];
+  }
+  return undefined;
+}
+
+function readNewProjectDefaultString(source: Record<string, unknown>, ...keys: string[]): string {
+  return String(readNewProjectDefaultValue(source, ...keys) ?? '');
+}
+
 function firstNonEmptyString(...values: Array<string | null | undefined>) {
   for (const value of values) {
     const text = String(value ?? '').trim();
@@ -923,6 +1094,7 @@ export function loopFormFromProjectState(state: ProjectState): LoopFormState {
     workspacePath: state.workspace_path || '',
     intervalSeconds: String(state.interval_seconds || 5),
     validationCommand: state.validation_command ?? '',
+    projectPrompt: state.project_prompt ?? '',
     agentCliProvider: legacyProvider,
     agentCliCommand: legacyCommand,
     codexReasoningEffort: legacyReasoning,
@@ -975,6 +1147,7 @@ export function loopConfigurePayloadFromForm(projectId: number, form: LoopFormSt
     workspacePath: form.workspacePath,
     intervalSeconds: Number(form.intervalSeconds || 5),
     validationCommand: form.validationCommand,
+    projectPrompt: form.projectPrompt,
     agentCliProvider: legacyProvider,
     agentCliCommand: legacyCommand.trim(),
     planGenerationStrategy,
@@ -1037,6 +1210,7 @@ export function loopFormsEqual(left: LoopFormState, right: LoopFormState) {
   return left.workspacePath === right.workspacePath
     && left.intervalSeconds === right.intervalSeconds
     && left.validationCommand === right.validationCommand
+    && left.projectPrompt === right.projectPrompt
     && left.agentCliProvider === right.agentCliProvider
     && left.agentCliCommand === right.agentCliCommand
     && left.codexReasoningEffort === right.codexReasoningEffort
@@ -1119,20 +1293,21 @@ export function resolveClaudeConfigSelection(
 
 /* ===================== MCP 配置 draft 表单（设置面板） ===================== */
 
+export type McpAuthTokenIntent = 'unchanged' | 'set' | 'clear';
+
 export type McpConfigFormState = {
   enabled: boolean;
   transport: McpTransport;
   host: string;
-  /** 文本输入值，提交时再解析为 1–65535 整数 */
   port: number | string;
   path: string;
-  /** 始终留空，不从快照明文回填；承载用户输入/生成/清空 */
   authToken: string;
+  authTokenIntent: McpAuthTokenIntent;
 };
 
 /** 从快照构造表单：transport/host/port/path 取自快照，authToken 永不回填明文 */
 export function mcpConfigFormFromSnapshot(mcp: McpStatus | null | undefined): McpConfigFormState {
-  if (!mcp) return { enabled: true, transport: 'http', host: '', port: '', path: '', authToken: '' };
+  if (!mcp) return { enabled: true, transport: 'http', host: '', port: '', path: '', authToken: '', authTokenIntent: 'unchanged' };
   return {
     enabled: Boolean(mcp.enabled),
     transport: 'http',
@@ -1140,6 +1315,7 @@ export function mcpConfigFormFromSnapshot(mcp: McpStatus | null | undefined): Mc
     port: mcp.port ?? '',
     path: mcp.path ?? '',
     authToken: '',
+    authTokenIntent: 'unchanged',
   };
 }
 
@@ -1149,7 +1325,8 @@ export function mcpConfigFormsEqual(left: McpConfigFormState, right: McpConfigFo
     && left.host === right.host
     && String(left.port) === String(right.port)
     && left.path === right.path
-    && left.authToken === right.authToken;
+    && left.authToken === right.authToken
+    && normalizeMcpAuthTokenIntent(left.authTokenIntent, left.authToken) === normalizeMcpAuthTokenIntent(right.authTokenIntent, right.authToken);
 }
 
 /** 将端口解析为 1–65535 整数；非法返回 null */
@@ -1184,13 +1361,34 @@ export function mcpConfigFormToPayload(
     port: form.port,
     path: form.path.trim(),
   };
-  if (authTokenTouched) {
-    payload.authToken = form.authToken.trim();
+  const authTokenIntent = normalizeMcpAuthTokenIntent(form.authTokenIntent, form.authToken, authTokenTouched);
+  if (authTokenTouched || authTokenIntent !== 'unchanged') {
+    payload.authToken = authTokenIntent === 'clear' ? '' : form.authToken.trim();
   }
   return payload;
 }
 
 /** 用 Web Crypto 生成 32 字节高熵随机密钥（base64url，无填充） */
+function normalizeMcpAuthTokenIntent(
+  intent: McpAuthTokenIntent | undefined,
+  authToken: string,
+  touched = false,
+): McpAuthTokenIntent {
+  if (intent === 'unchanged' || intent === 'set' || intent === 'clear') return intent;
+  if (!touched) return 'unchanged';
+  return String(authToken || '').trim() ? 'set' : 'clear';
+}
+
+function mcpAuthTokenIntentFromPatch(patch: Partial<McpConfigFormState>): McpAuthTokenIntent | null {
+  if (patch.authTokenIntent === 'unchanged' || patch.authTokenIntent === 'set' || patch.authTokenIntent === 'clear') {
+    return patch.authTokenIntent;
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, 'authToken')) {
+    return String(patch.authToken || '').trim() ? 'set' : 'clear';
+  }
+  return null;
+}
+
 export function generateMcpAuthToken(): string {
   const bytes = new Uint8Array(32);
   window.crypto.getRandomValues(bytes);
@@ -1218,9 +1416,14 @@ export function useMcpConfigForm(mcp: McpStatus | null | undefined, projectId: n
   }, []);
 
   const setMcpForm = useCallback((patch: Partial<McpConfigFormState>) => {
-    if ('authToken' in patch) setMcpAuthTokenTouched(true);
+    const nextPatch = { ...patch };
+    const authTokenIntent = mcpAuthTokenIntentFromPatch(patch);
+    if (authTokenIntent) {
+      nextPatch.authTokenIntent = authTokenIntent;
+      setMcpAuthTokenTouched(authTokenIntent !== 'unchanged');
+    }
     setMcpFormDirty(true);
-    applyForm({ ...formRef.current, ...patch });
+    applyForm({ ...formRef.current, ...nextPatch });
   }, [applyForm]);
 
   // 从快照同步配置（authToken 不回填），dirty 时不覆盖；projectId 变化触发重新计算。
@@ -1280,7 +1483,7 @@ export function createDefaultChatConfigForm(config?: ChatConfig | null): ChatCon
   const provider = config.provider || 'openai';
   return {
     provider,
-    baseUrl: config.baseUrl || 'https://api.openai.com',
+    baseUrl: config.baseUrl || defaultBaseUrlForProvider(provider),
     apiKey: '',
     model: config.model || defaultModelForProvider(provider),
     temperature: config.temperature || '0.3',
@@ -1389,6 +1592,21 @@ export function aiThinkingDepthLabel(value?: string | null, provider = 'openai')
   return `思考 · ${option?.label || '关闭'}`;
 }
 
+export function chatProviderRequiresApiKey(provider?: string | null): boolean {
+  return normalizeAiConfigProvider(provider) !== 'codex';
+}
+
+type ChatAvailabilityConfig = Pick<ChatConfig, 'provider' | 'hasApiKey'>
+  | Pick<AiConfig, 'provider' | 'hasApiKey'>
+  | null
+  | undefined;
+
+export function isChatConfigAvailableForSend(config?: ChatAvailabilityConfig): boolean {
+  if (!config) return false;
+  if (!chatProviderRequiresApiKey(config.provider)) return true;
+  return config.hasApiKey === true;
+}
+
 /** 根据 provider 返回默认 Base URL 占位符 */
 export function defaultBaseUrlForProvider(provider: string): string {
   if (provider === 'deepseek') return 'https://api.deepseek.com';
@@ -1476,9 +1694,9 @@ function normalizeAiThinkingDepth(value: string, provider = 'openai'): AiThinkin
   return depth || null;
 }
 
-function normalizeAiConfigProvider(value?: string | null): 'openai' | 'deepseek' | 'anthropic' {
+function normalizeAiConfigProvider(value?: string | null): ChatProvider {
   const provider = String(value || '').trim().toLowerCase();
-  if (provider === 'deepseek' || provider === 'anthropic') return provider;
+  if (provider === 'deepseek' || provider === 'anthropic' || provider === 'codex') return provider;
   return 'openai';
 }
 

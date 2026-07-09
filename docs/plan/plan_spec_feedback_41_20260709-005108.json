@@ -1,0 +1,36 @@
+{
+  "title": "Fix task completion timestamp format",
+  "summary": "Feedback #41 reports that the task completion note appended to the plan progress section currently uses an ISO timestamp such as 2026-07-07T14:06:06.811Z, but the expected display format is yyyy-MM-dd HH:mm:ss. The affected write path is markTaskCompletedInPlan in src/loop/taskExecution.js. Internal database and event timestamps can keep the existing ISO format; only the Markdown progress note should use the user-facing second-level date-time format.",
+  "tasks": [
+    {
+      "title": "Format AutoPlan completion notes as yyyy-MM-dd HH:mm:ss",
+      "scope": [
+        "src/loop/taskExecution.js"
+      ],
+      "acceptance": [
+        "The progress-section note written by markTaskCompletedInPlan, for example `- P001 AutoPlan completed: ...`, uses `yyyy-MM-dd HH:mm:ss` and does not contain `T`, milliseconds, or `Z`.",
+        "The formatter is applied only to the Markdown progress note; internal fields such as task finishedAt, event metadata, and database updated_at keep their existing ISO timestamp semantics.",
+        "Completion notes with and without a relative log path keep the existing note structure, with only the displayed timestamp changed."
+      ]
+    },
+    {
+      "title": "Add regression coverage for progress note timestamps",
+      "scope": [
+        "src/loop/taskExecution.test.js"
+      ],
+      "acceptance": [
+        "First-time completion writeback asserts that the progress-section timestamp matches `\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}`.",
+        "Repeated writeback for the same task still keeps only one AutoPlan completion note and the replacement note uses the target timestamp format.",
+        "When the completion note includes a relative log path, the log path remains after the timestamp and existing checkbox update plus legacy progress-table cleanup behavior does not regress."
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "Static checks pass with no syntax or TypeScript errors.",
+      "Task execution tests pass and AutoPlan completion notes in plan progress sections no longer use ISO-shaped timestamps.",
+      "The full test suite passes, with no regression in task completion, retry writeback, log path writeback, or plan progress refresh behavior."
+    ]
+  }
+}

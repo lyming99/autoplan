@@ -87,6 +87,7 @@ export function useWorkspaceController() {
     workspacePath: '',
     intervalSeconds: '5',
     validationCommand: '',
+    projectPrompt: '',
     agentCliProvider: 'codex',
     agentCliCommand: '',
     codexReasoningEffort: defaultCodexReasoningEffort,
@@ -249,6 +250,22 @@ export function useWorkspaceController() {
     window.alert(msg);
   }, [setError]);
 
+  const openScopeFile = useCallback((filePath: string) => {
+    void (async () => {
+      try {
+        const result = await window.autoplan.openWorkspaceFile({
+          projectId,
+          filePath,
+          mode: scopeFileOpenSettings.mode,
+          command: scopeFileOpenSettings.command,
+        });
+        if (!result.ok) throw new Error(result.error || '打开 scope 文件失败');
+      } catch (e) {
+        showError(e);
+      }
+    })();
+  }, [projectId, scopeFileOpenSettings.mode, scopeFileOpenSettings.command, showError]);
+
   const resetPlanReaderState = useCallback(() => {
     planReadRequestRef.current += 1;
     setPlanReadState(createEmptyPlanReadState());
@@ -282,6 +299,7 @@ export function useWorkspaceController() {
     state?.workspace_path,
     state?.interval_seconds,
     state?.validation_command,
+    state?.project_prompt,
     state?.agent_cli_provider,
     state?.agent_cli_command,
     state?.codex_reasoning_effort,
@@ -304,6 +322,7 @@ export function useWorkspaceController() {
   }, [projectId]);
 
   useEffect(() => {
+    if (!state || Number(state.project_id) !== Number(projectId)) return;
     setComposerPlanGeneration({
       requirement: composerPlanGenerationSelectionFromProjectState(state),
       feedback: composerPlanGenerationSelectionFromProjectState(state),
@@ -658,6 +677,8 @@ export function useWorkspaceController() {
     runLoopAction(() => window.autoplan.acceptItem({ projectId, targetType, id }));
   const unacceptItem = (targetType: 'plan' | 'task', id: number) =>
     runLoopAction(() => window.autoplan.unacceptItem({ projectId, targetType, id }));
+  const redoAcceptanceItem = (targetType: 'plan' | 'task', id: number, supplement?: string) =>
+    runLoopAction(() => window.autoplan.redoAcceptanceItem({ projectId, targetType, id, supplement }));
 
   const acceptItems = (targets: { targetType: 'plan' | 'task'; id: number }[]) => {
     if (!targets || targets.length === 0) return; // 空列表短路，不发 IPC（后端亦拒绝）
@@ -893,12 +914,14 @@ export function useWorkspaceController() {
     navigate,
     openIntakePlanReader,
     openPlanReader,
+    openScopeFile,
     openTaskPlanReader,
     pendingAttachments,
     planReadState,
     project,
     projectId,
     projects,
+    redoAcceptanceItem,
     recentAccepted,
     refreshPlanReader,
     removePendingAttachment,

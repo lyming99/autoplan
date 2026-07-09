@@ -64,6 +64,12 @@ type WorkspacePlanListProps = ComponentProps<typeof PlanList> & {
 
 const WorkspacePlanList = PlanList as ComponentType<WorkspacePlanListProps>;
 
+type WorkspaceTaskListProps = ComponentProps<typeof TaskList> & {
+  onOpenScopeFile?: (filePath: string) => void;
+};
+
+const WorkspaceTaskList = TaskList as ComponentType<WorkspaceTaskListProps>;
+
 type PendingIntakeTarget = { tab: WorkspaceTab; id: number; anchorId: string };
 
 export function WorkspacePage() {
@@ -97,6 +103,7 @@ export function WorkspacePage() {
     navigate,
     openIntakePlanReader,
     openPlanReader,
+    openScopeFile,
     openTaskPlanReader,
     pendingAttachments,
     planReadState,
@@ -675,11 +682,12 @@ export function WorkspacePage() {
                   <div className="card-head">
                     <h2>任务</h2>
                   </div>
-                  <TaskList
+                  <WorkspaceTaskList
                     emptyText={filteredEmptyText}
                     locateTarget={pendingSearchTarget}
                     planFilter={selectedPlanTaskFilter}
                     tasks={taskListTasks}
+                    onOpenScopeFile={openScopeFile}
                     onOpenPlan={openTaskPlanReader}
                     onRun={(task) => runLoopAction(() => window.autoplan.runTask({ projectId, taskId: task.id }))}
                     onStop={(task) => runLoopAction(() => window.autoplan.stopTask({ projectId, taskId: task.id }))}

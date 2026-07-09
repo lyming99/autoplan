@@ -1,0 +1,70 @@
+{
+  "title": "修复 MCP 配置显示密钥无内容",
+  "summary": "反馈指出在 MCP 配置中点击“显示密钥”后没有显示已保存密钥。现有前端表单出于安全设计不从快照回填明文 authToken，眼睛按钮仅切换当前输入框类型，导致已保存密钥场景下仍为空。计划补齐受控的密钥读取通道，并调整 MCP 设置面板的显示逻辑，让用户能在明确点击显示后看到已保存密钥，同时保持默认脱敏、不误触保存覆盖。",
+  "tasks": [
+    {
+      "title": "新增 MCP 已保存密钥受控读取接口",
+      "scope": [
+        "src/main.js",
+        "src/preload.js",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "已保存 mcp.authToken 时，渲染层可通过专用 IPC 在用户触发显示时读取完整密钥",
+        "未设置密钥时接口返回空值或明确的未设置状态，不抛出异常影响设置页",
+        "接口不改变现有 mcp:status 和 snapshot 的默认脱敏契约，普通快照仍不包含明文密钥"
+      ]
+    },
+    {
+      "title": "调整 MCP 密钥显示按钮行为",
+      "scope": [
+        "src/renderer/components/workspace/McpControlPanel.tsx",
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/renderer/utils/workspaceForms.ts"
+      ],
+      "acceptance": [
+        "当输入框已有新密钥草稿时，点击显示/隐藏只切换草稿明文可见性",
+        "当输入框为空且已有保存密钥时，点击显示会加载并展示已保存密钥",
+        "隐藏密钥后界面恢复密码态或脱敏占位，不持续暴露明文",
+        "读取已保存密钥用于显示时不应将 authToken 标记为 touched，直接保存不会误覆盖或清空原密钥"
+      ]
+    },
+    {
+      "title": "完善 MCP 密钥清空与编辑状态区分",
+      "scope": [
+        "src/renderer/components/workspace/McpControlPanel.tsx",
+        "src/renderer/utils/workspaceForms.ts"
+      ],
+      "acceptance": [
+        "用户点击清空后再保存会按现有语义清除鉴权",
+        "用户仅点击显示再隐藏且未编辑时，保存不下发 authToken 字段",
+        "用户显示已保存密钥后进行编辑，保存会按新值覆盖原密钥",
+        "生成随机密钥、手动输入密钥、清空密钥三种路径的 touched 状态保持可区分"
+      ]
+    },
+    {
+      "title": "补充 MCP 密钥显示回归测试",
+      "scope": [
+        "src/renderer/components/workspace/McpControlPanel.test.tsx",
+        "src/renderer/utils/workspaceForms.test.ts",
+        "src/main.js",
+        "src/preload.js"
+      ],
+      "acceptance": [
+        "覆盖已保存密钥场景下点击显示能得到完整密钥并展示",
+        "覆盖显示已保存密钥但未编辑时保存载荷不包含 authToken",
+        "覆盖显示后编辑、生成、清空时保存载荷分别符合覆盖、覆盖、清除语义",
+        "覆盖未设置密钥时点击显示不会出现空白误导或异常报错"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "TypeScript、主进程脚本、preload 脚本和文件长度检查全部通过",
+      "现有 Node 测试全部通过，新增 MCP 密钥显示相关测试通过",
+      "MCP 设置页默认仍只显示脱敏密钥状态，只有用户点击显示时才展示完整已保存密钥",
+      "保存 MCP 配置时能正确区分未改动、设置新密钥、清空密钥三种场景"
+    ]
+  }
+}

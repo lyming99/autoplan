@@ -166,4 +166,46 @@ describe('validation 完成后关联需求/反馈状态同步', () => {
       fixture.destroy();
     }
   });
+
+  it('完整验收失败时保留 validation_failed、失败事件、任务失败语义和 validation_passed=0', async () => {
+    const fixture = await createFixture({ validationCommand: 'npm run blocked:stub' });
+    try {
+      const plan = insertPlan(fixture, 'failed-final-acceptance-state', [
+        '- [x] P001: 完成实现 <!-- scope: src/example.js -->',
+        '- [ ] P002: 完整验收 <!-- scope: validation -->',
+      ]);
+      const acceptanceTask = fixture.db.get('SELECT * FROM plan_tasks WHERE plan_id = ? AND task_key = ?', [
+        plan.id,
+        'P002',
+      ]);
+      fixture.loop.runShell = async () => ({
+        exitCode: 1,
+        output: 'PathAccessException: Permission denied while reading .dart_tool',
+        errorMessage: 'PathAccessException: Permission denied while reading .dart_tool',
+        logFile: null,
+      });
+
+      await fixture.loop.validatePlan(fixture.workspace, plan, { task: acceptanceTask });
+
+      const failedPlan = fixture.db.get('SELECT * FROM plans WHERE id = ?', [plan.id]);
+      const failedTask = fixture.db.get('SELECT * FROM plan_tasks WHERE id = ?', [acceptanceTask.id]);
+      const validationEvent = latestEvent(fixture.db, fixture.projectId, 'validation.blocked');
+      const taskEvent = latestEvent(fixture.db, fixture.projectId, 'task.failed');
+      const validationMeta = JSON.parse(validationEvent.meta);
+      const taskMeta = JSON.parse(taskEvent.meta);
+
+      assert.equal(failedPlan.status, 'validation_failed', '失败验收应保留 validation_failed 计划状态');
+      assert.equal(failedPlan.validation_passed, 0, '失败验收不应写成 validation_passed=1');
+      assert.equal(failedTask.status, 'pending', '失败的完整验收任务应保持可显式重试而非 completed');
+      assert.equal(validationMeta.planId, plan.id, '失败验收事件应记录 planId');
+      assert.equal(validationMeta.exitCode, 1, '失败验收事件应记录退出码');
+      assert.equal(validationMeta.failureKind, 'environment_permission', '失败验收事件应记录失败分类');
+      assert.equal(taskMeta.planId, plan.id, '任务失败事件应记录 planId');
+      assert.equal(taskMeta.taskId, acceptanceTask.id, '任务失败事件应记录验收任务 id');
+      assert.equal(taskMeta.status, 'failed', '任务失败事件 meta 应保留 failed 语义');
+      assert.equal(taskMeta.acceptanceTask, true, '任务失败事件应标识完整验收任务');
+    } finally {
+      fixture.destroy();
+    }
+  });
 });

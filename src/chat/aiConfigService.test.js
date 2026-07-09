@@ -122,6 +122,7 @@ describe('aiConfigService create regression', () => {
       assert.equal(codex.hasApiKey, false);
       assert.equal(codex.maskedKey, '');
       assert.equal(codex.baseUrl, '');
+      assert.equal(codex.model, '');
       // codex 不支持 thinkingBudgetTokens（仍仅限 anthropic）
       assert.equal(codex.thinkingBudgetTokens, null);
 

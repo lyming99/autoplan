@@ -16,6 +16,7 @@ const {
   createChunkDecoder,
   normalizeAgentCliProvider,
   normalizeCodexReasoningEffort,
+  runAgentCliAttempt,
   writePromptSpilloverFile,
 } = require('./agentCli');
 
@@ -42,6 +43,58 @@ function expectTruthy(value) {
     throw new Error(`Expected ${JSON.stringify(value)} to be truthy`);
   }
 }
+
+describe('Agent CLI timeout handling', () => {
+  it('marks timed-out attempts and returns timeout metadata', async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-agent-timeout-'));
+    try {
+      const activeOperation = { label: 'timeout test' };
+      const runtime = {
+        activeOperation,
+        activeChild: null,
+        activeOperations: new Map([['op-timeout', activeOperation]]),
+        activeChildren: new Map(),
+      };
+      const writes = [];
+
+      const result = await runAgentCliAttempt({
+        workspace: tmpRoot,
+        prompt: 'timeout prompt',
+        lastFile: path.join(tmpRoot, 'last.txt'),
+        logFile: path.join(tmpRoot, 'agent.log'),
+        runtime,
+        activeOperation,
+        operationKey: 'op-timeout',
+        waitForChild: async (child, timeoutMs) => {
+          expectEqual(timeoutMs, 2000);
+          child.__autoplanTimedOut = true;
+          try { child.kill(); } catch (_) { /* ignore cleanup races in timeout simulation */ }
+          return -1;
+        },
+        stream: {
+          write(text) {
+            writes.push(text);
+            return true;
+          },
+        },
+        provider: 'codex',
+        command: process.execPath,
+        codexArgs: [],
+        timeoutMs: 2000,
+      });
+
+      expectEqual(result.exitCode, -1);
+      expectEqual(result.timedOut, true);
+      expectEqual(result.timeoutMs, 2000);
+      expectEqual(activeOperation.timedOut, true);
+      expectEqual(activeOperation.timeoutMs, 2000);
+      expectTruthy(/timed out/i.test(result.errorMessage));
+      expectTruthy(writes.some((item) => /timed out/i.test(item)));
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+});
 
 describe('Codex reasoning effort', () => {
   it('normalizes xhigh while preserving legacy fallbacks', () => {

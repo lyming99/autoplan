@@ -1,6 +1,7 @@
 const { effectiveAgentCliConfig, hasAgentCliOverride } = require('./agentCliConfig');
 const planBackendConfig = require('./planBackendConfig');
 const { parseEventMeta } = require('./snapshots');
+const { normalizeProjectPrompt } = require('./taskSessionContext');
 
 const BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR = 'builtin-llm execution is not supported yet';
 
@@ -14,12 +15,13 @@ function planAgentCliConfig(service, plan) {
 }
 
 function planExecutionConfig(service, plan) {
-  const projectDefaults = service.status(plan.project_id) || {};
-  const eventSnapshot = planAgentCliEventSnapshot(service, plan.project_id, plan.id);
-  const sourceSnapshot = planSourceAgentCliSnapshot(service, plan.project_id, plan.id);
+  const currentPlan = currentPlanExecutionSource(service, plan);
+  const projectDefaults = service.status(currentPlan.project_id) || {};
+  const eventSnapshot = planAgentCliEventSnapshot(service, currentPlan.project_id, currentPlan.id);
+  const sourceSnapshot = planSourceAgentCliSnapshot(service, currentPlan.project_id, currentPlan.id);
   const snapshotDefaults = eventSnapshot || sourceSnapshot || projectDefaults;
-  if (hasPlanExecutionConfigSnapshot(plan) || hasAgentCliOverride(plan)) {
-    return planBackendConfig.effectivePlanExecutionConfig(snapshotDefaults, flattenPlanExecutionSource(plan));
+  if (hasPlanExecutionConfigSnapshot(currentPlan) || hasAgentCliOverride(currentPlan)) {
+    return planBackendConfig.effectivePlanExecutionConfig(snapshotDefaults, flattenPlanExecutionSource(currentPlan));
   }
   if (eventSnapshot) {
     return planBackendConfig.effectivePlanExecutionConfig(projectDefaults, eventSnapshot);
@@ -30,8 +32,25 @@ function planExecutionConfig(service, plan) {
   return planBackendConfig.effectivePlanExecutionConfig(projectDefaults);
 }
 
+function currentPlanExecutionSource(service, plan = {}) {
+  const planId = Number(plan?.id || 0);
+  if (!planId || !service?.db || typeof service.db.get !== 'function') return plan || {};
+  const projectId = Number(plan?.project_id || 0);
+  const persisted = projectId
+    ? service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [planId, projectId])
+    : service.db.get('SELECT * FROM plans WHERE id = ?', [planId]);
+  return persisted ? { ...plan, ...persisted } : (plan || {});
+}
+
 function planSnapshotAgentCliConfig(service, plan) {
   return planAgentCliConfig(service, plan);
+}
+
+function planProjectPrompt(service, plan) {
+  const currentPlan = currentPlanExecutionSource(service, plan);
+  const projectId = Number(currentPlan?.project_id || 0);
+  if (!projectId || typeof service?.status !== 'function') return '';
+  return normalizeProjectPrompt(service.status(projectId));
 }
 
 function planAgentCliEventSnapshot(service, projectId, planId) {
@@ -199,6 +218,7 @@ module.exports = {
   planExecutionConfig,
   planExecutionEventMeta,
   planAgentCliConfig,
+  planProjectPrompt,
   planSnapshotAgentCliConfig,
   planAgentCliEventSnapshot,
   planSourceAgentCliSnapshot,

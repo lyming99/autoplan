@@ -176,12 +176,12 @@ function snapshot(service, helpers, projectId = null) {
       terminals: readTerminalMetadata(service, projectId),
       activeOperation:
         runtime?.activeOperation && Number(runtime.activeOperation.projectId) === Number(projectId)
-          ? operationSnapshotRow(runtime.activeOperation)
+          ? operationSnapshotRowWithPlanExecutionFields(runtime.activeOperation)
           : null,
       activeOperations: runtime?.activeOperations
         ? Array.from(runtime.activeOperations.values())
             .filter((operation) => Number(operation.projectId) === Number(projectId))
-            .map((operation) => operationSnapshotRow(operation))
+            .map((operation) => operationSnapshotRowWithPlanExecutionFields(operation))
         : [],
       lastOperation:
         runtime?.lastOperation && Number(runtime.lastOperation.projectId) === Number(projectId)
@@ -198,6 +198,7 @@ function taskSnapshotRow(service, workspace, task, operationContext = null) {
   const runDurationMs = isRunning ? taskRunDurationMs(startedAt, nowIso()) : undefined;
   const agentContext = agentCliContextFields(operationContext || {}, { defaultProvider: false });
   const providerForSession = agentContext.agentCliProvider || (task.codex_session_id ? DEFAULT_AGENT_CLI_PROVIDER : undefined);
+  const timeoutContext = taskTimeoutSnapshotFields(service, task, operationContext);
   const sessionContext = providerForSession !== DEFAULT_AGENT_CLI_PROVIDER
     ? {}
     : codexSessionContextFields({
@@ -214,11 +215,63 @@ function taskSnapshotRow(service, workspace, task, operationContext = null) {
     finished_at: finishedAt,
     duration_ms: normalizeDurationMs(task.duration_ms),
     ...(runDurationMs !== undefined ? { run_duration_ms: normalizeDurationMs(runDurationMs) } : {}),
+    ...timeoutContext,
     ...agentContext,
     ...sessionContext,
   };
 }
 
+function taskTimeoutSnapshotFields(service, task = {}, operationContext = null) {
+  const operationTimeout = taskTimeoutFieldsFromMeta(operationContext, null);
+  if (operationTimeout?.timedOut) return operationTimeout;
+  const event = latestTaskTimeoutEvent(service, task);
+  if (!event) return {};
+  return taskTimeoutFieldsFromMeta(parseEventMeta(event.meta), event) || {};
+}
+
+function latestTaskTimeoutEvent(service, task = {}) {
+  const taskId = Number(task?.id || 0);
+  if (!taskId || !service?.db?.all) return null;
+  const needle = `%\"taskId\":${taskId}%`;
+  const rows = service.db.all(
+    `SELECT type, message, meta, created_at
+       FROM events
+      WHERE meta LIKE ?
+      ORDER BY id DESC
+      LIMIT 40`,
+    [needle],
+  );
+  return (rows || []).find((event) => {
+    const meta = parseEventMeta(event?.meta);
+    return event?.type === 'task.timeout' || Boolean(meta?.timedOut);
+  }) || null;
+}
+
+function taskTimeoutFieldsFromMeta(meta = null, event = null) {
+  if (!meta || typeof meta !== 'object') return null;
+  const timedOut = Boolean(meta.timedOut || meta.timed_out || event?.type === 'task.timeout');
+  const resetReason = normalizeOptionalString(meta.taskSessionResetReason ?? meta.task_session_reset_reason) || null;
+  if (!timedOut && resetReason !== 'timedOut') return null;
+  const timeoutMs = normalizeNullableNumber(meta.timeoutMs ?? meta.timeout_ms);
+  const timeoutMinutes = normalizeNullableNumber(meta.timeoutMinutes ?? meta.timeout_minutes)
+    ?? (timeoutMs ? Math.round((timeoutMs / 60000) * 100) / 100 : null);
+  return {
+    timedOut,
+    timeoutMs,
+    timeoutMinutes,
+    taskSessionMode: normalizeOptionalString(meta.taskSessionMode ?? meta.task_session_mode) || null,
+    taskSessionState: normalizeOptionalString(meta.taskSessionState ?? meta.task_session_state) || null,
+    taskSessionResetReason: resetReason,
+    willRetryWithNewSession: Boolean(meta.willRetryWithNewSession || meta.reopenContextOnRetry),
+    reopenContextOnRetry: Boolean(meta.reopenContextOnRetry || meta.willRetryWithNewSession),
+    last_timeout_at: normalizeOptionalString(event?.created_at) || null,
+    last_timeout_message: normalizeOptionalString(event?.message) || null,
+    last_timeout_ms: timeoutMs,
+    last_timeout_minutes: timeoutMinutes,
+    last_timeout_agent_cli_provider: normalizeOptionalString(meta.agentCliProvider ?? meta.agent_cli_provider) || null,
+    last_timeout_log: normalizeOptionalString(meta.log ?? meta.logFile ?? meta.log_file) || null,
+  };
+}
 function intakeLinkedPlanSnapshotRow(row = {}, planSnapshotById = new Map(), state = {}, linkedPlans = []) {
   const normalized = intakeSnapshotRow(row);
   // 生效 CLI：记录覆盖优先，否则回退项目默认（state）；写入快照行让渲染层只管显示。
@@ -664,7 +717,7 @@ function eventSnapshotRow(event) {
 function executorSnapshotRow(row = {}, runtime = null, projectId = null) {
   const executor = executorFromRow(row);
   const activeOperation = findExecutorOperation(runtime, projectId, executor.id);
-  const activeSnapshot = activeOperation ? operationSnapshotRow(activeOperation) : null;
+  const activeSnapshot = activeOperation ? operationSnapshotRowWithPlanExecutionFields(activeOperation) : null;
   const runStatus = activeSnapshot ? 'running' : (executor.lastStatus || 'idle');
   return {
     ...executor,
@@ -684,6 +737,29 @@ function executorSnapshotRow(row = {}, runtime = null, projectId = null) {
     runStatus,
     activeOperation: activeSnapshot,
   };
+}
+
+function operationSnapshotRowWithPlanExecutionFields(operation) {
+  const row = operationSnapshotRow(operation);
+  if (!row || !operation) return row;
+  const executionProvider = normalizeOptionalPlanExecutionAgentCliProvider(
+    operation.planExecutionProvider ?? operation.plan_execution_provider,
+  );
+  if (!row.agentCliProvider && executionProvider) row.agentCliProvider = executionProvider;
+  const provider = row.agentCliProvider || executionProvider;
+  const executionReasoningEffort = operation.planExecutionCodexReasoningEffort
+    ?? operation.plan_execution_codex_reasoning_effort;
+  if (provider === DEFAULT_AGENT_CLI_PROVIDER && !row.codexReasoningEffort && executionReasoningEffort) {
+    row.codexReasoningEffort = normalizeOptionalCodexReasoningEffort(executionReasoningEffort);
+  }
+  return row;
+}
+
+function normalizeOptionalPlanExecutionAgentCliProvider(value) {
+  const provider = String(value ?? '').trim().toLowerCase();
+  return provider === DEFAULT_AGENT_CLI_PROVIDER || provider === 'claude' || provider === 'opencode' || provider === 'oh-my-pi'
+    ? provider
+    : null;
 }
 
 function findExecutorOperation(runtime, projectId, executorId) {

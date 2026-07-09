@@ -1,9 +1,11 @@
 const { nowIso } = require('../database');
+const planLifecycle = require('./planLifecycle');
 
 // 人工验收态与执行态正交：只允许对「已完成」项验收（计划 status='completed'、任务 status ∈ 已完成集合），
 // 与渲染层 matchesTaskStatusFilter 的「已完成」语义一致，不新增 status 取值。
 const ACCEPTABLE_PLAN_STATUS = 'completed';
 const ACCEPTABLE_TASK_STATUSES = Object.freeze(['completed', 'done', 'passed']);
+const REDO_SUPPLEMENT_MAX_LENGTH = 2000;
 
 /** 单项人工验收：对已完成的计划/任务置 accepted_at（不改变执行态 status），并记事件；重复验收覆盖时间戳。 */
 function acceptItem(service, projectId, { targetType, id } = {}) {
@@ -21,6 +23,60 @@ function unacceptItem(service, projectId, { targetType, id } = {}) {
   const result = writeAcceptance(service, targetType, target, null, projectId, updatedAt);
   service.emitUpdate(projectId);
   return result;
+}
+
+/** 验收重做：清理人工验收态，将已完成/已验收目标退回 pending，并记录 plan.redo/task.redo 事件。 */
+function redoAcceptanceItem(service, projectId, { targetType, id, supplement } = {}) {
+  const target = acceptanceTargetRow(service, projectId, targetType, id, { requireCompleted: false });
+  const normalizedSupplement = normalizeRedoSupplement(supplement);
+  ensureRedoTargetAllowed(service, projectId, targetType, target);
+  const updatedAt = nowIso();
+
+  if (targetType === 'plan') {
+    const updated = planLifecycle.reExecutePlan(service, projectId, target.id, {
+      updatedAt,
+      clearAcceptedAt: true,
+      eventType: 'plan.redo',
+      eventMessage: `plan #${target.id} 已退回重做`,
+      eventMeta: {
+        targetType: 'plan',
+        id: target.id,
+        planId: target.id,
+        taskId: null,
+        previousStatus: target.status,
+        previousAcceptedAt: target.accepted_at || null,
+        previousValidationPassed: Number(target.validation_passed || 0),
+        supplement: normalizedSupplement,
+      },
+    });
+    return {
+      targetType: 'plan',
+      id: target.id,
+      planId: target.id,
+      status: updated?.status || 'pending',
+      accepted_at: updated?.accepted_at ?? null,
+      supplement: normalizedSupplement,
+    };
+  }
+
+  const updated = planLifecycle.redoTask(service, projectId, target.id, {
+    updatedAt,
+    eventType: 'task.redo',
+    eventMessage: `${target.task_key} 已退回重做`,
+    eventMeta: {
+      supplement: normalizedSupplement,
+      previousAcceptedAt: target.accepted_at || null,
+    },
+  });
+  return {
+    targetType: 'task',
+    id: target.id,
+    taskId: target.id,
+    planId: target.plan_id,
+    status: updated?.status || 'pending',
+    accepted_at: updated?.accepted_at ?? null,
+    supplement: normalizedSupplement,
+  };
 }
 
 /** 校验收目标：按 targetType 路由 plan/task、校验归属当前项目与「已完成」态；不存在或不可验收时抛中文错误。 */
@@ -50,6 +106,61 @@ function acceptanceTargetRow(service, projectId, targetType, id, options = {}) {
     return task;
   }
   throw new Error('验收目标类型无效');
+}
+
+function ensureRedoTargetAllowed(service, projectId, targetType, target) {
+  if (targetType === 'plan') {
+    if (isPlanRedoTargetRunning(service, projectId, target.id, target.status)) {
+      throw new Error('计划正在运行中，不能重做');
+    }
+    if (target.status !== ACCEPTABLE_PLAN_STATUS && !target.accepted_at) {
+      throw new Error('仅可重做已完成或已验收的计划/任务');
+    }
+    if (target.status !== ACCEPTABLE_PLAN_STATUS) {
+      throw new Error('仅可重做已完成或已验收的计划/任务');
+    }
+    return;
+  }
+
+  if (isTaskRedoTargetRunning(service, projectId, target)) {
+    throw new Error('任务正在运行中，不能重做');
+  }
+  if (!ACCEPTABLE_TASK_STATUSES.includes(target.status) && !target.accepted_at) {
+    throw new Error('仅可重做已完成或已验收的计划/任务');
+  }
+}
+
+function isPlanRedoTargetRunning(service, projectId, planId, status) {
+  if (String(status || '') === 'running') return true;
+  if (service.db.get('SELECT 1 FROM plan_tasks WHERE plan_id = ? AND status = ? LIMIT 1', [planId, 'running'])) {
+    return true;
+  }
+  return hasActiveOperation(service, projectId, (operation) => Number(operation?.planId) === Number(planId));
+}
+
+function isTaskRedoTargetRunning(service, projectId, task) {
+  if (String(task?.status || '') === 'running') return true;
+  const plan = service.db.get('SELECT status FROM plans WHERE id = ? AND project_id = ?', [task.plan_id, projectId]);
+  if (String(plan?.status || '') === 'running') return true;
+  return hasActiveOperation(service, projectId, (operation) =>
+    Number(operation?.taskId) === Number(task.id) || Number(operation?.planId) === Number(task.plan_id),
+  );
+}
+
+function hasActiveOperation(service, projectId, predicate) {
+  const runtime = typeof service.existingRuntime === 'function' ? service.existingRuntime(projectId) : null;
+  if (!runtime?.activeOperations) return false;
+  for (const operation of runtime.activeOperations.values()) {
+    if (predicate(operation)) return true;
+  }
+  return false;
+}
+
+function normalizeRedoSupplement(value) {
+  if (value == null) return '';
+  const normalized = String(value).replace(/\r\n?/g, '\n').trim();
+  if (!normalized) return '';
+  return Array.from(normalized).slice(0, REDO_SUPPLEMENT_MAX_LENGTH).join('');
 }
 
 /**
@@ -186,11 +297,14 @@ function normalizeAcceptanceTargets(targets, emptyMessage) {
 module.exports = {
   acceptItem,
   unacceptItem,
+  redoAcceptanceItem,
   acceptanceTargetRow,
   writeAcceptance,
   acceptItems,
   unacceptItems,
   normalizeAcceptanceTargets,
+  normalizeRedoSupplement,
   ACCEPTABLE_PLAN_STATUS,
   ACCEPTABLE_TASK_STATUSES,
+  REDO_SUPPLEMENT_MAX_LENGTH,
 };

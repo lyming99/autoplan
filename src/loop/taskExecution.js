@@ -23,9 +23,12 @@ const { taskScopeText } = require('./planParser');
 const { normalizeRelative } = require('./workspaceFiles');
 const { agentCliSessionContextFields } = require('./agentCliRunner');
 const {
+  shouldForceNewTaskSession,
   taskAgentCliSessionId,
+  taskProjectPromptLines,
   taskResultSessionId,
   taskResultSessionContextFields,
+  timeoutRetrySessionContextFields,
 } = require('./taskSessionContext');
 const planAgentCli = require('./planAgentCli');
 
@@ -33,6 +36,7 @@ const { BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR } = planAgentCli;
 
 /** 退避重试序列：首次等待 5s，逐次递增，上限 30s */
 const TASK_RETRY_BACKOFF_SECONDS = Object.freeze([5, 10, 20, 30]);
+const TASK_AGENT_CLI_TIMEOUT_MS = 30 * 60 * 1000;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -40,9 +44,98 @@ function sleep(ms) {
 
 function isEnvironmentBlocking(result) {
   const failure = classifyExecutionFailure(result);
+  if (failure.timedOut) return false;
   return failure.environmentBlocked === true;
 }
 
+function taskTimeoutFailureMeta(result = {}) {
+  if (!result?.timedOut) return {};
+  const timeoutMs = Number(result.timeoutMs);
+  return {
+    timedOut: true,
+    ...(Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? { timeoutMs, timeoutMinutes: Math.round((timeoutMs / 60000) * 100) / 100 }
+      : {}),
+  };
+}
+
+function formatPlanProgressTimestamp(value) {
+  const text = String(value || '');
+  const isoMatch = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})(?:\.\d+)?Z?$/.exec(text);
+  if (isoMatch) return `${isoMatch[1]} ${isoMatch[2]}`;
+
+  const date = new Date(text);
+  if (!Number.isNaN(date.getTime())) {
+    const pad = (part) => String(part).padStart(2, '0');
+    return [
+      date.getFullYear(),
+      pad(date.getMonth() + 1),
+      pad(date.getDate()),
+    ].join('-') + ` ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+  }
+
+  return text.replace('T', ' ').replace(/\.\d+Z?$/, '').replace(/Z$/, '').slice(0, 19);
+}
+
+function redoSupplementText(value) {
+  if (value == null) return '';
+  return String(value).replace(/\r\n?/g, '\n').trim();
+}
+
+function eventMeta(row) {
+  if (!row?.meta) return {};
+  if (typeof row.meta === 'object') return row.meta;
+  try {
+    return JSON.parse(row.meta);
+  } catch {
+    return {};
+  }
+}
+
+function redoContextForTask(service, plan, task) {
+  if (!service?.db || typeof service.db.all !== 'function' || !plan?.project_id || !plan?.id || !task?.id) return [];
+  let rows = [];
+  try {
+    rows = service.db.all(
+      `SELECT type, message, meta, created_at
+       FROM events
+       WHERE project_id = ? AND type IN ('task.redo', 'plan.redo')
+       ORDER BY id DESC
+       LIMIT 50`,
+      [plan.project_id],
+    );
+  } catch {
+    return [];
+  }
+  let taskContext = null;
+  let planContext = null;
+  for (const row of rows || []) {
+    const meta = eventMeta(row);
+    const supplement = redoSupplementText(meta.supplement);
+    if (!supplement) continue;
+    if (!taskContext && !planContext && row.type === 'task.redo') {
+      const metaTaskId = Number(meta.taskId || meta.id || 0);
+      if (metaTaskId === Number(task.id)) taskContext = { label: '任务重做补充内容', supplement };
+    }
+    if (!planContext && row.type === 'plan.redo') {
+      const metaPlanId = Number(meta.planId || meta.id || 0);
+      if (metaPlanId === Number(plan.id)) planContext = { label: '计划重做补充内容', supplement };
+    }
+    if (taskContext && planContext) break;
+  }
+  return [taskContext, planContext].filter(Boolean);
+}
+
+function redoContextPromptLines(contexts) {
+  const lines = [];
+  for (const context of contexts || []) {
+    lines.push(`- ${context.label}：`);
+    for (const line of context.supplement.split('\n')) {
+      lines.push(`  ${line}`);
+    }
+  }
+  return lines;
+}
 function planExecutionForTask(service, plan) {
   const config = planAgentCli.planExecutionConfig(service, plan);
   return {
@@ -76,11 +169,13 @@ async function processPlan(service, helpers, workspace, plan) {
       service.setPhase(plan.project_id, 'execute-task');
       let attempt = 0;
       let result;
+      let forceNewSession = false;
       do {
         if (!taskTargetExists(service, plan, firstPendingTask)) return;
-        result = await service.executeTask(workspace, plan, firstPendingTask);
+        result = await service.executeTask(workspace, plan, firstPendingTask, { forceNewSession });
         if (!taskTargetExists(service, plan, firstPendingTask) || result?.cancelled) return;
         if (result.exitCode === 0) break;
+        if (result?.timedOut) forceNewSession = true;
         attempt++;
         if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
           const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
@@ -92,6 +187,7 @@ async function processPlan(service, helpers, workspace, plan) {
               taskKey: firstPendingTask.task_key,
               attempt,
               delaySeconds,
+              ...timeoutRetrySessionContextFields({ forceNewSession }),
             });
           await sleep(delaySeconds * 1000);
           if (!taskTargetExists(service, plan, firstPendingTask)) return;
@@ -193,17 +289,19 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
         let result = null;
         try {
           let attempt = 0;
+          let forceNewSession = false;
           do {
             if (!taskTargetExists(service, plan, task)) {
               result = cancelledTaskResult();
               break;
             }
-            result = await service.executeTask(workspace, plan, task, { parallel: false });
+            result = await service.executeTask(workspace, plan, task, { parallel: false, forceNewSession });
             if (!taskTargetExists(service, plan, task) || result?.cancelled) {
               result = cancelledTaskResult(result);
               break;
             }
             if (result.exitCode === 0) break;
+            if (result?.timedOut) forceNewSession = true;
             attempt++;
             if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
               const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
@@ -215,6 +313,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
                   taskKey: task.task_key,
                   attempt,
                   delaySeconds,
+                  ...timeoutRetrySessionContextFields({ forceNewSession }),
                 });
               await sleep(delaySeconds * 1000);
               if (!taskTargetExists(service, plan, task)) {
@@ -267,17 +366,19 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
         let result = null;
         try {
           let attempt = 0;
+          let forceNewSession = false;
           do {
             if (!taskTargetExists(service, plan, task)) {
               result = cancelledTaskResult();
               break;
             }
-            result = await service.executeTask(workspace, plan, task, { parallel: true });
+            result = await service.executeTask(workspace, plan, task, { parallel: true, forceNewSession });
             if (!taskTargetExists(service, plan, task) || result?.cancelled) {
               result = cancelledTaskResult(result);
               break;
             }
             if (result.exitCode === 0) break;
+            if (result?.timedOut) forceNewSession = true;
             attempt++;
             if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
               const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
@@ -289,6 +390,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
                   taskKey: task.task_key,
                   attempt,
                   delaySeconds,
+                  ...timeoutRetrySessionContextFields({ forceNewSession }),
                 },
               );
               await sleep(delaySeconds * 1000);
@@ -370,36 +472,44 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
     const isTaskCodexProvider = taskAgentCliContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER;
     const isTaskClaudeProvider = taskAgentCliContext.agentCliProvider === 'claude';
     const isTaskOpenCodeProvider = taskAgentCliContext.agentCliProvider === 'opencode';
-    const taskSessionId = isTaskCodexProvider
-      ? operationCodexSessionId(startedTask)
-      : isTaskClaudeProvider
-        ? taskAgentCliSessionId(startedTask)
-        : '';
-    const planSessionId = (isTaskCodexProvider || isTaskClaudeProvider) && !options.parallel
+    const forceNewSession = shouldForceNewTaskSession(options);
+    const timeoutRetrySessionContext = timeoutRetrySessionContextFields(options);
+    if (forceNewSession && isTaskOpenCodeProvider && typeof service.updatePlanAgentCliSession === 'function') {
+      service.updatePlanAgentCliSession(plan.id, '', startedAt);
+    }
+    const taskSessionId = !forceNewSession
+      ? (isTaskCodexProvider
+          ? operationCodexSessionId(startedTask)
+          : isTaskClaudeProvider
+            ? taskAgentCliSessionId(startedTask)
+            : '')
+      : '';
+    const planSessionId = !forceNewSession && (isTaskCodexProvider || isTaskClaudeProvider) && !options.parallel
       ? (isTaskCodexProvider
           ? service.previousPlanCodexSessionId(plan.id, startedTask)
           : service.previousPlanAgentCliSessionId(plan.id, startedTask))
       : '';
-    const openCodeSessionId = isTaskOpenCodeProvider ? service.planAgentCliSessionId(plan.id) : '';
+    const openCodeSessionId = !forceNewSession && isTaskOpenCodeProvider ? service.planAgentCliSessionId(plan.id) : '';
     const existingSessionId = taskSessionId || planSessionId;
     const inheritedPlanSession = Boolean(!taskSessionId && planSessionId);
     const startedSessionContext = isTaskCodexProvider
       ? codexSessionContextFields({
           codexSessionId: existingSessionId,
           codexSessionMode: existingSessionId ? 'resume' : 'new',
-          codexSessionState: inheritedPlanSession ? 'plan-resume' : undefined,
+          codexSessionState: forceNewSession ? timeoutRetrySessionContext.taskSessionState : (inheritedPlanSession ? 'plan-resume' : undefined),
         })
       : isTaskClaudeProvider
         ? agentCliSessionContextFields('claude', {
             sessionId: existingSessionId,
             requestedId: existingSessionId,
             mode: existingSessionId ? 'resume' : 'new',
-            state: inheritedPlanSession ? 'plan-resume' : undefined,
+            state: forceNewSession ? timeoutRetrySessionContext.taskSessionState : (inheritedPlanSession ? 'plan-resume' : undefined),
           })
       : isTaskOpenCodeProvider
         ? opencodeSessionContextFields({
             opencodeSessionId: openCodeSessionId,
             opencodeSessionMode: openCodeSessionId ? 'resume' : 'new',
+            opencodeSessionState: forceNewSession ? timeoutRetrySessionContext.taskSessionState : undefined,
           })
       : {};
     service.addTaskLifecycleEvent(plan.project_id, TASK_EVENT_TYPES.STARTED, startedTask, {
@@ -409,6 +519,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       status: TASK_EVENT_STATUS.RUNNING,
       startedAt,
       ...startedSessionContext,
+      ...timeoutRetrySessionContext,
     });
     const planFile = path.join(workspace, plan.file_path);
     clearTaskCompletionMarkInPlan(planFile, startedTask);
@@ -424,12 +535,17 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       '- 不输出完整 diff、源码全文或长文件列表',
       '- 中文文件读写使用 UTF-8',
     ];
+    if (forceNewSession) {
+      completionRules.unshift('- 当前任务上次执行超时，本次必须开启新的上下文窗口，不要恢复旧会话');
+    }
     if (inheritedPlanSession) {
       completionRules.unshift(`- 当前任务已恢复同一 plan 前序任务的 ${agentCliProviderDisplayName(taskAgentCliContext.agentCliProvider)} 会话，请沿用已有分析结论和修改背景，避免重新从零梳理`);
     }
     if (options.parallel) {
       completionRules.unshift('- 当前为并发执行模式，不要读写其它任务的 scope');
     }
+    const projectPromptLines = taskProjectPromptLines(planAgentCli.planProjectPrompt(service, plan));
+    const redoContextLines = redoContextPromptLines(redoContextForTask(service, plan, startedTask));
     const prompt = [
       '你是开发执行者，在无人值守模式下工作：禁止反问用户、禁止请求确认或补充信息、禁止输出“请告诉我…/是否需要…”之类等待回复的话；遇到不确定一律自行从代码推断，按最合理的工程方案直接推进，不要停下来等待输入。',
       `请只执行指定任务 ${task.task_key}，不要提前执行其它任务，也不要顺手处理其它 checkbox。`,
@@ -438,6 +554,8 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       `指定任务：${task.raw_line}`,
       `任务 scope：${task.scope || taskScopeText(task) || 'unknown'}`,
       '',
+      ...projectPromptLines,
+      ...(redoContextLines.length ? ['验收重做补充内容：', ...redoContextLines, ''] : []),
       '完成后必须：',
       ...completionRules,
     ].join('\n');
@@ -448,9 +566,11 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         planId: plan.id,
         taskId: task.id,
         parallel: Boolean(options.parallel),
+        timeoutMs: TASK_AGENT_CLI_TIMEOUT_MS,
         ...execution.meta,
         ...taskAgentCliContext,
         ...startedSessionContext,
+        ...timeoutRetrySessionContext,
         ...(isTaskCodexProvider && existingSessionId ? { codexSessionId: existingSessionId } : {}),
         ...(isTaskClaudeProvider && existingSessionId ? { agentCliSessionId: existingSessionId } : {}),
         ...(isTaskCodexProvider && inheritedPlanSession ? { codexSessionState: 'plan-resume' } : {}),
@@ -488,7 +608,36 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       return { ...result, exitCode: -1, cancelled: true };
     }
     const capturedSessionId = taskResultSessionId(result);
-    if (capturedSessionId) {
+    const timeoutMeta = taskTimeoutFailureMeta(result);
+    if (result.timedOut) {
+      const timeoutLabel = timeoutMeta.timeoutMinutes ? `${timeoutMeta.timeoutMinutes} 分钟` : '任务级超时阈值';
+      if (typeof service.addEvent === 'function') {
+        service.addEvent(plan.project_id, 'task.timeout',
+          `任务 ${task.task_key} 执行超过 ${timeoutLabel}，已终止；后续重试将开启新上下文`,
+          {
+            ...execution.meta,
+            ...agentCliContextFields(result, { defaultProvider: true }),
+            planId: plan.id,
+            taskId: task.id,
+            taskKey: task.task_key,
+            taskTitle: task.title,
+            status: TASK_EVENT_STATUS.FAILED,
+            exitCode: result.exitCode,
+            log: result.logFile,
+            ...timeoutMeta,
+            willRetryWithNewSession: true,
+            reopenContextOnRetry: true,
+            ...timeoutRetrySessionContextFields({ forceNewSession: true }),
+          });
+      }
+      if (typeof service.clearTaskAgentCliSessions === 'function') {
+        service.clearTaskAgentCliSessions(task.id, finishedAt);
+      }
+      if (result.agentCliProvider === 'opencode' && typeof service.updatePlanAgentCliSession === 'function') {
+        service.updatePlanAgentCliSession(plan.id, '', finishedAt);
+      }
+    }
+    if (capturedSessionId && !result.timedOut) {
       if (result.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER) {
         service.updateTaskCodexSession(task.id, capturedSessionId, finishedAt);
       } else if (result.agentCliProvider === 'claude') {
@@ -507,7 +656,8 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         exitCode: result.exitCode,
         log: result.logFile,
         ...failure,
-        ...taskResultSessionContextFields(result),
+        ...timeoutMeta,
+        ...(result.timedOut ? {} : taskResultSessionContextFields(result)),
       });
       await service.runHookScripts(plan.project_id, 'on:fail', {
         failedStage: 'task',
@@ -517,6 +667,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         exitCode: result.exitCode,
         log: result.logFile || null,
         ...failure,
+        ...timeoutMeta,
       });
     }
     return result;
@@ -603,17 +754,62 @@ function markTaskCompletedInPlan(service, helpers, workspace, planFile, task, re
       content = content.replace(checkboxRe, '$1x$3');
     }
 
-    const note = `- ${task.task_key} AutoPlan 完成：${nowIso()}${relativeLog ? `；日志：${relativeLog}` : ''}`;
-    const noteRe = new RegExp(`^\\s*-\\s+${key}\\s+AutoPlan 完成：.*$`, 'm');
-    if (noteRe.test(content)) {
-      content = content.replace(noteRe, note);
-    } else if (/##\s*进度区/.test(content)) {
-      content = `${content.trimEnd()}\n${note}\n`;
-    } else {
-      content = `${content.trimEnd()}\n\n## 进度区\n${note}\n`;
-    }
+    const noteTimestamp = formatPlanProgressTimestamp(nowIso());
+    const note = `- ${task.task_key} AutoPlan 完成：${noteTimestamp}${relativeLog ? `；日志：${relativeLog}` : ''}`;
+    content = upsertProgressLog(content, task.task_key, note);
     fs.writeFileSync(planFile, content, 'utf8');
   }
+
+function upsertProgressLog(content, taskKey, note) {
+  const headingRe = /^##\s*进度区.*$/m;
+  const headingMatch = headingRe.exec(content);
+  if (!headingMatch) {
+    return `${content.trimEnd()}\n\n## 进度区\n\n${note}\n`;
+  }
+
+  const headingLineEnd = content.indexOf('\n', headingMatch.index);
+  const bodyStart = headingLineEnd === -1 ? content.length : headingLineEnd + 1;
+  const prefix = headingLineEnd === -1
+    ? `${content.slice(0, bodyStart)}\n`
+    : content.slice(0, bodyStart);
+  const rest = content.slice(bodyStart);
+  const nextSectionMatch = /^##\s+\S.*$/m.exec(rest);
+  const sectionBody = nextSectionMatch ? rest.slice(0, nextSectionMatch.index) : rest;
+  const suffix = nextSectionMatch ? rest.slice(nextSectionMatch.index) : '';
+
+  return `${prefix}${progressSectionWithNote(sectionBody, taskKey, note)}${suffix}`;
+}
+
+function progressSectionWithNote(sectionBody, taskKey, note) {
+  const noteRe = new RegExp(`^\\s*-\\s+${escapeRegExp(String(taskKey || ''))}\\s+AutoPlan 完成：.*$`);
+  const lines = String(sectionBody || '').replace(/\r\n/g, '\n').split('\n');
+  const kept = [];
+  let replaced = false;
+
+  for (const rawLine of lines) {
+    const line = rawLine.replace(/\r$/, '');
+    if (isLegacyProgressTableLine(line)) continue;
+    if (noteRe.test(line)) {
+      if (!replaced) {
+        kept.push(note);
+        replaced = true;
+      }
+      continue;
+    }
+    kept.push(line);
+  }
+
+  if (!replaced) kept.push(note);
+  const body = kept.join('\n').trim();
+  return body ? `\n${body}\n` : `\n${note}\n`;
+}
+
+function isLegacyProgressTableLine(line) {
+  const trimmed = String(line || '').trim();
+  return /^\|\s*任务\s*\|\s*状态\s*\|\s*备注\s*\|\s*$/.test(trimmed)
+    || /^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*$/.test(trimmed)
+    || /^\|\s*P\d+\s*\|/.test(trimmed);
+}
 
 function escapeRegExp(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -656,6 +852,7 @@ module.exports = {
   previousPlanCodexSessionId,
   processPlan,
   refreshPlanProgress,
+  TASK_AGENT_CLI_TIMEOUT_MS,
   TASK_RETRY_BACKOFF_SECONDS,
 };
 

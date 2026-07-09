@@ -1,0 +1,57 @@
+{
+  "title": "Reject duplicate MCP-submitted requirements",
+  "summary": "Feedback #42 requires AutoPlan to identify and reject duplicate requirements sent through MCP. The current MCP create_requirement and create_feedback tools delegate to the shared IntakeService create paths, which always insert new rows. The plan is to add shared duplicate-intake detection before persistence, expose a clear MCP error response that points to the existing record, and cover the behavior with regression tests while preserving normal unique requirement and feedback creation.",
+  "tasks": [
+    {
+      "title": "Add shared duplicate intake detection before insert",
+      "scope": [
+        "src/intakeService.js"
+      ],
+      "acceptance": [
+        "createRequirement rejects a new requirement when the same project already has a non-closed requirement with equivalent normalized title and body.",
+        "createFeedback rejects a new feedback item when the same project and requirement association already has a non-closed feedback item with equivalent normalized title and body.",
+        "Duplicate comparison ignores insignificant whitespace differences such as leading/trailing spaces, repeated spaces, and CRLF versus LF line endings, but does not collapse genuinely different text.",
+        "Closed duplicate records do not block a new submission, so users can intentionally re-open previously closed work by creating a fresh intake.",
+        "When a duplicate is rejected, no new intake row, attachment row, creation event, or autoRun loop start is produced."
+      ]
+    },
+    {
+      "title": "Return a clear MCP duplicate rejection response",
+      "scope": [
+        "src/mcpTools.js",
+        "src/mcpToolDocs.js"
+      ],
+      "acceptance": [
+        "MCP create_requirement returns isError true for duplicate input and the structured error includes a stable duplicate code plus the existing requirement id.",
+        "MCP create_feedback returns isError true for duplicate input and the structured error includes a stable duplicate code plus the existing feedback id.",
+        "The duplicate rejection message is human-readable and tells the caller that the requirement or feedback already exists instead of returning a generic validation failure.",
+        "Successful unique create_requirement and create_feedback responses keep the existing structuredContent shape, including intake summary, openable link, and snapshot summary.",
+        "MCP tool descriptions or generated docs make it clear that duplicate create requests are rejected."
+      ]
+    },
+    {
+      "title": "Cover duplicate MCP submissions with regression tests",
+      "scope": [
+        "src/intakeService.test.js",
+        "src/mcpTools.test.js"
+      ],
+      "acceptance": [
+        "Tests cover duplicate requirement rejection through the shared service path, including whitespace-normalized body and title comparison.",
+        "Tests cover duplicate feedback rejection through the shared service path, including requirementId-aware matching.",
+        "Tests verify rejected duplicates do not save attachments, add creation events, or start the project loop.",
+        "MCP tests verify duplicate create_requirement and create_feedback calls return isError true with the expected duplicate code and existing record id.",
+        "Tests verify non-duplicates and closed historical records can still be created normally."
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "Static checks pass with no syntax or TypeScript errors.",
+      "MCP create_requirement and create_feedback reject duplicate non-closed records in the same project before any persistence side effects occur.",
+      "MCP duplicate rejection responses are structured, human-readable, and include enough existing-record context for callers to avoid retry loops.",
+      "Unique intake creation, closed-record re-submission, attachments, events, snapshots, and autoRun behavior remain compatible with existing flows.",
+      "The rendered AutoPlan Markdown keeps a `## \u4efb\u52a1\u62c6\u89e3` section with continuous single-line checkbox task rows and a final validation task generated from finalValidation."
+    ]
+  }
+}

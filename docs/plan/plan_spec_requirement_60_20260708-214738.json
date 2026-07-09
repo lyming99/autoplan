@@ -1,0 +1,92 @@
+{
+  "title": "验收模块支持重做并附加说明",
+  "summary": "当前验收模块已支持对已完成计划和任务进行人工验收、取消验收以及批量操作，但当人工验收不通过时，用户缺少从验收页直接发起返工的入口，也无法把不通过原因或补充要求传递给后续执行。需要在验收模块增加“重做”能力：对待验收或已验收的计划/任务可触发返工，允许输入可选补充内容，后端清理人工验收态并把目标重新放回可执行队列，同时记录事件并保持现有验收/取消验收行为不回归。",
+  "tasks": [
+    {
+      "title": "补齐验收重做的后端语义和事件记录",
+      "scope": [
+        "src/loop/acceptance.js",
+        "src/loopService.js",
+        "src/loop/planLifecycle.js",
+        "src/loop/acceptance.test.js",
+        "src/loop/planLifecycle.test.js"
+      ],
+      "acceptance": [
+        "计划级重做仅允许当前项目内已完成或已验收的计划触发，触发后清空 accepted_at、validation_passed，并复用或扩展现有 reExecutePlan 逻辑把计划重新置为 pending",
+        "任务级重做仅允许当前项目内已完成或已验收的任务触发，触发后清空 accepted_at，并将目标任务置为 pending，所属计划回到可继续执行状态",
+        "补充内容为空时可正常重做；补充内容非空时会被规范化、限制长度，并写入重做事件 meta，供后续执行和排查使用",
+        "重做操作记录 plan.redo 或 task.redo 事件，事件包含 targetType、id、planId、taskId、previousStatus、supplement 等关键信息",
+        "非法目标、跨项目目标、未完成目标、正在运行中的目标会被拒绝并给出中文错误，不修改数据库"
+      ]
+    },
+    {
+      "title": "打通验收重做 IPC 与渲染进程 API",
+      "scope": [
+        "src/main.js",
+        "src/preload.js",
+        "src/renderer/types.ts",
+        "src/renderer/hooks/useWorkspaceController.ts"
+      ],
+      "acceptance": [
+        "新增 acceptance:redo 或等价 IPC 入口，入参包含 projectId、targetType、id、可选 supplement",
+        "主进程对 projectId、record id、targetType 和 supplement 做与既有验收入口一致的规范化与错误处理",
+        "preload 暴露 redoAcceptanceItem 或等价安全 API，TypeScript 类型包含补充内容字段",
+        "useWorkspaceController 提供验收页可调用的 redo 回调，调用成功后刷新 snapshot，失败时沿用现有 showError 行为"
+      ]
+    },
+    {
+      "title": "在验收页加入重做交互和补充内容输入",
+      "scope": [
+        "src/renderer/components/workspace/AcceptanceView.tsx",
+        "src/renderer/styles/workspace.css",
+        "src/renderer/components/icons.tsx"
+      ],
+      "acceptance": [
+        "待验收计划和待验收任务均显示重做入口，用户可直接发起返工而不需要切换到计划与任务页",
+        "已完成验收区域的计划和任务也可重做，触发前会表达其将取消验收并回到执行队列的含义",
+        "点击重做后展示轻量弹层或行内编辑区域，允许填写可选补充内容；空内容也可以提交重做",
+        "提交、取消、加载中、错误态都有明确 UI 状态，重复点击不会发起多次请求",
+        "多选批量验收和批量取消验收入口保持现有行为，不被重做输入状态干扰"
+      ]
+    },
+    {
+      "title": "让补充内容进入后续返工上下文",
+      "scope": [
+        "src/loop/taskExecution.js",
+        "src/loop/planLifecycle.js",
+        "src/loop/taskExecution.test.js",
+        "src/loop/planLifecycle.test.js"
+      ],
+      "acceptance": [
+        "任务级重做带补充内容时，后续执行该任务的提示词能包含人工验收不通过的补充说明",
+        "计划级重做带补充内容时，计划后续执行或最终验收能读取到本次重做说明，避免丢失验收反馈",
+        "多次重做同一目标时，后一次补充内容不会破坏历史事件记录，执行上下文优先使用最近一次有效说明",
+        "无补充内容的重做保持现有任务执行提示词和计划重跑逻辑，避免引入额外噪音"
+      ]
+    },
+    {
+      "title": "补齐验收重做的前端和后端测试覆盖",
+      "scope": [
+        "src/loop/acceptance.test.js",
+        "src/loop/planLifecycle.test.js",
+        "src/renderer/components/workspace/AcceptanceView.test.tsx",
+        "src/renderer/pages/WorkspacePage.test.tsx"
+      ],
+      "acceptance": [
+        "后端测试覆盖计划重做、任务重做、带补充内容、空补充内容、非法目标、跨项目目标和运行中拒绝场景",
+        "后端测试确认重做会清空 accepted_at，并把计划或任务重新置为可执行状态，同时保留既有验收/取消验收测试通过",
+        "前端测试覆盖验收页重做按钮、补充内容输入、提交回调参数，以及待验收和已验收区域均可触发重做",
+        "WorkspacePage 测试覆盖控制器将重做回调传入 AcceptanceView，并保持现有验收相关 props 不变"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "TypeScript 类型检查、主进程脚本语法检查和文件长度检查全部通过",
+      "Node 测试套件全部通过，覆盖验收重做、补充内容传递、事件记录、前端入口和既有验收/取消验收回归",
+      "手动验证验收模块中待验收与已验收的计划/任务均能通过重做入口返回执行队列，补充内容会出现在事件流或后续执行上下文中",
+      "只生成并使用 PlanSpec JSON，由 AutoPlan 渲染最终 Markdown plan 文件；本次计划生成不修改业务代码"
+    ]
+  }
+}

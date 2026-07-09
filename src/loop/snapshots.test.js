@@ -331,6 +331,86 @@ describe('snapshot plan generation duration', () => {
     assert.equal(findSnapshotRow(result.plans, 41).plan_generation_duration_ms, 0);
   });
 });
+
+describe('snapshot plan execution Codex reasoning', () => {
+  it('exposes current project state and plan execution effort without leaking other projects', () => {
+    const db = createSnapshotDb({
+      plans: [
+        planRow({
+          id: 50,
+          project_id: 1,
+          plan_execution_provider: 'codex',
+          plan_execution_codex_reasoning_effort: 'xhigh',
+        }),
+        planRow({
+          id: 51,
+          project_id: 2,
+          plan_execution_provider: 'codex',
+          plan_execution_codex_reasoning_effort: 'low',
+        }),
+      ],
+    });
+    const service = createSnapshotService({
+      db,
+      projects: [
+        { id: 1, name: 'Project A', workspace_path: 'D:/workspace-a', updated_at: '2026-07-03T00:00:00.000Z' },
+        { id: 2, name: 'Project B', workspace_path: 'D:/workspace-b', updated_at: '2026-07-03T00:00:00.000Z' },
+      ],
+      status(projectId) {
+        return Number(projectId) === 1
+          ? {
+              agent_cli_provider: 'codex',
+              codex_reasoning_effort: 'medium',
+              plan_execution_provider: 'codex',
+              plan_execution_codex_reasoning_effort: 'xhigh',
+            }
+          : {
+              agent_cli_provider: 'codex',
+              codex_reasoning_effort: 'medium',
+              plan_execution_provider: 'codex',
+              plan_execution_codex_reasoning_effort: 'low',
+            };
+      },
+    });
+
+    const result = snapshots.snapshot(service, {}, 1);
+
+    assert.equal(result.state.plan_execution_codex_reasoning_effort, 'xhigh');
+    assert.equal(findSnapshotRow(result.plans, 50).plan_execution_codex_reasoning_effort, 'xhigh');
+    assert.equal(findSnapshotRow(result.plans, 51), undefined);
+  });
+
+  it('copies plan execution Codex effort from active operation context', () => {
+    const activeOperation = {
+      operationType: 'execute-task',
+      projectId: 1,
+      planId: 50,
+      taskId: 500,
+      label: 'task-500',
+      startedAt: '2026-07-03T00:00:00.000Z',
+      planExecutionProvider: 'codex',
+      planExecutionCodexReasoningEffort: 'high',
+      logBuffer: 'running',
+    };
+    const db = createSnapshotDb();
+    const service = createSnapshotService({
+      db,
+      runtime: {
+        activeOperation,
+        activeOperations: new Map([
+          ['current', activeOperation],
+          ['other', { ...activeOperation, projectId: 2, planExecutionCodexReasoningEffort: 'low' }],
+        ]),
+      },
+    });
+
+    const result = snapshots.snapshot(service, {}, 1);
+
+    assert.equal(result.activeOperation.codexReasoningEffort, 'high');
+    assert.equal(result.activeOperations.length, 1);
+    assert.equal(result.activeOperations[0].codexReasoningEffort, 'high');
+  });
+});
 describe('snapshot scan_files payload contract', () => {
   it('keeps regular snapshots bounded while exposing a scan summary', () => {
     const baseDb = createSnapshotDb();
@@ -468,6 +548,7 @@ function createSnapshotService({
   db,
   projects = [{ id: 1, name: 'Project', workspace_path: 'D:/workspace', updated_at: '2026-07-03T00:00:00.000Z' }],
   runtime = null,
+  status = null,
 } = {}) {
   return {
     db,
@@ -478,6 +559,7 @@ function createSnapshotService({
       return projects.find((project) => Number(project.id) === Number(projectId)) || null;
     },
     status(projectId) {
+      const overrides = typeof status === 'function' ? status(projectId) : (status || {});
       return {
         project_id: projectId,
         running: 0,
@@ -485,6 +567,7 @@ function createSnapshotService({
         interval_seconds: 5,
         validation_command: '',
         updated_at: '2026-07-03T00:00:00.000Z',
+        ...overrides,
       };
     },
     existingRuntime(projectId) {
@@ -536,6 +619,11 @@ function planRow(overrides = {}) {
     completed_tasks: overrides.completed_tasks ?? 0,
     validation_passed: overrides.validation_passed ?? 0,
     plan_generation_duration_ms: overrides.plan_generation_duration_ms ?? 0,
+    plan_execution_strategy: overrides.plan_execution_strategy ?? null,
+    plan_execution_provider: overrides.plan_execution_provider ?? null,
+    plan_execution_command: overrides.plan_execution_command ?? null,
+    plan_execution_model: overrides.plan_execution_model ?? null,
+    plan_execution_codex_reasoning_effort: overrides.plan_execution_codex_reasoning_effort ?? null,
     agent_cli_provider: overrides.agent_cli_provider ?? null,
     agent_cli_command: overrides.agent_cli_command || '',
     codex_reasoning_effort: overrides.codex_reasoning_effort ?? null,

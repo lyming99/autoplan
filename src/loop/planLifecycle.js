@@ -15,6 +15,16 @@ const PLAN_RUNNING_STATUS = 'running';
 const PLAN_INTERRUPTED_STATUS = 'interrupted';
 const PLAN_UNFINISHED_TASK_STATUSES = Object.freeze(['pending', TASK_EVENT_STATUS.RUNNING]);
 const PLAN_COMPLETED_STATUSES = Object.freeze(['completed']);
+const TASK_REDO_COMPLETED_STATUSES = Object.freeze(['completed', 'done', 'passed']);
+const PLAN_AUTO_RUNNABLE_STATUSES = Object.freeze(['pending', PLAN_RUNNING_STATUS, 'ready_for_validation']);
+const PLAN_EXECUTION_CONFIG_SYNC_STATUSES = Object.freeze([
+  'pending',
+  PLAN_RUNNING_STATUS,
+  'ready_for_validation',
+  PLAN_INTERRUPTED_STATUS,
+  'stopped',
+  'validation_failed',
+]);
 
 function linkedIntakeCompletionResult(planId, projectId, overrides = {}) {
   const requirements = Number(overrides.requirements || 0);
@@ -38,12 +48,14 @@ function hasPlanForIssueHash(service, projectId, issueHash) {
 }
 
 function nextRunnablePlan(service, projectId) {
+  const placeholders = PLAN_AUTO_RUNNABLE_STATUSES.map(() => '?').join(', ');
   return service.db.get(
     `SELECT * FROM plans
-     WHERE project_id = ? AND status NOT IN ('completed', 'interrupted', 'draft')
+     WHERE project_id = ?
+       AND LOWER(TRIM(COALESCE(status, ''))) IN (${placeholders})
      ORDER BY sort_order ASC, created_at ASC, id ASC
      LIMIT 1`,
-    [projectId],
+    [projectId, ...PLAN_AUTO_RUNNABLE_STATUSES],
   );
 }
 
@@ -130,6 +142,15 @@ function hasActivePlanOperation(service, projectId, planId) {
   return false;
 }
 
+function hasActiveTaskOperation(service, projectId, taskId) {
+  const runtime = typeof service.existingRuntime === 'function' ? service.existingRuntime(projectId) : null;
+  if (!runtime?.activeOperations) return false;
+  for (const operation of runtime.activeOperations.values()) {
+    if (Number(operation?.taskId) === Number(taskId)) return true;
+  }
+  return false;
+}
+
 function isPlanRunning(service, projectId, plan) {
   if (!plan?.id) return false;
   if (String(plan.status || '') === PLAN_RUNNING_STATUS) return true;
@@ -201,20 +222,29 @@ function resumePlan(service, projectId, planId, options = {}) {
   if (!plan) return null;
 
   const updatedAt = options.updatedAt || nowIso();
-  const blockedTaskCount = Number(
+  const status = String(plan.status || '').toLowerCase();
+  const resumableTaskStatuses = status === 'validation_failed'
+    ? ['blocked', TASK_EVENT_STATUS.FAILED]
+    : ['blocked'];
+  const resumableTaskStatusPlaceholders = resumableTaskStatuses.map(() => '?').join(', ');
+  const resumedTaskCount = Number(
     service.db.get(
-      'SELECT COUNT(*) AS count FROM plan_tasks WHERE plan_id = ? AND status = ?',
-      [plan.id, 'blocked'],
+      `SELECT COUNT(*) AS count
+       FROM plan_tasks
+       WHERE plan_id = ?
+         AND status IN (${resumableTaskStatusPlaceholders})`,
+      [plan.id, ...resumableTaskStatuses],
     )?.count || 0,
   );
   service.db.runBatch([
     {
       sql: `UPDATE plan_tasks SET status = ?, updated_at = ?
-            WHERE plan_id = ? AND status = ?`,
-      params: ['pending', updatedAt, plan.id, 'blocked'],
+            WHERE plan_id = ?
+              AND status IN (${resumableTaskStatusPlaceholders})`,
+      params: ['pending', updatedAt, plan.id, ...resumableTaskStatuses],
     },
     {
-      sql: 'UPDATE plans SET status = ?, updated_at = ? WHERE id = ? AND project_id = ?',
+      sql: 'UPDATE plans SET status = ?, validation_passed = 0, updated_at = ? WHERE id = ? AND project_id = ?',
       params: ['pending', updatedAt, plan.id, normalizedProjectId],
     },
   ]);
@@ -227,7 +257,7 @@ function resumePlan(service, projectId, planId, options = {}) {
         planId: plan.id,
         previousStatus: plan.status,
         status: 'pending',
-        resumedTasks: blockedTaskCount,
+        resumedTasks: resumedTaskCount,
       },
     );
   }
@@ -248,6 +278,7 @@ function reExecutePlan(service, projectId, planId, options = {}) {
   }
 
   const updatedAt = options.updatedAt || nowIso();
+  const status = options.status || 'pending';
   const completedTaskCount = Number(
     service.db.get(
       'SELECT COUNT(*) AS count FROM plan_tasks WHERE plan_id = ? AND status = ?',
@@ -258,12 +289,16 @@ function reExecutePlan(service, projectId, planId, options = {}) {
     {
       sql: `UPDATE plan_tasks SET status = ?, updated_at = ?
             WHERE plan_id = ? AND status = ?`,
-      params: ['pending', updatedAt, plan.id, 'completed'],
+      params: [status, updatedAt, plan.id, 'completed'],
     },
     {
-      sql: `UPDATE plans SET status = ?, validation_passed = 0, updated_at = ?
+      sql: `UPDATE plans
+            SET status = ?,
+                validation_passed = 0,
+                accepted_at = CASE WHEN ? THEN NULL ELSE accepted_at END,
+                updated_at = ?
             WHERE id = ? AND project_id = ?`,
-      params: ['pending', updatedAt, plan.id, normalizedProjectId],
+      params: [status, options.clearAcceptedAt ? 1 : 0, updatedAt, plan.id, normalizedProjectId],
     },
   ]);
   if (!options.suppressEvent) {
@@ -274,13 +309,79 @@ function reExecutePlan(service, projectId, planId, options = {}) {
       {
         planId: plan.id,
         previousStatus: plan.status,
-        status: 'pending',
+        status,
         resetTasks: completedTaskCount,
+        ...(options.eventMeta || {}),
       },
     );
   }
   service.emitUpdate(normalizedProjectId);
   return service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [plan.id, normalizedProjectId]);
+}
+
+function redoTask(service, projectId, taskId, options = {}) {
+  const normalizedProjectId = Number(projectId || 0);
+  const normalizedTaskId = Number(taskId || 0);
+  if (!normalizedProjectId || !service.project(normalizedProjectId)) throw new Error('项目不存在');
+  if (!normalizedTaskId) throw new Error('任务不存在');
+  const task = service.db.get(
+    `SELECT plan_tasks.*, plans.status AS plan_status, plans.accepted_at AS plan_accepted_at
+     FROM plan_tasks JOIN plans ON plans.id = plan_tasks.plan_id
+     WHERE plan_tasks.id = ? AND plans.project_id = ?`,
+    [normalizedTaskId, normalizedProjectId],
+  );
+  if (!task) throw new Error('任务不存在');
+
+  const plan = { id: task.plan_id, project_id: normalizedProjectId, status: task.plan_status };
+  if (isPlanRunning(service, normalizedProjectId, plan) || hasActiveTaskOperation(service, normalizedProjectId, task.id)) {
+    throw new Error('任务正在运行中，不能重做');
+  }
+
+  const taskStatus = String(task.status || '').toLowerCase();
+  if (!TASK_REDO_COMPLETED_STATUSES.includes(taskStatus) && !task.accepted_at) {
+    throw new Error('仅可重做已完成或已验收的计划/任务');
+  }
+
+  const updatedAt = options.updatedAt || nowIso();
+  service.db.runBatch([
+    {
+      sql: `UPDATE plan_tasks
+            SET status = ?,
+                accepted_at = NULL,
+                updated_at = ?
+            WHERE id = ?`,
+      params: ['pending', updatedAt, task.id],
+    },
+    {
+      sql: `UPDATE plans
+            SET status = ?,
+                validation_passed = 0,
+                accepted_at = NULL,
+                updated_at = ?
+            WHERE id = ? AND project_id = ?`,
+      params: ['pending', updatedAt, task.plan_id, normalizedProjectId],
+    },
+  ]);
+  if (!options.suppressEvent) {
+    service.addEvent(
+      normalizedProjectId,
+      options.eventType || 'task.redo',
+      options.eventMessage || `${task.task_key} 已退回重做`,
+      {
+        targetType: 'task',
+        id: task.id,
+        taskId: task.id,
+        planId: task.plan_id,
+        taskKey: task.task_key,
+        previousStatus: task.status,
+        previousPlanStatus: task.plan_status,
+        status: 'pending',
+        ...(options.eventMeta || {}),
+      },
+    );
+  }
+  service.emitUpdate(normalizedProjectId);
+  return service.db.get('SELECT * FROM plan_tasks WHERE id = ?', [task.id]);
 }
 
 async function recreatePlanFromIntake(service, projectId, planId, options = {}) {
@@ -691,9 +792,8 @@ function updatePlanExecutionConfig(service, projectId, planId, input = {}) {
   const normalizedPlanId = Number(planId || 0);
   const plan = planForProject(service, normalizedProjectId, normalizedPlanId);
 
-  const status = String(plan.status || '').toLowerCase();
-  if (status !== PLAN_INTERRUPTED_STATUS && status !== 'stopped') {
-    throw new Error('仅可在计划中断或停止状态下修改执行配置');
+  if (isCompletedPlan(plan)) {
+    throw new Error('已完成计划不允许修改执行配置');
   }
 
   const config = planBackendConfig.planExecutionConfigFields({
@@ -753,8 +853,10 @@ function updatePlanExecutionConfig(service, projectId, planId, input = {}) {
       planId: plan.id,
       previousProvider: plan.plan_execution_provider || '',
       previousCommand: plan.plan_execution_command || '',
+      previousCodexReasoningEffort: plan.plan_execution_codex_reasoning_effort || null,
       provider: config.provider || '',
       command: config.command || '',
+      codexReasoningEffort: config.codexReasoningEffort || null,
       previousAgentCliSessionId: sessionCleared ? (plan.agent_cli_session_id || '') : undefined,
       agentCliSessionCleared: sessionCleared || undefined,
     },
@@ -762,6 +864,70 @@ function updatePlanExecutionConfig(service, projectId, planId, input = {}) {
 
   service.emitUpdate(normalizedProjectId);
   return service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [normalizedPlanId, normalizedProjectId]);
+}
+
+
+function syncUnfinishedPlanExecutionCodexReasoningEffort(service, projectId, config = {}) {
+  const normalizedProjectId = Number(projectId || 0);
+  if (!normalizedProjectId) return;
+  const columns = service.planColumns();
+  if (!columns.has('plan_execution_codex_reasoning_effort')) return;
+
+  const normalized = planBackendConfig.planExecutionConfigFields({
+    strategy: config.strategy ?? config.planExecutionStrategy,
+    provider: config.provider ?? config.planExecutionProvider,
+    command: config.command ?? config.planExecutionCommand,
+    model: config.model ?? config.planExecutionModel,
+    codexReasoningEffort: config.codexReasoningEffort ?? config.planExecutionCodexReasoningEffort,
+  });
+  const nextCodexReasoningEffort = normalized.codexReasoningEffort || null;
+  const updatedAt = nowIso();
+  const statusPlaceholders = PLAN_EXECUTION_CONFIG_SYNC_STATUSES.map(() => '?').join(', ');
+  const statusCondition = `LOWER(TRIM(COALESCE(status, ''))) IN (${statusPlaceholders})`;
+  const statusParams = [...PLAN_EXECUTION_CONFIG_SYNC_STATUSES];
+
+  if (!nextCodexReasoningEffort) {
+    service.db.run(
+      `UPDATE plans
+       SET plan_execution_codex_reasoning_effort = NULL, updated_at = ?
+       WHERE project_id = ?
+         AND ${statusCondition}
+         AND plan_execution_codex_reasoning_effort IS NOT NULL`,
+      [updatedAt, normalizedProjectId, ...statusParams],
+    );
+    return;
+  }
+
+  if (!columns.has('plan_execution_provider')) {
+    service.db.run(
+      `UPDATE plans
+       SET plan_execution_codex_reasoning_effort = ?, updated_at = ?
+       WHERE project_id = ?
+         AND ${statusCondition}
+         AND COALESCE(plan_execution_codex_reasoning_effort, '') != ?`,
+      [nextCodexReasoningEffort, updatedAt, normalizedProjectId, ...statusParams, nextCodexReasoningEffort],
+    );
+    return;
+  }
+
+  service.db.run(
+    `UPDATE plans
+     SET plan_execution_codex_reasoning_effort = ?, updated_at = ?
+     WHERE project_id = ?
+       AND ${statusCondition}
+       AND LOWER(TRIM(COALESCE(plan_execution_provider, ''))) IN ('', ?)
+       AND COALESCE(plan_execution_codex_reasoning_effort, '') != ?`,
+    [nextCodexReasoningEffort, updatedAt, normalizedProjectId, ...statusParams, 'codex', nextCodexReasoningEffort],
+  );
+  service.db.run(
+    `UPDATE plans
+     SET plan_execution_codex_reasoning_effort = NULL, updated_at = ?
+     WHERE project_id = ?
+       AND ${statusCondition}
+       AND LOWER(TRIM(COALESCE(plan_execution_provider, ''))) NOT IN ('', ?)
+       AND plan_execution_codex_reasoning_effort IS NOT NULL`,
+    [updatedAt, normalizedProjectId, ...statusParams, 'codex'],
+  );
 }
 
 module.exports = {
@@ -772,9 +938,11 @@ module.exports = {
   interruptPlan,
   resumePlan,
   reExecutePlan,
+  redoTask,
   recreatePlanFromIntake,
   stopPlan,
   updatePlanExecutionConfig,
+  syncUnfinishedPlanExecutionCodexReasoningEffort,
   linkedPlansForIntake,
   interruptPlansForIntake,
   resumePlansForIntake,

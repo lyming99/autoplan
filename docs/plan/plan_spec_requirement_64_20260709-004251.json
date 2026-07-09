@@ -1,0 +1,108 @@
+{
+  "title": "增加项目级 Prompt 设置并注入 AutoPlan 规范约束",
+  "summary": "需求 #64 希望在项目维度增加可配置 Prompt，用于约束当前项目的代码规范、计划格式和执行偏好。结合现有代码，配置应随项目状态持久化并通过设置页编辑，随后在计划生成和任务执行提示中统一注入，同时保持现有 AutoPlan 任务拆解硬性格式、PlanSpec 结构化生成和最终 Markdown 渲染链路不被破坏。",
+  "tasks": [
+    {
+      "title": "新增项目级 Prompt 持久化字段与运行时配置",
+      "scope": [
+        "src/database.js",
+        "src/loopService.js",
+        "src/loop/runtime.js"
+      ],
+      "acceptance": [
+        "project_states 增加项目级 Prompt 字段，老数据库迁移后默认值为空字符串。",
+        "loop.configure 支持保存、清空和读取项目级 Prompt，未传入该字段时不意外覆盖已有配置。",
+        "不同项目的 Prompt 配置相互隔离，snapshot/status 返回当前项目自己的配置。"
+      ]
+    },
+    {
+      "title": "打通前端类型、表单和配置提交链路",
+      "scope": [
+        "src/renderer/types.ts",
+        "src/renderer/utils/workspaceForms.ts",
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/preload.js"
+      ],
+      "acceptance": [
+        "ProjectState、LoopConfigInput 和 LoopFormState 能表达项目级 Prompt 字段。",
+        "从 snapshot 回填设置表单时保留已保存 Prompt，提交设置时将最新 Prompt 写回后端。",
+        "表单 dirty 判断包含 Prompt 字段，修改、清空 Prompt 都能触发保存状态变化。"
+      ]
+    },
+    {
+      "title": "在项目设置页提供 Prompt 编辑入口",
+      "scope": [
+        "src/renderer/components/workspace/WorkspaceSettingsView.tsx",
+        "src/renderer/styles/workspace.css",
+        "src/renderer/styles/components.css"
+      ],
+      "acceptance": [
+        "设置页新增项目级 Prompt 编辑区域，支持多行输入，适合填写代码规范、计划拆解偏好和执行约束。",
+        "Prompt 留空时表示不追加项目级约束，保存后再次进入项目仍能看到当前配置。",
+        "界面布局与现有设置页分组风格一致，在窄屏和桌面宽度下输入框、说明文字和保存按钮不重叠。"
+      ]
+    },
+    {
+      "title": "将项目级 Prompt 注入计划生成提示",
+      "scope": [
+        "src/loop/planGeneration.js",
+        "src/loop/builtinPlanGenerator.js",
+        "src/loop/agentCliRunner.js"
+      ],
+      "acceptance": [
+        "external-cli-markdown、external-cli-structured 和 builtin-llm-structured 三种计划生成路径都会在用户需求正文之外追加项目级 Prompt 约束。",
+        "项目级 Prompt 不会覆盖或弱化 AutoPlan 任务拆解硬性格式、PlanSpec JSON 契约、只写指定输出文件等系统级约束。",
+        "Prompt 为空时生成提示与现有行为保持兼容，不额外插入空章节或多余文本。"
+      ]
+    },
+    {
+      "title": "将项目级 Prompt 注入任务执行提示",
+      "scope": [
+        "src/loop/taskExecution.js",
+        "src/loop/taskSessionContext.js",
+        "src/loop/planAgentCli.js"
+      ],
+      "acceptance": [
+        "执行单个计划任务时，Agent 能收到当前项目级 Prompt，并据此遵守项目约定的编码规范和约束。",
+        "项目级 Prompt 不改变只执行当前任务、不修改 plan 文件、不提前执行其它 checkbox、并发 scope 隔离等既有硬约束。",
+        "任务重试、恢复新会话和重做补充内容场景下仍能带上同一项目级 Prompt。"
+      ]
+    },
+    {
+      "title": "补充项目级 Prompt 配置与注入测试",
+      "scope": [
+        "src/loopService.test.js",
+        "src/loop/planGeneration.test.js",
+        "src/loop/taskExecution.test.js",
+        "src/renderer/utils/workspaceForms.test.ts",
+        "src/renderer/components/workspace/WorkspaceSettingsView.test.tsx"
+      ],
+      "acceptance": [
+        "覆盖项目级 Prompt 的默认值、保存、清空、snapshot 回填和多项目隔离。",
+        "覆盖计划生成 prompt 捕获断言，确认项目级 Prompt 被注入且 AutoPlan 任务拆解硬性格式约束仍存在。",
+        "覆盖任务执行 prompt 捕获断言，确认项目级 Prompt 与任务级硬约束、重做补充内容可同时存在。"
+      ]
+    },
+    {
+      "title": "更新项目级 Prompt 使用说明",
+      "scope": [
+        "README.md",
+        "docs/architecture.md"
+      ],
+      "acceptance": [
+        "文档说明项目级 Prompt 的用途、作用范围和空值行为。",
+        "文档明确项目级 Prompt 只能补充项目规范，不能覆盖 AutoPlan 的任务拆解格式、PlanSpec 契约和文件写入边界。",
+        "文档列出适合填写的约束示例，例如编码风格、测试偏好、模块边界和计划拆解粒度。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test && npm run check",
+    "criteria": [
+      "项目级 Prompt 可在项目设置中保存、清空并按项目隔离持久化。",
+      "计划生成和任务执行提示均包含当前项目级 Prompt，同时保留 AutoPlan 系统级硬约束。",
+      "结构化 PlanSpec 生成后仍由 AutoPlan 渲染最终 Markdown，最终计划包含精确 `## 任务拆解` 章节、连续任务编号和 scope 注释。",
+      "相关单元测试、类型检查、语法检查和文件长度检查全部通过。"
+    ]
+  }
+}

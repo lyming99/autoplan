@@ -1,0 +1,51 @@
+{
+  "title": "计划与任务列表排序优化",
+  "summary": "优化工作区计划列表和任务列表的展示顺序：计划列表优先展示存在正在执行任务的计划，并明确区别于仅处于执行计划中状态的计划；其余计划保持较新计划优先。任务列表按计划分组展示时，优先展示含执行中任务的分组，其余分组按较新活动时间优先，组内子任务继续按任务序号稳定排序。",
+  "tasks": [
+    {
+      "title": "调整计划列表排序优先级",
+      "scope": [
+        "src/renderer/components/PlanLists.tsx",
+        "src/renderer/utils/planTasks.ts"
+      ],
+      "acceptance": [
+        "计划列表中，存在 status 为 running、processing 或 stopping 子任务的计划排在没有执行中子任务的计划之前。",
+        "仅 plan.status 为 running 但没有执行中子任务的计划，不应被误判为“正在执行任务”的最高优先级计划。",
+        "同一优先级内，计划按较新计划优先排序，并保留稳定兜底顺序，避免回退到 sort_order 升序主导展示。"
+      ]
+    },
+    {
+      "title": "调整任务列表分组排序规则",
+      "scope": [
+        "src/renderer/utils/planTasks.ts",
+        "src/renderer/components/PlanLists.tsx"
+      ],
+      "acceptance": [
+        "任务列表按计划分组后，包含执行中任务的分组排在不含执行中任务的分组之前。",
+        "多个执行中分组之间以及多个非执行中分组之间，按分组内任务的最新活动时间或更新时间较新优先排序。",
+        "每个分组内部的子任务继续按 sort_order 或 task_key 中的数字序号升序排列，缺少序号时保持稳定兜底顺序。"
+      ]
+    },
+    {
+      "title": "补充分组与计划排序回归覆盖",
+      "scope": [
+        "src/renderer/utils/planTasks.test.ts",
+        "src/renderer/pages/WorkspacePage.test.tsx"
+      ],
+      "acceptance": [
+        "覆盖计划排序中“有执行中任务”优先于“仅计划状态 running”的场景。",
+        "覆盖任务分组中执行中分组优先、较新分组优先、组内任务仍按序号排序的组合场景。",
+        "更新既有排序断言，确保新需求不会被旧的按序号或 sort_order 优先规则误判。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test && npm run build",
+    "criteria": [
+      "静态检查、Node 测试、TypeScript 编译和 Vite 构建全部通过。",
+      "计划列表最终展示顺序满足：有正在执行任务的计划优先，其余较新计划优先，并且不会把仅 plan.status=running 的计划误当作正在执行任务优先级。",
+      "任务列表最终展示顺序满足：执行中分组优先，非执行中分组较新优先，组内子任务按任务序号升序稳定排列。",
+      "AutoPlan 渲染出的 Markdown 计划包含规范的任务拆解章节和连续任务编号，最终验收作为 finalValidation 渲染，不作为普通开发任务重复拆分。"
+    ]
+  }
+}

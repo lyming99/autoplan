@@ -12,6 +12,7 @@ const AGENT_CLI_DISPLAY_NAMES = Object.freeze({
   opencode: 'OpenCode',
   'oh-my-pi': 'Oh My Pi',
 });
+const DEFAULT_AGENT_CLI_TIMEOUT_MS = 45 * 60 * 1000;
 const OPENCODE_SESSION_LOOKUP_MAX_COUNT = 50;
 
 function normalizeAgentCliProvider(value) {
@@ -21,6 +22,11 @@ function normalizeAgentCliProvider(value) {
 
 function normalizeAgentCliCommand(value) {
   return String(value || '').trim();
+}
+
+function normalizeAgentCliTimeoutMs(value, fallback = DEFAULT_AGENT_CLI_TIMEOUT_MS) {
+  const timeoutMs = Number(value);
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : fallback;
 }
 
 function defaultAgentCliCommand(provider) {
@@ -257,6 +263,7 @@ function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptio
     const sessionId = normalizeAgentCliSessionId(agentCliOptions.sessionId || agentCliOptions.opencodeSessionId);
     const title = normalizeOpenCodeSessionTitle(agentCliOptions.title || agentCliOptions.opencodeSessionTitle);
     const agent = normalizeOpenCodeAgentName(agentCliOptions.agent || agentCliOptions.opencodeAgent);
+    const structuredPlan = Boolean(agentCliOptions.structuredPlan);
     return {
       provider: normalizedProvider,
       agentCliProvider: normalizedProvider,
@@ -268,6 +275,7 @@ function agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptio
       agentCliSessionId: sessionId,
       agentCliSessionTitle: title,
       ...(agent ? { opencodeAgent: agent } : {}),
+      ...(structuredPlan ? { structuredPlan: true, opencodePlanMode: 'structured-plan-spec' } : {}),
     };
   }
   if (normalizedProvider === 'oh-my-pi') {
@@ -313,10 +321,19 @@ async function runAgentCliAttempt(options) {
     agentCliOptions,
     onChunk,
     env,
-    timeoutMs = 45 * 60 * 1000,
+    timeoutMs: requestedTimeoutMs,
   } = options;
+  const timeoutMs = normalizeAgentCliTimeoutMs(
+    requestedTimeoutMs,
+    normalizeAgentCliTimeoutMs(activeOperation?.timeoutMs),
+  );
+  activeOperation.timeoutMs = timeoutMs;
 
-  const spawnSpec = agentCliSpawnSpec(provider, command, lastFile, codexArgs, agentCliOptions);
+  const effectiveAgentCliOptions = {
+    ...(agentCliOptions || {}),
+    ...(activeOperation?.structuredPlan ? { structuredPlan: true } : {}),
+  };
+  const spawnSpec = agentCliSpawnSpec(provider, command, lastFile, codexArgs, effectiveAgentCliOptions);
   activeOperation.agentCliProvider = spawnSpec.agentCliProvider;
   activeOperation.agentCliCommand = spawnSpec.command;
   if (spawnSpec.agentCliSessionId) activeOperation.agentCliSessionId = spawnSpec.agentCliSessionId;
@@ -324,6 +341,11 @@ async function runAgentCliAttempt(options) {
   if (spawnSpec.agentCliSessionMode) activeOperation.agentCliSessionMode = spawnSpec.agentCliSessionMode;
   if (spawnSpec.agentCliSessionState) activeOperation.agentCliSessionState = spawnSpec.agentCliSessionState;
   if (spawnSpec.agentCliSessionTitle) activeOperation.agentCliSessionTitle = spawnSpec.agentCliSessionTitle;
+  if (spawnSpec.opencodeAgent) activeOperation.opencodeAgent = spawnSpec.opencodeAgent;
+  if (spawnSpec.structuredPlan) {
+    activeOperation.structuredPlan = true;
+    activeOperation.opencodePlanMode = spawnSpec.opencodePlanMode;
+  }
 
   let promptSpillover = null;
 
@@ -392,6 +414,8 @@ async function runAgentCliAttempt(options) {
       errorMessage: message,
       timedOut: false,
       timeoutMs,
+      ...(spawnSpec.opencodeAgent ? { opencodeAgent: spawnSpec.opencodeAgent } : {}),
+      ...(spawnSpec.structuredPlan ? { structuredPlan: true, opencodePlanMode: spawnSpec.opencodePlanMode } : {}),
     };
   }
 
@@ -462,6 +486,7 @@ async function runAgentCliAttempt(options) {
 
   let exitCode = await waitForChild(child, timeoutMs);
   const timedOut = Boolean(child.__autoplanTimedOut);
+  activeOperation.timedOut = timedOut;
   const timeoutMessage = timedOut
     ? `${AGENT_CLI_DISPLAY_NAMES[spawnSpec.agentCliProvider] || 'Agent CLI'} CLI timed out after ${formatDurationMs(timeoutMs)}`
     : '';
@@ -566,6 +591,8 @@ async function runAgentCliAttempt(options) {
     ...(agentCliSessionId ? { agentCliSessionId, opencodeSessionId: agentCliSessionId } : {}),
     ...(spawnSpec.agentCliSessionTitle ? { agentCliSessionTitle: spawnSpec.agentCliSessionTitle, opencodeSessionTitle: spawnSpec.agentCliSessionTitle } : {}),
     ...(sessionLookupError ? { sessionLookupError } : {}),
+    ...(spawnSpec.opencodeAgent ? { opencodeAgent: spawnSpec.opencodeAgent } : {}),
+    ...(spawnSpec.structuredPlan ? { structuredPlan: true, opencodePlanMode: spawnSpec.opencodePlanMode } : {}),
   };
 }
 
@@ -838,6 +865,7 @@ function readableAgentCliLastFileError({ provider, command, lastFile, error }) {
 
 module.exports = {
   AGENT_CLI_PROVIDERS,
+  DEFAULT_AGENT_CLI_TIMEOUT_MS,
   DEFAULT_AGENT_CLI_PROVIDER,
   WIN_CMD_LIMIT,
   WIN_CREATEPROCESS_LIMIT,

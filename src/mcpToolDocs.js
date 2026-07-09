@@ -18,6 +18,7 @@ function toolMarkdown(tool) {
     `**功能**：${tool.description || tool.title || tool.name}`,
     '',
     executorToolNote(tool.name),
+    intakeDuplicateNote(tool.name),
     '',
     parameterSection(tool.inputSchema),
   ].filter(Boolean).join('\n');
@@ -26,6 +27,16 @@ function toolMarkdown(tool) {
 function executorToolNote(name) {
   if (!String(name || '').includes('executor')) return '';
   return '**执行器约束**：仅操作当前项目内已保存的执行器；run/stop 不接受临时 command、launch 或 debug 参数；运行结果只返回状态、退出码、耗时和日志尾部。';
+}
+
+function intakeDuplicateNote(name) {
+  if (name === 'create_requirement') {
+    return '**重复提交**：同项目内 normalized title/body 相同且未 closed 的需求会被拒绝，错误返回 `code=DUPLICATE_INTAKE` 和 `existingRequirementId`。';
+  }
+  if (name === 'create_feedback') {
+    return '**重复提交**：同项目、同 requirement 关联下 normalized title/body 相同且未 closed 的反馈会被拒绝，错误返回 `code=DUPLICATE_INTAKE` 和 `existingFeedbackId`。';
+  }
+  return '';
 }
 
 function parameterSection(schema = {}) {

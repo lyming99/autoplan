@@ -1,0 +1,92 @@
+{
+  "title": "单独列出计划生成失败的需求与反馈",
+  "summary": "为 AutoPlan 增加独立的计划生成失败列表，汇总当前项目中已记录 generate_fail_count 或 last_generate_error、且尚未成功绑定 Plan 的需求与反馈。项目现有数据库和快照已保存生成失败次数、失败时间、错误、日志路径、失败 CLI 与重试入口，本次重点在前端派生失败集合、提供独立导航入口/视图、保留原需求/反馈卡片内的失败提示与重试能力，并补充回归测试确保失败记录不会被大量需求/反馈淹没。",
+  "tasks": [
+    {
+      "title": "定义失败列表的数据派生与类型契约",
+      "scope": [
+        "src/renderer/types.ts",
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/renderer/utils/workspaceForms.ts"
+      ],
+      "acceptance": [
+        "WorkspaceTab 增加独立的计划生成失败视图标识，并能通过 URL tab 参数稳定进入该视图。",
+        "从 snapshot.requirements 与 snapshot.feedback 派生 failedIntakeItems，只纳入 generate_fail_count 大于 0 或 last_generate_error 非空的记录。",
+        "已成功绑定可用 Plan 的记录不再出现在失败汇总中，避免历史失败在后续成功生成后继续占用失败列表。",
+        "失败记录保留 intake 类型、标题、正文、失败次数、失败时间、错误信息、日志路径、失败 CLI、Codex 思考深度和原记录更新时间。"
+      ]
+    },
+    {
+      "title": "新增独立的计划生成失败列表视图",
+      "scope": [
+        "src/renderer/components/workspace/PlanGenerationFailuresView.tsx",
+        "src/renderer/components/IntakePanel.tsx",
+        "src/renderer/components/shared.tsx",
+        "src/renderer/styles/workspace.css",
+        "src/renderer/styles/components.css"
+      ],
+      "acceptance": [
+        "失败视图按最近失败时间或更新时间倒序展示需求与反馈的失败记录，并能区分来源类型和记录 ID。",
+        "每条失败记录展示错误摘要、失败次数、失败时间、失败 CLI、日志路径和正文摘要，长文本在卡片内保持可读且不撑破布局。",
+        "失败视图复用或抽取现有失败卡片逻辑，支持选择重试 CLI 与 Codex 思考深度并触发 retryIntakePlanGeneration。",
+        "失败视图提供跳转到原需求或反馈记录的操作，跳转后定位并高亮对应卡片。",
+        "空状态明确提示当前没有计划生成失败项，不影响原需求/反馈列表的内嵌失败提示。"
+      ]
+    },
+    {
+      "title": "接入导航、顶部标题和数量提示",
+      "scope": [
+        "src/renderer/components/workspace/WorkspaceSidebar.tsx",
+        "src/renderer/pages/WorkspacePage.tsx",
+        "src/renderer/components/workspace/WorkspaceOverviewView.tsx",
+        "src/renderer/components/icons.tsx"
+      ],
+      "acceptance": [
+        "侧边栏在需求/反馈相关区域提供计划生成失败入口，并在存在失败项时显示失败数量徽标。",
+        "WorkspacePage 渲染新增失败视图，顶部标题和副标题能说明这是计划生成失败汇总。",
+        "概览页显示当前项目计划生成失败数量，并可快速进入失败列表。",
+        "从失败视图跳转到需求或反馈时，继续沿用现有 tab 切换和锚点定位机制，不破坏搜索定位与 Chat 打开需求/反馈逻辑。"
+      ]
+    },
+    {
+      "title": "补充搜索、筛选和性能边界",
+      "scope": [
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/renderer/utils/workspaceSearch.ts",
+        "src/renderer/utils/search.ts",
+        "src/renderer/components/SearchResults.tsx"
+      ],
+      "acceptance": [
+        "失败视图内的搜索只筛选失败集合，不扫描无关 tab 的大列表派生结果。",
+        "搜索命中失败记录的标题、正文、错误信息、日志路径和来源类型时，结果能跳转到失败视图或原需求/反馈记录。",
+        "失败数量与失败列表使用 useMemo 等派生缓存，避免每次渲染重复遍历大量需求与反馈。",
+        "原有需求、反馈、计划、任务、事件搜索结果和定位行为保持不变。"
+      ]
+    },
+    {
+      "title": "增加失败列表回归测试",
+      "scope": [
+        "src/renderer/pages/WorkspacePage.test.tsx",
+        "src/renderer/components/IntakePanel.test.tsx",
+        "src/renderer/utils/workspaceSearch.test.ts",
+        "scripts/smoke-test.js"
+      ],
+      "acceptance": [
+        "覆盖有十几条需求/反馈时，生成失败的个别记录会出现在独立失败列表并显示计数。",
+        "覆盖失败记录成功重试并绑定 Plan 后，会从独立失败列表中消失。",
+        "覆盖失败列表的重试操作仍调用 retryIntakePlanGeneration，并携带用户选择的 CLI 与 Codex 思考深度。",
+        "覆盖侧边栏失败数量、概览失败数量、跳转原记录和搜索定位的关键源码或 smoke 断言。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test && npm run smoke",
+    "criteria": [
+      "结构化 Plan 渲染仍满足 ## 任务拆解 与连续 P 编号格式要求，新增失败列表不改变 PlanSpec 渲染和任务同步逻辑。",
+      "当前项目中需求与反馈的计划生成失败会被单独汇总展示，失败数量、失败详情、日志路径、失败 CLI 和重试入口可见。",
+      "失败项在后续成功生成并绑定 Plan 后不再出现在失败汇总中，原需求/反馈列表仍保留正常展示与操作能力。",
+      "侧边栏、概览页、搜索定位、需求/反馈原列表、验收页和任务页的既有行为不回退。",
+      "check、单测和 smoke 全部通过。"
+    ]
+  }
+}

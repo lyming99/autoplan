@@ -367,6 +367,130 @@ describe('LoopService.runScheduledScripts', () => {
   });
 });
 
+describe('LoopService.runOnce plan queue scheduling', () => {
+  it('keeps a newly generated plan behind an earlier runnable plan', async () => {
+    const fixture = await createRetryFixture('runonce-generated-plan-queued');
+    try {
+      const previousPlanId = insertQueuedPlan(fixture, {
+        issueHash: 'previous-runnable-plan',
+        sortOrder: 1,
+        status: 'pending',
+      });
+      const requirementId = insertOpenRequirement(fixture, '生成新计划时仍应先执行前序计划');
+      const processedPlanIds = [];
+      let generatedPlanId = null;
+      const restore = stubRunOnceQueue(fixture, {
+        generatePlanForIntake: async (_projectId, _workspace, intake) => {
+          assert.equal(intake.id, requirementId);
+          generatedPlanId = insertQueuedPlan(fixture, {
+            issueHash: 'newly-generated-plan',
+            sortOrder: 2,
+            status: 'pending',
+          });
+          fixture.db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+            generatedPlanId,
+            nowIso(),
+            requirementId,
+          ]);
+          return generatedPlanId;
+        },
+        processPlan: async (_workspace, plan) => {
+          processedPlanIds.push(plan.id);
+        },
+      });
+
+      try {
+        await fixture.loop.runOnce(fixture.projectId);
+      } finally {
+        restore();
+      }
+
+      assert.ok(generatedPlanId, 'runOnce 应先生成新 plan 并入队');
+      assert.deepEqual(processedPlanIds, [previousPlanId], '已有前序可运行 plan 应先于新生成 plan 执行');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('runs a newly generated non-draft plan in the same cycle when no earlier runnable plan exists', async () => {
+    const fixture = await createRetryFixture('runonce-generated-plan-empty-queue');
+    try {
+      const requirementId = insertOpenRequirement(fixture, '空队列时新生成计划可同轮执行');
+      const processedPlanIds = [];
+      let generatedPlanId = null;
+      const restore = stubRunOnceQueue(fixture, {
+        generatePlanForIntake: async (_projectId, _workspace, intake) => {
+          assert.equal(intake.id, requirementId);
+          generatedPlanId = insertQueuedPlan(fixture, {
+            issueHash: 'generated-empty-queue',
+            sortOrder: 1,
+            status: 'pending',
+          });
+          fixture.db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+            generatedPlanId,
+            nowIso(),
+            requirementId,
+          ]);
+          return generatedPlanId;
+        },
+        processPlan: async (_workspace, plan) => {
+          processedPlanIds.push(plan.id);
+        },
+      });
+
+      try {
+        await fixture.loop.runOnce(fixture.projectId);
+      } finally {
+        restore();
+      }
+
+      assert.ok(generatedPlanId, 'runOnce 应生成新 plan');
+      assert.deepEqual(processedPlanIds, [generatedPlanId], '无前序可运行 plan 时新生成非 draft plan 应可同轮执行');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('does not auto-run a newly generated draft plan', async () => {
+    const fixture = await createRetryFixture('runonce-generated-draft-waits');
+    try {
+      const requirementId = insertOpenRequirement(fixture, 'draft 计划等待显式执行');
+      const processedPlanIds = [];
+      let generatedPlanId = null;
+      const restore = stubRunOnceQueue(fixture, {
+        generatePlanForIntake: async (_projectId, _workspace, intake) => {
+          assert.equal(intake.id, requirementId);
+          generatedPlanId = insertQueuedPlan(fixture, {
+            issueHash: 'generated-draft-plan',
+            sortOrder: 1,
+            status: 'draft',
+          });
+          fixture.db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+            generatedPlanId,
+            nowIso(),
+            requirementId,
+          ]);
+          return generatedPlanId;
+        },
+        processPlan: async (_workspace, plan) => {
+          processedPlanIds.push(plan.id);
+        },
+      });
+
+      try {
+        await fixture.loop.runOnce(fixture.projectId);
+      } finally {
+        restore();
+      }
+
+      assert.ok(generatedPlanId, 'runOnce 应生成 draft plan');
+      assert.deepEqual(processedPlanIds, [], 'draft plan 不应被自动调度执行');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+});
+
 async function createRetryFixture(name) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), `autoplan-loop-retry-${name}-`));
   const workspace = path.join(tempRoot, 'workspace');
@@ -388,6 +512,68 @@ async function createRetryFixture(name) {
   };
 }
 
+function insertOpenRequirement(fixture, body) {
+  const now = nowIso();
+  return fixture.db.insert(
+    `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+    [fixture.projectId, '队列调度需求', body || '队列调度回归', 'open', now, now],
+  );
+}
+
+function insertQueuedPlan(fixture, options = {}) {
+  const now = nowIso();
+  const issueHash = options.issueHash || `queued-plan-${Date.now()}`;
+  const planRel = path.join('docs', 'plan', `${issueHash}.md`);
+  const planFile = path.join(fixture.workspace, planRel);
+  fs.mkdirSync(path.dirname(planFile), { recursive: true });
+  fs.writeFileSync(
+    planFile,
+    [
+      `# ${issueHash}`,
+      '',
+      '- [ ] P001: 队列调度任务 <!-- scope: src/loopService.js -->',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  return fixture.db.insert(
+    `INSERT INTO plans
+       (project_id, issue_hash, file_path, hash, status, sort_order, total_tasks, completed_tasks, validation_passed, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fixture.projectId,
+      issueHash,
+      planRel,
+      `${issueHash}-hash`,
+      options.status || 'pending',
+      Number(options.sortOrder || 1),
+      0,
+      0,
+      0,
+      now,
+      now,
+    ],
+  );
+}
+
+function stubRunOnceQueue(fixture, overrides = {}) {
+  const originalGeneratePlanForIntake = fixture.loop.generatePlanForIntake;
+  const originalProcessPlan = fixture.loop.processPlan;
+  const originalScanDirectoryInWorker = fixture.loop.scanDirectoryInWorker;
+  fixture.loop.generatePlanForIntake = overrides.generatePlanForIntake;
+  fixture.loop.processPlan = overrides.processPlan;
+  fixture.loop.scanDirectoryInWorker = async () => ({
+    root: path.join(fixture.workspace, 'docs', 'plan'),
+    aggregateHash: '',
+    files: [],
+  });
+  return () => {
+    fixture.loop.generatePlanForIntake = originalGeneratePlanForIntake;
+    fixture.loop.processPlan = originalProcessPlan;
+    fixture.loop.scanDirectoryInWorker = originalScanDirectoryInWorker;
+  };
+}
 function insertScript(fixture, overrides = {}) {
   const timestamp = nowIso();
   return fixture.db.insert(

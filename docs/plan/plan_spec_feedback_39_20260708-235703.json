@@ -1,0 +1,67 @@
+{
+  "title": "移除 plan 进度区表格模板",
+  "summary": "调整 AutoPlan 生成的最终 Markdown plan 格式，去除任务/进度区域中的预置表格，只保留规范的任务拆解 checkbox 行，以及由执行过程追加的进度记录和日志文件路径模式。重点保证 `## 任务拆解` 章节只包含顶层任务行与缩进验收要点，`## 进度区` 不再渲染任务状态表格头或预置表格行。",
+  "tasks": [
+    {
+      "title": "调整结构化 PlanSpec 的 Markdown 渲染模板",
+      "scope": [
+        "src/loop/planRenderer.js"
+      ],
+      "acceptance": [
+        "渲染出的最终 Markdown 必须包含精确二级标题 `## 任务拆解`，所有开发任务只在该章节内以顶层 `- [ ] P001: 任务标题 <!-- scope: ... -->` 行呈现。",
+        "任务验收要点只能作为缩进普通 bullet 渲染，不能渲染为 checkbox、表格、引用块或代码块中的任务。",
+        "`## 进度区` 初始内容不包含 `| 任务 | 状态 | 备注 |`、表格分隔线或任何按任务预置的表格行，只保留后续执行追加 `- P001 AutoPlan 完成...；日志：docs/progress/logs/...` 的空间。",
+        "完整验收任务仍由 PlanSpec 规范化流程追加为连续编号的最后一个任务，scope 为 `validation`。"
+      ]
+    },
+    {
+      "title": "强化计划格式校验与任务解析约束",
+      "scope": [
+        "src/loop/planGeneration.js",
+        "src/loop/planTaskSync.js",
+        "src/loop/planParser.js"
+      ],
+      "acceptance": [
+        "格式校验要求最终 Markdown 具备精确的 `## 任务拆解` 章节，且任务行只能是该章节内的顶层 checkbox 行。",
+        "任务拆解区域中的表格行、引用块、代码块和嵌套 checkbox 不会被当成可执行任务解析入库。",
+        "缺少 scope 的任务行仍按既有规范补 `<!-- scope: unknown -->`，完整验收任务使用 `<!-- scope: validation -->`。",
+        "历史或外部生成的带表格进度区内容不会影响任务解析，执行追加的进度日志 bullet 仍保留在 `## 进度区`。"
+      ]
+    },
+    {
+      "title": "同步计划生成提示词中的硬性格式要求",
+      "scope": [
+        "src/loop/planGeneration.js",
+        "src/loop/builtinPlanGenerator.js"
+      ],
+      "acceptance": [
+        "外部 CLI 和内置 LLM 的计划生成提示明确要求任务拆解只使用顶层 checkbox 行，不得使用普通段落、代码块、表格、引用块或嵌套 checkbox 表达任务。",
+        "提示词明确说明最终 Markdown 的 `## 进度区` 采用执行进度 bullet 加日志文件路径模式，不预置任务状态表格。",
+        "结构化 PlanSpec 路径继续只要求模型写 JSON 文件，任务编号、完整验收任务和 Markdown 渲染仍由 AutoPlan 确定性完成。"
+      ]
+    },
+    {
+      "title": "补充无表格进度区与任务格式回归测试",
+      "scope": [
+        "src/loop/structuredPlanSpec.test.js",
+        "src/loop/planGeneration.test.js",
+        "src/loop/planTaskSync.test.js"
+      ],
+      "acceptance": [
+        "覆盖 PlanSpec 渲染结果中 `## 进度区` 不含任务状态表头、表格分隔线和预置任务表格行。",
+        "覆盖 `## 任务拆解` 中只有顶层 `- [ ] P00N: ... <!-- scope: ... -->` 被解析为任务，表格、引用、代码块和嵌套 checkbox 均被忽略或判为不合规。",
+        "覆盖最终完整验收任务连续编号且 scope 为 `validation`，不会因为移除表格而丢失。",
+        "覆盖执行后追加的 `- P00N AutoPlan 完成...；日志：docs/progress/logs/...` 进度日志模式不会被误解析为新的开发任务。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test",
+    "criteria": [
+      "所有结构化 PlanSpec、计划渲染、计划格式校验和任务同步相关单元测试通过。",
+      "新生成的最终 Markdown plan 包含 `## 任务拆解`，任务行连续编号为 `P001`、`P002` 等，并带有 `<!-- scope: ... -->` 注释。",
+      "`## 进度区` 不再包含 Markdown 表格，仅保留执行过程追加的进度 bullet 与日志文件路径记录。",
+      "既有计划任务解析、scope 提取、完整验收任务追加和执行进度回写行为无回退。"
+    ]
+  }
+}

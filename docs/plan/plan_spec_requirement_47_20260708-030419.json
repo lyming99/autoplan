@@ -1,0 +1,90 @@
+{
+  "title": "执行中计划支持修改 Codex 思考深度",
+  "summary": "当前计划执行配置会在计划生成时写入 plans 快照，任务执行和验收会优先读取该快照；因此项目设置里的计划执行 Codex 思考深度变更无法稳定影响已经生成、正在执行的计划。本次需求需要补齐运行中计划的思考深度更新链路，让用户在计划执行期间调整 Codex 思考深度后，后续任务、重试和最终验收使用新的深度，同时保留事件记录和前端状态同步。",
+  "tasks": [
+    {
+      "title": "放宽运行中计划执行配置更新规则",
+      "scope": [
+        "src/loop/planLifecycle.js",
+        "src/loop/planLifecycle.test.js"
+      ],
+      "acceptance": [
+        "允许 running、pending、ready_for_validation、interrupted、stopped 等未完成计划更新执行配置中的 Codex 思考深度",
+        "仍禁止对 completed 计划进行普通运行期配置更新，避免历史已完成计划被误改",
+        "更新计划执行配置时写入 plan_execution_codex_reasoning_effort 并记录包含前后思考深度的 plan.execution_config.updated 事件",
+        "仅修改思考深度且 provider 仍为 codex 时不清空已有 CLI session；provider 变化时继续清空跨后端 session"
+      ]
+    },
+    {
+      "title": "让项目设置保存同步影响当前未完成计划",
+      "scope": [
+        "src/loopService.js",
+        "src/loop/planLifecycle.js",
+        "src/loopService.test.js",
+        "src/loop/planLifecycle.test.js"
+      ],
+      "acceptance": [
+        "保存计划执行 Codex 思考深度时，项目状态 project_states 正常更新",
+        "当前项目中未完成且可继续执行的计划同步更新 plan_execution_codex_reasoning_effort，后续 pending 任务读取新值",
+        "正在运行的任务不被中断；修改只影响之后启动的任务、失败重试和最终验收",
+        "非 Codex 执行后端保存配置时不会残留或误写 Codex 思考深度"
+      ]
+    },
+    {
+      "title": "补齐前端运行中修改入口和状态回显",
+      "scope": [
+        "src/renderer/hooks/useWorkspaceController.ts",
+        "src/renderer/components/workspace/WorkspaceSettingsView.tsx",
+        "src/renderer/utils/workspaceForms.ts",
+        "src/renderer/types.ts"
+      ],
+      "acceptance": [
+        "循环正在运行时，计划执行后端为 Codex 的思考深度控件仍可修改并保存",
+        "保存后设置页表单、项目状态快照和运行概览展示的新思考深度保持一致",
+        "计划生成思考深度与计划执行思考深度仍保持独立，不因本次运行中修改互相覆盖",
+        "非 Codex provider 下思考深度控件继续隐藏或不可用"
+      ]
+    },
+    {
+      "title": "确保任务执行和验收使用更新后的计划深度",
+      "scope": [
+        "src/loop/planAgentCli.js",
+        "src/loop/taskExecution.js",
+        "src/loop/validation.js",
+        "src/loop/taskExecution.test.js",
+        "src/loop/validation.test.js"
+      ],
+      "acceptance": [
+        "计划执行配置解析优先读取已更新的 plans.plan_execution_codex_reasoning_effort",
+        "后续任务启动事件、task.started 元数据和实际 Codex CLI 参数体现新的 model_reasoning_effort",
+        "最终验收阶段使用同一计划执行配置来源，思考深度与最后保存值一致",
+        "历史 plan.generated 事件快照不再覆盖用户后续对该计划执行思考深度的修改"
+      ]
+    },
+    {
+      "title": "补齐快照和显示测试覆盖",
+      "scope": [
+        "src/loop/snapshots.js",
+        "src/loop/snapshots.test.js",
+        "src/renderer/components/workspace/WorkspaceOverviewView.tsx",
+        "src/renderer/components/workspace/WorkspaceSidebar.tsx",
+        "src/renderer/pages/WorkspacePage.test.tsx"
+      ],
+      "acceptance": [
+        "快照中的项目状态和计划执行配置能反映最新 Codex 思考深度",
+        "活动操作展示优先显示当前任务实际使用的思考深度",
+        "侧边栏或概览中的思考深度标签在保存后及时更新",
+        "多项目场景下只更新当前项目相关快照，不污染其它项目显示"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test",
+    "criteria": [
+      "类型检查、主进程脚本语法检查、文件长度检查全部通过",
+      "Node 测试套件全部通过，覆盖运行中计划更新思考深度、后续任务执行、最终验收和快照回显",
+      "手动或自动验证保存计划执行 Codex 思考深度后，未完成计划的后续任务使用新的 model_reasoning_effort",
+      "未生成或修改最终 Markdown plan 文件，业务实现只在后续开发任务中进行"
+    ]
+  }
+}

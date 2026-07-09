@@ -192,6 +192,7 @@ async function main() {
     const guardedPlanText = fs.readFileSync(planFile, 'utf8');
     assert.match(guardedPlanText, /- \[x\] P001:/, '系统应在任务成功后勾选 checkbox');
     assert.match(guardedPlanText, /P001 AutoPlan 完成/, '系统应在进度区写入完成记录');
+    assertNoProgressTable(progressSectionText(guardedPlanText), '任务完成后的进度区');
     assert.doesNotMatch(guardedPlanText, /P999/, 'Codex 对 plan 的写入应被恢复');
     const completedTask = db.get('SELECT * FROM plan_tasks WHERE id = ?', [executableTask.id]);
     assert.equal(
@@ -560,6 +561,15 @@ function assertFrontendInteractionSourceSmoke() {
     path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'WorkspaceOverviewView.tsx'),
     'utf8',
   );
+  const chatViewSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'components', 'workspace', 'ChatView.tsx'),
+    'utf8',
+  );
+  const useChatSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'hooks', 'useChat.ts'), 'utf8');
+  const workspaceFormsSource = fs.readFileSync(
+    path.join(__dirname, '..', 'src', 'renderer', 'utils', 'workspaceForms.ts'),
+    'utf8',
+  );
   const mainSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8'), mcpAuthSource = `${fs.readFileSync(path.join(__dirname, '..', 'src', 'mcpServer.js'), 'utf8')}\n${fs.readFileSync(path.join(__dirname, '..', 'src', 'database.js'), 'utf8')}`;
 
   assert.match(planListsSource, /aria-expanded=\{expanded\}/, '任务分组应暴露展开状态');
@@ -581,6 +591,16 @@ function assertFrontendInteractionSourceSmoke() {
   assert.match(mainSource, /await loadRenderer\(mainWindow\);\s+scheduleMcpServerStart\(\);[\s\S]*function scheduleMcpServerStart\(\) \{ setTimeout\(\(\) => startMcpServer\(\)\.catch\(\(error\) => recordMcpStartupError\(error\)\), 0\); \}/, 'MCP 应在 renderer 加载后后台启动，失败只记录错误');
   assert.match(mainSource, /onDone: \(\{ status, error, conversationId: doneConversationId, title \} = \{\}\) => \{/, 'chat:done 转发前不应丢弃自动标题字段');
   assert.match(mainSource, /mainWindow\.webContents\.send\('chat:done', \{[\s\S]*status,[\s\S]*error,[\s\S]*conversationId: doneConversationId,[\s\S]*title,[\s\S]*\}\);/, 'chat:done IPC 应完整转发 status/error/conversationId/title');
+  assert.match(workspaceFormsSource, /function chatProviderRequiresApiKey[\s\S]*!== 'codex'/, 'Codex 对话配置不应要求 HTTP API Key');
+  assert.match(workspaceFormsSource, /function isChatConfigAvailableForSend[\s\S]*chatProviderRequiresApiKey/, '对话发送可用性应复用 provider-aware helper');
+  assert.match(chatViewSource, /const canSendWithCurrentConfig = isChatConfigAvailableForSend\(currentAiConfig \?\? config\);/, 'ChatView 发送门禁应允许 Codex 无 Key 配置');
+  assert.match(chatViewSource, /const missingRequiredApiKey = chatProviderRequiresApiKey\(selectedProvider\) && !canSendWithCurrentConfig;/, 'ChatView 缺 Key 空状态应只作用于 HTTP provider');
+  assert.match(chatViewSource, /if \(!text \|\| !activeConversationId \|\| !canSendWithCurrentConfig\) return;/, 'ChatView handleSend 不应按 hasApiKey 阻断 Codex');
+  assert.match(chatViewSource, /Codex CLI 本地后端/, 'Codex 配置标签应表达本地后端而非缺少 HTTP 模型');
+  assert.doesNotMatch(chatViewSource, /hasAiApiKey/, 'ChatView 不应保留 API-key-only 门禁变量');
+  assert.match(useChatSource, /function selectPreferredAiConfig[\s\S]*configs\.find\(\(config\) => config\.hasApiKey\)[\s\S]*isChatConfigAvailableForSend/, 'useChat 新建会话应在 HTTP Key 后兜底 Codex 可发送配置');
+  assert.match(useChatSource, /const selectedConfig = selectPreferredAiConfig\(cfgs\);[\s\S]*aiConfigId: selectedConfig\?\.id \?\? null/, '只有 Codex 配置时新建会话应绑定 Codex 配置');
+  assert.match(useChatSource, /provider: aiConfig\.provider[\s\S]*thinkingDepth: aiConfig\.thinkingDepth/, 'toChatConfig 应保留 Codex provider 与 thinkingDepth');
   assert.match(mcpAuthSource, /Authorization Bearer[\s\S]*WWW-Authenticate[\s\S]*Bearer realm="AutoPlan MCP"[\s\S]*'mcp\.authToken': generateSecretToken\(\)/, 'MCP HTTP 应使用标准 Bearer 校验并自动生成默认密钥');
 }
 
@@ -1713,7 +1733,10 @@ async function assertPlanExecutionProviderSmoke(db, loop, workspace, projectId, 
   } finally {
     loop.runCodex = originalRunCodex;
   }
-
+  const completedPlanText = fs.readFileSync(path.join(workspace, plan.file_path), 'utf8');
+  const completedProgressSection = progressSectionText(completedPlanText);
+  assert.match(completedProgressSection, /- P001 AutoPlan 完成：/, '结构化 PlanSpec smoke 完成后应在进度区写入日志');
+  assertNoProgressTable(completedProgressSection, '结构化 PlanSpec smoke 完成后的进度区');
   const startedEvent = db.get(
     `SELECT * FROM events
      WHERE project_id = ? AND type = 'task.started'
@@ -1777,6 +1800,49 @@ async function assertMalformedPlanSpecSmoke(db, loop, workspace, projectId) {
   assert.match(invalidEvent.message, /PlanSpec 不合规/, '畸形 PlanSpec 事件文案应说明格式不合规');
   const meta = JSON.parse(invalidEvent.meta || '{}');
   assert.match(meta.reason || '', /title|summary|tasks|finalValidation/, '畸形 PlanSpec 事件 meta 应携带 schema 失败原因');
+
+  loop.configure(projectId, {
+    planGenerationStrategy: 'external-cli-structured',
+    planGenerationProvider: 'opencode',
+  });
+  const markdownOnlyRequirementId = insertRequirement(db, projectId);
+  const markdownOnlyRequirement = db.get('SELECT * FROM requirements WHERE id = ?', [markdownOnlyRequirementId]);
+  const beforeMarkdownOnlyCount = db.get('SELECT COUNT(*) AS count FROM plans WHERE project_id = ?', [projectId]).count;
+  try {
+    loop.runCodex = async () => {
+      const logFile = path.join(workspace, 'docs', 'progress', 'logs', 'opencode-markdown-only-plan-spec.log');
+      fs.mkdirSync(path.dirname(logFile), { recursive: true });
+      fs.writeFileSync(logFile, 'opencode markdown-only PlanSpec smoke', 'utf8');
+      return {
+        exitCode: 0,
+        output: ['# Wrong artifact', '', '## 任务拆解', '- [ ] P001: markdown only <!-- scope: smoke/markdown.js -->'].join('\n'),
+        logFile,
+        agentCliProvider: 'opencode',
+      };
+    };
+    const generated = await loop.generatePlanForIntake(projectId, workspace, {
+      ...markdownOnlyRequirement,
+      __type: 'requirement',
+    });
+    assert.equal(generated, null, 'OpenCode markdown-only stdout must not generate a plan id');
+  } finally {
+    loop.runCodex = originalRunCodex;
+  }
+  const afterMarkdownOnlyCount = db.get('SELECT COUNT(*) AS count FROM plans WHERE project_id = ?', [projectId]).count;
+  assert.equal(afterMarkdownOnlyCount, beforeMarkdownOnlyCount, 'OpenCode markdown-only stdout must not insert plans');
+  const missingSpecEvent = db.get(
+    `SELECT * FROM events
+     WHERE project_id = ? AND type = 'plan.spec.missing'
+     ORDER BY id DESC LIMIT 1`,
+    [projectId],
+  );
+  assert.ok(missingSpecEvent, 'OpenCode markdown-only stdout should record plan.spec.missing');
+  const missingSpecMeta = JSON.parse(missingSpecEvent.meta || '{}');
+  assert.equal(missingSpecMeta.agentCliProvider, 'opencode', 'missing PlanSpec event should retain provider');
+  assert.equal(missingSpecMeta.stdoutPlanSpecClassification, 'markdown', 'missing PlanSpec event should classify markdown stdout');
+  assert.equal(missingSpecMeta.stdoutPlanSpecRecoveryReason, 'stdout_markdown_not_json', 'missing PlanSpec event should explain recovery failure');
+  assert.equal(missingSpecMeta.planSpecRecoveredFromStdout, false, 'missing PlanSpec event should state recovery did not happen');
+  assert.match(missingSpecMeta.planSpecTargetPath || '', /docs\/plan\/plan_spec_/, 'missing PlanSpec event should include target path');
 }
 
 function assertMcpToolSuccess(result, label) {
@@ -1926,7 +1992,7 @@ function assertPlanTaskParsingRegression(db, loop, workspace, projectId) {
   loop.syncPlanTasks(planId, planFile);
   const tasks = db.all('SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order ASC', [planId]);
 
-  assert.equal(tasks.length, 5, '解析回归应覆盖标准、缺 scope、中文缩进、已完成和完整验收任务');
+  assert.equal(tasks.length, 4, '解析回归应覆盖标准、缺 scope、已完成和完整验收任务，并忽略缩进 checkbox');
   assert.equal(tasks[0].task_key, 'P010', '标准任务行应提取 task_key');
   assert.equal(tasks[0].title, '标准任务', '标准任务行应提取标题');
   assert.equal(tasks[0].scope, 'src/loopservice.js, src/main.js', '标准任务行应提取多个 scope');
@@ -1934,18 +2000,15 @@ function assertPlanTaskParsingRegression(db, loop, workspace, projectId) {
   assert.equal(tasks[1].title, '缺少 scope 的任务', '缺少 scope 不应吞掉验收要点');
   assert.equal(tasks[1].scope, 'unknown', '缺少 scope 的任务应补 unknown');
   assert.ok(tasks[1].raw_line.includes('scope: unknown'), '缺少 scope 的 raw_line 应补 unknown 注释用于阅读器展示');
-  assert.equal(tasks[2].task_key, 'P012', '缩进任务行应提取 task_key');
-  assert.equal(tasks[2].status, 'pending', '缩进任务行应保持 pending 状态');
-  assert.match(tasks[2].scope, /planlists\.tsx/, '中文 scope 分隔符应被解析');
-  assert.equal(tasks[3].task_key, 'P013', '破折号分隔符应提取 task_key');
-  assert.equal(tasks[3].title, '已完成 checkbox', '破折号分隔符不应残留到标题');
-  assert.equal(tasks[3].status, 'completed', '已完成 checkbox 应同步 completed 状态');
-  assert.equal(tasks[4].scope, 'validation', '完整验收任务应保留 validation scope');
+  assert.equal(tasks[2].task_key, 'P013', '破折号分隔符应提取 task_key');
+  assert.equal(tasks[2].title, '已完成 checkbox', '破折号分隔符不应残留到标题');
+  assert.equal(tasks[2].status, 'completed', '已完成 checkbox 应同步 completed 状态');
+  assert.equal(tasks[3].scope, 'validation', '完整验收任务应保留 validation scope');
   assert.equal(fs.readFileSync(planFile, 'utf8'), original, '解析回归不应改写原始 Plan Markdown');
 
   const duplicateKeyPlan = [
     '# Duplicate Key Regression',
-    '## Tasks',
+    '## 任务拆解',
     '- [ ] P020: First duplicate task <!-- scope: src/first.js -->',
     '- [x] P020: Second duplicate task <!-- scope: src/second.js -->',
     '- [ ] P021: Unique follow-up task <!-- scope: src/unique.js -->',
@@ -3086,6 +3149,7 @@ async function assertClaudeSessionContextSmoke(db, loop, projectId, workspace) {
 
 async function assertAgentCliBackendSmoke(db, loop, projectId, workspace) {
   assertRendererAgentCliTypeSmoke();
+  assertNewProjectDefaultCliSourceSmoke();
 
   const handlers = loadMainIpcHandlers(db, loop);
   const configureLoop = handlers.get('loop:configure');
@@ -3625,6 +3689,166 @@ async function assertFeedback10RegressionSmoke(db, loop, tempRoot) {
   assert.equal(blockedValidationMeta.failureKind, 'environment_permission', 'validation.blocked should classify permission blockers');
   assert.equal(blockedValidationMeta.environmentBlocked, true, 'validation.blocked should mark environment blockers');
   assert.equal(db.get('SELECT status FROM feedback WHERE id = ?', [blockedFeedbackId]).status, 'open', '验收失败时关联反馈应保持 open');
+  assert.equal(db.get('SELECT status FROM plans WHERE id = ?', [blockedValidationPlanId]).status, 'validation_failed', '验收失败 plan 应保留 validation_failed 状态');
+  assert.equal(db.get('SELECT validation_passed FROM plans WHERE id = ?', [blockedValidationPlanId]).validation_passed, 0, '验收失败 plan 不应标记 validation_passed');
+
+  const followUpValidationPlanRel = path.join('docs', 'plan', 'feedback10-follow-up-validation.md');
+  const followUpValidationPlanFile = path.join(regressionWorkspace, followUpValidationPlanRel);
+  fs.writeFileSync(
+    followUpValidationPlanFile,
+    [
+      '# Feedback 10 follow-up validation smoke',
+      '',
+      '- [x] V001: follow-up implementation <!-- scope: smoke/validation.js -->',
+      '- [ ] V002: 完整验收 <!-- scope: validation -->',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  const followUpValidationPlanId = insertPlan(
+    db,
+    regressionProjectId,
+    followUpValidationPlanRel,
+    'feedback10-follow-up-validation',
+    'pending',
+  );
+  loop.syncPlanTasks(followUpValidationPlanId, followUpValidationPlanFile);
+  db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ?', [1, nowIso(), blockedValidationPlanId]);
+  db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ?', [2, nowIso(), followUpValidationPlanId]);
+  assert.equal(
+    loop.nextRunnablePlan(regressionProjectId)?.id,
+    followUpValidationPlanId,
+    'validation_failed plan 不应阻塞同项目后续可运行计划',
+  );
+
+  const originalRunOnceValidatePlan = loop.validatePlan.bind(loop);
+  const originalScanDirectoryInWorker = loop.scanDirectoryInWorker.bind(loop);
+  const runOnceValidationCalls = [];
+  try {
+    loop.scanDirectoryInWorker = async () => ({
+      root: path.join(regressionWorkspace, 'docs', 'plan'),
+      aggregateHash: '',
+      files: [],
+    });
+    loop.validatePlan = async (_workspace, plan, options = {}) => {
+      runOnceValidationCalls.push({ planId: plan.id, taskKey: options.task?.task_key || '' });
+      return { exitCode: 0, output: 'ok', logFile: null, finishedAt: nowIso() };
+    };
+    await loop.runOnce(regressionProjectId);
+  } finally {
+    loop.validatePlan = originalRunOnceValidatePlan;
+    loop.scanDirectoryInWorker = originalScanDirectoryInWorker;
+  }
+  assert.deepEqual(
+    runOnceValidationCalls.map((call) => call.planId),
+    [followUpValidationPlanId],
+    '自动 runOnce 不应重复调用 validation_failed 计划的 validatePlan',
+  );
+
+  const queueWorkspace = path.join(tempRoot, 'feedback10-queue-regression');
+  const queueProjectId = insertProject(db, loop, 'Feedback #10 Queue Regression', queueWorkspace);
+  loop.configure(queueProjectId, { workspacePath: queueWorkspace, intervalSeconds: 5, validationCommand: '' });
+  loop.ensureWorkspaceDirs(queueWorkspace);
+  const earlierPlanRel = path.join('docs', 'plan', 'feedback10-earlier-pending.md');
+  const earlierPlanFile = path.join(queueWorkspace, earlierPlanRel);
+  fs.mkdirSync(path.dirname(earlierPlanFile), { recursive: true });
+  fs.writeFileSync(
+    earlierPlanFile,
+    ['# Feedback 10 earlier pending', '', '- [ ] P001: earlier task <!-- scope: smoke/queue.js -->', ''].join('\n'),
+    'utf8',
+  );
+  const earlierPlanId = insertPlan(db, queueProjectId, earlierPlanRel, 'feedback10-earlier-pending', 'pending');
+  db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ?', [1, nowIso(), earlierPlanId]);
+  loop.syncPlanTasks(earlierPlanId, earlierPlanFile);
+  const queueRequirementId = insertRequirement(db, queueProjectId);
+  const originalQueueGeneratePlanForIntake = loop.generatePlanForIntake.bind(loop);
+  const originalQueueProcessPlan = loop.processPlan.bind(loop);
+  const originalQueueScanDirectoryInWorker = loop.scanDirectoryInWorker.bind(loop);
+  const queueProcessedPlanIds = [];
+  let queuedGeneratedPlanId = null;
+  try {
+    loop.scanDirectoryInWorker = async () => ({
+      root: path.join(queueWorkspace, 'docs', 'plan'),
+      aggregateHash: '',
+      files: [],
+    });
+    loop.generatePlanForIntake = async (_projectId, _workspace, intake) => {
+      assert.equal(intake.id, queueRequirementId, '队列回归应处理当前需求');
+      const generatedPlanRel = path.join('docs', 'plan', 'feedback10-generated-waiting.md');
+      const generatedPlanFile = path.join(queueWorkspace, generatedPlanRel);
+      fs.mkdirSync(path.dirname(generatedPlanFile), { recursive: true });
+      fs.writeFileSync(
+        generatedPlanFile,
+        ['# Feedback 10 generated waiting', '', '- [ ] P001: generated task <!-- scope: smoke/queue.js -->', ''].join('\n'),
+        'utf8',
+      );
+      queuedGeneratedPlanId = insertPlan(db, queueProjectId, generatedPlanRel, 'feedback10-generated-waiting', 'pending');
+      db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ?', [2, nowIso(), queuedGeneratedPlanId]);
+      db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+        queuedGeneratedPlanId,
+        nowIso(),
+        queueRequirementId,
+      ]);
+      return queuedGeneratedPlanId;
+    };
+    loop.processPlan = async (_workspace, plan) => {
+      queueProcessedPlanIds.push(plan.id);
+    };
+    await loop.runOnce(queueProjectId);
+  } finally {
+    loop.generatePlanForIntake = originalQueueGeneratePlanForIntake;
+    loop.processPlan = originalQueueProcessPlan;
+    loop.scanDirectoryInWorker = originalQueueScanDirectoryInWorker;
+  }
+  assert.ok(queuedGeneratedPlanId, 'runOnce 生成的新 plan 应入库');
+  assert.deepEqual(queueProcessedPlanIds, [earlierPlanId], 'runOnce 生成新 plan 后仍应先执行前序 pending plan');
+
+  const emptyQueueWorkspace = path.join(tempRoot, 'feedback10-empty-queue-regression');
+  const emptyQueueProjectId = insertProject(db, loop, 'Feedback #10 Empty Queue Regression', emptyQueueWorkspace);
+  loop.configure(emptyQueueProjectId, { workspacePath: emptyQueueWorkspace, intervalSeconds: 5, validationCommand: '' });
+  loop.ensureWorkspaceDirs(emptyQueueWorkspace);
+  const emptyQueueRequirementId = insertRequirement(db, emptyQueueProjectId);
+  const originalEmptyGeneratePlanForIntake = loop.generatePlanForIntake.bind(loop);
+  const originalEmptyProcessPlan = loop.processPlan.bind(loop);
+  const originalEmptyScanDirectoryInWorker = loop.scanDirectoryInWorker.bind(loop);
+  const emptyQueueProcessedPlanIds = [];
+  let emptyQueueGeneratedPlanId = null;
+  try {
+    loop.scanDirectoryInWorker = async () => ({
+      root: path.join(emptyQueueWorkspace, 'docs', 'plan'),
+      aggregateHash: '',
+      files: [],
+    });
+    loop.generatePlanForIntake = async (_projectId, _workspace, intake) => {
+      assert.equal(intake.id, emptyQueueRequirementId, '空队列回归应处理当前需求');
+      const generatedPlanRel = path.join('docs', 'plan', 'feedback10-empty-queue-generated.md');
+      const generatedPlanFile = path.join(emptyQueueWorkspace, generatedPlanRel);
+      fs.mkdirSync(path.dirname(generatedPlanFile), { recursive: true });
+      fs.writeFileSync(
+        generatedPlanFile,
+        ['# Feedback 10 empty queue generated', '', '- [ ] P001: generated task <!-- scope: smoke/queue.js -->', ''].join('\n'),
+        'utf8',
+      );
+      emptyQueueGeneratedPlanId = insertPlan(db, emptyQueueProjectId, generatedPlanRel, 'feedback10-empty-queue-generated', 'pending');
+      db.run('UPDATE plans SET sort_order = ?, updated_at = ? WHERE id = ?', [1, nowIso(), emptyQueueGeneratedPlanId]);
+      db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+        emptyQueueGeneratedPlanId,
+        nowIso(),
+        emptyQueueRequirementId,
+      ]);
+      return emptyQueueGeneratedPlanId;
+    };
+    loop.processPlan = async (_workspace, plan) => {
+      emptyQueueProcessedPlanIds.push(plan.id);
+    };
+    await loop.runOnce(emptyQueueProjectId);
+  } finally {
+    loop.generatePlanForIntake = originalEmptyGeneratePlanForIntake;
+    loop.processPlan = originalEmptyProcessPlan;
+    loop.scanDirectoryInWorker = originalEmptyScanDirectoryInWorker;
+  }
+  assert.ok(emptyQueueGeneratedPlanId, '空队列场景应生成新 plan');
+  assert.deepEqual(emptyQueueProcessedPlanIds, [emptyQueueGeneratedPlanId], '无前序未完成 plan 时新生成非 draft plan 应同轮执行');
 
   const handlers = loadMainIpcHandlers(db, loop);
   const createRequirement = handlers.get('requirements:create');
@@ -3803,6 +4027,29 @@ function assertRendererAgentCliTypeSmoke() {
   assert.match(mcpToolsSource, /'oh-my-pi'/, 'mcpTools provider 白名单应包含 oh-my-pi');
 }
 
+function assertNewProjectDefaultCliSourceSmoke() {
+  const formsSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'utils', 'workspaceForms.ts'), 'utf8');
+  const projectsPageSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'pages', 'ProjectsPage.tsx'), 'utf8');
+  const controllerSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'hooks', 'useWorkspaceController.ts'), 'utf8');
+  const intakeSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'intakeService.js'), 'utf8');
+  const loopSource = fs.readFileSync(path.join(__dirname, '..', 'src', 'loopService.js'), 'utf8');
+
+  assert.match(formsSource, /export const NEW_PROJECT_DEFAULT_CLI_PREFERENCES_STORAGE_KEY = 'autoplan\.newProjectDefaultCliPreferences';/, 'new project default CLI storage key should stay stable');
+  assert.match(formsSource, /export function normalizeNewProjectDefaultCliPreferences[\s\S]*planGenerationCodexReasoningEffort = isCodexPlanBackendProvider\(planGenerationProvider\)[\s\S]*: null;/, 'new project default generation reasoning should be provider-specific');
+  assert.match(formsSource, /export function newProjectDefaultCliPreferencesForStorage[\s\S]*if \(normalized\.planGenerationCodexReasoningEffort\)/, 'new project default storage should omit null generation reasoning');
+  assert.match(formsSource, /export function planGenerationInputFromComposerSelection[\s\S]*planGenerationCodexReasoningEffort: isCodexPlanBackendProvider\(provider\)[\s\S]*: null,/, 'composer generation payload should drop Codex reasoning for non-Codex providers');
+
+  assert.match(projectsPageSource, /const openCreate = \(\) => \{\s*setDraft\(createDraftFromNewProjectDefaults\(\)\);/, 'project create modal should apply persisted CLI defaults');
+  assert.match(projectsPageSource, /const openEdit = \(project: Project\) => \{\s*setDraft\(projectDraftFromProject\(project\)\);/, 'project edit modal should ignore persisted new-project defaults');
+  assert.match(projectsPageSource, /!draft\.id \? \([\s\S]*onClick=\{saveCurrentCliAsDefault\}/, 'project create modal should expose save-default only for new projects');
+  assert.match(projectsPageSource, /planGenerationCodexReasoningEffort: isCodexPlanBackendProvider\(planGenerationProvider\)[\s\S]*: null,/, 'create project payload should submit generation reasoning only for Codex');
+  assert.match(projectsPageSource, /planExecutionCodexReasoningEffort: isCodexPlanBackendProvider\(planExecutionProvider\)[\s\S]*: null,/, 'create project payload should submit execution reasoning only for Codex');
+
+  assert.match(controllerSource, /setComposerPlanGeneration\(\{\s*requirement: composerPlanGenerationSelectionFromProjectState\(state\),\s*feedback: composerPlanGenerationSelectionFromProjectState\(state\),\s*\}\);/, 'workspace composer should initialize from project generation defaults');
+  assert.match(controllerSource, /planGenerationInputFromComposerSelection\(composerPlanGeneration\[type\]\)/, 'workspace composer submissions should use normalized generation defaults');
+  assert.match(intakeSource, /const projectState = this\.loop\.status\(projectId\) \|\| \{\};[\s\S]*nextIntakePlanGenerationConfig\(projectState, input\)/, 'intake creation should default generation config from project state');
+  assert.match(loopSource, /const projectStatus = this\.status\(normalizedProjectId\) \|\| \{\};\s*const planGenerationConfig = nextIntakePlanGenerationConfig\(projectStatus, \{ \.\.\.intake, \.\.\.input \}\);/, 'intake retry should default generation config from project state');
+}
 function assertPlanCliSnapshot(plan, expected, label) {
   assert.ok(plan, `${label} 应存在`);
   assert.equal(plan.agent_cli_provider, expected.provider, `${label} 应记录 CLI 后端`);
@@ -3881,6 +4128,24 @@ function taskEventsByKey(snapshot, taskKey) {
   return snapshot.events.filter((event) => event.meta?.taskKey === taskKey);
 }
 
+function progressSectionText(markdown) {
+  const text = String(markdown || '');
+  const start = text.indexOf('## 进度区');
+  assert.notEqual(start, -1, 'Markdown 应包含进度区');
+  const section = text.slice(start);
+  const headingLineEnd = section.indexOf('\n');
+  if (headingLineEnd === -1) return section;
+  const rest = section.slice(headingLineEnd + 1);
+  const nextSection = /^##\s+\S.*$/m.exec(rest);
+  return nextSection ? section.slice(0, headingLineEnd + 1 + nextSection.index) : section;
+}
+
+function assertNoProgressTable(progressSection, label) {
+  assert.doesNotMatch(progressSection, /\|\s*任务\s*\|\s*状态\s*\|\s*备注\s*\|/, `${label}不应包含任务状态表头`);
+  assert.doesNotMatch(progressSection, /^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|/m, `${label}不应包含表格分隔线`);
+  assert.doesNotMatch(progressSection, /^\|\s*P\d+\s*\|/m, `${label}不应包含任务状态表格行`);
+}
+
 function assertTaskEventOrder(events, expectedTypes, label) {
   assert.deepEqual(
     events.slice(0, expectedTypes.length).map((event) => event.type),
@@ -3954,11 +4219,30 @@ function assertAiConfigIpcSmoke(db, loop, projectId) {
   assert.equal(raw.api_key, 'sk-smoke-ai-123456', 'AI 配置 IPC 创建应把原始密钥仅保存到数据库');
   assert.equal(raw.project_id, null, 'AI 配置 IPC 创建不应写入 project_id');
 
+  const codexCreated = createConfig(null, {
+    name: 'Smoke Codex CLI',
+    provider: 'codex',
+    baseUrl: '',
+    apiKey: '',
+    model: '',
+    thinkingDepth: 'high',
+  });
+  assert.ok(codexCreated.id, 'Codex AI 配置 IPC 创建应返回新配置 ID');
+  assert.equal(codexCreated.provider, 'codex', 'Codex AI 配置 IPC 创建应保留 provider');
+  assert.equal(codexCreated.hasApiKey, false, 'Codex AI 配置不应要求 HTTP API Key');
+  assert.equal(codexCreated.maskedKey, '', 'Codex AI 配置空 Key 不应显示缺失密钥标签数据');
+  assert.equal(codexCreated.baseUrl, '', 'Codex AI 配置应允许空 Base URL');
+  assert.equal(codexCreated.model, '', 'Codex AI 配置应允许空 HTTP 模型名');
+  assert.equal(codexCreated.thinkingDepth, 'high', 'Codex AI 配置应保留 thinkingDepth');
+
   const listed = listConfigs();
   const found = listed.find((item) => item.id === created.id);
   assert.ok(found, 'AI 配置 IPC 创建后应能被 ai-config:list 查询到');
   assert.equal(found.name, 'Smoke DeepSeek', 'AI 配置列表应返回创建的配置名称');
   assert.equal(found.maskedKey, '····3456', 'AI 配置列表应保持 API Key 脱敏');
+  const foundCodex = listed.find((item) => item.id === codexCreated.id);
+  assert.ok(foundCodex, 'AI 配置列表应返回 Codex CLI 配置供 Composer 选择');
+  assert.equal(foundCodex.hasApiKey, false, 'Codex CLI 列表项应保持无 HTTP Key 状态');
 
   const ignoredScopedList = listConfigs(null, { projectId });
   assert.ok(
@@ -4111,3 +4395,4 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

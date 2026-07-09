@@ -6,6 +6,8 @@ import type { ChatThinkingDepth, WorkspaceChatComposerActions } from '../../hook
 import {
   aiProviderLabel,
   aiThinkingDepthLabel,
+  chatProviderRequiresApiKey,
+  isChatConfigAvailableForSend,
   normalizeAiThinkingDepthInput,
   providerSupportsThinkingDepth,
   thinkingDepthOptionsForProvider,
@@ -149,6 +151,27 @@ function ChatMessageBubble({
 
 type ChatEmptyStateKind = 'missing-key' | 'no-conversation' | 'empty-conversation';
 
+type ChatConfigSummary = {
+  name?: string;
+  provider?: string | null;
+  model?: string | null;
+  hasApiKey?: boolean;
+};
+
+function chatConfigModelLabel(config?: ChatConfigSummary | null): string {
+  if (!config) return '无可用配置';
+  const provider = config.provider || 'openai';
+  if (!chatProviderRequiresApiKey(provider)) {
+    return config.model || 'Codex CLI 本地后端';
+  }
+  return config.model || '未设置模型';
+}
+
+function chatConfigKeySuffix(config: ChatConfigSummary): string {
+  if (!chatProviderRequiresApiKey(config.provider)) return '';
+  return config.hasApiKey ? '' : ' · 未配置 Key';
+}
+
 function ChatEmptyState({
   kind,
   onCreateConversation,
@@ -250,8 +273,9 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
   const activeConfigName = currentAiConfig?.name || config?.name || (activeConv
     ? getAiConfigName(activeConv.ai_config_id ?? activeConv.aiConfigId)
     : '');
-  const hasAiApiKey = currentAiConfig?.hasApiKey ?? (config?.hasApiKey === true);
   const selectedProvider = currentAiConfig?.provider || config?.provider || 'openai';
+  const canSendWithCurrentConfig = isChatConfigAvailableForSend(currentAiConfig ?? config);
+  const missingRequiredApiKey = chatProviderRequiresApiKey(selectedProvider) && !canSendWithCurrentConfig;
   const providerOptions = useMemo(() => {
     const providers = new Map<string, { value: string; label: string }>();
     for (const item of aiConfigs) {
@@ -285,8 +309,10 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
     [selectedProvider, supportsThinkingDepth],
   );
   const activeModelLabel = currentAiConfig
-    ? `${currentAiConfig.name} · ${currentAiConfig.model || '未设置模型'}`
-    : activeConfigName || '无可用配置';
+    ? `${currentAiConfig.name} · ${chatConfigModelLabel(currentAiConfig)}`
+    : activeConfigName
+      ? `${activeConfigName} · ${chatConfigModelLabel(config)}`
+      : chatConfigModelLabel(config);
   const configControlsDisabled =
     !activeConversationId || isStreaming || isComposerConfigSaving || aiConfigs.length === 0;
   const thinkingDepthDisabled =
@@ -294,7 +320,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
     !supportsThinkingDepth ||
     selectedConfigId == null ||
     !updateActiveAiConfigThinkingDepth;
-  const inputDisabled = !activeConversationId || !hasAiApiKey; // 流式中输入框保持可用（需求 #37）
+  const inputDisabled = !activeConversationId || !canSendWithCurrentConfig; // 流式中输入框保持可用（需求 #37）
   const sendDisabled = !input.trim() || inputDisabled;
   /* ---- 新消息自动滚到底部 ---- */
   useEffect(() => {
@@ -318,7 +344,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
   const handleSend = useCallback(() => {
     const text = input.trim();
     // 移除流式中发送守卫：回复中也可继续输入并入队（需求 #37）
-    if (!text || !activeConversationId || !hasAiApiKey) return;
+    if (!text || !activeConversationId || !canSendWithCurrentConfig) return;
     // 意图直达：识别「打开/查看 需求/反馈 #N」并立即触发；无论是否命中均继续正常发送（保留 AI 补充说明）
     if (onOpenIntake && currentProjectId) {
       const intent = parseOpenIntakeIntent(text);
@@ -326,7 +352,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
     }
     void sendMessage(text);
     setInput('');
-  }, [activeConversationId, currentProjectId, hasAiApiKey, input, onOpenIntake, sendMessage]);
+  }, [activeConversationId, canSendWithCurrentConfig, currentProjectId, input, onOpenIntake, sendMessage]);
 
   /* ---- 键盘 ---- */
   const handleKeyDown = useCallback(
@@ -375,7 +401,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
       const nextProvider = e.target.value;
       if (!activeConversationId || isStreaming || !updateConversationAiConfig) return;
       const matches = aiConfigs.filter((item) => (item.provider || 'openai') === nextProvider);
-      const nextConfig = matches.find((item) => item.hasApiKey) ?? matches[0];
+      const nextConfig = matches.find((item) => isChatConfigAvailableForSend(item)) ?? matches[0];
       if (!nextConfig || nextConfig.id === selectedConfigId) return;
       commitComposerConfigUpdate(() => updateConversationAiConfig(nextConfig.id));
     },
@@ -432,7 +458,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
     ],
   );
 
-  const emptyStateKind: ChatEmptyStateKind = !hasAiApiKey
+  const emptyStateKind: ChatEmptyStateKind = missingRequiredApiKey
     ? 'missing-key'
     : activeConversationId
       ? 'empty-conversation'
@@ -489,7 +515,7 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
                   ? 'AI 正在思考…'
                   : streamPhase === 'replying'
                     ? 'AI 正在回复…'
-                    : !hasAiApiKey
+                    : missingRequiredApiKey
                       ? '请先在设置中配置全局 AI 接口'
                       : activeConversationId
                         ? '输入消息…（Enter 发送，Shift+Enter 换行）'
@@ -534,8 +560,8 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
                     {configSelectOptions.length > 0 ? (
                       configSelectOptions.map((item) => (
                         <option key={item.id} value={item.id}>
-                          {item.name} · {item.model || '未设置模型'}
-                          {item.hasApiKey ? '' : ' · 未配置 Key'}
+                          {item.name} · {chatConfigModelLabel(item)}
+                          {chatConfigKeySuffix(item)}
                         </option>
                       ))
                     ) : (

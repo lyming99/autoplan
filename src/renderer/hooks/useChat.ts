@@ -9,6 +9,7 @@ import type {
   Conversation,
   WorkspaceChatState,
 } from '../types';
+import { isChatConfigAvailableForSend } from '../utils/workspaceForms';
 import { useChatQueue } from './useChatQueue';
 
 /* ------------------------------------------------------------------ 辅助 ------------------------------------------------------------------ */
@@ -35,8 +36,15 @@ function newMessage(
   };
 }
 
+function selectPreferredAiConfig(configs: AiConfig[]): AiConfig | null {
+  return configs.find((config) => config.hasApiKey)
+    ?? configs.find((config) => isChatConfigAvailableForSend(config))
+    ?? configs[0]
+    ?? null;
+}
+
 function getAiConfigName(configs: AiConfig[], configId: number | null): string {
-  const fallback = configs.find((c) => c.hasApiKey) ?? configs[0];
+  const fallback = selectPreferredAiConfig(configs);
   if (configId == null) {
     return fallback ? fallback.name : '默认配置';
   }
@@ -87,7 +95,7 @@ function resolveCurrentAiConfig(
     if (bound) return bound;
   }
 
-  return configs.find((c) => c.hasApiKey) ?? configs[0] ?? null;
+  return selectPreferredAiConfig(configs);
 }
 
 function normalizeConversationAiConfigBinding(conversation: Conversation, configs: AiConfig[]): Conversation {
@@ -658,7 +666,7 @@ export function useChat(projectId: number): WorkspaceChatState {
     if (!projectId) return;
     try {
       const cfgs = await window.autoplan.aiConfigList().catch(() => aiConfigs);
-      const selectedConfig = cfgs.find((c) => c.hasApiKey);
+      const selectedConfig = selectPreferredAiConfig(cfgs);
       const conv = await window.autoplan.conversationCreate({
         projectId,
         aiConfigId: selectedConfig?.id ?? null,

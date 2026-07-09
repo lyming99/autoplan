@@ -20,10 +20,13 @@ const PLAN_HEADING_NORMALIZE_RE = new RegExp(
   '^(#{1,6})[^\\S\\r\\n]*(?:' + PLAN_HEADING_NUMBER_PREFIX + '[^\\S\\r\\n]*)?(' +
     PLAN_REQUIRED_HEADINGS.join('|') + ')([^\\n]*)$',
 );
+const PLAN_TASK_SECTION_HEADING_RE = /^\uFEFF?##[ \t]+\u4EFB\u52A1\u62C6\u89E3[ \t]*$/;
+const PLAN_NEXT_SECTION_HEADING_RE = /^\uFEFF?##[ \t]+\S.*$/;
 // \u5339\u914D\u4EFB\u52A1\u590D\u9009\u6846\u884C\uFF1B\u6355\u83B7\uFF1A1=\u7F29\u8FDB 2=\u5217\u8868\u6807\u8BB0 3=\u52FE\u9009\u72B6\u6001 4=\u6B63\u6587\u3002
-const PLAN_TASK_CHECKBOX_LINE_RE = /^(\s*)([-*])\s*\[\s*([ xX]?)\s*\]\s+(.*)$/;
+const PLAN_TASK_CHECKBOX_LINE_RE = /^(\uFEFF?)(-)\s*\[\s*([ xX]?)\s*\]\s+(.*)$/;
 // \u5339\u914D\u56F4\u680F\u4EE3\u7801\u5757\u884C\uFF08``` \u6216 ~~~\uFF09\uFF0C\u7528\u4E8E\u89C4\u8303\u5316\u65F6\u8DF3\u8FC7\u4EE3\u7801\u5757\u5185\u5BB9\u3002
 const CODE_FENCE_LINE_RE = /^(\s*)(`{3,}|~{3,})/;
+const FINAL_ACCEPTANCE_RE = /\u5B8C\u6574\u9A8C\u6536|\u6574\u4F53\u9A8C\u6536|\u603B\u4F53\u9A8C\u6536|\u6700\u7EC8\u9A8C\u6536|\u5B8C\u6574\u9A8C\u8BC1|\u6700\u7EC8\u9A8C\u8BC1|acceptance|validation/i;
 
 function appendTask(service, helpers, projectId, planId, title) {
     const project = service.project(projectId);
@@ -46,21 +49,21 @@ function appendTask(service, helpers, projectId, planId, title) {
     }, 0);
     const taskKey = `P${String(maxNum + 1).padStart(3, '0')}`;
 
-    // 追加到 plan 文件的"## 任务计划"段末尾
+    // Append to the canonical task section parsed by syncPlanTasks.
     let content = fs.readFileSync(planFile, 'utf8');
     const line = ensureTaskScopeComment(`- [ ] ${taskKey}: ${cleanTitle}`);
-    const taskSectionIdx = content.search(/##\s*任务计划/);
+    const taskSectionIdx = content.search(PLAN_TASK_SECTION_HEADING_RE);
     const lastTask = service.db.get(
       'SELECT * FROM plan_tasks WHERE plan_id = ? ORDER BY sort_order DESC, id DESC LIMIT 1',
       [planId],
     );
+    const { isAcceptanceTask } = helpers;
     if (taskSectionIdx === -1) {
-  const { isAcceptanceTask } = helpers;
-      content = `${content.trim()}\n\n## 任务计划\n${line}\n`;
+      content = `${content.trim()}\n\n## 任务拆解\n${line}\n`;
     } else if (isAcceptanceTask(lastTask)) {
       content = insertTaskLineBeforeTask(content, lastTask, line);
     } else {
-      content = `${content.trimEnd()}\n${line}\n`;
+      content = insertTaskLineAtTaskSectionEnd(content, line);
     }
     fs.writeFileSync(planFile, content, 'utf8');
 
@@ -106,21 +109,31 @@ function syncPlanTasks(service, helpers, planId, planFile) {
     if (!fs.existsSync(planFile)) return;
     normalizePlanTaskScopes(planFile);
     const text = fs.readFileSync(planFile, 'utf8');
-    const regex = /^\s*[-*]\s+\[([ xX])\]\s+(.+)$/gm;
+    const lines = planTaskSectionLinesFromMarkdown(text);
     const tasks = [];
-    let match;
-    let index = 0;
-    while ((match = regex.exec(text))) {
-      index += 1;
-      const rawTitle = match[2].trim();
+    let inFence = false;
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (/^(?:```|~~~)/.test(trimmed)) {
+        inFence = !inFence;
+        continue;
+      }
+      if (inFence || /^[>|]/.test(line.trimStart())) continue;
+      const match = line.match(PLAN_TASK_CHECKBOX_LINE_RE);
+      if (!match) continue;
+      const index = tasks.length + 1;
+      const rawTitle = match[4].trim();
       const titleWithoutScope = stripTaskScopeComment(rawTitle);
       const idMatch = titleWithoutScope.match(/^([A-Za-z]+[-_]?\d+|P\d+)[:：\s-]+(.+)$/);
+      const parsedTitle = idMatch?.[2]?.trim() || titleWithoutScope || rawTitle;
+      const fallbackScope = isFinalAcceptanceTitle(titleWithoutScope) ? 'validation' : 'unknown';
+      const rawLine = ensureTaskScopeComment(line, fallbackScope);
       tasks.push({
         key: idMatch?.[1] || `P${String(index).padStart(3, '0')}`,
-        title: idMatch?.[2]?.trim() || titleWithoutScope || rawTitle,
-        rawLine: ensureTaskScopeComment(match[0]),
-        scope: taskScopeText({ raw_line: match[0], title: rawTitle }),
-        status: match[1].toLowerCase() === 'x' ? 'completed' : 'pending',
+        title: parsedTitle,
+        rawLine,
+        scope: fallbackScope === 'validation' ? 'validation' : taskScopeText({ raw_line: rawLine, title: rawTitle }, fallbackScope),
+        status: match[3].toLowerCase() === 'x' ? 'completed' : 'pending',
         sortOrder: index,
       });
     }
@@ -181,9 +194,24 @@ function syncPlanTasks(service, helpers, planId, planFile) {
     );
   }
 
-function taskScopeText(task) {
+function planTaskSectionLinesFromMarkdown(markdown) {
+  const lines = String(markdown || '').split(/\r?\n/);
+  const start = lines.findIndex((line) => PLAN_TASK_SECTION_HEADING_RE.test(line));
+  if (start === -1) return [];
+  const sectionLines = [];
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (PLAN_NEXT_SECTION_HEADING_RE.test(line)) break;
+    sectionLines.push(line);
+  }
+  return sectionLines;
+}
+
+function taskScopeText(task, fallbackScope = 'unknown') {
   const explicit = taskDeclaredScopes(task, { keepUnknown: true, includePathFallback: false });
   if (explicit.length) return explicit.join(', ');
+  const fallback = normalizeTaskScope(fallbackScope, { keepUnknown: true });
+  if (fallback) return fallback;
   const inferred = taskDeclaredScopes(task, { keepUnknown: false });
   return inferred.join(', ') || 'unknown';
 }
@@ -244,10 +272,10 @@ function stripTaskScopeComment(value) {
 function normalizePlanTaskScopes(planFile) {
   const content = fs.readFileSync(planFile, 'utf8');
   let changed = false;
-  const next = content.replace(/^(\s*[-*]\s+\[[ xX]\]\s+.+)$/gm, (line) => {
-    if (TASK_SCOPE_RE.test(line)) return line;
+  const next = rewritePlanTaskSectionLines(content, (line) => {
+    if (!PLAN_TASK_CHECKBOX_LINE_RE.test(line) || TASK_SCOPE_RE.test(line)) return line;
     changed = true;
-    return ensureTaskScopeComment(line);
+    return ensureTaskScopeComment(line, isFinalAcceptanceTitle(line) ? 'validation' : 'unknown');
   });
   if (changed) fs.writeFileSync(planFile, next, 'utf8');
 }
@@ -260,6 +288,24 @@ function insertTaskLineBeforeTask(content, task, line) {
     return content.replace(taskLineRe, `${line}\n$1`);
   }
   return `${content.trimEnd()}\n${line}\n`;
+}
+
+function insertTaskLineAtTaskSectionEnd(content, line) {
+  const text = String(content || '');
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  const start = lines.findIndex((value) => PLAN_TASK_SECTION_HEADING_RE.test(value));
+  if (start === -1) return `${text.trimEnd()}${eol}${line}${eol}`;
+  let insertIndex = lines.length;
+  for (let index = start + 1; index < lines.length; index += 1) {
+    if (PLAN_NEXT_SECTION_HEADING_RE.test(lines[index])) {
+      insertIndex = index;
+      break;
+    }
+  }
+  while (insertIndex > start + 1 && lines[insertIndex - 1].trim() === '') insertIndex -= 1;
+  lines.splice(insertIndex, 0, line);
+  return lines.join(eol);
 }
 
 function extractMarkdownTitle(markdown) {
@@ -292,6 +338,7 @@ function normalizePlanMarkdown(content) {
   const lines = text.split(/\r?\n/);
   let inFence = false;
   let fenceChar = '';
+  let inTaskSection = false;
   let taskIndex = 0;
   const out = [];
   for (const line of lines) {
@@ -314,14 +361,18 @@ function normalizePlanMarkdown(content) {
     }
     const heading = normalizePlanHeadingLine(line);
     if (heading !== null) {
+      inTaskSection = PLAN_TASK_SECTION_HEADING_RE.test(heading);
       out.push(heading);
       continue;
     }
-    const task = normalizePlanTaskLine(line, taskIndex + 1);
-    if (task !== null) {
-      taskIndex += 1;
-      out.push(task);
-      continue;
+    if (PLAN_NEXT_SECTION_HEADING_RE.test(line)) inTaskSection = false;
+    if (inTaskSection) {
+      const task = normalizePlanTaskLine(line, taskIndex + 1);
+      if (task !== null) {
+        taskIndex += 1;
+        out.push(task);
+        continue;
+      }
     }
     out.push(line);
   }
@@ -339,7 +390,7 @@ function normalizePlanHeadingLine(line) {
 function normalizePlanTaskLine(line, index) {
   const m = line.match(PLAN_TASK_CHECKBOX_LINE_RE);
   if (!m) return null;
-  const [, indent, marker, check, body] = m;
+  const [, bom, marker, check, body] = m;
   const scopeMatch = body.match(TASK_SCOPE_COMMENT_RE);
   const scopeValue = scopeMatch ? scopeMatch[1].trim() : '';
   const title = stripTaskScopeComment(body)
@@ -349,8 +400,50 @@ function normalizePlanTaskLine(line, index) {
   const checkChar = check && check.toLowerCase() === 'x' ? 'x' : ' ';
   const taskKey = `P${String(index).padStart(3, '0')}`;
   const base = `${taskKey}: ${title}`;
-  const newBody = scopeValue ? `${base} <!-- scope: ${scopeValue} -->` : ensureTaskScopeComment(base);
-  return `${indent}${marker} [${checkChar}] ${newBody}`;
+  const validationLike = isFinalAcceptanceTitle(title);
+  const newBody = validationLike
+    ? `${base} <!-- scope: validation -->`
+    : (scopeValue ? `${base} <!-- scope: ${scopeValue} -->` : ensureTaskScopeComment(base, 'unknown'));
+  return `${bom}${marker} [${checkChar}] ${newBody}`;
+}
+
+function rewritePlanTaskSectionLines(content, rewriteLine) {
+  const text = String(content || '');
+  if (!text) return text;
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = text.split(/\r?\n/);
+  let inTaskSection = false;
+  let inFence = false;
+  let fenceChar = '';
+  const out = [];
+  for (const line of lines) {
+    const fence = line.match(CODE_FENCE_LINE_RE);
+    if (fence) {
+      const ch = fence[2][0];
+      if (!inFence) {
+        inFence = true;
+        fenceChar = ch;
+      } else if (ch === fenceChar) {
+        inFence = false;
+        fenceChar = '';
+      }
+      out.push(line);
+      continue;
+    }
+    if (!inFence) {
+      if (PLAN_TASK_SECTION_HEADING_RE.test(line)) {
+        inTaskSection = true;
+      } else if (PLAN_NEXT_SECTION_HEADING_RE.test(line)) {
+        inTaskSection = false;
+      }
+    }
+    out.push(inTaskSection && !inFence ? rewriteLine(line) : line);
+  }
+  return out.join(eol);
+}
+
+function isFinalAcceptanceTitle(value) {
+  return FINAL_ACCEPTANCE_RE.test(String(value || ''));
 }
 
 // 文件级规范化：读盘 -> 规范化 -> 仅在内容变化时写回（幂等，无变化不写盘）。
@@ -375,6 +468,7 @@ module.exports = {
   normalizePlanMarkdownFile,
   normalizePlanTaskScopes,
   normalizeTaskScope,
+  planTaskSectionLinesFromMarkdown,
   stripTaskScopeComment,
   syncPlanTasks,
   taskDeclaredScopes,

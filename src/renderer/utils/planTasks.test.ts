@@ -108,6 +108,9 @@ const {
   acceptanceSelectionKey,
   formatPlanDurationSummary,
   formatPlanGenerationDuration,
+  scopeFileClassName,
+  scopeFileLabel,
+  scopeFileStatus,
 } = require('./planTasks.ts') as typeof import('./planTasks');
 
 function sortedAcceptDates(groups: Array<{ plan: { accepted_at?: string | null } | null; tasks: Array<{ accepted_at?: string | null }> }>) {
@@ -137,7 +140,7 @@ describe('P006 - plan generation duration formatting', () => {
     expectEqual(formatPlanDurationSummary(tasks), '总耗时 1秒 · 已完成 1秒');
   });
 });
-describe('Requirement #52 – groupTasksByPlan sequence sorting', () => {
+describe('Requirement #52 – groupTasksByPlan running/activity sorting', () => {
   it('sorts tasks within a plan group by sort_order before task activity time', () => {
     const tasks = [
       makeTask({
@@ -172,7 +175,59 @@ describe('Requirement #52 – groupTasksByPlan sequence sorting', () => {
     expectEqual(groups[0].tasks.map((task) => task.task_key).join(','), 'P001,P002,P003');
   });
 
-  it('sorts plan groups by the minimum visible task sequence instead of latest activity time', () => {
+  it('sorts running groups first and then by latest group activity time', () => {
+    const completedNewest = makeTask({
+      id: 1,
+      plan_id: 1,
+      plan_title: 'Completed newest plan',
+      task_key: 'P001',
+      sort_order: 1,
+      status: 'completed',
+      finished_at: iso('2026-07-05T12:00:00Z'),
+      updated_at: iso('2026-07-05T12:00:00Z'),
+    });
+    const queuedOldest = makeTask({
+      id: 2,
+      plan_id: 2,
+      plan_title: 'Queued oldest plan',
+      task_key: 'P002',
+      sort_order: 2,
+      status: 'pending',
+      started_at: null,
+      finished_at: null,
+      updated_at: iso('2026-07-01T12:00:00Z'),
+    });
+    const runningOlder = makeTask({
+      id: 10,
+      plan_id: 10,
+      plan_title: 'Running older plan',
+      task_key: 'P010',
+      sort_order: 10,
+      status: 'running',
+      started_at: iso('2026-07-02T12:00:00Z'),
+      finished_at: null,
+      updated_at: iso('2026-07-02T12:00:00Z'),
+    });
+    const stoppingNewer = makeTask({
+      id: 11,
+      plan_id: 11,
+      plan_title: 'Stopping newer plan',
+      task_key: 'P011',
+      sort_order: 11,
+      status: 'stopping',
+      started_at: iso('2026-07-04T12:00:00Z'),
+      finished_at: null,
+      updated_at: iso('2026-07-04T12:00:00Z'),
+    });
+
+    const groups = groupTasksByPlan([completedNewest, runningOlder, queuedOldest, stoppingNewer]);
+
+    expectLength(groups, 4, 'tasks should be split into four plan groups');
+    expectEqual(groups.map((group) => group.sourceId).join(','), '11,10,1,2');
+    expectEqual(groups.map((group) => String(group.hasRunningTask)).join(','), 'true,true,false,false');
+  });
+
+  it('sorts non-running plan groups by latest activity instead of minimum task sequence', () => {
     const newerLateSequence = makeTask({
       id: 10,
       plan_id: 10,
@@ -195,11 +250,11 @@ describe('Requirement #52 – groupTasksByPlan sequence sorting', () => {
     const groups = groupTasksByPlan([newerLateSequence, olderEarlySequence]);
 
     expectLength(groups, 2, 'tasks should be split into two plan groups');
-    expectEqual(groups[0].sourceId, '1');
-    expectEqual(groups[1].sourceId, '10');
+    expectEqual(groups[0].sourceId, '10');
+    expectEqual(groups[1].sourceId, '1');
   });
 
-  it('falls back to numeric task_key sequence when sort_order is missing or invalid', () => {
+  it('falls back to numeric task_key sequence when sort_order is missing or invalid inside a group', () => {
     const missingSortOrder = makeTask({ id: 1, plan_id: 1, task_key: 'P001' });
     delete (missingSortOrder as { sort_order?: number }).sort_order;
 
@@ -215,14 +270,14 @@ describe('Requirement #52 – groupTasksByPlan sequence sorting', () => {
     expectEqual(groups[0].tasks.map((task) => task.task_key).join(','), 'P001,P002,TASK-10');
   });
 
-  it('keeps input order stable when neither sort_order nor task_key yields a sequence', () => {
-    const first = makeTask({ id: 21, plan_id: 101, task_key: 'ALPHA', sort_order: 0 });
-    const second = makeTask({ id: 22, plan_id: 102, task_key: 'BETA', sort_order: Number.NaN });
-    const third = makeTask({ id: 23, plan_id: 103, task_key: 'GAMMA', sort_order: -1 });
+  it('keeps input order stable when neither group activity time nor sequence yields an order', () => {
+    const first = makeTask({ id: 21, plan_id: 101, task_key: 'ALPHA', sort_order: 0, started_at: '', finished_at: '', updated_at: '' });
+    const second = makeTask({ id: 22, plan_id: 102, task_key: 'BETA', sort_order: Number.NaN, started_at: '', finished_at: '', updated_at: '' });
+    const third = makeTask({ id: 23, plan_id: 103, task_key: 'GAMMA', sort_order: -1, started_at: '', finished_at: '', updated_at: '' });
 
     const groups = groupTasksByPlan([second, first, third]);
 
-    expectLength(groups, 3, 'tasks without sequences should remain in separate plan groups');
+    expectLength(groups, 3, 'tasks without ordering signals should remain in separate plan groups');
     expectEqual(groups.map((group) => group.sourceId).join(','), '102,101,103');
   });
 });
@@ -407,5 +462,49 @@ describe('AcceptedRecord type backwards-compat in buildRecentAccepted', () => {
     const taskRec = records.find((r: { targetType: string }) => r.targetType === 'task');
     expectDefined(planRec, 'should have a plan-type AcceptedRecord');
     expectDefined(taskRec, 'should have a task-type AcceptedRecord');
+  });
+});
+
+describe('Task scope file display semantics', () => {
+  function scopeFile(overrides: Record<string, unknown> = {}) {
+    return {
+      path: (overrides.path as string) ?? 'src/renderer/App.tsx',
+      exists: (overrides.exists as boolean) ?? true,
+      isDirectory: (overrides.isDirectory as boolean) ?? false,
+      canOpen: (overrides.canOpen as boolean) ?? false,
+      isUnknown: (overrides.isUnknown as boolean) ?? false,
+      isValidation: (overrides.isValidation as boolean) ?? false,
+      reason: (overrides.reason as string) ?? '',
+    };
+  }
+
+  it('keeps openable scope files visibly openable without changing their label', () => {
+    const file = scopeFile({ canOpen: true, path: 'src/renderer/pages/WorkspacePage.tsx' });
+
+    expectEqual(scopeFileLabel(file), 'src/renderer/pages/WorkspacePage.tsx');
+    expectEqual(scopeFileStatus(file), '可打开');
+    expectEqual(scopeFileClassName(file), 'openable');
+  });
+
+  it('keeps unknown and validation scopes readonly semantic states', () => {
+    const unknown = scopeFile({ path: 'unknown', isUnknown: true, reason: '无法判断影响范围' });
+    const validation = scopeFile({ path: 'validation', isValidation: true, reason: '完整验收任务' });
+
+    expectEqual(scopeFileLabel(unknown), 'unknown');
+    expectEqual(scopeFileStatus(unknown), '无法判断影响范围');
+    expectEqual(scopeFileClassName(unknown), 'unknown special');
+    expectEqual(scopeFileLabel(validation), 'validation');
+    expectEqual(scopeFileStatus(validation), '完整验收任务');
+    expectEqual(scopeFileClassName(validation), 'validation');
+  });
+
+  it('keeps missing and non-openable scopes out of the openable class', () => {
+    const missing = scopeFile({ exists: false, reason: '' });
+    const directory = scopeFile({ isDirectory: true, reason: '路径指向目录，不能作为文件打开' });
+
+    expectEqual(scopeFileStatus(missing), '文件不存在');
+    expectEqual(scopeFileClassName(missing), '');
+    expectEqual(scopeFileStatus(directory), '路径指向目录，不能作为文件打开');
+    expectEqual(scopeFileClassName(directory), '');
   });
 });

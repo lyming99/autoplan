@@ -1,4 +1,4 @@
-﻿const { spawn } = require('node:child_process');
+const { spawn } = require('node:child_process');
 const { nowIso } = require('../database');
 const {
   DEFAULT_AGENT_CLI_PROVIDER,
@@ -122,6 +122,7 @@ function runtimeProjectSummary(project, state = {}, runtime = null, agentCliConf
     phase: normalizeRuntimePhase(state.phase || 'idle', runtime),
     interval_seconds: Number(state.interval_seconds || 5),
     validation_command: state.validation_command || '',
+    project_prompt: state.project_prompt ?? '',
     agent_cli_provider: agentCliConfig.provider,
     agent_cli_command: agentCliConfig.command,
   };
@@ -134,6 +135,7 @@ function normalizeRuntimeStatus(state, runtime = null, agentCliConfig) {
     ...state,
     running: runtimeRunning ? 1 : 0,
     validation_command: state.validation_command ?? '',
+    project_prompt: state.project_prompt ?? '',
     agent_cli_provider: agentCliConfig.provider,
     agent_cli_command: agentCliConfig.command,
     codex_reasoning_effort: agentCliConfig.codexReasoningEffort,
@@ -339,6 +341,28 @@ function setProjectPhase(db, projectId, phase) {
   ]);
 }
 
+function timeoutMinutesForOperation(operation = {}) {
+  const explicit = Number(operation.timeoutMinutes);
+  if (Number.isFinite(explicit) && explicit > 0) return explicit;
+  const timeoutMs = Number(operation.timeoutMs);
+  return Number.isFinite(timeoutMs) && timeoutMs > 0 ? Math.round((timeoutMs / 60000) * 100) / 100 : null;
+}
+
+function operationTimeoutSnapshotFields(operation = {}) {
+  const timeoutMs = Number(operation.timeoutMs);
+  const timeoutMinutes = timeoutMinutesForOperation(operation);
+  return {
+    ...(operation.timedOut !== undefined ? { timedOut: Boolean(operation.timedOut) } : {}),
+    ...(Number.isFinite(timeoutMs) && timeoutMs > 0 ? { timeoutMs } : {}),
+    ...(timeoutMinutes ? { timeoutMinutes } : {}),
+    ...(operation.taskSessionMode ? { taskSessionMode: operation.taskSessionMode } : {}),
+    ...(operation.taskSessionState ? { taskSessionState: operation.taskSessionState } : {}),
+    ...(operation.taskSessionResetReason ? { taskSessionResetReason: operation.taskSessionResetReason } : {}),
+    ...(operation.willRetryWithNewSession !== undefined ? { willRetryWithNewSession: Boolean(operation.willRetryWithNewSession) } : {}),
+    ...(operation.reopenContextOnRetry !== undefined ? { reopenContextOnRetry: Boolean(operation.reopenContextOnRetry) } : {}),
+  };
+}
+
 function recordRuntimeError(db, projectId, error, addEvent, emitUpdate) {
   const message = error?.stack || error?.message || String(error);
   db.run(
@@ -380,6 +404,14 @@ function archiveRuntimeOperation(runtime, operationKey) {
       startedAt: op.startedAt || null,
       finishedAt: nowIso(),
       exitCode: typeof op.exitCode === 'number' ? op.exitCode : null,
+      timedOut: Boolean(op.timedOut),
+      timeoutMs: Number.isFinite(Number(op.timeoutMs)) && Number(op.timeoutMs) > 0 ? Number(op.timeoutMs) : null,
+      timeoutMinutes: timeoutMinutesForOperation(op),
+      taskSessionMode: op.taskSessionMode || null,
+      taskSessionState: op.taskSessionState || null,
+      taskSessionResetReason: op.taskSessionResetReason || null,
+      willRetryWithNewSession: op.willRetryWithNewSession === true,
+      reopenContextOnRetry: op.reopenContextOnRetry === true,
       logTail: (op.logBuffer || '').slice(-8000),
       activity: op.activity ? op.activity.getLines() : [],
       ...(op.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(op) : {}),
@@ -432,6 +464,7 @@ function operationSnapshotRow(operation) {
     startedAt: operation.startedAt || null,
     ...(operation.finishedAt ? { finishedAt: operation.finishedAt } : {}),
     ...(typeof operation.exitCode === 'number' ? { exitCode: operation.exitCode } : {}),
+    ...operationTimeoutSnapshotFields(operation),
     ...(operation.logFile ? { logFile: operation.logFile } : {}),
     ...(operation.lastFile ? { lastFile: operation.lastFile } : {}),
     ...(operation.errorMessage ? { errorMessage: operation.errorMessage } : {}),
@@ -458,6 +491,7 @@ function operationTaskContextFields(operation = {}) {
   const agentContext = agentCliContextFields(operation, { defaultProvider: true });
   return {
     ...agentContext,
+    ...operationTimeoutSnapshotFields(operation),
     ...(agentContext.agentCliProvider === DEFAULT_AGENT_CLI_PROVIDER ? codexSessionContextFields(operation) : {}),
     ...(agentContext.agentCliProvider === 'opencode' ? opencodeSessionContextFields(operation) : {}),
   };

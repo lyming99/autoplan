@@ -154,6 +154,7 @@ const PLAN_EXECUTION_CONFIG_INPUT_KEYS = Object.freeze([
   ...planBackendConfig.PLAN_EXECUTION_MODEL_KEYS,
   ...planBackendConfig.PLAN_EXECUTION_CODEX_REASONING_EFFORT_KEYS,
 ]);
+const PROJECT_PROMPT_INPUT_KEYS = Object.freeze(['projectPrompt', 'project_prompt']);
 // 判定 runCodex 的本次调用是否为「OpenCode 计划生成」操作（区别于任务执行/修复）。
 // 仅在计划生成阶段注入 AutoPlan 专用受限 agent（P002），任务执行/修复复用既有 session 行为不变。
 // 判据与 src/loop/planGeneration.js 的调用方一致：label 为 generate-plan（issue-scan 走查计划）、
@@ -235,7 +236,7 @@ class LoopService extends EventEmitter {
   }
 
   hasRuntimeConfigInput(input = {}) {
-    return hasAnyOwnProperty(input, LOOP_CONFIG_INPUT_KEYS);
+    return hasAnyOwnProperty(input, LOOP_CONFIG_INPUT_KEYS) || hasProjectPromptInput(input);
   }
 
   resetRuntimeState() {
@@ -277,15 +278,23 @@ class LoopService extends EventEmitter {
     const nextValidationCommand = hasAnyOwnProperty(config, VALIDATION_COMMAND_INPUT_KEYS)
       ? String(readFirstOwnValue(config, VALIDATION_COMMAND_INPUT_KEYS) ?? '')
       : current.validation_command;
+    const projectStateColumns = this.projectStateColumns();
+    const planExecutionConfig = nextPlanExecutionConfig(current, config);
     const stateUpdates = [
       ['interval_seconds', nextInterval],
       ['validation_command', nextValidationCommand],
-      ...agentCliStateUpdates(this.projectStateColumns(), agentCliConfig),
-      ...planGenerationStateUpdates(this.projectStateColumns(), current, config),
-      ...planExecutionStateUpdates(this.projectStateColumns(), current, config),
+      ...agentCliStateUpdates(projectStateColumns, agentCliConfig),
+      ...planGenerationStateUpdates(projectStateColumns, current, config),
+      ...(planExecutionConfig ? planBackendStateUpdates(projectStateColumns, 'plan_execution', planExecutionConfig) : []),
       ['updated_at', nowIso()],
     ];
-    if (Array.isArray(config.envVars) && this.projectStateColumns().has('env_vars')) {
+    if (hasProjectPromptInput(config) && projectStateColumns.has('project_prompt')) {
+      stateUpdates.splice(stateUpdates.length - 1, 0, [
+        'project_prompt',
+        String(readFirstOwnValue(config, PROJECT_PROMPT_INPUT_KEYS) ?? ''),
+      ]);
+    }
+    if (Array.isArray(config.envVars) && projectStateColumns.has('env_vars')) {
       stateUpdates.splice(stateUpdates.length - 1, 0, ['env_vars', normalizeEnvVarsJson(config.envVars)]);
     }
     this.db.run(
@@ -294,6 +303,9 @@ class LoopService extends EventEmitter {
        WHERE project_id = ?`,
       [...stateUpdates.map(([, value]) => value), projectId],
     );
+    if (planExecutionConfig) {
+      planLifecycle.syncUnfinishedPlanExecutionCodexReasoningEffort(this, projectId, planExecutionConfig);
+    }
     if (runtime?.running) this.scheduleProject(projectId, nextInterval);
     this.emitUpdate(projectId);
   }
@@ -469,20 +481,8 @@ class LoopService extends EventEmitter {
       if (startedFromRunningLoop && !runtime.running) return;
       this.saveScan(projectId, 'plan', planScan);
 
-      // 执行队列里可运行的 plan
-      const generatedPlans = generatedPlanIds.length > 0
-        ? this.db.all(
-          `SELECT * FROM plans
-           WHERE project_id = ?
-             AND id IN (${generatedPlanIds.map(() => '?').join(', ')})
-           ORDER BY sort_order ASC, created_at ASC, id ASC`,
-          [projectId, ...generatedPlanIds],
-        )
-        : [];
-      const generatedPlan = generatedPlans.find((plan) => plan.status !== 'draft') || null;
-      const nextPlan = generatedPlan && generatedPlan.status !== 'draft'
-        ? generatedPlan
-        : this.nextRunnablePlan(projectId);
+      // 执行队列里可运行的 plan：新生成的计划只入队，不抢占更早的未完成计划。
+      const nextPlan = this.nextRunnablePlan(projectId);
       if (!nextPlan) {
         if (runtime.running || this.db.get('SELECT phase FROM project_states WHERE project_id = ?', [projectId])?.phase !== 'stopped') {
           this.setPhase(projectId, pendingIntakes.length > 0 && runtime.running ? 'waiting' : 'idle');
@@ -760,6 +760,19 @@ class LoopService extends EventEmitter {
     return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
   }
 
+  clearTaskAgentCliSessions(taskId, updatedAt = nowIso()) {
+    if (!taskId) return null;
+    this.db.run(
+      `UPDATE plan_tasks
+       SET codex_session_id = NULL,
+           agent_cli_session_id = NULL,
+           updated_at = ?
+       WHERE id = ?`,
+      [updatedAt, taskId],
+    );
+    return this.db.get('SELECT * FROM plan_tasks WHERE id = ?', [taskId]);
+  }
+
   planAgentCliSessionId(planId) {
     if (!planId) return '';
     const row = this.db.get('SELECT agent_cli_session_id FROM plans WHERE id = ?', [planId]);
@@ -921,7 +934,8 @@ class LoopService extends EventEmitter {
     if (linkedPlans.length > 0) throw new Error(`${sourceName}已绑定 Plan，不能重复生成`);
 
     const hasCliInput = hasAnyOwnProperty(input, INTAKE_RETRY_AGENT_CLI_INPUT_KEYS);
-    const planGenerationConfig = nextIntakePlanGenerationConfig(intake, input);
+    const projectStatus = this.status(normalizedProjectId) || {};
+    const planGenerationConfig = nextIntakePlanGenerationConfig(projectStatus, { ...intake, ...input });
     const agentCliConfig = hasCliInput
       ? nextIntakeAgentCliConfig(intake, input)
       : normalizeIntakeAgentCliConfig(intake);
@@ -991,6 +1005,11 @@ class LoopService extends EventEmitter {
   /** 取消人工验收：清空 accepted_at（NULL），不改变执行态 status，并记事件；重复取消保持 NULL 不报错。 */
   unacceptItem(projectId, target) {
     return acceptance.unacceptItem(this, projectId, target);
+  }
+
+  /** 验收重做：清空人工验收态，将已完成/已验收目标退回 pending，并记录 redo 事件。 */
+  redoAcceptanceItem(projectId, target) {
+    return acceptance.redoAcceptanceItem(this, projectId, target);
   }
 
   /** 校验收目标：按 targetType 路由 plan/task、校验归属当前项目与「已完成」态；不存在或不可验收时抛中文错误。 */
@@ -1523,7 +1542,9 @@ class LoopService extends EventEmitter {
           const resumeMissing = resume.exitCode !== 0 && isOpenCodeSessionMissing(resume.output);
           if (!resumeMissing) {
             const result = resultFor(resume, 'resume');
-            if (result.opencodeSessionId && opencodePlanId) {
+            if (result.timedOut && opencodePlanId) {
+              this.updatePlanAgentCliSession(opencodePlanId, '');
+            } else if (result.opencodeSessionId && opencodePlanId) {
               this.updatePlanAgentCliSession(opencodePlanId, result.opencodeSessionId);
             }
             return result;
@@ -1549,7 +1570,9 @@ class LoopService extends EventEmitter {
         const fresh = await runAttempt([], 'new');
         if (operationCancelled()) return cancelledResult();
         const result = resultFor(fresh, 'new');
-        if (result.opencodeSessionId && opencodePlanId) {
+        if (result.timedOut && opencodePlanId) {
+          this.updatePlanAgentCliSession(opencodePlanId, '');
+        } else if (result.opencodeSessionId && opencodePlanId) {
           this.updatePlanAgentCliSession(opencodePlanId, result.opencodeSessionId);
         } else if (result.sessionLookupError) {
           appendInternalLog(`OpenCode session lookup failed: ${result.sessionLookupError}`);
@@ -2146,6 +2169,10 @@ function hasPlanExecutionConfigInput(input = {}) {
   return hasAnyOwnProperty(input, PLAN_EXECUTION_CONFIG_INPUT_KEYS);
 }
 
+function hasProjectPromptInput(input = {}) {
+  return hasAnyOwnProperty(input, PROJECT_PROMPT_INPUT_KEYS);
+}
+
 function planGenerationStateUpdates(columns, current = {}, input = {}) {
   if (!hasPlanGenerationConfigInput(input) && !hasLegacyAgentCliConfigInput(input)) return [];
   const config = planBackendConfig.effectivePlanGenerationConfig(
@@ -2156,12 +2183,16 @@ function planGenerationStateUpdates(columns, current = {}, input = {}) {
 }
 
 function planExecutionStateUpdates(columns, current = {}, input = {}) {
-  if (!hasPlanExecutionConfigInput(input) && !hasLegacyAgentCliConfigInput(input)) return [];
-  const config = planBackendConfig.effectivePlanExecutionConfig(
+  const config = nextPlanExecutionConfig(current, input);
+  return config ? planBackendStateUpdates(columns, 'plan_execution', config) : [];
+}
+
+function nextPlanExecutionConfig(current = {}, input = {}) {
+  if (!hasPlanExecutionConfigInput(input) && !hasLegacyAgentCliConfigInput(input)) return null;
+  return planBackendConfig.effectivePlanExecutionConfig(
     current,
     planExecutionInputWithLegacyStrategyDefault(input),
   );
-  return planBackendStateUpdates(columns, 'plan_execution', config);
 }
 
 function planBackendStateUpdates(columns, prefix, config = {}) {

@@ -10,6 +10,7 @@ import {
   isBuiltinPlanExecutionStrategy,
   isBuiltinPlanGenerationStrategy,
   isCodexPlanBackendProvider,
+  loadNewProjectDefaultCliPreferences,
   normalizeCodexReasoningEffort,
   normalizePlanBackendProvider,
   normalizePlanExecutionStrategy,
@@ -19,6 +20,7 @@ import {
   planBackendProviderOptionsForStrategy,
   planExecutionStrategyOptions,
   planGenerationStrategyOptions,
+  saveNewProjectDefaultCliPreferences,
 } from '../utils/workspaceForms';
 import { formatChinaDateTime } from '../utils/time';
 import { UpdateNotice } from '../components/UpdateNotice';
@@ -51,6 +53,7 @@ export function ProjectsPage() {
   const [query, setQuery] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
+  const [defaultSaved, setDefaultSaved] = useState(false);
   const [deleting, setDeleting] = useState<Project | null>(null);
 
   const filtered = useMemo(() => {
@@ -70,12 +73,14 @@ export function ProjectsPage() {
   };
 
   const openCreate = () => {
-    setDraft({ ...emptyDraft });
+    setDraft(createDraftFromNewProjectDefaults());
+    setDefaultSaved(false);
     setModalOpen(true);
   };
 
   const openEdit = (project: Project) => {
     setDraft(projectDraftFromProject(project));
+    setDefaultSaved(false);
     setModalOpen(true);
   };
 
@@ -116,6 +121,17 @@ export function ProjectsPage() {
         : await window.autoplan.createProject(projectPayload);
       setSnapshot(next);
       setModalOpen(false);
+      setError(null);
+    } catch (e) {
+      showError(e);
+    }
+  };
+
+  const saveCurrentCliAsDefault = () => {
+    try {
+      const saved = saveNewProjectDefaultCliPreferences(newProjectDefaultCliPreferencesFromDraft(draft));
+      setDraft((current) => current.id ? current : { ...current, ...draftCliFieldsFromNewProjectDefaults(saved) });
+      setDefaultSaved(true);
       setError(null);
     } catch (e) {
       showError(e);
@@ -272,7 +288,7 @@ export function ProjectsPage() {
 
       {modalOpen ? (
         <div className="modal-mask" onClick={() => setModalOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
+          <div className="modal modal-wide" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h3>{draft.id ? '编辑项目' : '创建项目'}</h3>
               <button type="button" className="modal-close" onClick={() => setModalOpen(false)} aria-label="关闭">
@@ -316,6 +332,16 @@ export function ProjectsPage() {
                 <ProjectBackendDraftFields kind="generation" draft={draft} setDraft={setDraft} />
                 <ProjectBackendDraftFields kind="execution" draft={draft} setDraft={setDraft} />
               </div>
+              {!draft.id ? (
+                <div className="button-row">
+                  <span className="field-hint">新项目默认 CLI</span>
+                  {defaultSaved ? <span className="chip chip-completed">已保存</span> : null}
+                  <button type="button" className="btn btn-sm" onClick={saveCurrentCliAsDefault}>
+                    <Icon name="save" size={15} aria-hidden="true" />
+                    设为默认
+                  </button>
+                </div>
+              ) : null}
               <div className="modal-foot">
                 <button type="button" className="btn" onClick={() => setModalOpen(false)}>
                   取消
@@ -354,6 +380,56 @@ export function ProjectsPage() {
       ) : null}
     </>
   );
+}
+
+function createDraftFromNewProjectDefaults(): Draft {
+  return {
+    ...emptyDraft,
+    ...draftCliFieldsFromNewProjectDefaults(loadNewProjectDefaultCliPreferences()),
+  };
+}
+
+function draftCliFieldsFromNewProjectDefaults(
+  defaults: ReturnType<typeof loadNewProjectDefaultCliPreferences>,
+): Partial<Draft> {
+  return {
+    agentCliProvider: defaults.agentCliProvider,
+    agentCliCommand: defaults.agentCliCommand,
+    codexReasoningEffort: defaults.codexReasoningEffort || defaultCodexReasoningEffort,
+    planGenerationStrategy: defaults.planGenerationStrategy,
+    planGenerationProvider: defaults.planGenerationProvider,
+    planGenerationCommand: defaults.planGenerationCommand,
+    planGenerationModel: defaults.planGenerationModel,
+    planGenerationCodexReasoningEffort: defaults.planGenerationCodexReasoningEffort || defaultCodexReasoningEffort,
+    planExecutionStrategy: defaults.planExecutionStrategy,
+    planExecutionProvider: defaults.planExecutionProvider,
+    planExecutionCommand: defaults.planExecutionCommand,
+    planExecutionModel: defaults.planExecutionModel,
+    planExecutionCodexReasoningEffort: defaults.planExecutionCodexReasoningEffort || defaultCodexReasoningEffort,
+  };
+}
+
+function newProjectDefaultCliPreferencesFromDraft(draft: Draft): ReturnType<typeof loadNewProjectDefaultCliPreferences> {
+  const payload = projectInputFromDraft(draft, draft.description || '');
+  const planGenerationStrategy = normalizePlanGenerationStrategy(payload.planGenerationStrategy);
+  const planGenerationProvider = normalizePlanBackendProvider(payload.planGenerationProvider, planGenerationStrategy);
+  const planExecutionStrategy = normalizePlanExecutionStrategy(payload.planExecutionStrategy);
+  const planExecutionProvider = normalizePlanBackendProvider(payload.planExecutionProvider, planExecutionStrategy);
+  return {
+    agentCliProvider: payload.agentCliProvider || 'codex',
+    agentCliCommand: String(payload.agentCliCommand || ''),
+    codexReasoningEffort: payload.codexReasoningEffort ?? null,
+    planGenerationStrategy,
+    planGenerationProvider,
+    planGenerationCommand: String(payload.planGenerationCommand || ''),
+    planGenerationModel: String(payload.planGenerationModel || ''),
+    planGenerationCodexReasoningEffort: payload.planGenerationCodexReasoningEffort ?? null,
+    planExecutionStrategy,
+    planExecutionProvider,
+    planExecutionCommand: String(payload.planExecutionCommand || ''),
+    planExecutionModel: String(payload.planExecutionModel || ''),
+    planExecutionCodexReasoningEffort: payload.planExecutionCodexReasoningEffort ?? null,
+  };
 }
 
 function projectDraftFromProject(project: Project): Draft {

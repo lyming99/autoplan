@@ -1,4 +1,4 @@
-﻿const {
+const {
   DEFAULT_AGENT_CLI_PROVIDER,
   agentCliContextFields,
   agentCliProviderDisplayName,
@@ -99,6 +99,14 @@ function taskEventMeta(task, overrides = {}) {
     : undefined;
   meta.durationMs = normalizeOptionalNumber(meta.durationMs);
   meta.runDurationMs = normalizeOptionalNumber(meta.runDurationMs);
+  meta.timedOut = meta.timedOut === undefined && meta.timed_out === undefined
+    ? undefined
+    : Boolean(meta.timedOut ?? meta.timed_out);
+  meta.timeoutMs = normalizeOptionalNumber(meta.timeoutMs ?? meta.timeout_ms);
+  meta.timeoutMinutes = normalizeOptionalNumber(meta.timeoutMinutes ?? meta.timeout_minutes);
+  delete meta.timed_out;
+  delete meta.timeout_ms;
+  delete meta.timeout_minutes;
   const compacted = compactEventMeta(meta);
   return Object.keys(compacted).length ? compacted : null;
 }

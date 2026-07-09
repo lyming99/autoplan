@@ -68,6 +68,7 @@ class AppDatabase {
         phase TEXT NOT NULL DEFAULT 'idle',
         interval_seconds INTEGER NOT NULL DEFAULT 5,
         validation_command TEXT NOT NULL DEFAULT '',
+        project_prompt TEXT NOT NULL DEFAULT '',
         agent_cli_provider TEXT NOT NULL DEFAULT 'codex',
         agent_cli_command TEXT NOT NULL DEFAULT '',
         codex_reasoning_effort TEXT,
@@ -495,6 +496,7 @@ class AppDatabase {
     this.ensureColumn('executors', 'created_at', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('executors', 'updated_at', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'agent_cli_provider', "TEXT NOT NULL DEFAULT 'codex'");
+    this.ensureColumn('project_states', 'project_prompt', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'agent_cli_command', "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn('project_states', 'codex_reasoning_effort', 'TEXT');
     this.ensureColumn('project_states', 'plan_generation_strategy', "TEXT NOT NULL DEFAULT 'external-cli-markdown'");

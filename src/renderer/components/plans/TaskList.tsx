@@ -20,12 +20,14 @@ export function TaskList({
   emptyText = '暂无任务。',
   tasks,
   onOpenPlan,
+  onOpenScopeFile,
   onRun,
   onStop,
 }: {
   emptyText?: string;
   tasks: PlanTask[];
   onOpenPlan?: (task: PlanTask) => void;
+  onOpenScopeFile?: (filePath: string) => void;
   onRun?: (task: PlanTask) => void;
   onStop?: (task: PlanTask) => void;
 }) {
@@ -140,14 +142,35 @@ export function TaskList({
                             <div className="task-scope-files scope-files" aria-label="任务相关文件">
                               {task.scope_files.map((file) => {
                                 const semanticClass = scopeFileClassName(file);
+                                const className = `task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`;
+                                const status = scopeFileStatus(file);
+                                const label = scopeFileLabel(file);
+                                if (file.canOpen && onOpenScopeFile) {
+                                  return (
+                                    <button
+                                      key={`${task.id}-${file.path}`}
+                                      type="button"
+                                      className={className}
+                                      title={status}
+                                      aria-label={`打开 ${file.path}`}
+                                      onClick={(event) => {
+                                        event.stopPropagation();
+                                        onOpenScopeFile(file.path);
+                                      }}
+                                    >
+                                      <span className="mono">{label}</span>
+                                      <small>{status}</small>
+                                    </button>
+                                  );
+                                }
                                 return (
                                   <span
                                     key={`${task.id}-${file.path}`}
-                                    className={`task-scope-chip scope-chip${semanticClass ? ` ${semanticClass}` : ''}`}
-                                    title={scopeFileStatus(file)}
+                                    className={className}
+                                    title={status}
                                   >
-                                    <span className="mono">{scopeFileLabel(file)}</span>
-                                    <small>{scopeFileStatus(file)}</small>
+                                    <span className="mono">{label}</span>
+                                    <small>{status}</small>
                                   </span>
                                 );
                               })}

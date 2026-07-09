@@ -295,6 +295,36 @@ export function WorkspacePage() {
 | `external-cli-structured` | 外置 CLI 写 `PlanSpec` JSON，或从 stdout 兜底提取 JSON。 | `structuredPlanSpec` 校验/规范化，`planRenderer` 确定性渲染 Markdown，再走现有 Markdown 校验和任务同步。 |
 | `builtin-llm-structured` | 内置 LLM 返回 `PlanSpec`。 | 复用同一套 PlanSpec 校验、规范化、渲染和 Markdown 校验。该路径依赖 `ai_configs` 中可用的 provider、模型和 API key。 |
 
+### 结构化 PlanSpec 与 Markdown 渲染契约
+
+结构化计划生成分两步：生成端只产出 `PlanSpec` JSON，AutoPlan 负责校验、规范化和确定性渲染最终 Markdown。这样可以避免外部 agent 直接写出漂移的 Markdown 任务格式，也让 `plans` / `plan_tasks` 入库前有统一的失败边界。
+
+`PlanSpec` JSON 的最小契约：
+
+- 顶层必须是对象，且包含非空 `title`、`summary`、`tasks`、`finalValidation`。
+- `tasks` 至少 1 项；每项写 `title`、可选 `scope: string[]`、可选 `acceptance: string[]`。
+- 普通任务不要写 P001/P002 编号，`normalizePlanSpec` 会清理手写编号并由渲染器重新编号。
+- `finalValidation.command` 和 `finalValidation.criteria` 必填，最终会并入最后的完整验收任务。
+- 普通任务缺失 scope 时归一为 `unknown`；完整验收任务 scope 强制归一为 `validation`。
+
+渲染后的 Markdown 在写入 plan 文件前必须通过硬校验：
+
+- 必须包含精确的 `## 任务拆解` 二级标题，不能写成 `## 2. 任务拆解`、`### 任务拆解` 或其它变体。
+- 任务拆解章节只能包含顶层任务 checkbox；代码块、引用、表格或嵌套 checkbox 里的内容不允许作为任务来源。
+- 任务行必须严格形如 `- [ ] P001: 标题 <!-- scope: src/file.js -->`，编号从 P001 连续递增。
+- 最后一项必须是完整验收类任务，且唯一 scope 为 `validation`。
+- Markdown 校验失败时按计划生成失败处理，不插入 `plans`，不调用 `syncPlanTasks`。
+
+`planTaskSync` 只解析精确 `## 任务拆解` 章节内的真实顶层 checkbox 行；章节外、代码块、引用、表格和嵌套 checkbox 会被忽略，避免 UI 展示任务和数据库任务被伪任务污染。
+
+OpenCode 结构化生成使用项目内 `.opencode/agents/autoplan-plan.md` 专用 agent：
+
+- 只允许读取少量必要上下文并写指定的 PlanSpec JSON 文件。
+- 禁止创建最终 Markdown plan 文件；最终 Markdown 必须由 AutoPlan 渲染。
+- 禁止修改业务代码、配置、测试文件，禁止运行命令、联网、派生子 agent 或反问用户。
+- 如果 OpenCode 未写 PlanSpec 文件但 stdout 中能提取合法 JSON 对象，`recoverPlanSpecFromStdoutResult` 会安全落盘并继续渲染。
+- 如果 stdout 只是 Markdown、寒暄或非 JSON 文本，失败事件会记录 `stdoutPlanSpecClassification`、`stdoutPlanSpecRecoveryReason`、PlanSpec 目标路径、日志路径和 provider 信息，便于 UI 定位。
+
 两种计划执行策略由 `src/loop/taskExecution.js`、`src/loop/validation.js` 通过 `src/loop/planAgentCli.js` 和 `src/loop/planBackendConfig.js` 读取：
 
 - `external-cli` 是当前支持的执行路径，会转换为现有 agent CLI operation fields，继续复用 `runCodexWithPlanGuard`、CLI 会话、OpenCode 串行化、plan guard 和事件记录。
@@ -314,6 +344,17 @@ export function WorkspacePage() {
 - 默认兼容：`external-cli-markdown` 生成 + `external-cli` 执行，provider 为 `codex`。
 - 外置结构化生成：`external-cli-structured` 生成 + `external-cli` 执行，生成和执行 provider 可以不同。
 - 内置结构化生成：`builtin-llm-structured` 生成 + `external-cli` 执行，用内置 AI 配置稳定产出 PlanSpec，再交给 Codex/Claude/OpenCode/oh-my-pi 执行。
+
+### 3.5 项目级 Prompt 配置与注入
+
+项目级 Prompt 是项目维度的补充约束，存储在 `project_states.project_prompt`，通过 `loop.configure` 保存、清空并随 `status` / `snapshot` 回填到渲染层。它用于表达长期项目约定，例如代码风格、目录边界、计划拆解偏好、禁止引入的依赖或执行时需要额外遵守的团队规范。
+
+注入链路分为两段：
+
+- **计划生成**：`src/loop/planGeneration.js` 在需求正文之外追加项目级 Prompt。覆盖 `external-cli-markdown`、`external-cli-structured` 和 `builtin-llm-structured` 三种生成策略；空字符串不追加该段内容。
+- **任务执行**：`src/loop/taskExecution.js` 通过 `planAgentCli.planProjectPrompt` 读取当前项目状态，并在单任务执行 prompt 中加入项目级 Prompt。普通执行、超时后新上下文重试、恢复同一 plan 前序会话、任务/计划重做补充内容都会重新构造 prompt，因此都能带上同一项目级 Prompt。
+
+优先级规则：项目级 Prompt 只能补充约定，不能覆盖 AutoPlan 系统级边界。计划生成时必须继续遵守 Markdown 任务拆解格式、PlanSpec JSON 契约和“只写指定输出文件”；任务执行时必须继续遵守只执行当前任务、不提前执行其它 checkbox、plan 文件只读、只改当前 scope、并发隔离和最终验收统一执行等硬约束。项目级 Prompt 与这些规则冲突时，硬约束优先。
 
 ---
 
