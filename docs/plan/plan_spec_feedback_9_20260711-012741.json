@@ -1,0 +1,28 @@
+{
+  "title": "修复 OpenCode 附件模式把指针消息误解析为文件路径",
+  "summary": "反馈 #9 的日志表明，反馈 #6 已成功把 Windows `.cmd/.bat` shim 下的多行结构化计划 prompt 完整写入临时附件，但实际调用仍在参数解析阶段失败：OpenCode 1.17.15 报错 `File not found: 你的完整唯一指令已作为附件...`。结合当前 `src/agentCli.js` 与本机 `opencode run --help` 可确认，`run [message..]` 是位置消息数组，`-f/--file` 是文件数组；现实现按 `-f <附件> <指针消息>` 排列，导致指针消息也被 `-f` 吞入文件列表。需要调整附件与位置消息的组装契约，并用能验证 OpenCode 参数归属而非只检查字符串顺序的回归场景，保证完整 prompt 能进入 autoplan-plan agent。",
+  "tasks": [
+    {
+      "title": "修正 OpenCode prompt 附件参数绑定并固化真实解析回归",
+      "scope": [
+        "src/agentCli.js",
+        "src/agentCli.test.js"
+      ],
+      "acceptance": [
+        "Windows `.cmd/.bat` shim 的多行 prompt 继续完整写入受控临时附件，但最终 `opencode run` 参数必须让单行权威指针归入 `message..`、且只让实际附件路径归入 `-f/--file` 数组；不得再出现把指针文本作为文件打开并报 `File not found` 的行为。",
+        "参数组装保留 `--auto`、`--session`、`--title`、`--agent autoplan-plan` 等既有选项及其取值，兼容 LF、CRLF、命令行超长 spillover、Windows shim 和原生可执行文件路径，不把原始多行 prompt 重新暴露到 `cmd.exe` 命令字符串。",
+        "回归覆盖贴近反馈日志的真实结构化计划 prompt，并验证 OpenCode 的参数归属语义，而不只验证子进程能启动或命令字符串包含附件；断言指针是消息、附件列表仅包含 prompt 文件、附件内容逐字等于原 prompt。",
+        "短单行 OpenCode prompt 仍沿用直接位置参数，Codex、Claude、Oh My Pi 的 stdin 投递不受影响；临时附件在成功、CLI 非零退出、超时、spawn 异常和写入失败路径仍按既有生命周期清理并返回可诊断错误。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test && npm run check && npm run smoke",
+    "criteria": [
+      "OpenCode 参数与执行层测试全部通过，LF/CRLF 多行 prompt 和超长 prompt 均通过唯一附件安全投递，权威指针不会进入 `-f/--file` 文件数组。",
+      "在 Windows 上使用 OpenCode 1.17.15 生成结构化计划时，不再出现 `File not found: 你的完整唯一指令已作为附件...`，autoplan-plan agent 能读取完整需求、PlanSpec 契约、引用上下文和目标输出路径并写出合法 JSON。",
+      "附件清理、写入失败诊断、非零退出、超时与 spawn 异常场景通过，且短单行 OpenCode prompt 及 Codex、Claude、Oh My Pi 的既有投递链路无回归。",
+      "生成的 PlanSpec 可由 AutoPlan 渲染为包含精确 `## 任务拆解`、连续 P001 编号、完整 scope 注释、最后一个 `validation` 完整验收任务和空初始 `## 进度区` 的 Markdown plan。"
+    ]
+  }
+}

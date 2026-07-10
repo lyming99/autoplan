@@ -57,6 +57,7 @@ function codexNewSessionArgs(lastFile, options = {}) {
     lastFile,
     '--sandbox',
     'danger-full-access',
+    '--skip-git-repo-check',
     '-',
   ];
 }
@@ -68,6 +69,7 @@ function codexResumeSessionArgs(sessionId, lastFile, options = {}) {
     ...codexReasoningConfigArgs(options.reasoningEffort),
     '-o',
     lastFile,
+    '--skip-git-repo-check',
     sessionId,
     '-',
   ];
@@ -193,16 +195,16 @@ function normalizeOpenCodeAgentName(value) {
 }
 
 function opencodeCliArgs(options = {}) {
-  // --dangerously-skip-permissions：无人值守模式下必须自动批准 external_directory 等权限，
+  // --auto：无人值守模式下自动批准未被显式拒绝的 external_directory 等权限，
   // 否则每次访问工作区文件都会触发权限请求并被自动拒绝（auto-rejecting），导致工具调用全部失败、
   // 写不出 plan。与 codex 的 --sandbox danger-full-access、claude 的 --dangerously-skip-permissions 对齐。
-  const args = ['run', '--format', 'default', '--dangerously-skip-permissions'];
+  const args = ['run', '--format', 'default', '--auto'];
   const sessionId = normalizeAgentCliSessionId(options.sessionId || options.opencodeSessionId);
   const title = normalizeOpenCodeSessionTitle(options.title || options.opencodeSessionTitle);
   if (sessionId) args.push('--session', sessionId);
   if (title) args.push('--title', title);
   // 计划生成阶段注入 AutoPlan 专用受限 agent（见 src/loop/opencodeAgent.js，P001/P002）。
-  // --agent 必须位于 run / --format / --dangerously-skip-permissions 与 --session / --title
+  // --agent 必须位于 run / --format / --auto 与 --session / --title
   // 之后、位置 prompt 之前（位置 prompt 在 runAgentCliAttempt 中追加，本函数返回时其后尚无 prompt）。
   const agent = normalizeOpenCodeAgentName(options.agent || options.opencodeAgent);
   if (agent) args.push('--agent', agent);
@@ -351,18 +353,53 @@ async function runAgentCliAttempt(options) {
 
   // opencode 仅支持以位置参数传入 prompt，在构造命令行前追加，复用既有转义/引用逻辑。
   if (spawnSpec.promptSource === 'argument') {
-    const spillover = writePromptSpilloverFile(spawnSpec, prompt, workspace);
+    let spillover;
+    try {
+      spillover = writePromptSpilloverFile(spawnSpec, prompt, workspace);
+    } catch (error) {
+      // 多行 prompt 在 Windows .cmd/.bat shim 上不能安全放回命令行。附件写入
+      // 失败时直接返回可诊断失败，禁止静默降级为会被 cmd.exe 截断的位置参数。
+      const message = `OpenCode CLI prompt 安全投递失败（${spawnSpec.command}）：${error?.message || String(error)}`;
+      const note = `\n[AutoPlan] ${message}\n`;
+      safeWriteStream(stream, note);
+      appendOperationBuffer(activeOperation, note);
+      activeOperation.errorMessage = message;
+      return {
+        exitCode: -1,
+        output: note,
+        logFile,
+        lastFile,
+        provider: spawnSpec.agentCliProvider,
+        agentCliProvider: spawnSpec.agentCliProvider,
+        command: spawnSpec.command,
+        agentCliCommand: spawnSpec.command,
+        operationKey,
+        activity: agentCliActivity(activeOperation),
+        errorMessage: message,
+        timedOut: false,
+        timeoutMs,
+        ...(spawnSpec.opencodeAgent ? { opencodeAgent: spawnSpec.opencodeAgent } : {}),
+        ...(spawnSpec.structuredPlan ? { structuredPlan: true, opencodePlanMode: spawnSpec.opencodePlanMode } : {}),
+      };
+    }
     if (spillover) {
-      // prompt（连同 run 子命令自身参数、转义/call 开销）会超过命令行字符上限（cmd.exe 路径仅
-      // 8191，CreateProcess 路径 32767）：已把完整 prompt 落盘为文件，用 `-f` 作为「消息附件」投递，
+      // prompt 为 Windows .cmd/.bat shim 不安全的多行参数，或会超过对应命令行字符上限
+      // （cmd.exe 路径 8191，CreateProcess 路径 32767）：已把完整 prompt 落盘为文件，用 `-f`
+      // 作为「消息附件」投递，
       // 位置参数只放 spillover.pointerMessage 这条权威指针指令。注意 opencode 的 `-f/--file` 语义是
       // "File(s) to attach to message"（把文件作为消息附件，见 opencode.ai/docs/cli），而非「从文件读取
       // prompt」——真正的用户消息是位置参数这条指令，附件需模型主动读取，故指针指令必须权威且明确。
       // opencode 的 run 子命令不读 stdin，必须走位置参数；仅 promptSource=argument（opencode）走此分支，
       // codex/claude/oh-my-pi（stdin）不受影响。
+      // OpenCode 的 -f/--file 是可变长数组；若把位置 prompt 放在 `-f <path>` 之后，解析器会把
+      // prompt 继续吞进 file[] 并尝试作为文件打开。先放 message..，再以末尾 `-f <path>` 收束，
+      // 保证权威指针只归入位置消息、file[] 只含实际附件路径。
       spawnSpec.args = [...spawnSpec.args, spillover.pointerMessage, '-f', spillover.filePath];
       promptSpillover = spillover;
-      const note = `\n[AutoPlan] prompt 过长（${spillover.promptChars} 字符），已写入附件 ${spillover.filePath} 并以 -f 作为消息附件投递，规避命令行长度上限。\n`;
+      const reason = spillover.reason === 'windows-cmd-multiline'
+        ? 'Windows .cmd/.bat shim 多行 prompt'
+        : `prompt 过长（${spillover.promptChars} 字符）`;
+      const note = `\n[AutoPlan] ${reason}，已写入附件 ${spillover.filePath} 并以 -f 作为消息附件安全投递。\n`;
       safeWriteStream(stream, note);
       appendOperationBuffer(activeOperation, note);
     } else {
@@ -710,22 +747,42 @@ function writePromptSpilloverFile(spawnSpec, prompt, workspace) {
   const text = typeof prompt === 'string' ? prompt : '';
   const promptChars = text.length;
   const limit = effectiveCommandLineLimit(spawnSpec) - PROMPT_ARG_SAFETY_MARGIN;
-  const baseChars = estimatedCommandLineChars(spawnSpec, '');
-  if (baseChars + promptChars <= limit) return null;
+  const estimatedChars = estimatedCommandLineChars(spawnSpec, text);
+  // cmd.exe 会把 CR/LF 解释为命令边界，即使总长度远低于 8191，结构化 prompt 也会
+  // 只把首行传给 .cmd/.bat shim。此类参数必须无条件走附件；Windows 原生 .exe 仍按长度判定。
+  const unsafeWindowsCmdMultiline = isWindowsCmdShim(spawnSpec.command) && /[\r\n]/.test(text);
+  const exceedsCommandLineLimit = estimatedChars > limit;
+  if (!unsafeWindowsCmdMultiline && !exceedsCommandLineLimit) return null;
+  let tmpDir = '';
+  let filePath = '';
   try {
-    const tmpDir = path.join(workspace, 'docs', 'progress', 'prompt-tmp');
+    tmpDir = path.join(workspace, 'docs', 'progress', 'prompt-tmp');
     fs.mkdirSync(tmpDir, { recursive: true });
     const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    const filePath = path.join(tmpDir, `prompt-${stamp}.md`);
+    filePath = path.join(tmpDir, `prompt-${stamp}.md`);
     fs.writeFileSync(filePath, text, 'utf8');
     // 位置参数只放一条「权威指针指令」：opencode 的 `-f/--file` 语义是 "File(s) to attach to message"
     // （把文件作为消息附件，见 opencode.ai/docs/cli），而非「从文件读取 prompt」——真正的用户消息是
     // 这条位置参数指令，附件内容需模型主动读取。故必须明确告知完整唯一指令就在附件里、必须完整读取
     // 并严格按其执行、禁止转而探索仓库或重写主题，否则 agentic 模型易忽略附件而自主发挥（反馈 #14 根因）。
     const pointerMessage = `你的完整唯一指令已作为附件 ${filePath} 提供。必须完整读取该附件，并严格按照其内容执行；禁止转而探索仓库、禁止自主重写任务主题。`;
-    return { filePath, promptBytes: Buffer.byteLength(text, 'utf8'), promptChars, pointerMessage };
-  } catch {
-    return null;
+    return {
+      filePath,
+      promptBytes: Buffer.byteLength(text, 'utf8'),
+      promptChars,
+      pointerMessage,
+      reason: unsafeWindowsCmdMultiline ? 'windows-cmd-multiline' : 'command-line-limit',
+    };
+  } catch (cause) {
+    // writeFileSync 可能在建立文件后才失败，先清理潜在的半成品，再将错误上抛给
+    // runAgentCliAttempt 转换为统一失败结果；不得退回原始多行位置参数。
+    removePromptSpilloverFile(filePath);
+    const target = filePath || tmpDir || workspace;
+    const detail = cause?.message || String(cause);
+    const error = new Error(`无法写入 OpenCode prompt 附件 ${target}：${detail}`);
+    error.code = 'OPENCODE_PROMPT_ATTACHMENT_WRITE_FAILED';
+    error.cause = cause;
+    throw error;
   }
 }
 

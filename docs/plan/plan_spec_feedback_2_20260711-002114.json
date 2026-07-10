@@ -1,0 +1,40 @@
+{
+  "title": "修复 Codex 在非受信任目录中启动失败",
+  "summary": "反馈 #2 表明 AutoPlan 在未被 Codex 认定为受信任 Git 仓库的工作区启动 Codex CLI 时，会因缺少 --skip-git-repo-check 而直接失败。当前计划生成、任务执行及 Codex 聊天共用 src/agentCli.js 中的新会话和恢复会话参数构造器，因此修复应在该共享入口为两类 codex exec 调用注入合法位置的绕过参数，并通过参数构造与聊天 spawn 回归用例确保所有复用链路生效且其他 CLI 后端不受影响。",
+  "tasks": [
+    {
+      "title": "为 Codex 新建与恢复会话注入仓库检查绕过参数",
+      "scope": [
+        "src/agentCli.js"
+      ],
+      "acceptance": [
+        "codexNewSessionArgs 生成的 codex exec 参数包含 --skip-git-repo-check，且该选项位于 stdin 提示占位符之前，不再因工作区未受信任或不是 Git 仓库而在启动阶段失败。",
+        "codexResumeSessionArgs 生成的 codex exec resume 参数同样包含 --skip-git-repo-check，并位于 resume 子命令可识别的选项位置及 sessionId、stdin 提示占位符之前。",
+        "新建与恢复会话原有的 reasoning effort、输出文件、颜色、sandbox、sessionId 和 stdin 参数语义保持不变。",
+        "计划生成、任务执行和 Codex 聊天等复用共享参数构造器的链路自动获得修复，Claude、OpenCode 与 Oh My Pi 的参数构造不发生变化。"
+      ]
+    },
+    {
+      "title": "补充非受信任目录场景的 Codex 参数回归覆盖",
+      "scope": [
+        "src/agentCli.test.js",
+        "src/chat/codexChatBackend.test.js"
+      ],
+      "acceptance": [
+        "参数构造单元用例覆盖 Codex 新会话与恢复会话，断言两条命令都包含 --skip-git-repo-check 且位于各自解析器可接受的位置。",
+        "用例同时断言 reasoning effort、输出文件、sandbox、sessionId 与末尾 stdin 占位符等既有关键参数及顺序没有回归。",
+        "Codex 聊天的新会话与恢复会话 spawn 参数用例确认注入 --json 后仍保留 --skip-git-repo-check，覆盖共享参数在实际调用链中的传播。",
+        "非 Codex provider 的参数用例保持原有行为，避免将 Git 仓库检查绕过标志误传给其他 CLI。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm run check && npm test && npm run smoke",
+    "criteria": [
+      "最终验收命令全部退出码为 0，静态检查、文件长度检查、单元测试与 smoke 主流程均通过。",
+      "Codex 新会话和恢复会话的最终命令参数均包含位置合法的 --skip-git-repo-check，并保留现有 reasoning、sandbox、输出文件、会话恢复和 stdin 投递行为。",
+      "在未受信任或非 Git 工作区触发使用 Codex 的计划生成、任务执行或聊天时，不再出现 Not inside a trusted directory and --skip-git-repo-check was not specified 错误。",
+      "Claude、OpenCode、Oh My Pi 以及 Codex 已受信任工作区的既有执行链路无回归。"
+    ]
+  }
+}

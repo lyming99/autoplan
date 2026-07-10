@@ -430,7 +430,7 @@ class LoopService extends EventEmitter {
              )
              AND status NOT IN ('completed', 'closed')
              AND (generate_fail_count < 3 OR (generate_fail_count >= 3 AND last_generate_fail_at < datetime('now','-15 minutes')))
-           ORDER BY created_at ASC`,
+           ORDER BY created_at ASC, id ASC`,
           [projectId],
         )
         .map((row) => ({ ...row, __type: 'requirement' }));
@@ -446,7 +446,7 @@ class LoopService extends EventEmitter {
              )
              AND status NOT IN ('completed', 'closed')
              AND (generate_fail_count < 3 OR (generate_fail_count >= 3 AND last_generate_fail_at < datetime('now','-15 minutes')))
-           ORDER BY created_at ASC`,
+           ORDER BY created_at ASC, id ASC`,
           [projectId],
         )
         .map((row) => ({ ...row, __type: 'feedback' }));

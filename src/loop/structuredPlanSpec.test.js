@@ -43,11 +43,52 @@ describe('structuredPlanSpec normalization and rendering', () => {
     assert.match(markdown, new RegExp(`^- \\[ \\] P003: ${FINAL_ACCEPTANCE_TITLE} <!-- scope: ${VALIDATION_SCOPE} -->$`, 'm'));
     assert.doesNotMatch(markdown, /P007:/);
     assert.ok(markdown.includes('npm test'), '渲染结果应包含最终验收命令');
+    assert.doesNotMatch(markdown, /^## 需求描述$/m, '未提供原始描述的调用方应保持既有渲染结果');
     assert.match(markdown, /^## 进度区$/m, '渲染结果应保留进度区标题');
     const progressSection = markdown.slice(markdown.indexOf('## 进度区'));
     assert.doesNotMatch(progressSection, /\|\s*任务\s*\|\s*状态\s*\|\s*备注\s*\|/, '进度区不应渲染任务状态表头');
     assert.doesNotMatch(progressSection, /^\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|\s*:?-{3,}:?\s*\|/m, '进度区不应渲染表格分隔线');
     assert.doesNotMatch(progressSection, /^\|\s*P\d+\s*\|/m, '进度区不应按任务预置表格行');
+  });
+
+  it('renders optional original description after the title while isolating embedded Markdown structure', () => {
+    const originalDescription = [
+      '第一行原始需求。',
+      '',
+      '## 正文内标题',
+      '- [ ] 正文内 checkbox',
+      '<!-- 正文内 HTML 注释 -->',
+      '```markdown',
+      '## 任务拆解',
+      '- [ ] P999: 伪任务 <!-- scope: fake.js -->',
+      '```',
+    ].join('\n');
+
+    const markdown = renderPlanSpecMarkdown(validPlanSpec(), { originalDescription });
+
+    assert.match(markdown, /^# 结构化计划\n\n## 需求描述$/m);
+    assert.ok(markdown.indexOf('## 需求描述') < markdown.indexOf('## 需求概要'));
+    assert.ok(markdown.indexOf('## 需求概要') < markdown.lastIndexOf('## 任务拆解'));
+    assert.match(markdown, /^> 第一行原始需求。$/m);
+    assert.match(markdown, /^> ## 正文内标题$/m);
+    assert.match(markdown, /^> - \[ \] 正文内 checkbox$/m);
+    assert.match(markdown, /^> <!-- 正文内 HTML 注释 -->$/m);
+    assert.match(markdown, /^> ```markdown$/m);
+    assert.match(markdown, /^> - \[ \] P999: 伪任务 <!-- scope: fake\.js -->$/m);
+    assert.equal((markdown.match(/^## 任务拆解$/gm) || []).length, 1, '正文内同名标题不能成为任务章节');
+    assert.equal((markdown.match(/^- \[ \] P\d{3}:/gm) || []).length, 2, '只应渲染 PlanSpec 开发任务与完整验收');
+    assert.match(markdown, /^## 需求概要\n\n覆盖结构化计划生成链路$/m, 'PlanSpec summary 应独立保留');
+    assert.equal(renderPlanSpecMarkdown(validPlanSpec(), { originalDescription }), markdown, '相同输入应确定性渲染');
+  });
+
+  it('uses an explicit placeholder for an empty supplied description without changing PlanSpec', () => {
+    const spec = validPlanSpec();
+    const markdown = renderPlanSpecMarkdown(spec, { description: ' \r\n ' });
+
+    assert.match(markdown, /^## 需求描述\n\n> （未提供需求或反馈正文）$/m);
+    assert.equal(Object.prototype.hasOwnProperty.call(spec, 'description'), false);
+    assert.equal(Object.prototype.hasOwnProperty.call(spec, 'originalDescription'), false);
+    assert.match(markdown, /^## 需求概要\n\n覆盖结构化计划生成链路$/m);
   });
 
   it('normalizes an existing final acceptance task instead of duplicating it', () => {

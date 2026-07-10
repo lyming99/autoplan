@@ -1,4 +1,5 @@
 const { normalizePlanSpec } = require('./structuredPlanSpec');
+const { renderPlanDescriptionSection } = require('./planParser');
 
 class PlanRenderError extends Error {
   constructor(message) {
@@ -12,13 +13,23 @@ function renderPlanSpecMarkdown(planSpec, options = {}) {
   const lines = [
     `# ${markdownLine(spec.title)}`,
     '',
+  ];
+  const hasOriginalDescription = Object.prototype.hasOwnProperty.call(options, 'originalDescription')
+    || Object.prototype.hasOwnProperty.call(options, 'description');
+  if (hasOriginalDescription) {
+    const description = Object.prototype.hasOwnProperty.call(options, 'originalDescription')
+      ? options.originalDescription
+      : options.description;
+    lines.push(...renderPlanDescriptionSection(description).split('\n'), '');
+  }
+  lines.push(
     '## 需求概要',
     '',
     markdownBlock(spec.summary),
     '',
     '## 任务拆解',
     '',
-  ];
+  );
 
   spec.tasks.forEach((task, index) => {
     const taskKey = taskKeyForIndex(index);

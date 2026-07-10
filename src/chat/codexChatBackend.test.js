@@ -77,7 +77,7 @@ function argsContain(args, ...fragments) {
 /* ------------------------------------------------------------------ 用例 ------------------------------------------------------------------ */
 
 describe('runCodexChat 新会话', () => {
-  it('新会话 spawn args 包含 --json、--sandbox、exec、- 与 reasoning config', () => {
+  it('新会话 spawn args 包含 --json、仓库检查绕过参数及原有关键参数', () => {
     let capturedArgs;
     fakeSpawn = (cmd, args) => {
       capturedArgs = args;
@@ -97,11 +97,14 @@ describe('runCodexChat 新会话', () => {
       assert.ok(argsContain(capturedArgs, 'exec', '--json'), '应包含 exec + --json');
       assert.ok(argsContain(capturedArgs, '--sandbox', 'danger-full-access'), '应保留 --sandbox danger-full-access');
       assert.ok(argsContain(capturedArgs, 'model_reasoning_effort="xhigh"'), '应注入 reasoning effort 配置');
+      const skipIndex = capturedArgs.indexOf('--skip-git-repo-check');
+      assert.ok(skipIndex > capturedArgs.indexOf('danger-full-access'), '绕过参数应位于 sandbox 参数之后');
+      assert.ok(skipIndex < capturedArgs.length - 1, '绕过参数应位于 stdin 标记之前');
       assert.strictEqual(capturedArgs[capturedArgs.length - 1], '-', '末尾位置参数应为 -（stdin 标记）');
     });
   });
 
-  it('新会话 resume args 包含 --json、resume、sessionId 与 reasoning config', () => {
+  it('恢复会话 spawn args 在注入 --json 后保留仓库检查绕过参数及原有关键参数', () => {
     let capturedArgs;
     fakeSpawn = (cmd, args) => {
       capturedArgs = args;
@@ -122,6 +125,11 @@ describe('runCodexChat 新会话', () => {
       assert.ok(argsContain(capturedArgs, 'exec', 'resume', '--json'), '应包含 exec + resume + --json');
       assert.ok(argsContain(capturedArgs, '00000000-aaaa-bbbb-cccc-000000000001'), '应包含 sessionId');
       assert.ok(argsContain(capturedArgs, 'model_reasoning_effort="low"'), '应包含 reasoning effort');
+      const skipIndex = capturedArgs.indexOf('--skip-git-repo-check');
+      const sessionIndex = capturedArgs.indexOf('00000000-aaaa-bbbb-cccc-000000000001');
+      assert.ok(skipIndex > capturedArgs.indexOf('resume'), '绕过参数应位于 resume 子命令之后');
+      assert.ok(skipIndex < sessionIndex, '绕过参数应位于 sessionId 之前');
+      assert.strictEqual(capturedArgs[capturedArgs.length - 1], '-', '末尾位置参数应为 -（stdin 标记）');
     });
   });
 

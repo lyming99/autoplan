@@ -22,7 +22,7 @@ const {
   parsePlanSpecJson,
 } = require('./structuredPlanSpec');
 const workspaceFiles = require('./workspaceFiles');
-const { normalizePlanMarkdownFile } = require('./planParser');
+const { injectPlanDescriptionFile, normalizePlanMarkdownFile } = require('./planParser');
 
 const PHASED_PLAN_BODY_LENGTH_THRESHOLD = 3000;
 const PHASED_PLAN_HEADING_THRESHOLD = 4;
@@ -58,6 +58,11 @@ const MARKDOWN_PLAN_TASK_FORMAT_CONSTRAINT_LINES = [
   '- 必须包含精确二级标题 `## 任务拆解`；所有可执行任务只能写在该章节内。',
   '- 可执行任务只能使用顶层未完成 checkbox 行，固定格式：`- [ ] P001: 任务标题 <!-- scope: lib/foo.dart,test/foo_test.dart -->`；行首不得缩进，不得使用 `*`/`+` 列表标记，不得写成嵌套 checkbox。',
   '- 禁止用普通段落、代码块、表格、引用块或嵌套 checkbox 表达任务；任务验收要点只能写成该任务下方的缩进普通 bullet，不能写成 checkbox、表格、引用块或代码块。',
+];
+const MARKDOWN_PLAN_DESCRIPTION_CONSTRAINT_LINES = [
+  '- 计划一级标题之后必须紧接精确二级标题 `## 需求描述`，并在 `## 任务拆解` 之前完整保留当前需求/反馈的原始正文。',
+  '- `## 需求描述` 只能包含当前 intake 的原始正文；不得把附件说明、引用上下文、项目 README、目录概览或模型补充内容写入该章节。正文为空时写 `（未提供需求或反馈正文）`。',
+  '- 需求描述正文逐行使用 Markdown 引用块（`> ...`）；原文中的标题、checkbox、HTML 注释和代码围栏只能作为描述内容，不能成为计划章节或任务。',
 ];
 const MARKDOWN_PLAN_PROGRESS_CONSTRAINT_LINES = [
   '- 必须包含精确二级标题 `## 进度区`。',
@@ -318,6 +323,7 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
       '你必须使用文件写入工具把完整 plan 内容写入上面指定的输出文件路径；不要只把 plan 内容打印在回复里。只有写入该文件才算成功。',
       '',
       '格式要求：',
+      ...MARKDOWN_PLAN_DESCRIPTION_CONSTRAINT_LINES,
       ...MARKDOWN_PLAN_TASK_FORMAT_CONSTRAINT_LINES,
       '- scope 必填，表示该任务预计修改的文件或模块；多个 scope 用英文逗号分隔；无法判断时写 <!-- scope: unknown -->，unknown 任务不会并发执行',
       '- 每个任务要有验收要点',
@@ -427,6 +433,9 @@ async function generatePlanForIntake(service, helpers, projectId, workspace, int
     // 标题编号前缀与层级漂移（如 `## 2. 任务拆解` / `### 任务拆解`）、补齐任务行 P0NN 编号与 scope 注释，
     // 避免畸形标题被 validatePlanContent 误判为格式不合规、整份计划不落库（反馈 #95）。幂等，无变化不写盘。
     normalizePlanMarkdownFile(planFile);
+    // 无论模型直接写盘还是 stdout 兜底恢复，都只使用 intake 原始正文确定性写入需求描述；
+    // 附件、mention 与自动收集的项目上下文不会进入该章节。注入在格式校验和计划入库前完成。
+    injectPlanDescriptionFile(planFile, intake.body);
 
     // 校验产物格式（stdout 兜底落盘与 opencode 直接写盘两条路径均经此）：必须含 `## 任务拆解`
     // 二级标题与至少一行 `- [ ] P0NN: ... <!-- scope: ... -->`。畸形 plan 不落库（不 insertPlan/syncPlanTasks），
@@ -964,6 +973,7 @@ async function generateStructuredPlanForIntake(service, helpers, projectId, work
       planSpecFile,
       planFile,
       helpers,
+      originalDescription: intake.body,
     });
   } catch (error) {
     const failureDiagnostic = structuredPlanRenderFailureDiagnostic(error);
@@ -1293,6 +1303,7 @@ async function generateBuiltinStructuredPlanForIntake(service, helpers, projectI
       planSpecFile,
       planFile,
       helpers,
+      originalDescription: intake.body,
     });
   } catch (error) {
     return recordIntakePlanGenerationFailure(service, {
@@ -1753,7 +1764,11 @@ function renderPlanSpecFileToMarkdown(input) {
 
   let markdown;
   try {
-    markdown = renderPlanSpecMarkdown(normalizeRenderedPlanSpec(planSpec), { normalized: true, validate: false });
+    const renderOptions = { normalized: true, validate: false };
+    if (Object.prototype.hasOwnProperty.call(input, 'originalDescription')) {
+      renderOptions.originalDescription = input.originalDescription;
+    }
+    markdown = renderPlanSpecMarkdown(normalizeRenderedPlanSpec(planSpec), renderOptions);
   } catch (error) {
     throw markStructuredPlanFailure(error, {
       stage: error instanceof PlanSpecValidationError ? 'plan_spec_schema' : 'plan_spec_render',
@@ -2149,6 +2164,7 @@ function buildPhasedPlanPrompt(input) {
     JSON.stringify(manifestExample, null, 2),
     '',
     '每个阶段 plan 的格式要求：',
+    ...MARKDOWN_PLAN_DESCRIPTION_CONSTRAINT_LINES,
     '- 必须包含 `## 任务拆解` 章节标题。',
     ...MARKDOWN_PLAN_TASK_FORMAT_CONSTRAINT_LINES,
     '- 单个阶段内任务编号必须从 P001 开始连续递增，不能跳号或重复。',
@@ -2256,6 +2272,8 @@ function validatePhaseManifestFile({ workspace, manifestFile, intake, phaseFileP
     // 校验前对阶段 plan markdown 做确定性规范化，修复 LLM 标题编号前缀/层级漂移（反馈 #95），
     // 使带编号前缀的阶段 plan 不再被判为格式不合规。幂等，无变化不写盘。
     normalizePlanMarkdownFile(phaseSafety.filePath);
+    // 每个阶段复用同一份 intake 原始正文，并在 manifest 校验、计划入库和任务同步前完成安全注入。
+    injectPlanDescriptionFile(phaseSafety.filePath, intake.body);
     const content = fs.readFileSync(phaseSafety.filePath, 'utf8');
     const contentValidation = validatePhasePlanContent(content);
     if (!contentValidation.valid) {
@@ -2563,8 +2581,8 @@ function recoverPlanFromStdout(planFile, stdout) {
     return false;
   }
 
-  // 优先取 stdout 中首个 ## 二级标题到结尾的内容（去掉前面对话式寒暄）
-  const headingMatch = stdout.match(/^## /m);
+  // 有计划一级标题时从标题开始保留；旧后端只输出二级标题时继续使用原有兜底，均去掉前面对话式寒暄。
+  const headingMatch = stdout.match(/^#(?!#)[ \t]+\S.*$/m) || stdout.match(/^## /m);
   if (headingMatch) {
     const content = stdout.slice(headingMatch.index).trim();
     if (content.length > 0) {

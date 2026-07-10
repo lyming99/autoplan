@@ -2,6 +2,7 @@ const { describe, it } = require('node:test');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const createYargs = require('yargs/yargs');
 
 const {
   AGENT_CLI_PROVIDERS,
@@ -42,6 +43,128 @@ function expectTruthy(value) {
   if (!value) {
     throw new Error(`Expected ${JSON.stringify(value)} to be truthy`);
   }
+}
+
+function structuredPlanPrompt(eol) {
+  return [
+    '你是需求整理与开发计划生成者。',
+    '',
+    '## 原始需求',
+    '修正 OpenCode prompt 附件参数绑定，并固化真实参数解析回归。',
+    '',
+    '## PlanSpec 输出契约',
+    'PlanSpec JSON 输出路径：D:/project/GitHub/autoplan/docs/progress/plan-spec-feedback-9.json',
+    '格式契约：只能输出包含 title、summary、tasks 和 validation 的合法 PlanSpec JSON。',
+    'tasks 必须包含连续 P001 编号、精确 scope 和完整验收要点，最后一项必须是 validation。',
+    '',
+    '## 引用上下文',
+    '反馈 #9 日志：OpenCode 1.17.15 报错 File not found: 你的完整唯一指令已作为附件提供。',
+    '已确认 run [message..] 是位置消息数组，-f/--file 是文件数组。',
+    '仓库上下文：src/agentCli.js 负责 provider 参数组装和 prompt 投递。',
+    '',
+    '只写入上述目标文件，不要改动 Markdown plan 或勾选 checkbox。',
+  ].join(eol);
+}
+
+function createAgentCliTestContext(operationKey, extraOperation = {}) {
+  const activeOperation = { label: 'OpenCode structured plan test', ...extraOperation };
+  return {
+    activeOperation,
+    runtime: {
+      activeOperation,
+      activeChild: null,
+      activeOperations: new Map([[operationKey, activeOperation]]),
+      activeChildren: new Map(),
+    },
+  };
+}
+
+function waitForTestChild(child) {
+  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (exitCode) => {
+      if (settled) return;
+      settled = true;
+      resolve(Number.isInteger(exitCode) ? exitCode : -1);
+    };
+    child.once('error', () => finish(-1));
+    child.once('exit', finish);
+  });
+}
+
+function writeOpenCodeCmdShim(root, options = {}) {
+  const exitCode = Number.isInteger(options.exitCode) ? options.exitCode : 0;
+  const delay = options.delay ? 'ping 127.0.0.1 -n 3 >nul\r\n' : '';
+  let capture = '';
+  if (options.captureArgsFile) {
+    const recorderPath = path.join(root, `capture-opencode-args-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.js`);
+    fs.writeFileSync(
+      recorderPath,
+      `require('node:fs').writeFileSync(${JSON.stringify(options.captureArgsFile)}, JSON.stringify(process.argv.slice(2)), 'utf8');\n`,
+      'utf8',
+    );
+    capture = `"${process.execPath}" "${recorderPath}" %*\r\n`;
+  }
+  const shimPath = path.join(root, `opencode-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.cmd`);
+  fs.writeFileSync(shimPath, `@echo off\r\n${delay}${capture}echo shim-output\r\nexit /b ${exitCode}\r\n`, 'utf8');
+  return shimPath;
+}
+
+// 与 OpenCode 1.17.15 `run [message..]` / `-f, --file [file..]` 相同的 yargs 语法。
+// 使用真实解析器验证参数归属，避免仅凭命令字符串顺序产生无法发现 greedy file[] 的假阳性。
+function parseOpenCodeRunArgs(args) {
+  return createYargs(args)
+    .exitProcess(false)
+    .help(false)
+    .version(false)
+    .command(
+      'run [message..]',
+      false,
+      (parser) => parser
+        .positional('message', { type: 'string', array: true })
+        .option('format', { type: 'string' })
+        .option('auto', { type: 'boolean' })
+        .option('session', { type: 'string' })
+        .option('title', { type: 'string' })
+        .option('agent', { type: 'string' })
+        .option('file', { alias: 'f', type: 'string', array: true }),
+    )
+    .parse();
+}
+
+function promptAttachmentFiles(workspace) {
+  const promptDir = path.join(workspace, 'docs', 'progress', 'prompt-tmp');
+  if (!fs.existsSync(promptDir)) return [];
+  return fs.readdirSync(promptDir)
+    .filter((name) => name.startsWith('prompt-') && name.endsWith('.md'))
+    .map((name) => path.join(promptDir, name));
+}
+
+function runOpenCodeTestAttempt({ workspace, prompt, command, waitForChild, env }) {
+  const operationKey = `op-opencode-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { activeOperation, runtime } = createAgentCliTestContext(operationKey, { structuredPlan: true });
+  return runAgentCliAttempt({
+    workspace,
+    prompt,
+    lastFile: path.join(workspace, 'last.txt'),
+    logFile: path.join(workspace, 'agent.log'),
+    runtime,
+    activeOperation,
+    operationKey,
+    waitForChild,
+    stream: { write() { return true; } },
+    provider: 'opencode',
+    command,
+    agentCliOptions: {
+      sessionId: 'ses_plan_feedback_9',
+      title: 'AutoPlan feedback 9 structured plan',
+      agent: 'autoplan-plan',
+      structuredPlan: true,
+    },
+    timeoutMs: 2000,
+    ...(env ? { env } : {}),
+  });
 }
 
 describe('Agent CLI timeout handling', () => {
@@ -119,6 +242,59 @@ describe('Codex reasoning effort', () => {
   });
 });
 
+describe('Codex 非受信任目录参数构造', () => {
+  it('新会话在 stdin 占位符前注入仓库检查绕过参数，并保留既有关键参数顺序', () => {
+    const args = codexNewSessionArgs('last.txt', { reasoningEffort: 'high' });
+    const ordered = [
+      'exec',
+      '-c',
+      'model_reasoning_effort="high"',
+      '--color',
+      'never',
+      '-o',
+      'last.txt',
+      '--sandbox',
+      'danger-full-access',
+      '--skip-git-repo-check',
+      '-',
+    ];
+
+    let prev = -1;
+    for (const item of ordered) {
+      const idx = args.indexOf(item);
+      expectTruthy(idx > prev);
+      prev = idx;
+    }
+    expectEqual(args[args.length - 2], '--skip-git-repo-check');
+    expectEqual(args[args.length - 1], '-');
+  });
+
+  it('恢复会话在 sessionId 与 stdin 占位符前注入仓库检查绕过参数，并保留输出与 reasoning 参数', () => {
+    const sessionId = '00000000-aaaa-bbbb-cccc-000000000001';
+    const args = codexResumeSessionArgs(sessionId, 'last.txt', { reasoningEffort: 'low' });
+    const ordered = [
+      'exec',
+      'resume',
+      '-c',
+      'model_reasoning_effort="low"',
+      '-o',
+      'last.txt',
+      '--skip-git-repo-check',
+      sessionId,
+      '-',
+    ];
+
+    let prev = -1;
+    for (const item of ordered) {
+      const idx = args.indexOf(item);
+      expectTruthy(idx > prev);
+      prev = idx;
+    }
+    expectEqual(args[args.length - 2], sessionId);
+    expectEqual(args[args.length - 1], '-');
+  });
+});
+
 describe('Codex 新会话参数构造（反馈 #92：移除 --cd）', () => {
   it('不包含 --cd / -C，且 workspace 值不会作为裸位置参数泄漏到末尾 - 之前', () => {
     const args = codexNewSessionArgs('last.txt', { reasoningEffort: 'medium' });
@@ -168,7 +344,13 @@ describe('Codex 新会话参数构造（反馈 #92：移除 --cd）', () => {
 
 describe('Claude session spec', () => {
   it('starts fresh Claude runs without Codex session or reasoning args', () => {
-    const spec = agentCliSpawnSpec('claude', '', 'last.txt', ['resume', 'codex-session-id', '-c', 'model_reasoning_effort="xhigh"']);
+    const spec = agentCliSpawnSpec('claude', '', 'last.txt', [
+      'resume',
+      'codex-session-id',
+      '-c',
+      'model_reasoning_effort="xhigh"',
+      '--skip-git-repo-check',
+    ]);
 
     expectEqual(spec.command, 'claude');
     expectEqual(spec.agentCliProvider, 'claude');
@@ -184,6 +366,7 @@ describe('Claude session spec', () => {
     expectNotIncludes(spec.args, 'resume');
     expectNotIncludes(spec.args, 'codex-session-id');
     expectNotIncludes(spec.args, 'model_reasoning_effort="xhigh"');
+    expectNotIncludes(spec.args, '--skip-git-repo-check');
   });
 
   it('starts Claude with an explicit session id when requested', () => {
@@ -306,12 +489,13 @@ describe('OpenCode backend spec', () => {
       'opencode',
       'opencode',
       'last.txt',
-      ['-c', 'model_reasoning_effort="xhigh"', 'resume'],
+      ['-c', 'model_reasoning_effort="xhigh"', 'resume', '--skip-git-repo-check'],
     );
 
     expectNotIncludes(spec.args, 'model_reasoning_effort');
     expectNotIncludes(spec.args, 'resume');
     expectNotIncludes(spec.args, 'session-id');
+    expectNotIncludes(spec.args, '--skip-git-repo-check');
   });
 
   it('passes OpenCode session options as native run flags', () => {
@@ -329,6 +513,79 @@ describe('OpenCode backend spec', () => {
     expectIncludes(spec.args, 'AutoPlan project 1 plan 2');
     expectEqual(spec.agentCliSessionId, 'ses_12345');
     expectEqual(spec.agentCliSessionTitle, 'AutoPlan project 1 plan 2');
+  });
+});
+
+describe('OpenCode 无人值守权限参数回归', () => {
+  it('普通任务执行精确使用 run --format default --auto，并移除失效的旧权限参数', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
+
+    expectEqual(
+      JSON.stringify(spec.args),
+      JSON.stringify(['run', '--format', 'default', '--auto']),
+    );
+    expectNotIncludes(spec.args, '--dangerously-skip-permissions');
+  });
+
+  it('会话恢复在 --auto 后按合法顺序追加 --session 与 --title', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt', [], {
+      sessionId: 'ses_12345',
+      title: 'AutoPlan project 1 plan 2',
+    });
+
+    expectEqual(
+      JSON.stringify(spec.args),
+      JSON.stringify([
+        'run',
+        '--format',
+        'default',
+        '--auto',
+        '--session',
+        'ses_12345',
+        '--title',
+        'AutoPlan project 1 plan 2',
+      ]),
+    );
+    expectNotIncludes(spec.args, '--dangerously-skip-permissions');
+  });
+
+  it('结构化计划生成在权限、会话和标题参数后注入 autoplan-plan agent', () => {
+    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt', [], {
+      sessionId: 'ses_plan_12345',
+      title: 'AutoPlan structured plan',
+      agent: 'autoplan-plan',
+      structuredPlan: true,
+    });
+
+    expectEqual(
+      JSON.stringify(spec.args),
+      JSON.stringify([
+        'run',
+        '--format',
+        'default',
+        '--auto',
+        '--session',
+        'ses_plan_12345',
+        '--title',
+        'AutoPlan structured plan',
+        '--agent',
+        'autoplan-plan',
+      ]),
+    );
+    expectNotIncludes(spec.args, '--dangerously-skip-permissions');
+    expectEqual(spec.opencodeAgent, 'autoplan-plan');
+    expectEqual(spec.structuredPlan, true);
+  });
+
+  it('OpenCode 的 --auto 不泄漏到 Claude、Codex 与 Oh My Pi', () => {
+    const claudeSpec = agentCliSpawnSpec('claude', 'claude', 'last.txt');
+    const codexSpec = agentCliSpawnSpec('codex', 'codex', 'last.txt', codexNewSessionArgs('last.txt'));
+    const ompSpec = agentCliSpawnSpec('oh-my-pi', 'omp', 'last.txt');
+
+    expectIncludes(claudeSpec.args, '--dangerously-skip-permissions');
+    expectNotIncludes(claudeSpec.args, '--auto');
+    expectNotIncludes(codexSpec.args, '--auto');
+    expectNotIncludes(ompSpec.args, '--auto');
   });
 });
 
@@ -415,7 +672,7 @@ describe('Oh My Pi backend spec', () => {
       'oh-my-pi',
       'omp',
       'last.txt',
-      ['-c', 'model_reasoning_effort="xhigh"', 'resume', 'session-id'],
+      ['-c', 'model_reasoning_effort="xhigh"', 'resume', 'session-id', '--skip-git-repo-check'],
       { sessionId: 'ses_12345', title: 'AutoPlan project 1 plan 2' },
     );
 
@@ -429,6 +686,7 @@ describe('Oh My Pi backend spec', () => {
     expectNotIncludes(spec.args, 'resume');
     expectNotIncludes(spec.args, 'session-id');
     expectNotIncludes(spec.args, 'exec');
+    expectNotIncludes(spec.args, '--skip-git-repo-check');
     // 不含 Claude stream-json / 会话续接标志（--print 为 omp 自身非交互标志，需保留）。
     expectNotIncludes(spec.args, 'stream-json');
     expectNotIncludes(spec.args, '--output-format');
@@ -442,67 +700,206 @@ describe('Oh My Pi backend spec', () => {
   });
 });
 
-describe('OpenCode prompt spillover (命令行长度上限规避)', () => {
-  it('returns null for short prompts under the effective limit', () => {
-    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
-    const result = writePromptSpilloverFile(spec, 'short prompt', os.tmpdir());
-    expectEqual(result, null);
+describe('OpenCode prompt spillover (命令行长度与 Windows 多行安全投递)', () => {
+  it('keeps a short single-line prompt as the existing positional argument', () => {
+    const spec = agentCliSpawnSpec('opencode', path.join(os.tmpdir(), 'opencode.cmd'), 'last.txt');
+    expectEqual(writePromptSpilloverFile(spec, 'short prompt', os.tmpdir()), null);
   });
 
-  it('returns null for non-argument prompt sources (codex/claude/oh-my-pi)', () => {
-    const longPrompt = 'x'.repeat(WIN_CMD_LIMIT + 1000);
-    const stdinSpec = agentCliSpawnSpec('codex', 'codex', 'last.txt', ['exec']);
-    expectEqual(writePromptSpilloverFile(stdinSpec, longPrompt, os.tmpdir()), null);
+  it('does not apply argument spillover to Codex, Claude, or Oh My Pi stdin prompts', () => {
+    const longMultilinePrompt = `first line\n${'x'.repeat(WIN_CMD_LIMIT + 1000)}`;
+    const codexSpec = agentCliSpawnSpec('codex', 'codex', 'last.txt', ['exec']);
     const claudeSpec = agentCliSpawnSpec('claude', 'claude', 'last.txt');
-    expectEqual(writePromptSpilloverFile(claudeSpec, longPrompt, os.tmpdir()), null);
+    const ompSpec = agentCliSpawnSpec('oh-my-pi', 'omp', 'last.txt');
+
+    expectEqual(writePromptSpilloverFile(codexSpec, longMultilinePrompt, os.tmpdir()), null);
+    expectEqual(writePromptSpilloverFile(claudeSpec, longMultilinePrompt, os.tmpdir()), null);
+    expectEqual(writePromptSpilloverFile(ompSpec, longMultilinePrompt, os.tmpdir()), null);
   });
 
-  it('writes a long OpenCode prompt to a temp file and returns a pointer + -f path', () => {
+  it('keeps a low-length multiline prompt direct for a Windows native executable', () => {
+    const nativeSpec = agentCliSpawnSpec(
+      'opencode',
+      path.join(os.tmpdir(), 'opencode-native.exe'),
+      'last.txt',
+    );
+    expectEqual(writePromptSpilloverFile(nativeSpec, structuredPlanPrompt('\n'), os.tmpdir()), null);
+  });
+
+  for (const newlineCase of [
+    { label: 'LF', eol: '\n' },
+    { label: 'CRLF', eol: '\r\n' },
+  ]) {
+    it(`delivers a realistic low-length structured plan prompt through an attachment (${newlineCase.label})`, {
+      skip: process.platform !== 'win32',
+    }, async () => {
+      const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-structured-prompt-'));
+      const prompt = structuredPlanPrompt(newlineCase.eol);
+      const capturedArgsFile = path.join(tmpRoot, 'opencode-args.json');
+      const shimPath = writeOpenCodeCmdShim(tmpRoot, { captureArgsFile: capturedArgsFile });
+      let observedDelivery = null;
+      try {
+        expectTruthy(prompt.length < WIN_CMD_LIMIT);
+        const result = await runOpenCodeTestAttempt({
+          workspace: tmpRoot,
+          prompt,
+          command: shimPath,
+          waitForChild: async (child) => {
+            const exitCode = await waitForTestChild(child);
+            const attachments = promptAttachmentFiles(tmpRoot);
+            const attachmentPath = attachments[0];
+            const actualArgs = JSON.parse(fs.readFileSync(capturedArgsFile, 'utf8'));
+            observedDelivery = {
+              attachmentCount: attachments.length,
+              attachmentPath,
+              attachment: fs.readFileSync(attachmentPath, 'utf8'),
+              actualArgs,
+              parsedArgs: parseOpenCodeRunArgs(actualArgs),
+              commandLine: child.spawnargs[child.spawnargs.length - 1],
+            };
+            return exitCode;
+          },
+        });
+
+        expectEqual(result.exitCode, 0);
+        expectTruthy(observedDelivery);
+        expectEqual(observedDelivery.attachmentCount, 1);
+        expectEqual(observedDelivery.attachment, prompt);
+        expectEqual(/[\r\n]/.test(observedDelivery.commandLine), false);
+        expectNotIncludes(observedDelivery.commandLine, prompt);
+        expectNotIncludes(observedDelivery.commandLine, '你是需求整理与开发计划生成者。');
+
+        expectEqual(observedDelivery.parsedArgs.format, 'default');
+        expectEqual(observedDelivery.parsedArgs.auto, true);
+        expectEqual(observedDelivery.parsedArgs.session, 'ses_plan_feedback_9');
+        expectEqual(observedDelivery.parsedArgs.title, 'AutoPlan feedback 9 structured plan');
+        expectEqual(observedDelivery.parsedArgs.agent, 'autoplan-plan');
+        expectEqual(observedDelivery.parsedArgs.message.length, 1);
+        expectIncludes(observedDelivery.parsedArgs.message[0], observedDelivery.attachmentPath);
+        expectIncludes(observedDelivery.parsedArgs.message[0], '必须完整读取');
+        expectEqual(
+          JSON.stringify(observedDelivery.parsedArgs.file),
+          JSON.stringify([observedDelivery.attachmentPath]),
+        );
+        expectNotIncludes(observedDelivery.parsedArgs.file, observedDelivery.parsedArgs.message[0]);
+
+        expectEqual(fs.existsSync(observedDelivery.attachmentPath), false);
+        expectEqual(promptAttachmentFiles(tmpRoot).length, 0);
+      } finally {
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+      }
+    });
+  }
+
+  it('spills the 14700-character cmd.exe requirement scenario without truncating content', {
+    skip: process.platform !== 'win32',
+  }, () => {
     const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-spillover-'));
     try {
-      const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
-      // 远超 cmd.exe 8191 上限（按字符数判断，cmd.exe/.cmd shim 路径）
-      const longPrompt = '需求：' + '丰富内容'.repeat(5000);
-      const spillover = writePromptSpilloverFile(spec, longPrompt, tmpRoot);
+      const spec = agentCliSpawnSpec('opencode', path.join(tmpRoot, 'opencode.cmd'), 'last.txt');
+      const prompt = '需求：' + 'x'.repeat(14697);
+      const spillover = writePromptSpilloverFile(spec, prompt, tmpRoot);
+
       expectTruthy(spillover);
-      expectTruthy(spillover.filePath);
-      expectTruthy(spillover.promptChars > WIN_CMD_LIMIT);
-      // P003：指针消息为权威指令，含附件路径与"禁止转而探索"措辞（不再含糊提示）
+      expectEqual(spillover.promptChars, 14700);
+      expectEqual(fs.readFileSync(spillover.filePath, 'utf8'), prompt);
       expectIncludes(spillover.pointerMessage, spillover.filePath);
       expectIncludes(spillover.pointerMessage, '禁止转而探索');
       expectIncludes(spillover.pointerMessage, '必须完整读取');
-      // 文件确实落盘且内容与原 prompt 一致
-      expectTruthy(fs.existsSync(spillover.filePath));
-      expectEqual(fs.readFileSync(spillover.filePath, 'utf8'), longPrompt);
-      // 落在 progress/prompt-tmp 目录下
-      expectIncludes(spillover.filePath, path.join('docs', 'progress', 'prompt-tmp'));
-    } finally {
-      fs.rmSync(tmpRoot, { recursive: true, force: true });
-    }
-  });
-
-  it('spills prompts that exceed the cmd.exe 8191 limit (the requirement-#6 scenario)', () => {
-    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-spillover-'));
-    try {
-      const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
-      // 需求 #6 实际生成的 prompt 约 14700 字符：8 字符正文 + 自动注入的 README/目录上下文，
-      // 远超 cmd.exe 的 8191 字符上限，必须触发落盘。这是「命令行太长」失败的复现场景。
-      const prompt = 'x'.repeat(14700);
-      const spillover = writePromptSpilloverFile(spec, prompt, tmpRoot);
-      expectTruthy(spillover);
-      expectTruthy(spillover.promptChars === 14700);
-      // 落盘后位置参数（指针消息）远小于上限
       expectTruthy(spillover.pointerMessage.length < WIN_CMD_LIMIT);
     } finally {
       fs.rmSync(tmpRoot, { recursive: true, force: true });
     }
   });
 
-  it('does not spill a moderate prompt that fits within cmd.exe limit', () => {
-    const spec = agentCliSpawnSpec('opencode', 'opencode', 'last.txt');
-    // ~4000 字符的 prompt：加上 run 子命令参数和余量后仍在 8191 之内，不应落盘
-    const prompt = 'x'.repeat(4000);
-    expectEqual(writePromptSpilloverFile(spec, prompt, os.tmpdir()), null);
+  it('preserves over-limit spillover for a Windows native executable', {
+    skip: process.platform !== 'win32',
+  }, () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-native-spillover-'));
+    try {
+      const spec = agentCliSpawnSpec('opencode', path.join(tmpRoot, 'opencode.exe'), 'last.txt');
+      const prompt = 'x'.repeat(WIN_CREATEPROCESS_LIMIT + 1000);
+      const spillover = writePromptSpilloverFile(spec, prompt, tmpRoot);
+
+      expectTruthy(spillover);
+      expectEqual(fs.readFileSync(spillover.filePath, 'utf8'), prompt);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
+
+  it('cleans multiline attachments after nonzero exit, timeout, and synchronous spawn failure', {
+    skip: process.platform !== 'win32',
+  }, async () => {
+    const scenarios = [
+      { name: 'nonzero', exitCode: 7, expectedExitCode: 7 },
+      { name: 'timeout', delay: true, expectedExitCode: -1, timedOut: true },
+      {
+        name: 'spawn-failure',
+        expectedExitCode: -1,
+        env: { ...process.env, AUTOPLAN_INVALID_ENV: 'invalid\0value' },
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), `autoplan-${scenario.name}-`));
+      try {
+        const shimPath = writeOpenCodeCmdShim(tmpRoot, scenario);
+        let attachmentObserved = false;
+        const result = await runOpenCodeTestAttempt({
+          workspace: tmpRoot,
+          prompt: structuredPlanPrompt('\n'),
+          command: shimPath,
+          env: scenario.env,
+          waitForChild: async (child) => {
+            attachmentObserved = promptAttachmentFiles(tmpRoot).length === 1;
+            if (scenario.timedOut) {
+              child.__autoplanTimedOut = true;
+              try { child.kill(); } catch (_) { /* process may have already exited */ }
+              await waitForTestChild(child);
+              return -1;
+            }
+            return waitForTestChild(child);
+          },
+        });
+
+        expectEqual(result.exitCode, scenario.expectedExitCode);
+        expectEqual(promptAttachmentFiles(tmpRoot).length, 0);
+        if (scenario.name !== 'spawn-failure') expectEqual(attachmentObserved, true);
+        if (scenario.timedOut) expectEqual(result.timedOut, true);
+        if (scenario.name === 'spawn-failure') expectTruthy(result.errorMessage);
+      } finally {
+        fs.rmSync(tmpRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it('returns a diagnosable failure when the required attachment cannot be written', {
+    skip: process.platform !== 'win32',
+  }, async () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-spillover-write-failure-'));
+    const blockedWorkspace = path.join(tmpRoot, 'workspace-is-a-file');
+    fs.writeFileSync(blockedWorkspace, 'not a directory', 'utf8');
+    let childStarted = false;
+    try {
+      const result = await runOpenCodeTestAttempt({
+        workspace: blockedWorkspace,
+        prompt: structuredPlanPrompt('\r\n'),
+        command: path.join(tmpRoot, 'opencode.cmd'),
+        waitForChild: async () => {
+          childStarted = true;
+          return 0;
+        },
+      });
+
+      expectEqual(result.exitCode, -1);
+      expectEqual(childStarted, false);
+      expectIncludes(result.errorMessage, 'OpenCode CLI prompt 安全投递失败');
+      expectIncludes(result.errorMessage, '无法写入 OpenCode prompt 附件');
+      expectEqual(promptAttachmentFiles(blockedWorkspace).length, 0);
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
   });
 });
 

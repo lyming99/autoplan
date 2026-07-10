@@ -13,7 +13,12 @@ const {
   shouldGeneratePhasedPlans,
 } = require('./planGeneration');
 const { BUILTIN_PLAN_GENERATION_ERROR_CODES } = require('./builtinPlanGenerator');
-const { normalizePlanMarkdown, normalizePlanMarkdownFile } = require('./planParser');
+const {
+  PLAN_DESCRIPTION_PLACEHOLDER,
+  injectPlanDescription,
+  normalizePlanMarkdown,
+  normalizePlanMarkdownFile,
+} = require('./planParser');
 const { parsePlanTasksFromMarkdown } = require('./planTaskSync');
 
 /**
@@ -734,6 +739,10 @@ describe('阶段化计划生成判定与落库（P006）', () => {
       ]);
       assert.deepEqual(svc.insertPlanCalls.map((call) => call.sortOrder), [20, 21], '阶段 plan 应保持相邻 sort_order');
       assert.deepEqual(svc.syncPlanTasksCalls.map((call) => call.planId), [501, 502], '每个阶段 plan 都应同步任务');
+      for (const call of svc.insertPlanCalls) {
+        const markdown = fs.readFileSync(path.join(dir, call.filePath), 'utf8');
+        assertPlanDescription(markdown, intake.body);
+      }
 
       const insertLinkStatements = svc.dbBatchStatements.filter((statement) => statement.sql.includes('INSERT OR IGNORE INTO intake_plan_links'));
       assert.equal(insertLinkStatements.length, 2, '应写入两个 intake_plan_links 阶段链接');
@@ -1058,6 +1067,8 @@ describe('generatePlanForIntake 生成策略路由（P011）', () => {
       assert.equal(svc.insertPlanCalls[0].planExecutionConfig.provider, 'codex');
       assert.equal(svc.insertPlanCalls[0].planExecutionConfig.codexReasoningEffort, 'xhigh');
       assert.ok(svc.syncPlanTasksCalls.length === 1, 'success should sync rendered plan tasks');
+      const markdown = fs.readFileSync(path.join(dir, svc.insertPlanCalls[0].filePath), 'utf8');
+      assertPlanDescription(markdown, '这是一段足够长的需求描述，走 markdown 兼容生成路径。');
       const generated = svc.events.find((event) => event.type === 'plan.generated');
       assert.equal(generated.meta.planGenerationProvider, 'claude');
       assert.equal(generated.meta.planExecutionProvider, 'codex');
@@ -1110,6 +1121,9 @@ describe('generatePlanForIntake 生成策略路由（P011）', () => {
       assert.equal(svc.insertPlanCalls[0].planExecutionConfig.provider, 'claude');
       assert.ok(svc.insertPlanCalls[0].filePath.endsWith('.md'));
       assert.ok(fs.existsSync(path.join(dir, svc.insertPlanCalls[0].filePath)), 'rendered markdown should be written');
+      const markdown = fs.readFileSync(path.join(dir, svc.insertPlanCalls[0].filePath), 'utf8');
+      assertPlanDescription(markdown, '这是一段足够长的需求描述，走结构化文件生成路径。');
+      assert.match(markdown, /^## 需求概要\n\n覆盖结构化计划生成路径$/m, '模型 summary 应继续渲染为需求概要');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1148,6 +1162,8 @@ describe('generatePlanForIntake 生成策略路由（P011）', () => {
       assert.equal(svc.insertPlanCalls[0].planGenerationConfig.provider, 'opencode');
       assert.ok(svc.events.some((event) => event.type === 'plan.spec.stdout.recovered'));
       assert.ok(fs.existsSync(path.join(dir, svc.insertPlanCalls[0].filePath)));
+      const markdown = fs.readFileSync(path.join(dir, svc.insertPlanCalls[0].filePath), 'utf8');
+      assertPlanDescription(markdown, '这是一段足够长的需求描述，走结构化 stdout 兜底路径。');
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -1248,6 +1264,9 @@ describe('generatePlanForIntake 生成策略路由（P011）', () => {
       assert.equal(svc.insertPlanCalls[0].planGenerationConfig.strategy, 'builtin-llm-structured');
       assert.equal(svc.insertPlanCalls[0].planGenerationConfig.provider, 'openai');
       assert.equal(svc.insertPlanCalls[0].planGenerationConfig.model, 'gpt-4o');
+      const markdown = fs.readFileSync(path.join(dir, svc.insertPlanCalls[0].filePath), 'utf8');
+      assertPlanDescription(markdown, '这是一段足够长的需求描述，走内置 LLM 结构化路径。');
+      assert.match(markdown, /^## 需求概要\n\n覆盖结构化计划生成路径$/m, '内置 PlanSpec summary 应继续保留');
       const generated = svc.events.find((event) => event.type === 'plan.generated');
       assert.equal(generated.meta.builtinLlmProvider, 'openai');
       assert.equal(generated.meta.builtinLlmModel, 'gpt-4o');
@@ -1306,7 +1325,152 @@ describe('generatePlanForIntake 生成策略路由（P011）', () => {
   });
 });
 
+describe('intake 原始需求描述端到端保留（反馈 #10）', () => {
+  it('external-cli-markdown 从 stdout 恢复后注入多行原始正文并保留一级标题', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-description-stdout-'));
+    try {
+      const body = ['第一行需求正文。', '第二行必须原样进入最终计划。'].join('\n');
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'external-cli-markdown',
+          plan_generation_provider: 'codex',
+        },
+        async runCodex(_workspace, prompt) {
+          const planFile = prompt.match(/输出文件：(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planFile), { recursive: true });
+          return {
+            exitCode: 0,
+            output: `模型回复：\n${validStrategyPlanMarkdown('stdout 恢复计划', 'src/stdout.js')}`,
+            logFile: '/tmp/description-stdout.log',
+            agentCliProvider: 'codex',
+          };
+        },
+      });
 
+      const result = await generatePlanForIntake(
+        svc,
+        strategyHelpers(dir),
+        'p1',
+        dir,
+        strategyIntake(201, body),
+      );
+
+      assert.equal(result, 801);
+      assert.ok(svc.events.some((event) => event.type === 'plan.stdout.recovered'));
+      assert.equal(svc.syncPlanTasksCalls.length, 1);
+      const markdown = fs.readFileSync(path.join(dir, svc.insertPlanCalls[0].filePath), 'utf8');
+      assert.match(markdown, /^# stdout 恢复计划$/m, 'stdout 恢复应保留计划一级标题');
+      assertPlanDescription(markdown, body);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('feedback 正文中的标题、checkbox、HTML 注释和代码围栏不会污染任务解析', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-description-feedback-'));
+    try {
+      const body = [
+        '反馈首行。',
+        '## 原始正文标题',
+        '- [ ] 这不是计划任务',
+        '<!-- 原始反馈注释 -->',
+        '```markdown',
+        '## 任务拆解',
+        '- [ ] P999: 围栏中的伪任务 <!-- scope: fake.js -->',
+        '```',
+      ].join('\n');
+      const { svc } = strategyFlowService({
+        status: {
+          plan_generation_strategy: 'external-cli-markdown',
+          plan_generation_provider: 'claude',
+        },
+        async runCodex(_workspace, prompt) {
+          const planFile = prompt.match(/输出文件：(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planFile), { recursive: true });
+          const modelPlan = validStrategyPlanMarkdown('反馈描述安全计划', 'src/feedback.js').replace(
+            '\n\n## 任务拆解',
+            '\n\n## 需求描述\n\n> 模型生成的旧描述\n\n## 任务拆解',
+          );
+          fs.writeFileSync(planFile, modelPlan, 'utf8');
+          return { exitCode: 0, output: '', logFile: '/tmp/description-feedback.log', agentCliProvider: 'claude' };
+        },
+      });
+
+      await generatePlanForIntake(svc, strategyHelpers(dir), 'p1', dir, {
+        __type: 'feedback',
+        id: 202,
+        title: 'Markdown 内容安全反馈',
+        body,
+      });
+
+      const markdown = fs.readFileSync(path.join(dir, svc.insertPlanCalls[0].filePath), 'utf8');
+      assertPlanDescription(markdown, body);
+      assert.doesNotMatch(markdown, /^## 原始正文标题$/m);
+      assert.doesNotMatch(markdown, /^- \[ \] 这不是计划任务$/m);
+      assert.ok(!markdown.includes('模型生成的旧描述'), '已有描述章节应被原始 feedback 正文替换');
+      assert.equal(validatePlanContent(markdown).valid, true);
+      assert.deepEqual(parsePlanTasksFromMarkdown(markdown).map((task) => task.key), ['P001', 'P002']);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('空 requirement 正文使用明确占位文本', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'autoplan-description-empty-'));
+    try {
+      const { svc } = strategyFlowService({
+        status: { plan_generation_strategy: 'external-cli-markdown' },
+        async runCodex(_workspace, prompt) {
+          const planFile = prompt.match(/输出文件：(.+)/)?.[1]?.trim();
+          fs.mkdirSync(path.dirname(planFile), { recursive: true });
+          fs.writeFileSync(planFile, validStrategyPlanMarkdown('空正文计划', 'src/empty.js'), 'utf8');
+          return { exitCode: 0, output: '', logFile: '/tmp/description-empty.log' };
+        },
+      });
+
+      await generatePlanForIntake(svc, strategyHelpers(dir), 'p1', dir, strategyIntake(203, ''));
+
+      const markdown = fs.readFileSync(path.join(dir, svc.insertPlanCalls[0].filePath), 'utf8');
+      assertPlanDescription(markdown, '');
+      assert.match(markdown, new RegExp(`^> ${PLAN_DESCRIPTION_PLACEHOLDER}$`, 'm'));
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('已有或重复描述章节经注入与 Markdown 规范化后保持幂等', () => {
+    const body = [
+      '真实正文',
+      '## 嵌入标题',
+      '- [ ] 嵌入 checkbox',
+      '<!-- 嵌入注释 -->',
+      '```js',
+      'const value = true;',
+      '```',
+    ].join('\n');
+    const input = validStrategyPlanMarkdown('幂等计划', 'src/idempotent.js')
+      .replace(
+        '\n\n## 任务拆解',
+        '\n\n## 需求描述\n\n旧描述一\n\n## 任务拆解',
+      )
+      .replace(
+        '\n\n## 进度区',
+        '\n\n## 需求描述\n\n旧描述二\n\n## 进度区',
+      );
+
+    const once = injectPlanDescription(input, body);
+    const twice = injectPlanDescription(once, body);
+    const normalized = normalizePlanMarkdown(once);
+
+    assert.equal(twice, once, '重复注入不应改变 plan');
+    assert.equal(normalized, once, '安全描述区块不应被 Markdown 规范化改写');
+    assert.equal(normalizePlanMarkdown(normalized), normalized, '重复规范化应保持稳定');
+    assertPlanDescription(once, body);
+    assert.ok(!once.includes('旧描述一'));
+    assert.ok(!once.includes('旧描述二'));
+    assert.deepEqual(parsePlanTasksFromMarkdown(once).map((task) => task.key), ['P001', 'P002']);
+  });
+});
 
 describe('generatePlanForIntake @ mention prompt context (P004)', () => {
   function mentionRows(sql, params) {
@@ -1687,6 +1851,23 @@ function validStrategyPlanMarkdown(title, scope) {
   ].join('\n');
 }
 
+function assertPlanDescription(markdown, description) {
+  const text = String(markdown || '');
+  const body = String(description ?? '').replace(/\r\n?/g, '\n');
+  const expected = body.trim() ? body : PLAN_DESCRIPTION_PLACEHOLDER;
+  const descriptionHeadings = text.match(/^## 需求描述$/gm) || [];
+  assert.equal(descriptionHeadings.length, 1, '最终 plan 应只包含一个规范需求描述章节');
+  const h1Index = text.search(/^# [^#].*$/m);
+  const descriptionIndex = text.indexOf('## 需求描述');
+  const taskIndex = text.lastIndexOf('## 任务拆解');
+  if (h1Index !== -1) assert.ok(descriptionIndex > h1Index, '需求描述应位于一级标题之后');
+  assert.ok(taskIndex === -1 || descriptionIndex < taskIndex, '需求描述应位于任务拆解之前');
+  for (const line of expected.split('\n')) {
+    const quoted = line ? `> ${line}` : '>';
+    assert.ok(text.split(/\r?\n/).includes(quoted), `需求描述应保留引用行：${quoted}`);
+  }
+}
+
 function assertSkillTransferPromptConstraint(prompt) {
   assert.ok(prompt.includes('用户指定 skill 传递约束：'), 'prompt 应包含用户指定 skill 传递约束标题');
   assert.ok(
@@ -1700,10 +1881,14 @@ function assertSkillTransferPromptConstraint(prompt) {
 }
 
 function assertMarkdownPlanPromptHardConstraints(prompt) {
+  assert.match(prompt, /一级标题之后必须紧接精确二级标题 `## 需求描述`/);
+  assert.match(prompt, /只能包含当前 intake 的原始正文/);
+  assert.match(prompt, /正文为空时写 `（未提供需求或反馈正文）`/);
   assert.match(prompt, /必须包含精确二级标题 `## 任务拆解`/);
   assert.match(prompt, /固定格式：`- \[ \] P001:/);
   assert.match(prompt, /scope 必填/);
   assert.match(prompt, /完整验收/);
+  assert.match(prompt, /`## 进度区` 初始内容不要预置任务状态表格/);
   assert.match(prompt, /只写 (?:plan 文件|manifest 和阶段 plan 文件)，不要改业务代码/);
 }
 

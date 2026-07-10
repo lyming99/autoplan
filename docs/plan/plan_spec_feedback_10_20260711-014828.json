@@ -1,0 +1,53 @@
+{
+  "title": "确保生成的计划在开头保留原始需求或反馈描述",
+  "summary": "反馈 #10 指出的计划由 external-cli-markdown 兼容链路生成：当前提示词和落盘规范化只保证任务拆解、总体验收标准与进度区，模型因此可能直接从任务拆解开始，未写入需求描述。现有结构化链路虽会渲染 PlanSpec summary，也不能保证逐字保留 intake 原始正文。需要把需求或反馈正文作为生成上下文中的确定性元数据，在一级标题之后统一写入“需求描述”章节，并让直接落盘、stdout 兜底、外部 CLI 结构化、内置 LLM 结构化及分阶段计划路径保持一致。",
+  "tasks": [
+    {
+      "title": "实现可复用且内容安全的计划需求描述区块",
+      "scope": [
+        "src/loop/planParser.js",
+        "src/loop/planRenderer.js"
+      ],
+      "acceptance": [
+        "提供统一的 Markdown 描述区块生成或注入能力，在计划一级标题之后、任务拆解之前输出精确的“## 需求描述”章节，并保留传入的需求或反馈正文；正文为空时使用明确占位文本。",
+        "原始正文中的标题、checkbox、HTML 注释、代码围栏等 Markdown 内容不会被误识别为计划任务或破坏后续章节边界，任务解析仍只读取真正的“## 任务拆解”章节。",
+        "注入逻辑具备幂等性：已有规范描述区块时不会重复追加，重复规范化不会改变文件；同时保留既有一级标题、需求概要、任务、总体验收标准和进度区内容。",
+        "PlanSpec 确定性渲染支持接收可选的原始描述上下文；未提供描述的目录扫描或其他调用方继续维持现有渲染结果和 PlanSpec 契约。"
+      ]
+    },
+    {
+      "title": "将原始描述接入所有 intake 计划生成与落盘路径",
+      "scope": [
+        "src/loop/planGeneration.js"
+      ],
+      "acceptance": [
+        "普通 external-cli-markdown 需求和反馈计划在模型直接写盘或从 stdout 恢复后、格式校验和入库前，均确定性包含对应 intake 的原始正文描述，不再依赖模型自行生成该章节。",
+        "external-cli-structured 与 builtin-llm-structured 的 intake 计划在渲染 PlanSpec 时携带原始正文，最终 Markdown 同时保留原始需求描述和模型生成的需求概要，且任务连续编号、scope 注释和完整验收任务不受影响。",
+        "分阶段需求生成的每个阶段 plan 都在开头包含同一原始需求描述，并在 manifest 校验、任务同步和计划入库前完成规范化。",
+        "普通 Markdown 与分阶段提示词明确要求在一级标题后写入需求描述，但确定性后处理仍覆盖模型遗漏、章节位置错误和重复描述等情况；引用上下文和项目自动收集上下文不会被误写成用户原始正文。"
+      ]
+    },
+    {
+      "title": "补充原始描述保留的端到端回归覆盖",
+      "scope": [
+        "src/loop/planGeneration.test.js",
+        "src/loop/structuredPlanSpec.test.js"
+      ],
+      "acceptance": [
+        "回归用例覆盖反馈中的 external-cli-markdown 成功写盘但缺少描述场景，断言最终文件在一级标题后包含原始需求正文并仍能同步任务。",
+        "覆盖 stdout 恢复、外部 CLI 结构化文件与 stdout 兜底、内置 LLM 结构化以及分阶段计划，验证所有 intake 生成策略的描述行为一致。",
+        "覆盖需求与反馈、空正文、多行正文、正文自带二级标题或 checkbox、已有描述区块和重复规范化，验证内容安全、顺序稳定且不重复。",
+        "提示词契约断言要求普通和分阶段 Markdown 计划包含需求描述，同时确认精确“## 任务拆解”、连续 P001 编号、scope、完整验收与空初始进度区等硬性格式约束保持不变。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test && npm run check && npm run smoke",
+    "criteria": [
+      "需求和反馈通过 external-cli-markdown、external-cli-structured、builtin-llm-structured 生成的最终 Markdown 均在一级标题后包含原始正文对应的“## 需求描述”区块。",
+      "模型直接写盘、stdout 兜底恢复和分阶段计划中的描述区块行为一致，空正文有明确占位，重复处理不产生重复章节。",
+      "包含 Markdown 标题、checkbox、代码围栏或 HTML 注释的原始正文不会污染任务解析，所有任务仍位于精确“## 任务拆解”下并保持连续编号、有效 scope 与末尾 validation 完整验收任务。",
+      "未携带 intake 描述的目录扫描计划及既有 PlanSpec、计划校验、任务同步和进度区行为无回归，完整测试、静态检查与 smoke 验证全部通过。"
+    ]
+  }
+}

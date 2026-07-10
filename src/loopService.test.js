@@ -5,7 +5,9 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { AppDatabase, nowIso } = require('./database');
+const { IntakeService } = require('./intakeService');
 const { LoopService } = require('./loopService');
+const { MCP_TOOL_NAMES, callMcpTool } = require('./mcpTools');
 const scriptHooks = require('./loop/scriptHooks');
 
 describe('LoopService.retryIntakePlanGeneration', () => {
@@ -368,7 +370,102 @@ describe('LoopService.runScheduledScripts', () => {
 });
 
 describe('LoopService.runOnce plan queue scheduling', () => {
-  it('keeps a newly generated plan behind an earlier runnable plan', async () => {
+  it('keeps MCP batch creation order through start_loop, plan enqueueing, and execution', async () => {
+    const fixture = await createRetryFixture('runonce-mcp-requirement-fifo');
+    try {
+      const intakeService = new IntakeService({
+        db: fixture.db,
+        loop: fixture.loop,
+        attachmentsRoot: path.join(fixture.workspace, '.attachments'),
+      });
+      const context = { db: fixture.db, loop: fixture.loop, intakeService };
+      const createdRequirementIds = [];
+      for (let index = 1; index <= 3; index += 1) {
+        const result = await callMcpTool(
+          MCP_TOOL_NAMES.CREATE_REQUIREMENT,
+          {
+            projectId: fixture.projectId,
+            title: `MCP 顺序需求 ${index}`,
+            body: `第 ${index} 个落库并等待循环的需求`,
+          },
+          context,
+        );
+        assert.equal(result.isError, undefined);
+        createdRequirementIds.push(result.structuredContent.requirementId);
+      }
+      assert.deepEqual(
+        [...createdRequirementIds].sort((left, right) => left - right),
+        createdRequirementIds,
+        '连续 MCP 创建应按调用顺序取得递增需求 ID',
+      );
+      const sharedCreatedAt = '2026-07-11T00:00:00.000Z';
+      fixture.db.run(
+        `UPDATE requirements
+         SET created_at = ?, updated_at = ?
+         WHERE id IN (?, ?, ?)`,
+        [sharedCreatedAt, sharedCreatedAt, ...createdRequirementIds],
+      );
+
+      const generatedRequirementIds = [];
+      const executedRequirementIds = [];
+      const generatedPlanIds = [];
+      const restoreQueue = stubRunOnceQueue(fixture, {
+        generatePlanForIntake: async (_projectId, _workspace, intake) => {
+          generatedRequirementIds.push(intake.id);
+          const planId = insertQueuedPlan(fixture, {
+            issueHash: `mcp-fifo-requirement-${intake.id}`,
+            sortOrder: fixture.loop.nextPlanSortOrder(fixture.projectId),
+            status: 'pending',
+          });
+          generatedPlanIds.push(planId);
+          fixture.db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+            planId,
+            sharedCreatedAt,
+            intake.id,
+          ]);
+          return planId;
+        },
+        processPlan: async (_workspace, plan) => {
+          const requirement = fixture.db.get('SELECT id FROM requirements WHERE linked_plan_id = ?', [plan.id]);
+          executedRequirementIds.push(requirement.id);
+          fixture.db.run('UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?', [
+            'completed',
+            sharedCreatedAt,
+            plan.id,
+          ]);
+        },
+      });
+      const originalStart = fixture.loop.start;
+      let startPromise = null;
+      fixture.loop.start = (projectId) => {
+        assert.equal(projectId, fixture.projectId);
+        startPromise = (async () => {
+          for (let cycle = 0; cycle < createdRequirementIds.length; cycle += 1) {
+            await fixture.loop.runOnce(projectId);
+          }
+        })();
+      };
+
+      try {
+        const started = await callMcpTool(MCP_TOOL_NAMES.START_LOOP, { projectId: fixture.projectId }, context);
+        assert.equal(started.isError, undefined);
+        assert.ok(startPromise, 'start_loop 应启动循环扫描');
+        await startPromise;
+      } finally {
+        fixture.loop.start = originalStart;
+        restoreQueue();
+      }
+
+      assert.deepEqual(generatedRequirementIds, createdRequirementIds, '同毫秒需求应按 MCP 落库 ID 顺序逐轮生成 Plan');
+      assert.deepEqual(executedRequirementIds, createdRequirementIds, '执行队列应保持需求创建顺序');
+      const generatedPlans = generatedPlanIds.map((planId) => fixture.db.get('SELECT sort_order FROM plans WHERE id = ?', [planId]));
+      assert.deepEqual(generatedPlans.map((plan) => plan.sort_order), [1, 2, 3], '后创建需求的 Plan 应依次追加到队尾');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('keeps a newly generated plan behind an earlier runnable plan until the earlier plan completes', async () => {
     const fixture = await createRetryFixture('runonce-generated-plan-queued');
     try {
       const previousPlanId = insertQueuedPlan(fixture, {
@@ -376,6 +473,12 @@ describe('LoopService.runOnce plan queue scheduling', () => {
         sortOrder: 1,
         status: 'pending',
       });
+      const previousTaskId = insertPlanTask(fixture, previousPlanId, {
+        taskKey: 'P001',
+        title: '前序待执行任务',
+        status: 'pending',
+      });
+      fixture.db.run('UPDATE plans SET total_tasks = 1 WHERE id = ?', [previousPlanId]);
       const requirementId = insertOpenRequirement(fixture, '生成新计划时仍应先执行前序计划');
       const processedPlanIds = [];
       let generatedPlanId = null;
@@ -396,17 +499,127 @@ describe('LoopService.runOnce plan queue scheduling', () => {
         },
         processPlan: async (_workspace, plan) => {
           processedPlanIds.push(plan.id);
+          if (plan.id === previousPlanId) {
+            const task = fixture.db.get('SELECT status FROM plan_tasks WHERE id = ?', [previousTaskId]);
+            assert.equal(task.status, 'pending', '前序 Plan 尚有待执行任务时必须保持队首');
+            fixture.db.run('UPDATE plan_tasks SET status = ?, finished_at = ?, updated_at = ? WHERE id = ?', [
+              'completed',
+              nowIso(),
+              nowIso(),
+              previousTaskId,
+            ]);
+            fixture.db.run(
+              'UPDATE plans SET status = ?, completed_tasks = 1, validation_passed = 1, updated_at = ? WHERE id = ?',
+              ['completed', nowIso(), previousPlanId],
+            );
+          }
         },
       });
 
       try {
+        await fixture.loop.runOnce(fixture.projectId);
+        assert.deepEqual(processedPlanIds, [previousPlanId], '前序 Plan 未完成前，新生成 Plan 只能在队尾等待');
         await fixture.loop.runOnce(fixture.projectId);
       } finally {
         restore();
       }
 
       assert.ok(generatedPlanId, 'runOnce 应先生成新 plan 并入队');
-      assert.deepEqual(processedPlanIds, [previousPlanId], '已有前序可运行 plan 应先于新生成 plan 执行');
+      assert.deepEqual(processedPlanIds, [previousPlanId, generatedPlanId], '前序 Plan 完成后才应推进后序 Plan');
+    } finally {
+      fixture.cleanup();
+    }
+  });
+
+  it('selects eligible requirements by created_at and id without changing the queue head on repeated scans', async () => {
+    const fixture = await createRetryFixture('runonce-requirement-fifo');
+    try {
+      const linkedPlanId = insertQueuedPlan(fixture, {
+        issueHash: 'already-linked-plan',
+        sortOrder: 1,
+        status: 'completed',
+      });
+      const directLinkedId = insertRequirement(fixture, {
+        title: '已有 linked_plan_id',
+        createdAt: '2026-07-11T00:00:00.000Z',
+        linkedPlanId,
+      });
+      const linkedByTableId = insertRequirement(fixture, {
+        title: '已有 intake_plan_links',
+        createdAt: '2026-07-11T00:00:00.100Z',
+      });
+      insertIntakePlanLink(fixture, linkedByTableId, linkedPlanId);
+      const completedId = insertRequirement(fixture, {
+        title: '已完成需求',
+        status: 'completed',
+        createdAt: '2026-07-11T00:00:00.200Z',
+      });
+      const closedId = insertRequirement(fixture, {
+        title: '已关闭需求',
+        status: 'closed',
+        createdAt: '2026-07-11T00:00:00.300Z',
+      });
+      const backedOffId = insertRequirement(fixture, {
+        title: '生成失败退避需求',
+        createdAt: '2026-07-11T00:00:00.400Z',
+        generateFailCount: 3,
+        lastGenerateFailAt: nowIso(),
+      });
+
+      const laterId = insertRequirement(fixture, {
+        title: '较晚创建需求',
+        createdAt: '2026-07-11T00:00:02.000Z',
+      });
+      const sameTimestampFirstId = insertRequirement(fixture, {
+        title: '同毫秒需求一',
+        createdAt: '2026-07-11T00:00:01.000Z',
+      });
+      const sameTimestampSecondId = insertRequirement(fixture, {
+        title: '同毫秒需求二',
+        createdAt: '2026-07-11T00:00:01.000Z',
+      });
+      const expectedRequirementIds = [sameTimestampFirstId, sameTimestampSecondId, laterId];
+      const generatedRequirementIds = [];
+      const generatedPlanIds = [];
+      const restore = stubRunOnceQueue(fixture, {
+        generatePlanForIntake: async (_projectId, _workspace, intake) => {
+          generatedRequirementIds.push(intake.id);
+          const planId = insertQueuedPlan(fixture, {
+            issueHash: `fifo-requirement-${intake.id}`,
+            sortOrder: fixture.loop.nextPlanSortOrder(fixture.projectId),
+            status: 'pending',
+          });
+          generatedPlanIds.push(planId);
+          fixture.db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [
+            planId,
+            nowIso(),
+            intake.id,
+          ]);
+          return planId;
+        },
+        processPlan: async (_workspace, plan) => {
+          fixture.db.run('UPDATE plans SET status = ?, validation_passed = 1, updated_at = ? WHERE id = ?', [
+            'completed',
+            nowIso(),
+            plan.id,
+          ]);
+        },
+      });
+
+      try {
+        for (let cycle = 0; cycle < expectedRequirementIds.length + 1; cycle += 1) {
+          await fixture.loop.runOnce(fixture.projectId);
+        }
+      } finally {
+        restore();
+      }
+
+      assert.deepEqual(generatedRequirementIds, expectedRequirementIds, '可处理需求应按 created_at ASC, id ASC 逐轮生成');
+      const generatedPlans = generatedPlanIds.map((planId) => fixture.db.get('SELECT * FROM plans WHERE id = ?', [planId]));
+      assert.deepEqual(generatedPlans.map((plan) => plan.sort_order), [2, 3, 4], '后生成 Plan 应持续追加到现有队尾');
+      assert.equal(new Set(generatedPlanIds).size, expectedRequirementIds.length, '重复扫描不得为同一需求重复生成 Plan');
+      const excludedIds = [directLinkedId, linkedByTableId, completedId, closedId, backedOffId];
+      assert.equal(excludedIds.some((id) => generatedRequirementIds.includes(id)), false, '既有过滤条件不得因 FIFO 排序而失效');
     } finally {
       fixture.cleanup();
     }
@@ -513,11 +726,38 @@ async function createRetryFixture(name) {
 }
 
 function insertOpenRequirement(fixture, body) {
+  return insertRequirement(fixture, { body });
+}
+
+function insertRequirement(fixture, options = {}) {
+  const createdAt = options.createdAt || nowIso();
+  const updatedAt = options.updatedAt || createdAt;
+  return fixture.db.insert(
+    `INSERT INTO requirements
+       (project_id, title, body, status, linked_plan_id, generate_fail_count,
+        last_generate_fail_at, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      fixture.projectId,
+      options.title || '队列调度需求',
+      options.body || '队列调度回归',
+      options.status || 'open',
+      options.linkedPlanId || null,
+      Number(options.generateFailCount || 0),
+      options.lastGenerateFailAt || null,
+      createdAt,
+      updatedAt,
+    ],
+  );
+}
+
+function insertIntakePlanLink(fixture, requirementId, planId) {
   const now = nowIso();
   return fixture.db.insert(
-    `INSERT INTO requirements (project_id, title, body, status, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [fixture.projectId, '队列调度需求', body || '队列调度回归', 'open', now, now],
+    `INSERT INTO intake_plan_links
+       (project_id, intake_type, intake_id, plan_id, phase_index, phase_title, created_at, updated_at)
+     VALUES (?, 'requirement', ?, ?, 1, '', ?, ?)`,
+    [fixture.projectId, requirementId, planId, now, now],
   );
 }
 

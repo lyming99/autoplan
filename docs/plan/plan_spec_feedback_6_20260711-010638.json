@@ -1,0 +1,38 @@
+{
+  "title": "修复 Windows OpenCode CLI 多行计划提示词仅传入首行",
+  "summary": "反馈 #6 所附的三次 OpenCode 计划生成日志均显示，autoplan-plan agent 实际只接收到结构化计划 prompt 的首行“你是需求整理与开发计划生成者。”，随后因缺少需求正文、PlanSpec 输出路径和格式契约而遍历仓库、等待补充信息，最终未生成计划。当前 Windows 执行路径会把多行位置参数直接拼入 `cmd.exe /d /s /c call opencode.cmd ...`；现有 spillover 只按命令行总长度触发，无法保护长度未超限但含 CR/LF 的 PlanSpec prompt。需要在 OpenCode 参数投递层识别 Windows `.cmd` shim 不安全的多行参数，改用完整内容落盘并通过单行指针与 `-f` 附件传递，同时以贴近真实结构化计划 prompt 的单元测试防止再次只传首行。",
+  "tasks": [
+    {
+      "title": "修复 OpenCode Windows `.cmd` shim 的多行 prompt 安全投递",
+      "scope": [
+        "src/agentCli.js"
+      ],
+      "acceptance": [
+        "Windows 下 OpenCode 命令解析为 `.cmd` 或 `.bat` shim 时，包含 `\n` 或 `\r\n` 的计划生成 prompt 不再原样嵌入 `cmd.exe /c` 命令字符串，而是完整写入受控的临时附件文件；长度未达到 8191 字符的多行 prompt 也必须走安全投递路径。",
+        "传给 OpenCode 的实际命令行只包含无 CR/LF 的单行权威指针，并以合法参数顺序携带 `-f/--file` 附件、`--auto`、`--agent autoplan-plan`、会话和标题参数，使模型能够读取完整 PlanSpec 契约、需求/反馈正文及目标输出路径。",
+        "单行且处于安全长度内的 OpenCode prompt 保持现有直接位置参数行为；超长 prompt、非 Windows 原生可执行文件路径以及 Codex、Claude、Oh My Pi 的 stdin 投递行为不回归。",
+        "临时 prompt 文件在成功、CLI 非零退出、超时和 spawn 异常等结束路径均按现有生命周期清理，文件写入或附件投递失败时返回可诊断失败，不得静默退回会被截断的多行命令行参数。"
+      ]
+    },
+    {
+      "title": "补充 OpenCode 结构化计划多行 prompt 首行截断回归单元测试",
+      "scope": [
+        "src/agentCli.test.js"
+      ],
+      "acceptance": [
+        "单元测试使用包含角色首行、PlanSpec JSON 输出路径、格式契约、需求正文和引用上下文的真实多行 prompt，复现反馈日志中的 Windows `.cmd` shim 场景，并断言完整内容逐字保存在投递文件中而不是只保留首行。",
+        "单元测试断言最终 OpenCode 执行参数或 `cmd.exe /c` 命令字符串不含原始换行和整段 prompt，同时包含单行指针、正确的附件路径及 `--auto --agent autoplan-plan` 等结构化计划参数，防止只验证静态权限参数却遗漏真实投递链路。",
+        "单元测试覆盖 CRLF 与 LF、多行但低于命令行长度阈值、超长 prompt、短单行 prompt，以及临时文件清理和写入失败分支，确保修复边界明确且 provider 之间相互隔离。"
+      ]
+    }
+  ],
+  "finalValidation": {
+    "command": "npm test && npm run check && npm run smoke",
+    "criteria": [
+      "OpenCode 参数与执行层单元测试全部通过，Windows `.cmd` shim 收到的命令字符串不再直接包含多行结构化计划 prompt，附件文件内容与原始 prompt 完全一致。",
+      "在 Windows 上使用 OpenCode 1.17.15 为包含 PlanSpec 契约和反馈引用上下文的需求生成计划时，autoplan-plan agent 能读取完整需求并写出合法 PlanSpec JSON，不再输出等待补充需求，也不再擅自创建 Markdown plan 或遍历整仓。",
+      "AutoPlan 能从生成的 PlanSpec 渲染出含精确 `## 任务拆解`、连续 P001 编号、完整 scope 注释、最后一个 `validation` 验收任务和空初始 `## 进度区` 的 Markdown plan。",
+      "Codex、Claude、OpenCode 和 Oh My Pi 的既有计划生成、任务执行、会话参数、超长 prompt、错误诊断与 smoke 主流程均无回归。"
+    ]
+  }
+}

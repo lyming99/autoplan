@@ -22,11 +22,121 @@ const PLAN_HEADING_NORMALIZE_RE = new RegExp(
 );
 const PLAN_TASK_SECTION_HEADING_RE = /^\uFEFF?##[ \t]+\u4EFB\u52A1\u62C6\u89E3[ \t]*$/;
 const PLAN_NEXT_SECTION_HEADING_RE = /^\uFEFF?##[ \t]+\S.*$/;
+const PLAN_DESCRIPTION_HEADING_RE = /^\uFEFF?##[ \t]+\u9700\u6C42\u63CF\u8FF0[ \t]*$/;
+const PLAN_TOP_LEVEL_SECTION_HEADING_RE = /^\uFEFF?#{1,2}[ \t]+\S.*$/;
 // \u5339\u914D\u4EFB\u52A1\u590D\u9009\u6846\u884C\uFF1B\u6355\u83B7\uFF1A1=\u7F29\u8FDB 2=\u5217\u8868\u6807\u8BB0 3=\u52FE\u9009\u72B6\u6001 4=\u6B63\u6587\u3002
 const PLAN_TASK_CHECKBOX_LINE_RE = /^(\uFEFF?)(-)\s*\[\s*([ xX]?)\s*\]\s+(.*)$/;
 // \u5339\u914D\u56F4\u680F\u4EE3\u7801\u5757\u884C\uFF08``` \u6216 ~~~\uFF09\uFF0C\u7528\u4E8E\u89C4\u8303\u5316\u65F6\u8DF3\u8FC7\u4EE3\u7801\u5757\u5185\u5BB9\u3002
 const CODE_FENCE_LINE_RE = /^(\s*)(`{3,}|~{3,})/;
 const FINAL_ACCEPTANCE_RE = /\u5B8C\u6574\u9A8C\u6536|\u6574\u4F53\u9A8C\u6536|\u603B\u4F53\u9A8C\u6536|\u6700\u7EC8\u9A8C\u6536|\u5B8C\u6574\u9A8C\u8BC1|\u6700\u7EC8\u9A8C\u8BC1|acceptance|validation/i;
+const PLAN_DESCRIPTION_HEADING = '## \u9700\u6C42\u63CF\u8FF0';
+const PLAN_DESCRIPTION_PLACEHOLDER = '\uFF08\u672A\u63D0\u4F9B\u9700\u6C42\u6216\u53CD\u9988\u6B63\u6587\uFF09';
+
+// 需求正文逐行放入 Markdown 引用块，使其中的标题、checkbox、HTML 注释和代码围栏
+// 都只是描述内容，不会成为 plan 的结构或任务。不 trim 非空正文，以保留原始换行与空行。
+function renderPlanDescriptionSection(description) {
+  const source = String(description ?? '').replace(/\r\n?/g, '\n');
+  const body = source.trim() ? source : PLAN_DESCRIPTION_PLACEHOLDER;
+  const quotedLines = body.split('\n').map((line) => (line ? '> ' + line : '>'));
+  return [PLAN_DESCRIPTION_HEADING, '', ...quotedLines].join('\n');
+}
+
+// 把唯一、内容安全的需求描述放在计划一级标题之后。已有描述章节会先被移除，
+// 因此可同时修复错位/重复章节，并保证重复注入后文本不变。
+function injectPlanDescription(markdown, description) {
+  const text = String(markdown || '');
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const lines = removePlanDescriptionSections(text.split(/\r?\n/));
+  const titleIndex = findPlanH1Index(lines);
+  const insertIndex = titleIndex === -1 ? 0 : titleIndex + 1;
+  const before = lines.slice(0, insertIndex);
+  const after = lines.slice(insertIndex);
+  while (after.length && after[0].trim() === '') after.shift();
+
+  const result = [...before];
+  if (result.length && result[result.length - 1].trim() !== '') result.push('');
+  result.push(...renderPlanDescriptionSection(description).split('\n'));
+  if (after.length) result.push('', ...after);
+  return result.join(eol);
+}
+
+function injectPlanDescriptionFile(planFile, description) {
+  if (!fs.existsSync(planFile)) return false;
+  const original = fs.readFileSync(planFile, 'utf8');
+  const injected = injectPlanDescription(original, description);
+  if (injected === original) return false;
+  fs.writeFileSync(planFile, injected, 'utf8');
+  return true;
+}
+
+function removePlanDescriptionSections(lines) {
+  const result = [];
+  let inDescription = false;
+  let inFence = false;
+  let fenceChar = '';
+  for (const line of lines) {
+    if (inDescription) {
+      if (!inFence && PLAN_DESCRIPTION_HEADING_RE.test(line)) continue;
+      if (!inFence && PLAN_TOP_LEVEL_SECTION_HEADING_RE.test(line)) {
+        inDescription = false;
+      } else {
+        const fence = line.match(CODE_FENCE_LINE_RE);
+        if (fence) {
+          const ch = fence[2][0];
+          if (!inFence) {
+            inFence = true;
+            fenceChar = ch;
+          } else if (ch === fenceChar) {
+            inFence = false;
+            fenceChar = '';
+          }
+        }
+        continue;
+      }
+    }
+    if (!inFence && PLAN_DESCRIPTION_HEADING_RE.test(line)) {
+      inDescription = true;
+      continue;
+    }
+    result.push(line);
+    if (!inDescription) {
+      const fence = line.match(CODE_FENCE_LINE_RE);
+      if (fence) {
+        const ch = fence[2][0];
+        if (!inFence) {
+          inFence = true;
+          fenceChar = ch;
+        } else if (ch === fenceChar) {
+          inFence = false;
+          fenceChar = '';
+        }
+      }
+    }
+  }
+  return result;
+}
+
+function findPlanH1Index(lines) {
+  let inFence = false;
+  let fenceChar = '';
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    const fence = line.match(CODE_FENCE_LINE_RE);
+    if (fence) {
+      const ch = fence[2][0];
+      if (!inFence) {
+        inFence = true;
+        fenceChar = ch;
+      } else if (ch === fenceChar) {
+        inFence = false;
+        fenceChar = '';
+      }
+      continue;
+    }
+    if (!inFence && /^\uFEFF?[ \t]*#[ \t]+\S/.test(line)) return index;
+  }
+  return -1;
+}
 
 function appendTask(service, helpers, projectId, planId, title) {
     const project = service.project(projectId);
@@ -457,18 +567,22 @@ function normalizePlanMarkdownFile(planFile) {
 }
 
 module.exports = {
+  PLAN_DESCRIPTION_PLACEHOLDER,
   addScopeParts,
   appendTask,
   cleanMarkdownHeadingTitle,
   ensureTaskScopeComment,
   explicitTaskScopeParts,
   extractMarkdownTitle,
+  injectPlanDescription,
+  injectPlanDescriptionFile,
   insertTaskLineBeforeTask,
   normalizePlanMarkdown,
   normalizePlanMarkdownFile,
   normalizePlanTaskScopes,
   normalizeTaskScope,
   planTaskSectionLinesFromMarkdown,
+  renderPlanDescriptionSection,
   stripTaskScopeComment,
   syncPlanTasks,
   taskDeclaredScopes,
