@@ -152,7 +152,7 @@ function workspaceToolEnv(workspace, baseEnv = process.env) {
     AUTOPLAN_RUNTIME_ROOT: root,
     PUB_CACHE: dirs.pubCache,
     FLUTTER_SUPPRESS_ANALYTICS: 'true',
-    CI: baseEnv.CI || 'true',
+    ...(baseEnv.CI ? { CI: baseEnv.CI } : {}),
     GRADLE_USER_HOME: baseEnv.GRADLE_USER_HOME || dirs.gradleHome,
     XDG_CACHE_HOME: baseEnv.XDG_CACHE_HOME || dirs.xdgCache,
     XDG_CONFIG_HOME: baseEnv.XDG_CONFIG_HOME || dirs.xdgConfig,
