@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from 'react';
+import { memo, type KeyboardEvent } from 'react';
 import { useEffect, useId, useRef } from 'react';
 import type { Plan, WorkspacePlanReadState } from '../../types';
 import { formatChinaDateTime } from '../../utils/time';
@@ -39,7 +39,7 @@ function getPlanReaderFocusableElements(container: HTMLElement) {
   );
 }
 
-export function PlanReaderModal({
+export const PlanReaderModal = memo(function PlanReaderModal({
   dialogId,
   latestPlan,
   onClose,
@@ -228,4 +228,4 @@ export function PlanReaderModal({
       </div>
     </div>
   );
-}
+});

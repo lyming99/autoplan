@@ -1,9 +1,10 @@
-import { useLayoutEffect, useRef } from 'react';
+import { memo, useEffect, useMemo, useRef } from 'react';
 import type { ActivityLine, AgentCliSessionInfo, CodexSessionInfo } from '../types';
 import { agentCliProviderLabel } from './shared';
 import { formatChinaTime } from '../utils/time';
 
 const LOG_BOTTOM_THRESHOLD_PX = 24;
+const MAX_VISIBLE_LINES = 200;
 
 const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
   codex: { label: 'Codex', cls: 'act-codex' },
@@ -18,42 +19,78 @@ const ROLE_CONFIG: Record<string, { label: string; cls: string }> = {
 type AgentCliLogContext = AgentCliSessionInfo &
   CodexSessionInfo & { errorMessage?: string | null; exitCode?: number | null };
 
+type CodexLogProps = {
+  log: string;
+  activity?: ActivityLine[];
+  context?: AgentCliLogContext | null;
+  provider?: string | null;
+};
+
 function isNearLogBottom(el: HTMLDivElement) {
   const maxScrollTop = Math.max(0, el.scrollHeight - el.clientHeight);
   return maxScrollTop - el.scrollTop <= LOG_BOTTOM_THRESHOLD_PX;
 }
 
+/** 提取用于 memo 比较的 activity 内容指纹 */
+function activityContentKey(a?: ActivityLine[]): string {
+  if (!a || !a.length) return '0';
+  const visible = a.length <= MAX_VISIBLE_LINES ? a : a.slice(-MAX_VISIBLE_LINES);
+  return `${a.length}|${visible.map((l) => `${l.at ?? ''}\x00${l.role}\x00${l.text}`).join('\x01')}`;
+}
+
+function contextFingerprint(c?: AgentCliLogContext | null): string {
+  if (!c) return '';
+  return [c.errorMessage, c.exitCode, c.agentCliSessionLabel, c.codexSessionLabel,
+    c.agentCliSessionState, c.agentCliSessionMode, c.agentCliSessionId].join('|');
+}
+
+function areCodexLogPropsEqual(prev: CodexLogProps, next: CodexLogProps): boolean {
+  if (prev.provider !== next.provider) return false;
+  if (prev.log !== next.log) return false;
+  if (activityContentKey(prev.activity) !== activityContentKey(next.activity)) return false;
+  if (contextFingerprint(prev.context) !== contextFingerprint(next.context)) return false;
+  return true;
+}
+
 /**
  * 以活动时间线显示 Agent CLI 执行过程（Codex 结构化 Activity 优先）。
- * 优先用过滤后的 activity 行；若为空则回退到 logTail 原始尾部。
+ * 仅渲染最近 200 条 activity 行，避免长任务产生数千个 DOM 节点。
+ * 使用被动 useEffect + rAF 滚动，不阻塞浏览器绘制。
+ * 自定义 memo 比较器：仅在内容指纹变化时重渲染，而非 prop 引用变化时。
  */
-export function CodexLog({
+export const CodexLog = memo(function CodexLog({
   log,
   activity,
   context,
   provider,
-}: {
-  log: string;
-  activity?: ActivityLine[];
-  context?: AgentCliLogContext | null;
-  provider?: string | null;
-}) {
+}: CodexLogProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const isAtBottomRef = useRef(true);
-  const lines = activity && activity.length > 0 ? activity : null;
+  const totalCount = activity?.length || 0;
+
+  // 仅取末尾 200 条 — 长任务中旧日志不挂 DOM
+  const lines = useMemo(() => {
+    if (!activity || !activity.length) return null;
+    if (activity.length <= MAX_VISIBLE_LINES) return activity;
+    return activity.slice(-MAX_VISIBLE_LINES);
+  }, [activity]);
+
   const displayMode = lines ? 'activity' : 'raw';
   const lastDisplayModeRef = useRef(displayMode);
   const providerLabel = agentCliProviderLabel(provider);
   const rawLogText = log ? log.slice(-4000) : `等待 ${providerLabel} 输出…`;
   const statusText = lines
-    ? `${providerLabel} 活动摘要`
+    ? `${providerLabel} 活动摘要${totalCount > MAX_VISIBLE_LINES ? ` (${totalCount} 条，显示最近 ${lines.length} 条)` : ''}`
     : log
       ? `${providerLabel} 原始日志尾部`
       : `等待 ${providerLabel} 输出`;
-  const activityContentKey = lines
-    ? lines.map((line) => `${line.at}\u0000${line.role}\u0000${line.text}`).join('\u0001')
-    : '';
-  const renderedContentKey = lines ? activityContentKey : rawLogText;
+
+  // O(200) 而非 O(N) 的变更检测 key
+  const renderedContentKey = useMemo(() => {
+    if (!lines) return rawLogText;
+    return lines.map((line) => `${line.at}\x00${line.role}\x00${line.text}`).join('\x01');
+  }, [lines, rawLogText]);
+
   const contextLabel = agentCliSessionContextLabel(context, providerLabel);
   const errorMessage = context?.errorMessage?.trim() || '';
 
@@ -62,16 +99,18 @@ export function CodexLog({
     isAtBottomRef.current = el ? isNearLogBottom(el) : true;
   };
 
-  useLayoutEffect(() => {
+  // 用被动 useEffect + rAF 替代 useLayoutEffect：不阻塞浏览器绘制
+  useEffect(() => {
     const el = scrollRef.current;
-    if (el) {
-      const displayModeChanged = lastDisplayModeRef.current !== displayMode;
-      if (displayModeChanged || isAtBottomRef.current) {
+    if (!el) return;
+    const displayModeChanged = lastDisplayModeRef.current !== displayMode;
+    lastDisplayModeRef.current = displayMode;
+    if (displayModeChanged || isAtBottomRef.current) {
+      requestAnimationFrame(() => {
         el.scrollTop = el.scrollHeight;
-      }
-      lastDisplayModeRef.current = displayMode;
-      updateBottomState();
+      });
     }
+    updateBottomState();
   }, [displayMode, renderedContentKey, contextLabel, errorMessage, statusText]);
 
   const statusLine = (
@@ -102,7 +141,7 @@ export function CodexLog({
     lines.map((line, index) => {
       const config = activityRoleConfig(line.role, providerLabel);
       return (
-        <div className={`act-line ${config.cls}`} key={index}>
+        <div className={`act-line ${config.cls}`} key={line.at ? `${line.at}-${index}` : index}>
           <span className="act-time">{formatChinaTime(line.at)}</span>
           <span className="act-tag">{config.label}</span>
           <span className="act-text">{line.text}</span>
@@ -121,7 +160,7 @@ export function CodexLog({
       {content}
     </div>
   );
-}
+}, areCodexLogPropsEqual);
 
 function activityRoleConfig(role: string, providerLabel: string) {
   if (role === 'codex' || role === 'assistant') {

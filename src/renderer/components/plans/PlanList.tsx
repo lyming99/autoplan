@@ -1,4 +1,4 @@
-import { type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { memo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import { useEffect, useId, useState } from 'react';
 import type { AgentCliProvider, Plan, PlanTask, WorkspacePlanReadState } from '../../types';
 import { planCliSummaryLabel } from '../shared';
@@ -84,7 +84,7 @@ function canStopPlan(plan: Plan, hasRunningTask: boolean) {
   return hasRunningTask || plan.status === 'running';
 }
 
-export function PlanList({
+export const PlanList = memo(function PlanList({
   emptyText = '暂无 plan。',
   latestReadingPlan,
   onCloseReader,
@@ -591,4 +591,4 @@ export function PlanList({
       />
     </>
   );
-}
+});

@@ -1,6 +1,6 @@
 const { effectiveAgentCliConfig, hasAgentCliOverride } = require('./agentCliConfig');
 const planBackendConfig = require('./planBackendConfig');
-const { parseEventMeta } = require('./snapshots');
+const { parseEventMeta } = require('./eventMeta');
 const { normalizeProjectPrompt } = require('./taskSessionContext');
 
 const BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR = 'builtin-llm execution is not supported yet';
@@ -15,8 +15,18 @@ function planAgentCliConfig(service, plan) {
 }
 
 function planExecutionConfig(service, plan) {
+  // 批量预取缓存快路径：避免每条 plan 分别查询 events/sources
+  const planId = Number(plan?.id || 0);
+  const projectId = Number(plan?.project_id || 0);
+  if (service._batchPlanCliCache && planId && projectId) {
+    const cached = service._batchPlanCliCache.get(`${projectId}:${planId}`);
+    if (cached) {
+      const projectDefaults = service.status(projectId) || {};
+      const snapshotDefaults = cached.eventSnapshot || cached.sourceSnapshot || projectDefaults;
+      return planBackendConfig.effectivePlanExecutionConfig(projectDefaults, cached.eventSnapshot || cached.sourceSnapshot || {});
+    }
+  }
   const currentPlan = currentPlanExecutionSource(service, plan);
-  const projectDefaults = service.status(currentPlan.project_id) || {};
   const eventSnapshot = planAgentCliEventSnapshot(service, currentPlan.project_id, currentPlan.id);
   const sourceSnapshot = planSourceAgentCliSnapshot(service, currentPlan.project_id, currentPlan.id);
   const snapshotDefaults = eventSnapshot || sourceSnapshot || projectDefaults;
@@ -43,7 +53,101 @@ function currentPlanExecutionSource(service, plan = {}) {
 }
 
 function planSnapshotAgentCliConfig(service, plan) {
+  // 批量预取快路径：直接从缓存读取已解析的配置
+  const planId = Number(plan?.id || 0);
+  const projectId = Number(plan?.project_id || 0);
+  if (planId && projectId && service._batchPlanCliConfigCache) {
+    const cached = service._batchPlanCliConfigCache.get(`${projectId}:${planId}`);
+    if (cached) return cached;
+  }
   return planAgentCliConfig(service, plan);
+}
+
+/**
+ * 批量预取 plan agent CLI 配置，避免 N+1 SQL 查询（原每个 plan 执行 3-4 条独立 SQL）。
+ * 在快照 plan 循环外调用一次，结果存入 service._batchPlanCliConfigCache，
+ * 后续 planSnapshotAgentCliConfig() 直接 O(1) 读取。
+ */
+function batchPreloadPlanAgentCliConfigs(service, planRows) {
+  if (!planRows || !planRows.length) return;
+  const projectIds = new Set(planRows.map((p) => Number(p.project_id)).filter(Boolean));
+  if (projectIds.size === 0) return;
+
+  if (!service._batchPlanCliConfigCache) service._batchPlanCliConfigCache = new Map();
+
+  // 批量加载 plan.generated 事件（每个项目一条 SQL）
+  const eventCache = new Map();
+  for (const projectId of projectIds) {
+    const rows = service.db.all(
+      `SELECT meta FROM events
+       WHERE project_id = ? AND type = 'plan.generated' AND meta IS NOT NULL
+       ORDER BY id DESC
+       LIMIT 80`,
+      [projectId],
+    );
+    eventCache.set(Number(projectId), rows || []);
+  }
+
+  // 批量加载关联 intake sources（每个项目两条 SQL）
+  const sourceCache = new Map();
+  for (const projectId of projectIds) {
+    const requirements = service.db.all(
+      'SELECT * FROM requirements WHERE project_id = ? AND linked_plan_id IS NOT NULL',
+      [projectId],
+    );
+    const feedback = service.db.all(
+      'SELECT * FROM feedback WHERE project_id = ? AND linked_plan_id IS NOT NULL',
+      [projectId],
+    );
+    sourceCache.set(Number(projectId), { requirements: requirements || [], feedback: feedback || [] });
+  }
+
+  // 为每个 plan 用缓存数据直接计算配置，绕过逐 plan 的 SQL 查询
+  for (const plan of planRows) {
+    const planId = Number(plan.id);
+    const projectId = Number(plan.project_id);
+    if (!planId || !projectId) continue;
+
+    const planKey = `${projectId}:${planId}`;
+    if (service._batchPlanCliConfigCache.has(planKey)) continue;
+
+    // 从缓存查找匹配的 event
+    const events = eventCache.get(projectId) || [];
+    let eventSnapshot = null;
+    for (const row of events) {
+      const meta = parseEventMeta(row.meta);
+      if (!meta || typeof meta !== 'object') continue;
+      if (!planEventMatches(meta, planId)) continue;
+      if (hasPlanExecutionConfigSnapshot(meta) || hasAgentCliOverride(meta)) {
+        eventSnapshot = flattenPlanExecutionSource(meta);
+        break;
+      }
+    }
+
+    // 从缓存查找匹配的 source intake
+    const sources = sourceCache.get(projectId);
+    let sourceSnapshot = null;
+    if (sources) {
+      const req = sources.requirements.find((r) => Number(r.linked_plan_id) === planId);
+      if (req && hasAgentCliOverride(req)) sourceSnapshot = req;
+      if (!sourceSnapshot) {
+        const fb = sources.feedback.find((f) => Number(f.linked_plan_id) === planId);
+        if (fb && hasAgentCliOverride(fb)) sourceSnapshot = fb;
+      }
+    }
+
+    // 存储中间数据供 planExecutionConfig 绕过 SQL
+    if (!service._batchPlanCliCache) service._batchPlanCliCache = new Map();
+    service._batchPlanCliCache.set(planKey, { eventSnapshot, sourceSnapshot, plan });
+
+    try {
+      const config = planAgentCliConfig(service, plan);
+      // 用最终解析的 config 覆盖缓存，供 planSnapshotAgentCliConfig 快速读取
+      service._batchPlanCliConfigCache.set(planKey, config);
+    } catch {
+      service._batchPlanCliCache.delete(planKey);
+    }
+  }
 }
 
 function planProjectPrompt(service, plan) {
@@ -214,6 +318,7 @@ function planEventMatches(meta, planId) {
 
 module.exports = {
   BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR,
+  batchPreloadPlanAgentCliConfigs,
   isBuiltinLlmPlanExecution,
   planExecutionConfig,
   planExecutionEventMeta,

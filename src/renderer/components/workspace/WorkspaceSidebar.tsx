@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import type { Conversation, Project, ProjectState, WorkspaceChatState, WorkspaceTab } from '../../types';
 import { useTheme } from '../../hooks/useTheme';
 import { Icon, type IconName } from '../icons';
@@ -47,7 +47,7 @@ export function agentCliConfigSummary(state?: ProjectState | null) {
   return `${providerLabel} · 思考${codexReasoningEffortLabel(readCodexReasoningEffort(state))}`;
 }
 
-export function WorkspaceSidebar({
+export const WorkspaceSidebar = memo(function WorkspaceSidebar({
   activeTab,
   onTab,
   onBack,
@@ -509,7 +509,7 @@ export function WorkspaceSidebar({
       />
     </aside>
   );
-}
+});
 
 function isConversationPinned(conversation: Conversation) {
   return Boolean(conversation.pinnedAt ?? conversation.pinned_at ?? conversation.pinned);

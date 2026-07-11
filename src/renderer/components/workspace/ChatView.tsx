@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { ChatMessage, OpenIntakeHandler, WorkspaceChatState } from '../../types';
@@ -19,8 +19,19 @@ import { ChatQueueView } from './ChatQueueView';
 
 /* ------------------------------------------------------------------ 子组件 ------------------------------------------------------------------ */
 
+/** Memoized markdown renderer — avoids re-parsing identical content on every parent render */
+const MemoMarkdown = memo(function MemoMarkdown({ content, className }: { content: string; className?: string }) {
+  return (
+    <div className={className}>
+      <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+});
+
 /** 推理内容可折叠区域 */
-function ReasoningSection({ content, isThinking }: { content: string; isThinking: boolean }) {
+const ReasoningSection = memo(function ReasoningSection({ content, isThinking }: { content: string; isThinking: boolean }) {
   const [expanded, setExpanded] = useState(false);
 
   if (!content && !isThinking) return null;
@@ -44,19 +55,15 @@ function ReasoningSection({ content, isThinking }: { content: string; isThinking
       </button>
       {expanded && content ? (
         <div className="chat-reasoning-body">
-          <div className="chat-markdown chat-markdown--reasoning">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-              {content}
-            </ReactMarkdown>
-          </div>
+          <MemoMarkdown className="chat-markdown chat-markdown--reasoning" content={content} />
         </div>
       ) : null}
     </div>
   );
-}
+});
 
 /** 单条消息 */
-function ChatMessageBubble({
+const ChatMessageBubble = memo(function ChatMessageBubble({
   message,
   isThinking = false,
   thinkingContent = '',
@@ -121,11 +128,7 @@ function ChatMessageBubble({
 
               {/* 正式回复内容 */}
               {!isError && hasReplyContent ? (
-                <div className="chat-markdown">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]} skipHtml>
-                    {message.content}
-                  </ReactMarkdown>
-                </div>
+                <MemoMarkdown className="chat-markdown" content={message.content} />
               ) : null}
             </div>
             {isStreaming && <span className="chat-message__cursor" aria-hidden />}
@@ -147,7 +150,7 @@ function ChatMessageBubble({
     default:
       return null;
   }
-}
+});
 
 type ChatEmptyStateKind = 'missing-key' | 'no-conversation' | 'empty-conversation';
 
@@ -172,7 +175,7 @@ function chatConfigKeySuffix(config: ChatConfigSummary): string {
   return config.hasApiKey ? '' : ' · 未配置 Key';
 }
 
-function ChatEmptyState({
+const ChatEmptyState = memo(function ChatEmptyState({
   kind,
   onCreateConversation,
 }: {
@@ -218,7 +221,7 @@ function ChatEmptyState({
       ) : null}
     </div>
   );
-}
+});
 
 /* ------------------------------------------------------------------ 主组件 ------------------------------------------------------------------ */
 
@@ -228,7 +231,7 @@ function ChatEmptyState({
  * Props：
  * - chatState: 工作区层共享的聊天状态容器
  */
-export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChatState; onOpenIntake?: OpenIntakeHandler }) {
+export const ChatView = memo(function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChatState; onOpenIntake?: OpenIntakeHandler }) {
   const {
     messages,
     isStreaming,
@@ -641,6 +644,6 @@ export function ChatView({ chatState, onOpenIntake }: { chatState: WorkspaceChat
       </div>
     </div>
   );
-}
+});
 
 export default ChatView;

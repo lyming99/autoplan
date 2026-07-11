@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
+import { startTransition, useCallback, useEffect, useRef, useState, type SetStateAction } from 'react';
 import type { AppSnapshot, WorkspaceSnapshotPatch } from '../types';
 
 const EMPTY_SCAN_SUMMARY = {
@@ -16,6 +16,7 @@ export function useSnapshot(projectId: number | null) {
   const [snapshot, setSnapshot] = useState<AppSnapshot | null>(null);
   const [error, setError] = useState<string | null>(null);
   const projectIdRef = useRef(projectId);
+  const lastContentKeyRef = useRef<string>('');
   projectIdRef.current = projectId;
 
   const commitSnapshot = useCallback((action: SetStateAction<AppSnapshot | null>) => {
@@ -49,13 +50,22 @@ export function useSnapshot(projectId: number | null) {
       queuedSnapshot = null;
       queuedPatches.clear();
       if (disposed || (!latestSnapshot && !latestPatches.length)) return;
-      setSnapshot((current) => {
-        let next = current;
-        if (latestSnapshot) next = applySnapshotForProject(latestSnapshot, projectId, current);
-        for (const latestPatch of latestPatches) {
-          next = applySnapshotPatchForProject(next, latestPatch, projectId);
-        }
-        return next;
+      // 内容去重：关键字段无变化时跳过渲染
+      if (latestSnapshot && !latestPatches.length) {
+        const contentKey = snapshotContentKey(latestSnapshot, projectId);
+        if (contentKey && contentKey === lastContentKeyRef.current) return;
+        lastContentKeyRef.current = contentKey;
+      }
+      // 用 startTransition 将快照更新标记为非紧急，浏览器可中断渲染以优先处理滚动/输入
+      startTransition(() => {
+        setSnapshot((current) => {
+          let next = current;
+          if (latestSnapshot) next = applySnapshotForProject(latestSnapshot, projectId, current);
+          for (const latestPatch of latestPatches) {
+            next = applySnapshotPatchForProject(next, latestPatch, projectId);
+          }
+          return next;
+        });
       });
     };
     const scheduleFrame = () => {
@@ -187,6 +197,44 @@ function mergeProjectStateIntoProjects(
 
 function hasOwn<T extends object, K extends PropertyKey>(value: T, key: K) {
   return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+/** 轻量级内容指纹：仅比较长度和首尾 ID，避免深比较开销 */
+function snapshotContentKey(snapshot: AppSnapshot, projectId: number | null): string {
+  if (projectId === null || snapshot.activeProjectId === null) return '';
+  const op = snapshot.activeOperation || snapshot.lastOperation;
+  const activity = op?.activity;
+  const tasks = snapshot.tasks || [];
+  const events = snapshot.events || [];
+  const plans = snapshot.plans || [];
+  const parts: string[] = [
+    `p${plans.length}`,
+    `t${tasks.length}`,
+    `e${events.length}`,
+    `s${snapshot.state?.running ? 1 : 0}`,
+    `ph${snapshot.state?.phase || ''}`,
+    `op${op?.label ?? ''}|${op?.startedAt ?? ''}`,
+    `opst${op?.startedAt ?? ''}`,
+    `opex${op?.exitCode ?? ''}`,
+    `ac${activity?.length ?? 0}`,
+  ];
+  if (tasks.length) {
+    parts.push(`tf${tasks[0].id}`, `tl${tasks[tasks.length - 1].id}`);
+    parts.push(`tcmp${tasks.filter(t => t.status === 'completed').length}`);
+    parts.push(`tfl${tasks.filter(t => t.status === 'failed').length}`);
+  }
+  if (events.length) {
+    parts.push(`ef${events[0].id}`, `el${events[events.length - 1].id}`);
+  }
+  if (plans.length) {
+    parts.push(`plf${plans[0].id}`, `pll${plans[plans.length - 1].id}`);
+    parts.push(`plst${plans.map(p => p.status).join(',')}`);
+  }
+  if (activity && activity.length) {
+    const last = activity[activity.length - 1];
+    parts.push(`al${activity.length}`, `aat${last.at ?? ''}`, `ar${last.role ?? ''}`);
+  }
+  return parts.join('|');
 }
 
 function createProjectListSnapshot(source: AppSnapshot, projects = source.projects): AppSnapshot {
