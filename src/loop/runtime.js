@@ -13,7 +13,7 @@ const {
 
 const ACTIVE_RUNTIME_PHASES = new Set(['running', 'scan', 'generate-plan', 'execute-task', 'validate']);
 const ACTIVE_RUNTIME_PHASE_SQL = "('running','scan','generate-plan','execute-task','validate')";
-const DEFAULT_UPDATE_THROTTLE_MS = 1200;
+const DEFAULT_UPDATE_THROTTLE_MS = 3000;
 
 /**
  * plugin 持久进程注册表：key `${projectId}:${executorId}` → 子进程句柄。
@@ -177,10 +177,11 @@ function resetStoredRuntimeState(db, now = nowIso()) {
 function scheduleProjectRuntime(runtime, intervalSeconds, runOnce) {
   if (!runtime) return;
   if (runtime.timer) clearInterval(runtime.timer);
+  const intervalMs = Math.max(5, Number(intervalSeconds || 5)) * 1000;
   runtime.timer = setInterval(() => {
     if (!runtime.running) return;
     runOnce();
-  }, Math.max(1, Number(intervalSeconds || 5)) * 1000);
+  }, intervalMs);
 }
 
 /** 创建一个会 unref 的 setInterval（不阻塞进程退出），沿用 scheduleProjectRuntime 的 timer 句柄风格。

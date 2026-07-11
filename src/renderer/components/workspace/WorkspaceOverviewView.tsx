@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import type { AppSnapshot, AppEventMeta, CodexSessionInfo, AgentCliSessionInfo, ProjectState } from '../../types';
 import { CodexLog, agentCliSessionContextLabel } from '../CodexLog';
 import { EventList } from '../PlanLists';
@@ -12,15 +13,55 @@ import { formatChinaTime } from '../../utils/time';
 
 type EventSessionMeta = Record<string, unknown> & AgentCliSessionInfo & CodexSessionInfo;
 
-export function WorkspaceOverviewView({
-  snapshot,
-  state,
-  onGoTasks,
-}: {
+type OverviewProps = {
   snapshot: AppSnapshot;
   state: ProjectState | null;
   onGoTasks: () => void;
-}) {
+};
+
+/** 仅提取概览页实际使用的快照字段做比较指纹 */
+function overviewSnapshotKey(s: AppSnapshot): string {
+  const op = s.activeOperation || s.lastOperation;
+  const activity = op?.activity;
+  const acts = activity?.length || 0;
+  const lastAct = acts > 0 ? `${activity![acts - 1].at}|${activity![acts - 1].role}|${activity![acts - 1].text}` : '';
+  return [
+    s.requirements.length,
+    s.plans.length,
+    s.plans.map(p => `${p.id}:${p.status}:${p.completed_tasks}/${p.total_tasks}`).join(','),
+    s.tasks.length,
+    s.tasks.filter(t => t.status === 'completed').length,
+    s.tasks.filter(t => t.status === 'failed').length,
+    s.events.filter(e => !String(e.type || '').startsWith('scan.')).length,
+    s.events.length > 0 ? s.events[0].id : '',
+    op?.label ?? '',
+    op?.label ?? '',
+    op?.logTail?.slice(-500) ?? '',
+    op?.startedAt ?? '',
+    op?.exitCode ?? '',
+    Boolean(s.activeOperation),
+    acts,
+    lastAct,
+  ].join('|');
+}
+
+function overviewStateKey(st: ProjectState | null): string {
+  if (!st) return '';
+  return `${st.running ? 1 : 0}|${st.phase || ''}|${st.agent_cli_provider || ''}|${st.interval_seconds || 0}`;
+}
+
+function areOverviewPropsEqual(prev: OverviewProps, next: OverviewProps): boolean {
+  if (prev.onGoTasks !== next.onGoTasks) return false;
+  if (overviewSnapshotKey(prev.snapshot) !== overviewSnapshotKey(next.snapshot)) return false;
+  if (overviewStateKey(prev.state) !== overviewStateKey(next.state)) return false;
+  return true;
+}
+
+export const WorkspaceOverviewView = memo(function WorkspaceOverviewView({
+  snapshot,
+  state,
+  onGoTasks,
+}: OverviewProps) {
   const reqCount = snapshot.requirements.length;
   const planCount = snapshot.plans.length;
   const runningPlan = snapshot.plans.find((plan) => !['completed'].includes(plan.status));
@@ -167,7 +208,7 @@ export function WorkspaceOverviewView({
       </div>
     </>
   );
-}
+}, areOverviewPropsEqual);
 
 function StatCard({
   icon,

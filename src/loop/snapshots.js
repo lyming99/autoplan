@@ -16,8 +16,10 @@ const { operationSnapshotRow, runtimeOperationContextByTask } = require('./runti
 const { emptyConcurrencySuggestion, planConcurrencySuggestion, taskScopeFileInfos } = require('./concurrency');
 const { extractMarkdownTitle } = require('./planParser');
 const intakePlanLinks = require('./intakePlanLinks');
+const planAgentCli = require('./planAgentCli');
 const { readSnippet, resolveWorkspaceChildPath } = require('./workspaceFiles');
 const { executorFromRow } = require('../executors/executorStore');
+const { parseEventMeta } = require('./eventMeta');
 const { MCP_TOOL_NAMES: MCP_TOOL_NAME_MAP } = require('../mcpTools');
 const { MCP_TOOL_DOCS } = require('../mcpToolDocs');
 
@@ -61,6 +63,9 @@ function snapshot(service, helpers, projectId = null) {
     const activeProject = service.project(projectId);
     if (!activeProject) return emptySnapshot(projects, mcp);
 
+    // 异步批量预取 task timeout 事件，避免每个 task 一次 LIKE 查询
+    batchPreloadTaskTimeouts(service, projectId);
+
     const rawState = service.status(projectId) || {};
     const state = {
       ...rawState,
@@ -81,6 +86,10 @@ function snapshot(service, helpers, projectId = null) {
       [projectId],
     );
     const tasksByPlanId = groupPlanTasksByPlanId(taskRows);
+
+    // 批量预取 plan agent CLI 配置（避免每个 plan 单独查 3-4 条 SQL）
+    planAgentCli.batchPreloadPlanAgentCliConfigs(service, planRows);
+
     const concurrencySuggestionByPlanId = new Map(
       planRows.map((plan) => [
         Number(plan.id),
@@ -224,9 +233,45 @@ function taskSnapshotRow(service, workspace, task, operationContext = null) {
 function taskTimeoutSnapshotFields(service, task = {}, operationContext = null) {
   const operationTimeout = taskTimeoutFieldsFromMeta(operationContext, null);
   if (operationTimeout?.timedOut) return operationTimeout;
-  const event = latestTaskTimeoutEvent(service, task);
-  if (!event) return {};
-  return taskTimeoutFieldsFromMeta(parseEventMeta(event.meta), event) || {};
+  // 跳过逐 task 的 LIKE SQL 查询（每个 task 一次，N+1 问题严重）。
+  // timeout 事件通过 setImmediate 异步预加载后下一次快照补充。
+  if (!service._taskTimeoutCache) return {};
+  const taskId = Number(task?.id || 0);
+  if (!taskId) return {};
+  const cached = service._taskTimeoutCache.get(taskId);
+  if (cached === undefined) return {}; // not yet loaded
+  if (!cached) return {};
+  return taskTimeoutFieldsFromMeta(parseEventMeta(cached.meta), cached) || {};
+}
+
+/** 批量预取 task timeout 事件，由快照构造函数在 plan 循环前调用一次。 */
+function batchPreloadTaskTimeouts(service, projectId) {
+  if (!service || !projectId) return;
+  if (!service._taskTimeoutCache) service._taskTimeoutCache = new Map();
+  // 已加载则跳过
+  if (service._taskTimeoutCache.has('__loaded__')) return;
+  service._taskTimeoutCache.set('__loaded__', true);
+
+  setImmediate(() => {
+    try {
+      const rows = service.db.all(
+        `SELECT type, message, meta, created_at FROM events
+         WHERE project_id = ? AND type = 'task.timeout'
+         ORDER BY id DESC LIMIT 200`,
+        [projectId],
+      ) || [];
+      for (const row of rows) {
+        const meta = parseEventMeta(row?.meta);
+        if (!meta || typeof meta !== 'object') continue;
+        const taskId = Number(meta.taskId || 0);
+        if (taskId && !service._taskTimeoutCache.has(taskId)) {
+          service._taskTimeoutCache.set(taskId, row);
+        }
+      }
+    } catch {
+      // 预加载失败静默跳过
+    }
+  });
 }
 
 function latestTaskTimeoutEvent(service, task = {}) {
@@ -777,19 +822,6 @@ function findExecutorOperation(runtime, projectId, executorId) {
   return null;
 }
 
-function parseEventMeta(meta) {
-  if (!meta) return null;
-  if (typeof meta !== 'string') return meta;
-  try {
-    const parsed = JSON.parse(meta);
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) return parsed;
-    if (typeof parsed === 'string') return parsed;
-  } catch {
-    return meta;
-  }
-  return meta;
-}
-
 function planSnapshotRow(service, workspace, plan, concurrencySuggestion = null, agentCliConfig = null) {
   if (!plan) return plan;
   const planAgentCliConfig = agentCliConfig || effectiveAgentCliConfig({}, plan);
@@ -858,15 +890,35 @@ function readPlanMarkdownTitle(workspace, filePath) {
 }
 
 function cachedPlanMarkdownTitle(service, workspace, plan) {
-  if (!service) return readPlanMarkdownTitle(workspace, plan?.file_path);
+  if (!service) return '';
   if (!service._planTitleCache) service._planTitleCache = new Map();
   const cache = service._planTitleCache;
   const version = plan?.hash || plan?.updated_at || '';
   const key = `${workspace || ''}\0${plan?.file_path || ''}\0${version}`;
   if (cache.has(key)) return touchCacheEntry(cache, key);
-  const title = readPlanMarkdownTitle(workspace, plan?.file_path);
-  setBoundedCacheEntry(cache, key, title, 200);
-  return title;
+  // 不再在快照构造热路径中同步读盘提取标题。
+  // 首次返回空字符串，UI 会优雅回退到 file_path；标题通过异步预加载填充缓存。
+  schedulePlanTitlePreload(service, workspace, plan, key);
+  return '';
+}
+
+function schedulePlanTitlePreload(service, workspace, plan, key) {
+  if (!service._planTitlePending) service._planTitlePending = new Set();
+  if (service._planTitlePending.has(key)) return;
+  service._planTitlePending.add(key);
+  // 使用 setImmediate 将磁盘 I/O 推迟到当前事件循环之后，不阻塞快照返回
+  setImmediate(() => {
+    try {
+      const title = readPlanMarkdownTitle(workspace, plan?.file_path);
+      if (service._planTitleCache) {
+        setBoundedCacheEntry(service._planTitleCache, key, title, 200);
+      }
+    } catch {
+      // 读盘失败静默跳过，UI 使用 file_path 回退
+    } finally {
+      if (service._planTitlePending) service._planTitlePending.delete(key);
+    }
+  });
 }
 
 function cachedPlanConcurrencySuggestion(service, workspace, plan, tasks) {
@@ -890,7 +942,7 @@ function cachedPlanConcurrencySuggestion(service, workspace, plan, tasks) {
 }
 
 function cachedTaskScopeFileInfos(service, workspace, task) {
-  if (!service) return taskScopeFileInfos(workspace, task);
+  if (!service) return [{ path: 'unknown', exists: false, isDirectory: false, canOpen: false, isUnknown: true, isValidation: false, reason: '' }];
   if (!service._taskScopeFileInfoCache) service._taskScopeFileInfoCache = new Map();
   const cache = service._taskScopeFileInfoCache;
   const key = [
@@ -901,9 +953,28 @@ function cachedTaskScopeFileInfos(service, workspace, task) {
     task?.title || '',
   ].join('\0');
   if (cache.has(key)) return touchCacheEntry(cache, key);
-  const infos = taskScopeFileInfos(workspace, task);
-  setBoundedCacheEntry(cache, key, infos, 500);
-  return infos;
+  // 首次访问返回占位信息，避免同步磁盘 stat 阻塞快照构造。
+  // scope 文件状态通过异步预加载后，下一次快照即包含完整信息。
+  scheduleTaskScopePreload(service, workspace, task, key);
+  return [{ path: task?.scope || 'unknown', exists: false, isDirectory: false, canOpen: false, isUnknown: true, isValidation: false, reason: '' }];
+}
+
+function scheduleTaskScopePreload(service, workspace, task, key) {
+  if (!service._taskScopePreloadPending) service._taskScopePreloadPending = new Set();
+  if (service._taskScopePreloadPending.has(key)) return;
+  service._taskScopePreloadPending.add(key);
+  setImmediate(() => {
+    try {
+      const infos = taskScopeFileInfos(workspace, task);
+      if (service._taskScopeFileInfoCache) {
+        setBoundedCacheEntry(service._taskScopeFileInfoCache, key, infos, 500);
+      }
+    } catch {
+      // 读盘失败静默跳过
+    } finally {
+      if (service._taskScopePreloadPending) service._taskScopePreloadPending.delete(key);
+    }
+  });
 }
 
 function touchCacheEntry(cache, key) {
@@ -926,7 +997,6 @@ module.exports = {
   eventSnapshotRow,
   groupPlanTasksByPlanId,
   mcpStatusSnapshot,
-  parseEventMeta,
   planBackendSnapshotFields,
   planSnapshotRow,
   readPlanMarkdownTitle,

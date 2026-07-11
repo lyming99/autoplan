@@ -719,7 +719,7 @@ class LoopService extends EventEmitter {
         this.addEvent(projectId, 'operation.stopping', operation.label || `plan #${planId}`);
       }
     }
-    this.emitUpdate(projectId, { immediate: true });
+    this.emitRuntimePatch(projectId, { immediate: true });
     return stopped;
   }
 
@@ -1532,7 +1532,7 @@ class LoopService extends EventEmitter {
     }
     const tailTimer = setInterval(() => {
       if (projectIdForEmit) this.emitRuntimePatch(projectIdForEmit);
-    }, 1500);
+    }, 5000);
     try {
       if (isOpenCodeProvider) {
         if (capturedOpenCodeSessionId) {
@@ -1777,7 +1777,7 @@ class LoopService extends EventEmitter {
     child.stderr.on('data', (chunk) => onChunk(chunk, 'stderr'));
     const tailTimer = setInterval(() => {
       if (projectIdForEmit) this.emitRuntimePatch(projectIdForEmit);
-    }, 1500);
+    }, 5000);
     try {
       const exitCode = await waitForChild(child, timeoutMs);
       const timedOut = Boolean(child.__autoplanTimedOut);

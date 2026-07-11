@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, useDeferredValue, type CSSProperties } from 'react';
 import type { ComponentProps, ComponentType } from 'react';
 import { isTaskAssociatedWithPlan, readPlanTaskAssociationFilePath } from '../types';
 import type {
@@ -163,8 +163,10 @@ export function WorkspacePage() {
   const [searchPopupRect, setSearchPopupRect] = useState<SearchResultsAnchorRect | null>(null);
   const [terminalSessions, setTerminalSessions] = useState<TerminalSession[]>([]);
   const [terminalListLoaded, setTerminalListLoaded] = useState(false);
+  // 延迟快照：让 React 在计算新 UI 时继续响应用户滚动/输入
+  const deferredSnapshot = useDeferredValue(snapshot);
   const hasSearchQuery = !workspaceSearch.query.isEmpty;
-  const activeSnapshot = isWorkspaceSnapshotForProject(snapshot, projectId) ? snapshot : null;
+  const activeSnapshot = isWorkspaceSnapshotForProject(deferredSnapshot, projectId) ? deferredSnapshot : null;
   const routeProject = projects.find((item) => Number(item.id) === Number(projectId)) || null;
   const sidebarProject = activeSnapshot?.activeProject || routeProject;
   const selectedPlan = activeSnapshot?.plans.find((plan) => plan.id === selectedPlanId && plan.project_id === projectId) || null;
@@ -287,7 +289,10 @@ export function WorkspacePage() {
   // 并在滚动 / 缩放时刷新，保证 fixed 弹层始终紧贴搜索框定位。
   useEffect(() => {
     if (!searchPopupOpen) return undefined;
+    let rafId = 0;
+    let pending = false;
     function updatePopupRect() {
+      pending = false;
       const node = searchPopupRef.current;
       if (!node) return;
       const rect = node.getBoundingClientRect();
@@ -300,13 +305,19 @@ export function WorkspacePage() {
         height: rect.height,
       });
     }
+    function scheduleUpdate() {
+      if (pending) return;
+      pending = true;
+      rafId = window.requestAnimationFrame(updatePopupRect);
+    }
     updatePopupRect();
-    // capture=true 以捕获 .workspace-main 等嵌套滚动容器的 scroll 事件。
-    window.addEventListener('scroll', updatePopupRect, true);
-    window.addEventListener('resize', updatePopupRect);
+    // 用 rAF 节流 + passive 避免滚动时强制同步布局
+    window.addEventListener('scroll', scheduleUpdate, { passive: true, capture: true });
+    window.addEventListener('resize', scheduleUpdate, { passive: true });
     return () => {
-      window.removeEventListener('scroll', updatePopupRect, true);
-      window.removeEventListener('resize', updatePopupRect);
+      window.removeEventListener('scroll', scheduleUpdate, { passive: true, capture: true } as AddEventListenerOptions);
+      window.removeEventListener('resize', scheduleUpdate, { passive: true } as AddEventListenerOptions);
+      if (rafId) window.cancelAnimationFrame(rafId);
     };
   }, [searchPopupOpen]);
 

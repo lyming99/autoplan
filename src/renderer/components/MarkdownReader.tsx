@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react';
+import { memo, type ComponentProps } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
@@ -80,7 +80,7 @@ const markdownComponents: MarkdownComponents = {
   },
 };
 
-export function MarkdownReader({
+export const MarkdownReader = memo(function MarkdownReader({
   markdown,
   className,
   emptyMessage = '暂无计划正文',
@@ -109,6 +109,6 @@ export function MarkdownReader({
       </ReactMarkdown>
     </div>
   );
-}
+});
 
 export default MarkdownReader;

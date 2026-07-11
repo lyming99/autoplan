@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { ChatQueueItem } from '../../types';
 
 interface ChatQueueViewProps {
@@ -14,7 +14,7 @@ interface ChatQueueViewProps {
  * - processing 项：「处理中」徽标，不可编辑/取消（仅展示当前正在生成的消息）
  * - 顶部「清空」按钮一键移除全部排队项（不影响处理中项）
  */
-export function ChatQueueView({ queue, cancelQueueItem, editQueueItem, clearQueue }: ChatQueueViewProps) {
+export const ChatQueueView = memo(function ChatQueueView({ queue, cancelQueueItem, editQueueItem, clearQueue }: ChatQueueViewProps) {
   if (!queue || queue.length === 0) return null;
   return (
     <div className="chat-queue-list" aria-label="消息队列">
@@ -34,7 +34,7 @@ export function ChatQueueView({ queue, cancelQueueItem, editQueueItem, clearQueu
       ))}
     </div>
   );
-}
+});
 
 function ChatQueueItemRow({
   item,

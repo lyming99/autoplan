@@ -1,11 +1,11 @@
-import { useState } from 'react';
+import { memo, useState } from 'react';
 import type { ChatMessage, ChatPlanToolResult, IntakeType, OpenIntakeHandler } from '../../types';
 import { buildIntakeAnchorId } from '../../utils/chatIntents';
 import { Modal } from '../Modal';
 import { Icon } from '../icons';
 
 /** 工具调用摘要与详情弹窗 */
-export function ChatToolCard({ message, onOpenIntake }: { message: ChatMessage; onOpenIntake?: OpenIntakeHandler }) {
+export const ChatToolCard = memo(function ChatToolCard({ message, onOpenIntake }: { message: ChatMessage; onOpenIntake?: OpenIntakeHandler }) {
   const [detailOpen, setDetailOpen] = useState(false);
   const result = (message.toolResult || {}) as Record<string, unknown>;
   const name = String(result.name || '工具');
@@ -157,7 +157,7 @@ export function ChatToolCard({ message, onOpenIntake }: { message: ChatMessage; 
       </div>
     </div>
   );
-}
+});
 
 function hasDisplayableToolValue(value: unknown): boolean {
   if (value === undefined || value === null) return false;
