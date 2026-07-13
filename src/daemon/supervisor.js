@@ -2,6 +2,7 @@
 
 const { EventEmitter } = require('node:events');
 const fs = require('node:fs');
+const os = require('node:os');
 const path = require('node:path');
 const { spawn: defaultSpawn } = require('node:child_process');
 const {
@@ -267,10 +268,25 @@ async function probeReady(fetchFn, readiness, session, timeoutMs) {
   }
 }
 
-function controlledEnvironment(env = {}, runtimeFeatureEnvironment = {}, rendererOrigin = '') {
+function controlledEnvironment(
+  env = {},
+  runtimeFeatureEnvironment = {},
+  rendererOrigin = '',
+  platform = process.platform,
+  temporaryRoot = os.tmpdir(),
+) {
   const result = Object.create(null);
-  for (const key of process.platform === 'win32' ? ['SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'Path', 'PATH'] : ['PATH']) {
+  for (const key of platform === 'win32' ? ['SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'Path', 'PATH'] : ['PATH']) {
     if (typeof env[key] === 'string' && env[key]) result[key] = env[key];
+  }
+  const absoluteTemporaryRoot = temporaryRootForPlatform(temporaryRoot, platform);
+  if (absoluteTemporaryRoot) {
+    if (platform === 'win32') {
+      result.TEMP = absoluteTemporaryRoot;
+      result.TMP = absoluteTemporaryRoot;
+    } else {
+      result.TMPDIR = absoluteTemporaryRoot;
+    }
   }
   for (const name of RUNTIME_FEATURE_ENVIRONMENT) {
     const value = runtimeFeatureEnvironment[name];
@@ -278,6 +294,12 @@ function controlledEnvironment(env = {}, runtimeFeatureEnvironment = {}, rendere
   }
   if (rendererOrigin) result[RENDERER_ORIGIN_ENVIRONMENT] = rendererOrigin;
   return result;
+}
+
+function temporaryRootForPlatform(value, platform) {
+  const candidate = String(value || '').trim();
+  const paths = platform === 'win32' ? path.win32 : path.posix;
+  return candidate && paths.isAbsolute(candidate) ? paths.resolve(candidate) : '';
 }
 
 function normalizeRendererOrigin(value) {
@@ -342,4 +364,5 @@ module.exports = {
   controlledEnvironment,
   normalizeRuntimeFeatureEnvironment,
   probeReady,
+  temporaryRootForPlatform,
 };

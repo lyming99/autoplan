@@ -8,7 +8,7 @@ const path = require('node:path');
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 const { createSessionProof, parseReadinessLine, verifyReadiness } = require('./readiness');
-const { GoDaemonSupervisor } = require('./supervisor');
+const { controlledEnvironment, GoDaemonSupervisor, temporaryRootForPlatform } = require('./supervisor');
 
 function fakeChild(pid = 4321) {
   const child = new EventEmitter();
@@ -28,6 +28,23 @@ function fakeChild(pid = 4321) {
 }
 
 describe('Go daemon readiness supervisor', () => {
+  it('pins the child temp root to the directory selected by Node', () => {
+    const darwin = controlledEnvironment(
+      { PATH: '/usr/bin', HOME: '/private/home' }, {}, '', 'darwin', '/Users/runner/work/_temp/',
+    );
+    assert.equal(darwin.TMPDIR, '/Users/runner/work/_temp');
+    assert.equal(darwin.HOME, undefined);
+    assert.equal(darwin.TEMP, undefined);
+
+    const windows = controlledEnvironment(
+      { Path: 'C:\\Windows\\System32', USERPROFILE: 'C:\\Users\\runner' }, {}, '', 'win32', 'D:\\a\\_temp\\',
+    );
+    assert.equal(windows.TEMP, 'D:\\a\\_temp');
+    assert.equal(windows.TMP, 'D:\\a\\_temp');
+    assert.equal(windows.USERPROFILE, undefined);
+    assert.equal(temporaryRootForPlatform('relative-temp', 'darwin'), '');
+  });
+
   it('requires exact ready protocol, child identity, and session binding', () => {
     const session = 'a'.repeat(43);
     const line = JSON.stringify({
