@@ -291,10 +291,13 @@ async function main() {
       return plan?.status === 'pending' && tasks.length === 3 && tasks.every((task) => task.status === 'pending');
     });
     if (!intakeActionSnapshot) throw new Error('go_intake_resume_not_persisted');
-    await request('POST', `/api/v1/projects/${project.id}/loop/actions/start`, {}, 'business-smoke-loop-resume-after-intake-actions');
+    // Keep the background timer stopped until the explicit task intent is
+    // admitted. Starting it first can let a fast runner claim this pending
+    // task between the resume snapshot and the manual action.
     await request('POST', `/api/v1/projects/${project.id}/tasks/${draftTasks[0].id}/actions/run`, {
       plan_id: draftPlanId,
     }, 'business-smoke-draft-activate');
+    await request('POST', `/api/v1/projects/${project.id}/loop/actions/start`, {}, 'business-smoke-loop-resume-after-intake-actions');
     const draftCompletionDeadline = Date.now() + 30000;
     while (Date.now() < draftCompletionDeadline) {
       draftSnapshot = await request('GET', `/api/v1/projects/${project.id}/snapshot`);
