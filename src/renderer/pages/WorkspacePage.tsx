@@ -289,13 +289,6 @@ export function WorkspacePage() {
     };
   }, [client, projectId]);
 
-  useEffect(() => {
-    const tabParam = new URLSearchParams(window.location.search).get('tab');
-    if ((tabParam === 'executors' || tabParam === 'terminal') && activeTab !== tabParam) {
-      selectTab(tabParam);
-    }
-  }, [activeTab, selectTab]);
-
   // Portal 弹层定位：弹层打开时读取锚点（.workspace-search-popover-anchor）视口坐标，
   // 并在滚动 / 缩放时刷新，保证 fixed 弹层始终紧贴搜索框定位。
   useEffect(() => {
@@ -678,6 +671,7 @@ export function WorkspacePage() {
                     onCloseReader={closePlanReader}
                     onDeletePlan={deletePlan}
                     onOpenReader={openPlanReader}
+                    onOpenPlanFile={(plan) => openScopeFile(plan.file_path, 'folder')}
                     onResumePlan={resumePlan}
                     onRunParallel={({ plan, batches }) =>
                       runLoopAction(() =>
@@ -685,7 +679,7 @@ export function WorkspacePage() {
                       )
                     }
                     onRunDraft={(plan, task) =>
-                      runLoopAction(() => client.runTask({ projectId: plan.project_id || projectId, taskId: task.id }))
+                      runLoopAction(() => client.runTask({ projectId: plan.project_id || projectId, planId: plan.id, taskId: task.id }))
                     }
                     onRefreshReader={refreshPlanReader}
                     onSelectPlan={planSelectionState.selectPlan}
@@ -716,8 +710,8 @@ export function WorkspacePage() {
                     tasks={taskListTasks}
                     onOpenScopeFile={openScopeFile}
                     onOpenPlan={openTaskPlanReader}
-                    onRun={(task) => runLoopAction(() => client.runTask({ projectId, taskId: task.id }))}
-                    onStop={(task) => runLoopAction(() => client.stopTask({ projectId, taskId: task.id }))}
+                    onRun={(task) => runLoopAction(() => client.runTask({ projectId, planId: task.plan_id, taskId: task.id }))}
+                    onStop={(task) => runLoopAction(() => client.stopTask({ projectId, planId: task.plan_id, taskId: task.id }))}
                   />
                 </section>
               </div>

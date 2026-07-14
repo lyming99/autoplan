@@ -46,7 +46,8 @@ describe('P11 GoDataClient runtime owner contract', () => {
     assert.equal(result.operation.type, RUNTIME_COMMANDS.ACCEPTANCE_ACCEPT);
     assert.equal(client.operationOwner(result.operation.operation_id), 'go');
     assert.deepEqual(calls[0].body, {
-      version: 'v1', command: 'acceptance.accept', project_id: 7, plan_id: 11, action: 'plan',
+	  version: 'v1', command: 'acceptance.accept', project_id: 7,
+	  acceptance: { targets: [{ target_type: 'plan', id: 11 }] },
     });
     assert.equal(Object.hasOwn(calls[0].body, 'sql'), false);
     assert.equal(typeof client.query, 'undefined');

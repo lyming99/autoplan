@@ -5,35 +5,51 @@ import type {
   AppEvent,
   AppSnapshot,
   AiConfig,
+  AiConfigCreateInput,
+  AiConfigUpdateInput,
+  AiConfigDeleteInput,
+  AiConfigGetInput,
   Attachment,
   CreateIntakeInput,
   CreateProjectInput,
   Feedback,
   ClaudeCliConfig,
+  ClaudeCliConfigCreateInput,
+  ClaudeCliConfigUpdateInput,
+  ClaudeCliConfigDeleteInput,
+  ClaudeCliConfigGetInput,
+  ClaudeCliConfigSetDefaultInput,
   ChatClearPayload,
+  ChatConfig,
   ChatDoneEvent,
   ChatHistoryPayload,
   ChatMessage,
   ChatQueueItem,
   ChatQueuePayload,
   ChatSendPayload,
+  ChatSaveConfigInput,
   ChatStopPayload,
   ConversationCreateInput,
   ConversationDeleteInput,
   ConversationListInput,
   ConversationUpdateInput,
   Conversation,
+  CreateScriptInput,
   FileAccessSaveInput,
   FileAccessSaveResult,
   FileAccessSettings,
   IntakeAcceptanceInput,
+  IntakeActionInput,
   IntakeType,
   LoopConfigInput,
+  McpConfigInput,
   Plan,
   PlanIdInput,
   PlanTask,
   Project,
   ProjectIdInput,
+  ReadPlanInput,
+  ReadPlanResult,
   ReorderPlansInput,
   RetryIntakePlanGenerationInput,
   RunTaskBatchesInput,
@@ -48,6 +64,7 @@ import type {
   UpdateFeedbackInput,
   UpdateProjectInput,
   UpdateRequirementInput,
+  UpdateScriptInput,
   TerminalRestCreateInput,
   TerminalRestReplay,
   TerminalRestSession,
@@ -117,6 +134,7 @@ const MAXIMUM_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 const MAXIMUM_ATTACHMENT_TOTAL_BYTES = 100 * 1024 * 1024;
 const MAXIMUM_ATTACHMENT_COUNT = 20;
 const MAXIMUM_ATTACHMENT_NAME_LENGTH = 120;
+const MAXIMUM_PLAN_MARKDOWN_BYTES = 2 * 1024 * 1024;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,63}$/;
 const OPERATION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SESSION_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -211,6 +229,12 @@ interface IntakeMutationResult {
 }
 interface PlanMutationResult {
   snapshot: AppSnapshot;
+}
+interface PlanContentResult {
+  plan: Plan;
+  tasks: PlanTask[];
+  markdown: string;
+  errorCode: string;
 }
 interface PlanMutationContext {
   projectId: number;
@@ -462,6 +486,62 @@ export class HttpAutoplanClient {
       { method: 'DELETE', idempotencyKey: this.#idempotencyKeyFor(options), retryTransportFailure: true });
   };
 
+  createScript = async (input: CreateScriptInput): Promise<AppSnapshot> => {
+    const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
+    await this.#request(
+      `/api/v1/projects/${projectId}/scripts`,
+      undefined,
+      (value) => validateSuccessEnvelope(value, validateStaticScript).data,
+      { method: 'POST', body: staticScriptInput(input), idempotencyKey: this.#idempotencyKeyFor(input), retryTransportFailure: true },
+    );
+    return this.#refreshProjectSnapshot(projectId);
+  };
+
+  updateScript = async (input: UpdateScriptInput): Promise<AppSnapshot> => {
+    const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
+    const scriptId = positiveInteger(input?.scriptId, 'invalid_automation');
+    const current = await this.getStaticScript(projectId, scriptId);
+    await this.#request(
+      `/api/v1/projects/${projectId}/scripts/${scriptId}`,
+      undefined,
+      (value) => validateSuccessEnvelope(value, validateStaticScript).data,
+      {
+        method: 'PATCH', body: { ...staticScriptInput(input), version: positiveVersion(current.version) },
+        idempotencyKey: this.#idempotencyKeyFor(input), retryTransportFailure: true,
+      },
+    );
+    return this.#refreshProjectSnapshot(projectId);
+  };
+
+  deleteScript = async (input: ScriptIdInput): Promise<AppSnapshot> => {
+    const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
+    const scriptId = positiveInteger(input?.scriptId, 'invalid_automation');
+    const current = await this.getStaticScript(projectId, scriptId);
+    await this.#request(
+      `/api/v1/projects/${projectId}/scripts/${scriptId}?version=${positiveVersion(current.version)}`,
+      undefined,
+      (value) => validateSuccessEnvelope(value, validateStaticScript).data,
+      { method: 'DELETE', idempotencyKey: this.#idempotencyKeyFor(input), retryTransportFailure: true },
+    );
+    return this.#refreshProjectSnapshot(projectId);
+  };
+
+  toggleScript = async (input: ScriptIdInput): Promise<AppSnapshot> => {
+    const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
+    const scriptId = positiveInteger(input?.scriptId, 'invalid_automation');
+    const current = await this.getStaticScript(projectId, scriptId);
+    await this.#request(
+      `/api/v1/projects/${projectId}/scripts/${scriptId}/toggle`,
+      undefined,
+      (value) => validateSuccessEnvelope(value, validateStaticScript).data,
+      {
+        method: 'POST', body: { version: positiveVersion(current.version) },
+        idempotencyKey: this.#idempotencyKeyFor(input), retryTransportFailure: true,
+      },
+    );
+    return this.#refreshProjectSnapshot(projectId);
+  };
+
   listStaticExecutors = async (projectId: number, options: PlanQueryOptions = {}): Promise<HttpStaticExecutor[]> => {
     const id = positiveInteger(projectId, 'invalid_project_id');
     const limit = positiveInteger(options.limit ?? 50, 'invalid_pagination');
@@ -677,6 +757,111 @@ export class HttpAutoplanClient {
   getStaticMCPConfig = (options: HttpRequestOptions = {}): Promise<HttpMCPConfig> =>
     this.#request('/api/v1/mcp-config', options.signal, (value) => validateSuccessEnvelope(value, validateMCPConfig).data);
 
+  aiConfigList = (): Promise<AiConfig[]> => this.listStaticAIConfigs();
+
+  chatGetConfig = async (): Promise<ChatConfig> => {
+    const current = (await this.listStaticAIConfigs())[0];
+    if (!current) {
+      return {
+        source: 'go-default', compatibilityOnly: false,
+        provider: 'openai', baseUrl: 'https://api.openai.com', hasApiKey: false,
+        maskedKey: '', model: 'gpt-5.5', temperature: '0.3',
+        thinkingDepth: null, thinkingBudgetTokens: null,
+      };
+    }
+    return {
+      source: 'ai-config', compatibilityOnly: false, aiConfigId: current.id, name: current.name,
+      provider: current.provider, baseUrl: current.baseUrl, hasApiKey: current.hasApiKey,
+      maskedKey: current.maskedKey, model: current.model, temperature: current.temperature,
+      thinkingDepth: current.thinkingDepth, thinkingBudgetTokens: current.thinkingBudgetTokens,
+    };
+  };
+
+  chatSaveConfig = async (payload: ChatSaveConfigInput): Promise<{ saved: boolean }> => {
+    if (!isRecord(payload)) throw new HttpClientError('invalid_config');
+    const current = (await this.listStaticAIConfigs())[0];
+    const fields = chatAIConfigInput(payload);
+    if (current) {
+      await this.aiConfigUpdate({ configId: current.id, ...fields });
+    } else {
+      const name = String(payload.name || '').trim() || '默认配置';
+      await this.aiConfigCreate({ name, ...fields });
+    }
+    return { saved: true };
+  };
+
+  aiConfigGet = (payload: AiConfigGetInput): Promise<AiConfig> => {
+    const id = positiveInteger(payload?.configId, 'invalid_config');
+    return this.#request(`/api/v1/ai-configs/${id}`, undefined,
+      (value) => validateSuccessEnvelope(value, validateAIConfig).data);
+  };
+
+  aiConfigCreate = (payload: AiConfigCreateInput): Promise<AiConfig> =>
+    this.#request('/api/v1/ai-configs', undefined,
+      (value) => validateSuccessEnvelope(value, validateAIConfig).data,
+      { method: 'POST', body: staticAIConfigInput(payload), retryTransportFailure: true });
+
+  aiConfigUpdate = async (payload: AiConfigUpdateInput): Promise<AiConfig> => {
+    const id = positiveInteger(payload?.configId, 'invalid_config');
+    const current = await this.aiConfigGet({ configId: id });
+    return this.#request(`/api/v1/ai-configs/${id}`, undefined,
+      (value) => validateSuccessEnvelope(value, validateAIConfig).data,
+      { method: 'PATCH', body: { ...staticAIConfigInput(payload), version: positiveVersion(current.version ?? 0) }, retryTransportFailure: true });
+  };
+
+  aiConfigDelete = async (payload: AiConfigDeleteInput): Promise<{ deleted: boolean }> => {
+    const id = positiveInteger(payload?.configId, 'invalid_config');
+    const current = await this.aiConfigGet({ configId: id });
+    return this.#request(`/api/v1/ai-configs/${id}?version=${positiveVersion(current.version ?? 0)}`, undefined,
+      (value) => validateSuccessEnvelope(value, validateDeletedStaticConfig).data,
+      { method: 'DELETE', retryTransportFailure: true });
+  };
+
+  claudeCliConfigList = (): Promise<ClaudeCliConfig[]> => this.listStaticClaudeConfigs();
+
+  claudeCliConfigGet = (payload: ClaudeCliConfigGetInput): Promise<ClaudeCliConfig> => {
+    const id = positiveInteger(payload?.configId, 'invalid_config');
+    return this.#request(`/api/v1/claude-cli-configs/${id}`, undefined,
+      (value) => validateSuccessEnvelope(value, validateClaudeConfig).data);
+  };
+
+  claudeCliConfigCreate = (payload: ClaudeCliConfigCreateInput): Promise<ClaudeCliConfig> =>
+    this.#request('/api/v1/claude-cli-configs', undefined,
+      (value) => validateSuccessEnvelope(value, validateClaudeConfig).data,
+      { method: 'POST', body: staticClaudeConfigInput(payload), retryTransportFailure: true });
+
+  claudeCliConfigUpdate = async (payload: ClaudeCliConfigUpdateInput): Promise<ClaudeCliConfig> => {
+    const id = positiveInteger(payload?.configId, 'invalid_config');
+    const current = await this.claudeCliConfigGet({ configId: id });
+    return this.#request(`/api/v1/claude-cli-configs/${id}`, undefined,
+      (value) => validateSuccessEnvelope(value, validateClaudeConfig).data,
+      { method: 'PATCH', body: { ...staticClaudeConfigInput(payload), version: positiveVersion(current.version ?? 0) }, retryTransportFailure: true });
+  };
+
+  claudeCliConfigDelete = async (payload: ClaudeCliConfigDeleteInput): Promise<{ deleted: boolean }> => {
+    const id = positiveInteger(payload?.configId, 'invalid_config');
+    const current = await this.claudeCliConfigGet({ configId: id });
+    return this.#request(`/api/v1/claude-cli-configs/${id}?version=${positiveVersion(current.version ?? 0)}`, undefined,
+      (value) => validateSuccessEnvelope(value, validateDeletedStaticConfig).data,
+      { method: 'DELETE', retryTransportFailure: true });
+  };
+
+  claudeCliConfigSetDefault = async (payload: ClaudeCliConfigSetDefaultInput): Promise<ClaudeCliConfig> => {
+    const id = positiveInteger(payload?.configId, 'invalid_config');
+    const current = await this.claudeCliConfigGet({ configId: id });
+    return this.#request(`/api/v1/claude-cli-configs/${id}/default`, undefined,
+      (value) => validateSuccessEnvelope(value, validateClaudeConfig).data,
+      { method: 'POST', body: { version: positiveVersion(current.version ?? 0) }, retryTransportFailure: true });
+  };
+
+  saveMcpConfig = async (payload: McpConfigInput): Promise<AppSnapshot> => {
+    const projectId = positiveInteger(payload?.projectId, 'invalid_project_id');
+    await this.#request('/api/v1/mcp-config', undefined,
+      (value) => validateSuccessEnvelope(value, validateMCPConfig).data,
+      { method: 'PATCH', body: staticMCPConfigInput(payload), retryTransportFailure: true });
+    return this.#refreshProjectSnapshot(projectId);
+  };
+
   getCapabilities = (options: HttpRequestOptions = {}): Promise<HttpCapabilityDiscovery> =>
     options.signal ? this.#discoverCapabilities(options.signal) : this.#capabilities();
 
@@ -689,7 +874,7 @@ export class HttpAutoplanClient {
     const offset = nonNegativeInteger(options.offset ?? 0, 'invalid_pagination');
     if (limit > 200) throw new HttpClientError('invalid_pagination');
     if (!(await this.#supportsCapabilities(['plans.query']))) {
-      return plansFromSnapshot(await this.#delegate.snapshot(id), id).slice(offset, offset + limit);
+      return plansFromSnapshot(await this.getProjectSnapshot(id, { signal: options.signal }), id).slice(offset, offset + limit);
     }
     const plans = await this.#request(
       `/api/v1/plans?project_id=${id}&limit=${limit}&offset=${offset}`,
@@ -706,7 +891,7 @@ export class HttpAutoplanClient {
     const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
     const planId = positiveInteger(input?.planId, 'invalid_plan');
     if (!(await this.#supportsCapabilities(['plans.query']))) {
-      return findPlan(plansFromSnapshot(await this.#delegate.snapshot(projectId), projectId), planId);
+      return findPlan(plansFromSnapshot(await this.getProjectSnapshot(projectId, { signal: options.signal }), projectId), planId);
     }
     const plan = await this.#request(
       `/api/v1/plans?project_id=${projectId}&plan_id=${planId}`,
@@ -724,7 +909,7 @@ export class HttpAutoplanClient {
     const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
     const planId = positiveInteger(input?.planId, 'invalid_plan');
     if (!(await this.#supportsCapabilities(['tasks.query']))) {
-      return tasksFromSnapshot(await this.#delegate.snapshot(projectId), projectId, planId);
+      return tasksFromSnapshot(await this.getProjectSnapshot(projectId, { signal: options.signal }), projectId, planId);
     }
     const tasks = await this.#request(
       `/api/v1/plan-tasks?project_id=${projectId}&plan_id=${planId}`,
@@ -742,7 +927,7 @@ export class HttpAutoplanClient {
     const planId = positiveInteger(input?.planId, 'invalid_plan');
     const taskId = positiveInteger(input?.taskId, 'invalid_task');
     if (!(await this.#supportsCapabilities(['tasks.query']))) {
-      return findTask(tasksFromSnapshot(await this.#delegate.snapshot(projectId), projectId, planId), taskId);
+      return findTask(tasksFromSnapshot(await this.getProjectSnapshot(projectId, { signal: options.signal }), projectId, planId), taskId);
     }
     const task = await this.#request(
       `/api/v1/plan-tasks?project_id=${projectId}&plan_id=${planId}&task_id=${taskId}`,
@@ -765,7 +950,7 @@ export class HttpAutoplanClient {
     const offset = nonNegativeInteger(options.offset ?? 0, 'invalid_pagination');
     if (limit > 200) throw new HttpClientError('invalid_pagination');
     if (!(await this.#supportsCapabilities(['events.query']))) {
-      return eventsFromSnapshot(await this.#delegate.snapshot(id), id, limit, offset);
+      return eventsFromSnapshot(await this.getProjectSnapshot(id, { signal: options.signal }), id, limit, offset);
     }
     const events = await this.#request(
       `/api/v1/events?project_id=${id}&limit=${limit}&offset=${offset}`,
@@ -774,6 +959,22 @@ export class HttpAutoplanClient {
     );
     if (events.some((event) => event.project_id !== id)) throw new HttpClientError('invalid_response');
     return events;
+  };
+
+  readPlan = async (input: ReadPlanInput): Promise<ReadPlanResult> => {
+    const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
+    const planId = positiveInteger(input?.planId, 'invalid_plan');
+    const content = await this.#request(
+      `/api/v1/projects/${projectId}/plans/${planId}/content`,
+      undefined,
+      (value) => validateSuccessEnvelope(value, validatePlanContent).data,
+    );
+    if (content.plan.id !== planId || content.plan.project_id !== projectId ||
+        content.tasks.some((task) => task.plan_id !== planId ||
+          (task as PlanTask & { project_id?: number }).project_id !== projectId)) {
+      throw new HttpClientError('invalid_response');
+    }
+    return planReadResult(content);
   };
 
   reorderPlans = async (
@@ -928,17 +1129,19 @@ export class HttpAutoplanClient {
   runTask = async (input: TaskIdInput): Promise<AppSnapshot> => {
     const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
     const taskId = positiveInteger(input?.taskId, 'invalid_task');
+    const planId = positiveInteger(input?.planId, 'invalid_plan');
     if (!this.#runtimeFeatureEnabled('go_task_actions')) return this.#nodeRuntime(() => this.#delegate.runTask(input));
     return this.#submitRuntimeAction('go_task_actions', projectId,
-      `/api/v1/projects/${projectId}/tasks/${taskId}/actions/run`, {}, input);
+      `/api/v1/projects/${projectId}/tasks/${taskId}/actions/run`, { plan_id: planId }, input);
   };
 
   stopTask = async (input: TaskIdInput): Promise<AppSnapshot> => {
     const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
     const taskId = positiveInteger(input?.taskId, 'invalid_task');
+    const planId = positiveInteger(input?.planId, 'invalid_plan');
     if (!this.#runtimeFeatureEnabled('go_task_actions')) return this.#nodeRuntime(() => this.#delegate.stopTask(input));
     return this.#submitRuntimeAction('go_task_actions', projectId,
-      `/api/v1/projects/${projectId}/tasks/${taskId}/actions/stop`, {}, input);
+      `/api/v1/projects/${projectId}/tasks/${taskId}/actions/stop`, { plan_id: planId }, input);
   };
 
   runTaskBatches = async (input: RunTaskBatchesInput): Promise<AppSnapshot> => {
@@ -965,6 +1168,19 @@ export class HttpAutoplanClient {
   unacceptItems = async (input: AcceptBatchInput, _options: HttpMutationOptions = {}): Promise<AppSnapshot> =>
     this.#submitAcceptanceBatchAction('unaccept-batch', input);
 
+  interruptIntake = (input: IntakeActionInput): Promise<AppSnapshot> =>
+    this.#submitIntakePlanAction(input, 'interrupt', {});
+
+  resumeIntake = (input: IntakeActionInput): Promise<AppSnapshot> =>
+    this.#submitIntakePlanAction(input, 'resume', {});
+
+  appendIntakeTask = (input: IntakeActionInput): Promise<AppSnapshot> => {
+    if (typeof input?.title !== 'string' || input.title.trim() === '') {
+      throw new HttpClientError('invalid_intake');
+    }
+    return this.#submitIntakePlanAction(input, 'append-task', { title: input.title.trim() });
+  };
+
   retryIntakePlanGeneration = async (input: RetryIntakePlanGenerationInput): Promise<AppSnapshot> => {
     const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
     const intakeId = positiveInteger(input?.id, 'invalid_intake');
@@ -972,8 +1188,24 @@ export class HttpAutoplanClient {
     if (!this.#runtimeFeatureEnabled('go_acceptance_retry_actions')) {
       return this.#nodeRuntime(() => this.#delegate.retryIntakePlanGeneration(input));
     }
-    return this.#submitRuntimeAction('go_acceptance_retry_actions', projectId,
-      `/api/v1/projects/${projectId}/intake/${input.type}/${intakeId}/actions/retry-plan-generation`, {}, input);
+    const snapshot = await this.#intakeMutation(
+      `/api/v1/projects/${projectId}/intake/${input.type}/${intakeId}/actions/retry-plan-generation`,
+      'POST', {}, input, undefined, `intake:${input.type}:${intakeId}`,
+    );
+    // Retrying clears the persisted generation failure synchronously. Start a
+    // fresh bounded cycle immediately instead of leaving the user waiting for
+    // the next timer tick. A cycle already in progress is a successful reset,
+    // not a reason to replay the mutation or fall back to Node.
+    if (!this.#runtimeFeatureEnabled('go_loop_actions')) return snapshot;
+    try {
+      return await this.runOnce({ projectId });
+    } catch (error) {
+      if (error instanceof HttpClientError &&
+          (error.code === 'precondition_failed' || error.code === 'operation_state_conflict')) {
+        return snapshot;
+      }
+      throw error;
+    }
   };
 
   // P006 used `this.#runtimeFeatureEnabled('go_agent_cli_runtime')` and
@@ -1608,6 +1840,28 @@ export class HttpAutoplanClient {
     this.#operationOwners.set(accepted.operation_id, 'go');
     this.#followRuntimeOperation(projectId, accepted);
     return this.getProjectSnapshot(projectId);
+  }
+
+  async #refreshProjectSnapshot(projectId: number): Promise<AppSnapshot> {
+    const snapshot = await this.getProjectSnapshot(projectId);
+    this.#recordSnapshotVersion(snapshot);
+    return snapshot;
+  }
+
+  #submitIntakePlanAction(
+    input: IntakeActionInput,
+    action: 'interrupt' | 'resume' | 'append-task',
+    body: Record<string, unknown>,
+  ): Promise<AppSnapshot> {
+    const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
+    const intakeId = positiveInteger(input?.id, 'invalid_intake');
+    if (input?.type !== 'requirement' && input?.type !== 'feedback') {
+      throw new HttpClientError('invalid_intake');
+    }
+    return this.#intakeMutation(
+      `/api/v1/projects/${projectId}/intake/${input.type}/${intakeId}/actions/${action}`,
+      'POST', body, input, undefined, `intake:${input.type}:${intakeId}`,
+    );
   }
 
   async #submitProcessAction(
@@ -2272,19 +2526,26 @@ function installDelegateForwarders(target: ForwardedTarget, delegate: AutoplanCl
         key === 'reorderPlans' || key === 'deletePlan' ||
         key === 'acceptItem' || key === 'unacceptItem' || key === 'redoAcceptanceItem' ||
         key === 'acceptItems' || key === 'unacceptItems' ||
+        key === 'interruptIntake' || key === 'resumeIntake' || key === 'appendIntakeTask' ||
         key === 'startLoop' || key === 'stopLoop' || key === 'runOnce' ||
         key === 'stopPlan' || key === 'resumePlan' || key === 'reExecutePlan' ||
         key === 'recreatePlanFromIntake' ||
         key === 'runTask' || key === 'runTaskBatches' || key === 'stopTask' ||
-        key === 'retryIntakePlanGeneration' ||
+        key === 'retryIntakePlanGeneration' || key === 'readPlan' ||
+        key === 'createScript' || key === 'updateScript' || key === 'deleteScript' || key === 'toggleScript' ||
         key === 'runScript' || key === 'stopScript' ||
         key === 'runExecutor' || key === 'stopExecutor' || key === 'runExecutorAction' ||
         key === 'createTerminal' || key === 'listTerminals' || key === 'writeTerminal' ||
         key === 'resizeTerminal' || key === 'killTerminal' || key === 'closeTerminal' ||
         key === 'renameTerminal' || key === 'replayTerminal' || key === 'clearTerminal' ||
         key === 'chatSend' || key === 'chatStop' || key === 'chatClear' || key === 'chatHistory' ||
+        key === 'chatSaveConfig' || key === 'chatGetConfig' ||
         key === 'chatQueueList' || key === 'chatQueueCancel' || key === 'chatQueueEdit' || key === 'chatQueueClear' ||
         key === 'conversationList' || key === 'conversationCreate' || key === 'conversationUpdate' || key === 'conversationDelete' ||
+        key === 'aiConfigList' || key === 'aiConfigCreate' || key === 'aiConfigUpdate' || key === 'aiConfigDelete' || key === 'aiConfigGet' ||
+        key === 'claudeCliConfigList' || key === 'claudeCliConfigCreate' || key === 'claudeCliConfigUpdate' ||
+        key === 'claudeCliConfigDelete' || key === 'claudeCliConfigGet' || key === 'claudeCliConfigSetDefault' ||
+        key === 'saveMcpConfig' ||
         key === 'acceptIntake' || key === 'unacceptIntake' ||
         key === 'createRequirement' || key === 'updateRequirement' || key === 'deleteRequirement' ||
         key === 'createFeedback' || key === 'updateFeedback' || key === 'deleteFeedback') continue;
@@ -2378,6 +2639,90 @@ function runtimeTaskBatches(value: RunTaskBatchesInput['batches']): Array<{ task
 function runtimeAcceptanceTarget(input: AcceptanceItemInput): { target_type: 'plan' | 'task'; id: number } {
   if (input?.targetType !== 'plan' && input?.targetType !== 'task') throw new HttpClientError('invalid_acceptance');
   return { target_type: input.targetType, id: positiveInteger(input.id, 'invalid_acceptance') };
+}
+
+function staticScriptInput(input: CreateScriptInput): Record<string, unknown> {
+  if (!isRecord(input)) throw new HttpClientError('invalid_automation');
+  const result: Record<string, unknown> = {};
+  const fields: Array<[string, unknown]> = [
+    ['name', input.name], ['runtime', input.runtime], ['body', input.body], ['path', input.path],
+    ['source_type', input.sourceType ?? input.source_type], ['description', input.description],
+    ['trigger_mode', input.triggerMode ?? input.trigger_mode], ['hook_stage', input.hookStage ?? input.hook_stage],
+    ['schedule_cron', input.scheduleCron ?? input.schedule_cron], ['work_dir', input.workDir ?? input.work_dir],
+    ['timeout_seconds', input.timeoutSeconds ?? input.timeout_seconds],
+    ['context_inject', input.contextInject ?? input.context_inject], ['sort_order', input.sortOrder ?? input.sort_order],
+  ];
+  for (const [key, value] of fields) {
+    if (value !== undefined) result[key] = value;
+  }
+  for (const [key, value] of [
+    ['enabled', input.enabled], ['fail_aborts', input.failAborts ?? input.fail_aborts],
+  ] as const) {
+    if (value === undefined) continue;
+    if (value !== true && value !== false && value !== 0 && value !== 1) {
+      throw new HttpClientError('invalid_automation');
+    }
+    result[key] = Boolean(value);
+  }
+  return result;
+}
+
+function staticAIConfigInput(input: AiConfigCreateInput | AiConfigUpdateInput): Record<string, unknown> {
+  if (!isRecord(input)) throw new HttpClientError('invalid_config');
+  return compactObject({
+    name: input.name,
+    provider: input.provider,
+    base_url: input.baseUrl,
+    api_key: input.apiKey,
+    model: input.model,
+    temperature: input.temperature,
+    thinking_depth: input.thinkingDepth === null ? '' : input.thinkingDepth,
+    thinking_budget_tokens: input.thinkingBudgetTokens === null ? 0 : input.thinkingBudgetTokens,
+  });
+}
+
+function chatAIConfigInput(input: ChatSaveConfigInput): Omit<AiConfigUpdateInput, 'configId'> {
+  return compactObject({
+    name: input.name,
+    provider: input.provider,
+    baseUrl: input.baseUrl,
+    apiKey: input.apiKey,
+    model: input.model,
+    temperature: input.temperature,
+    thinkingDepth: input.thinkingDepth,
+    thinkingBudgetTokens: input.thinkingBudgetTokens,
+  }) as Omit<AiConfigUpdateInput, 'configId'>;
+}
+
+function staticClaudeConfigInput(input: ClaudeCliConfigCreateInput | ClaudeCliConfigUpdateInput): Record<string, unknown> {
+  if (!isRecord(input)) throw new HttpClientError('invalid_config');
+  return compactObject({
+    name: input.name,
+    base_url: input.baseUrl,
+    auth_token: input.authToken,
+    model: input.model,
+  });
+}
+
+function staticMCPConfigInput(input: McpConfigInput): Record<string, unknown> {
+  if (!isRecord(input)) throw new HttpClientError('invalid_config');
+  let port: number | undefined;
+  if (input.port !== undefined) {
+    const rawPort: unknown = input.port;
+    const parsed = typeof rawPort === 'string' ? Number(rawPort.trim()) : rawPort;
+    if (typeof parsed !== 'number' || !Number.isSafeInteger(parsed) || parsed <= 0 || parsed > 65_535) {
+      throw new HttpClientError('invalid_config');
+    }
+    port = parsed;
+  }
+  return compactObject({
+    enabled: input.enabled,
+    transport: input.transport,
+    host: input.host,
+    port,
+    path: input.path,
+    auth_token: input.authToken,
+  });
 }
 
 function positiveInteger(value: unknown, code: string): number {
@@ -3069,6 +3414,12 @@ function validateMCPConfig(value: unknown): HttpMCPConfig {
   return { enabled: object.enabled, transport: object.transport, host: object.host, port: object.port, path: object.path, port_explicit: object.port_explicit, has_auth_token: object.has_auth_token, auth_token_masked: object.auth_token_masked };
 }
 
+function validateDeletedStaticConfig(value: unknown): { deleted: boolean } {
+  const object = exactObject(value, ['deleted']);
+  if (object.deleted !== true) throw new HttpClientError('invalid_response');
+  return { deleted: true };
+}
+
 function positiveSafeInteger(value: unknown): value is number { return safeInteger(value) && value > 0; }
 function nonNegativeIntegerValue(value: unknown): value is number { return safeInteger(value) && value >= 0; }
 function nullablePositiveInteger(value: unknown): value is number | null { return value === null || positiveSafeInteger(value); }
@@ -3224,6 +3575,85 @@ function validatePlan(value: unknown): Plan {
 function validatePlanTasks(value: unknown): PlanTask[] {
   if (!Array.isArray(value)) throw new HttpClientError('invalid_response');
   return value.map(validatePlanTask);
+}
+
+function validatePlanContent(value: unknown): PlanContentResult {
+  const object = exactObject(value, ['plan', 'tasks', 'markdown'], ['error_code']);
+  const plan = validatePlan(object.plan);
+  const tasks = validatePlanTasks(object.tasks);
+  if (typeof object.markdown !== 'string' || BufferByteLength(object.markdown) > MAXIMUM_PLAN_MARKDOWN_BYTES ||
+      (object.error_code !== undefined &&
+        (typeof object.error_code !== 'string' || !/^[a-z][a-z0-9_]{0,63}$/.test(object.error_code)))) {
+    throw new HttpClientError('invalid_response');
+  }
+  return { plan, tasks, markdown: object.markdown, errorCode: object.error_code as string | undefined || '' };
+}
+
+function planReadResult(content: PlanContentResult): ReadPlanResult {
+  const tasks = content.tasks.map((task) => ({
+    id: task.id,
+    plan_id: task.plan_id,
+    task_key: task.task_key,
+    title: task.title,
+    raw_line: task.raw_line,
+    scope: task.scope,
+    scopes: readPlanTaskScopes(task.scope),
+    status: task.status,
+    sort_order: task.sort_order,
+    updated_at: task.updated_at,
+  }));
+  const error = planContentErrorMessage(content.errorCode);
+  const parse = planTaskParseStatus(content.markdown, error, tasks.length);
+  return {
+    ok: error === null,
+    id: content.plan.id,
+    project_id: content.plan.project_id,
+    file_path: content.plan.file_path,
+    markdown: content.markdown,
+    tasks,
+    task_total: tasks.length,
+    task_completed: tasks.filter((task) => task.status === 'completed').length,
+    task_parse_status: parse.status,
+    task_parse_message: parse.message,
+    task_parse_has_task_section: parse.hasTaskSection,
+    hash: content.plan.hash,
+    updated_at: content.plan.updated_at,
+    error,
+  };
+}
+
+function readPlanTaskScopes(scope: string): string[] {
+  return [...new Set(scope.split(/[,，、;；]+/).map((item) => item.trim()).filter(Boolean))];
+}
+
+function planContentErrorMessage(code: string): string | null {
+  switch (code) {
+    case '': return null;
+    case 'workspace_unavailable': return '项目工作区不存在或无法访问';
+    case 'file_path_empty': return '计划文件路径为空';
+    case 'file_not_found': return '计划文件不存在';
+    case 'file_too_large': return '计划文件过大，无法预览';
+    case 'invalid_encoding': return '计划文件不是有效的 UTF-8 文本';
+    default: return '计划文件读取失败';
+  }
+}
+
+function planTaskParseStatus(markdown: string, error: string | null, taskCount: number): {
+  status: ReadPlanResult['task_parse_status']; message: string; hasTaskSection: boolean;
+} {
+  if (error) return { status: 'read_failed', message: error, hasTaskSection: false };
+  const hasTaskSection = /(?:^|\n)\s*#{1,6}\s*(?:任务拆解|任务计划|任务列表|开发任务|实施计划|Tasks)(?:\s|$)/i.test(markdown);
+  const hasCheckboxLine = /^\s*[-*+]\s+\[[ xX]\]\s+/m.test(markdown);
+  if (taskCount > 0) return { status: 'parsed', message: `已解析 ${taskCount} 个任务。`, hasTaskSection };
+  if (!markdown.trim()) return { status: 'empty_markdown', message: 'Plan Markdown 正文为空。', hasTaskSection: false };
+  if (hasTaskSection || hasCheckboxLine) {
+    return { status: 'parse_empty', message: 'Markdown 疑似包含任务拆解，但当前没有解析到任务。', hasTaskSection: true };
+  }
+  return { status: 'no_tasks', message: '当前 Plan 尚未解析到任务拆解。', hasTaskSection: false };
+}
+
+function BufferByteLength(value: string): number {
+  return new TextEncoder().encode(value).byteLength;
 }
 
 function validatePlanTask(value: unknown): PlanTask {

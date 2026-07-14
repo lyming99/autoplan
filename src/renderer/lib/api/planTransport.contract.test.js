@@ -28,6 +28,9 @@ function loadHttpClient() {
   wrapper((id) => {
     if (id === './client') return { AUTOPLAN_CLIENT_OPERATION_KEYS: operationKeys };
     if (id === './events') return { AUTOPLAN_CLIENT_EVENT_KEYS: eventKeys, consumeProjectEventPlaceholder: async () => {} };
+    if (id === './terminalTransport') {
+      return { TerminalTransport: class { constructor(options) { this.legacy = options.legacy; } } };
+    }
     throw new Error(`unexpected runtime import: ${id}`);
   }, module, module.exports);
   return module.exports;
@@ -109,6 +112,25 @@ function client(fetchImpl) {
 }
 
 describe('Plan IPC/HTTP capability transport contract', () => {
+  it('reads plan Markdown and parsed tasks from the project-scoped Go endpoint without IPC', async () => {
+    const markdown = '# Plan\n\n## Tasks\n\n- [x] P001: Persist\n';
+    const { client: http, calls } = client(async (target, init) => {
+      const url = new URL(target);
+      assert.equal(init.method, 'GET');
+      assert.equal(url.pathname, '/api/v1/projects/7/plans/12/content');
+      return response({
+        data: { plan: plan(), tasks: [task()], markdown }, request_id: 'req_plan_contract',
+      });
+    });
+
+    const result = await http.readPlan({ projectId: 7, planId: 12 });
+    assert.equal(result.ok, true);
+    assert.equal(result.markdown, markdown);
+    assert.equal(result.task_parse_status, 'parsed');
+    assert.deepStrictEqual(result.tasks[0].scopes, ['backend']);
+    assert.equal(calls.length, 0, 'Go plan preview must not invoke the unavailable IPC reader');
+  });
+
   it('uses enabled Plan, Task, and Event query capabilities without IPC DTO remapping', async () => {
     const captures = [];
     const { client: http, calls } = client(async (target, init) => {
@@ -184,9 +206,9 @@ describe('Plan IPC/HTTP capability transport contract', () => {
       ['resumePlan', { projectId: 7, planId: 12 }],
       ['reExecutePlan', { projectId: 7, planId: 12 }],
       ['recreatePlanFromIntake', { projectId: 7, planId: 12 }],
-      ['runTask', { projectId: 7, taskId: 21 }],
+      ['runTask', { projectId: 7, planId: 12, taskId: 21 }],
       ['runTaskBatches', { projectId: 7, planId: 12, batches: [{ taskIds: [21] }] }],
-      ['stopTask', { projectId: 7, taskId: 21 }],
+      ['stopTask', { projectId: 7, planId: 12, taskId: 21 }],
     ];
     const results = [];
     for (const [key, input] of actions) results.push(await http[key](input));

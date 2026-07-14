@@ -281,42 +281,44 @@ func (request *runRequest) complete(ctx context.Context, work scheduler.WorkResu
 	}
 	defer request.service.clearActive(request.command.ProjectID, request.command.ScriptID, request.operation.OperationID)
 	duration := durationMilliseconds(request.result, work)
+	target := domainoperation.StatusSucceeded
+	status := "ok"
+	failureLabel, summary := "", ""
 	if active.cancelled || work.Cancelled || errors.Is(work.Err, context.Canceled) || errors.Is(work.Err, process.ErrCancelled) {
-		completed, err := request.service.operations.ConfirmCancel(ctx, applicationoperations.CancelCommand{
-			Caller: operationCaller(request.command), ProjectID: request.command.ProjectID, OperationID: active.operation.OperationID,
-			ExpectedVersion: active.operation.Version, RequestID: request.command.RequestID,
-		})
-		if err != nil {
-			return operationError(err)
-		}
-		request.service.setRuntimeTerminal(request.command.ProjectID, request.command.ScriptID, "cancelled", int64(request.result.ExitCode), duration)
-		request.operation = completed.Operation
-		return nil
+		target, status = domainoperation.StatusCancelled, "cancelled"
+	} else if work.Err != nil {
+		target, status = domainoperation.StatusFailed, "bad"
+		failureLabel, summary = failureCode(work.Err), "Script execution failed."
 	}
-	if work.Err != nil {
-		code := failureCode(work.Err)
-		failed, err := request.service.operations.Fail(ctx, applicationoperations.FailCommand{
-			Caller: operationCaller(request.command), ProjectID: request.command.ProjectID, OperationID: active.operation.OperationID,
-			ExpectedVersion: active.operation.Version, RequestID: request.command.RequestID,
-			Code: code, Summary: "Script execution failed.",
-		})
-		if err != nil {
-			return operationError(err)
-		}
-		request.service.setRuntimeTerminal(request.command.ProjectID, request.command.ScriptID, "bad", int64(request.result.ExitCode), duration)
-		request.operation = failed.Operation
-		return work.Err
+	archive := applicationoperations.ArchiveOutput(&applicationoperations.OutputCapture{
+		Stdout: []byte(request.result.Stdout.Tail), Stderr: []byte(request.result.Stderr.Tail),
+	}, 8<<10, 256)
+	output := domainoperation.OutputMetadata{}
+	if archive.Metadata != nil {
+		output = *archive.Metadata
 	}
-	completed, err := request.service.operations.Succeed(ctx, applicationoperations.CompleteCommand{
-		Caller: operationCaller(request.command), ProjectID: request.command.ProjectID, OperationID: active.operation.OperationID,
-		ExpectedVersion: active.operation.Version, RequestID: request.command.RequestID,
+	completed, err := request.service.finalizer.FinalizeScriptRun(ctx, RunFinalization{
+		ProjectID: request.command.ProjectID, ScriptID: request.command.ScriptID,
+		OperationID: active.operation.OperationID, RequestID: request.command.RequestID,
+		ExpectedVersion: active.operation.Version, Target: target, Status: status,
+		FailureCode: failureLabel, Summary: summary, ExitCode: int64(request.result.ExitCode), DurationMS: duration,
+		StdoutTail: archive.StdoutTail, StderrTail: archive.StderrTail, Output: output,
+		OccurredAt: terminalTimestamp(request.service.clock.Now(), active.operation.UpdatedAt),
 	})
 	if err != nil {
-		return operationError(err)
+		return err
 	}
-	request.service.setRuntimeTerminal(request.command.ProjectID, request.command.ScriptID, "ok", int64(request.result.ExitCode), duration)
-	request.operation = completed.Operation
-	return nil
+	request.service.setRuntimeTerminal(request.command.ProjectID, request.command.ScriptID, status, int64(request.result.ExitCode), duration)
+	request.operation = completed
+	return work.Err
+}
+
+func terminalTimestamp(now time.Time, previous string) string {
+	value := now.UTC()
+	if parsed, err := time.Parse(time.RFC3339Nano, previous); err == nil && !value.After(parsed) {
+		value = parsed.Add(time.Millisecond)
+	}
+	return value.Format(time.RFC3339Nano)
 }
 
 func (request *runRequest) cancelCreated(ctx context.Context, operation domainoperation.Operation) {

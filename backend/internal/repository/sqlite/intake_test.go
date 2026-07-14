@@ -130,7 +130,7 @@ func TestReplacePlanLinksValidatesThenSortsAndSyncsLegacy(t *testing.T) {
 func TestReplacePlanLinksSameTargetIsBusinessIdempotent(t *testing.T) {
 	backend := &scriptBackend{steps: []scriptStep{
 		queryStep("FROM requirements WHERE project_id", intakeTestColumns(),
-			intakeTestValues(domainintake.Requirement, 3, 1, nil, "Requirement", "Body", "open", int64Pointer(10))),
+			intakeTestValues(domainintake.Requirement, 3, 1, nil, "Requirement", "Body", "open", intakeInt64Pointer(10))),
 		queryStep("SELECT project_id FROM plans", []string{"project_id"}, []driver.Value{int64(1)}),
 		queryStep("FROM intake_plan_links", planLinkTestColumns(),
 			planLinkTestValues(1, 1, domainintake.Requirement, 3, 10, 1, "Discover")),
@@ -214,6 +214,88 @@ func TestIntakeMutationAndPendingEventRollbackTogether(t *testing.T) {
 		t.Fatalf("rollback error = %v", err)
 	}
 	backend.assertFinished(t, 0, 1)
+}
+
+func TestIntakeLinkedPlanInterruptAndResumePersistBoundedTransitions(t *testing.T) {
+	for _, item := range []struct {
+		name, status string
+		action       repository.IntakePlanAction
+		steps        []scriptStep
+	}{
+		{
+			name: "interrupt", status: "running", action: repository.IntakePlanInterrupt,
+			steps: []scriptStep{
+				execStep("UPDATE plan_tasks", 2, 0),
+				execStep("UPDATE plans SET status", 1, 0),
+			},
+		},
+		{
+			name: "resume", status: "interrupted", action: repository.IntakePlanResume,
+			steps: []scriptStep{
+				queryStep("SELECT COUNT(*) FROM plan_tasks", []string{"count"}, []driver.Value{int64(2)}),
+				execStep("UPDATE plan_tasks", 2, 0),
+				execStep("UPDATE plans", 1, 0),
+			},
+		},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			steps := []scriptStep{
+				queryStep("FROM requirements WHERE project_id", intakeTestColumns(),
+					intakeTestValues(domainintake.Requirement, 4, 1, nil, "Requirement", "Body", "open", intakeInt64Pointer(8))),
+				queryStep("FROM intake_plan_links", planLinkTestColumns(),
+					planLinkTestValues(1, 1, domainintake.Requirement, 4, 8, 1, "Implement")),
+				queryStep("FROM plans WHERE project_id", planTestColumns(), planTestValues(8, 1, item.status, intakeTestTime, nil)),
+			}
+			steps = append(steps, item.steps...)
+			backend := &scriptBackend{steps: steps}
+			writer, cleanup := newTestWriter(t, backend)
+			defer cleanup()
+			var result repository.IntakePlanActionResult
+			err := writer.TransactIntake(context.Background(), func(transaction repository.IntakeWriteTransaction) error {
+				actions := transaction.(repository.IntakePlanActions)
+				var err error
+				result, err = actions.ApplyIntakePlanAction(context.Background(), repository.IntakePlanActionInput{
+					ProjectID: 1, Type: domainintake.Requirement, IntakeID: 4, Action: item.action,
+					UpdatedAt: "2026-07-11T00:00:01.000Z",
+				})
+				return err
+			})
+			if err != nil || len(result.AffectedPlanIDs) != 1 || result.AffectedPlanIDs[0] != 8 || result.AffectedTasks != 2 {
+				t.Fatalf("result=%#v error=%v", result, err)
+			}
+			backend.assertFinished(t, 1, 0)
+		})
+	}
+}
+
+func TestIntakeAppendTaskReactivatesCompletedLinkedPlan(t *testing.T) {
+	backend := &scriptBackend{steps: []scriptStep{
+		queryStep("FROM requirements WHERE project_id", intakeTestColumns(),
+			intakeTestValues(domainintake.Requirement, 4, 1, nil, "Requirement", "Body", "open", intakeInt64Pointer(8))),
+		queryStep("FROM intake_plan_links", planLinkTestColumns(),
+			planLinkTestValues(1, 1, domainintake.Requirement, 4, 8, 1, "Implement")),
+		queryStep("FROM plans WHERE project_id", planTestColumns(), planTestValues(8, 1, "completed", intakeTestTime, nil)),
+		queryStep("FROM plans WHERE project_id", planTestColumns(), planTestValues(8, 1, "completed", intakeTestTime, nil)),
+		queryStep("FROM plan_tasks JOIN plans", planTaskTestColumns()),
+		execStep("INSERT INTO plan_tasks", 1, 21),
+		execStep("UPDATE plans", 1, 0),
+	}}
+	writer, cleanup := newTestWriter(t, backend)
+	defer cleanup()
+	var result repository.IntakePlanActionResult
+	err := writer.TransactIntake(context.Background(), func(transaction repository.IntakeWriteTransaction) error {
+		actions := transaction.(repository.IntakePlanActions)
+		var err error
+		result, err = actions.ApplyIntakePlanAction(context.Background(), repository.IntakePlanActionInput{
+			ProjectID: 1, Type: domainintake.Requirement, IntakeID: 4, Action: repository.IntakePlanAppend,
+			Title: "Add regression coverage", UpdatedAt: "2026-07-11T00:00:01.000Z",
+		})
+		return err
+	})
+	if err != nil || result.PlanID != 8 || result.TaskID != 21 || result.TaskKey != "P001" || !result.Reactivated {
+		t.Fatalf("result=%#v error=%v", result, err)
+	}
+	backend.assertFinished(t, 1, 0)
 }
 
 func TestConcurrentEquivalentCreateAllowsOneCommit(t *testing.T) {
@@ -305,4 +387,11 @@ func planLinkTestValues(
 	return []driver.Value{id, projectID, string(intakeType), intakeID, planID, phaseIndex, phaseTitle, intakeTestTime, intakeTestTime}
 }
 
-func int64Pointer(value int64) *int64 { return &value }
+func planTaskTestColumns() []string {
+	return []string{
+		"id", "project_id", "plan_id", "task_key", "title", "raw_line", "scope", "status", "sort_order",
+		"started_at", "finished_at", "duration_ms", "updated_at", "accepted_at",
+	}
+}
+
+func intakeInt64Pointer(value int64) *int64 { return &value }

@@ -65,10 +65,11 @@ type OperationMutation struct {
 }
 
 type OperationListQuery struct {
-	ProjectID int64
-	Type      string
-	Status    domainoperation.Status
-	Limit     int
+	ProjectID  int64
+	Type       string
+	Status     domainoperation.Status
+	Limit      int
+	Descending bool
 }
 
 type storedOperation struct {
@@ -177,8 +178,12 @@ func (transaction *OperationTransaction) List(ctx context.Context, query Operati
 		arguments = append(arguments, string(query.Status))
 	}
 	arguments = append(arguments, query.Limit)
+	direction := "ASC"
+	if query.Descending {
+		direction = "DESC"
+	}
 	rows, err := transaction.transaction.tx.QueryContext(ctx,
-		"SELECT "+operationColumns+" FROM operations WHERE "+where+" ORDER BY created_at ASC, operation_id ASC LIMIT ?", arguments...)
+		"SELECT "+operationColumns+" FROM operations WHERE "+where+" ORDER BY created_at "+direction+", operation_id "+direction+" LIMIT ?", arguments...)
 	if err != nil {
 		return nil, safeSQLError(ctx, err)
 	}

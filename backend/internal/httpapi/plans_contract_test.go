@@ -33,7 +33,7 @@ func TestP07CapabilitiesContractKeepsActionsDisabled(t *testing.T) {
 	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
 		t.Fatal(err)
 	}
-	if envelope.Version != capabilities.ContractVersion || envelope.RequestID == "" {
+	if envelope.Data.Version != capabilities.ContractVersion || envelope.RequestID == "" {
 		t.Fatalf("capabilities envelope drift: %#v", envelope)
 	}
 	got := make(map[capabilities.ID]bool, len(envelope.Data.Capabilities))

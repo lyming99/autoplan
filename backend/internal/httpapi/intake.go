@@ -37,6 +37,10 @@ type IntakeService interface {
 	Create(context.Context, applicationintake.CreateCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
 	Update(context.Context, applicationintake.UpdateCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
 	SetAcceptance(context.Context, applicationintake.AcceptanceCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
+	RetryPlanGeneration(context.Context, applicationintake.RetryPlanGenerationCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
+	InterruptPlans(context.Context, applicationintake.PlanActionCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
+	ResumePlans(context.Context, applicationintake.PlanActionCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
+	AppendTask(context.Context, applicationintake.PlanActionCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
 	Links(context.Context, int64, domainintake.Type, int64) ([]applicationintake.LinkedPlanDTO, error)
 	ReplaceLinks(context.Context, applicationintake.ReplaceLinksCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
 	Delete(context.Context, applicationintake.DeleteCommand, domainproject.Visibility) (applicationintake.MutationResult, error)
@@ -168,7 +172,7 @@ func RegisterIntake(router *Router, security *Security, service IntakeService) e
 			return err
 		}
 	}
-	return nil
+	return RegisterIntakeActionRoutes(router, security, service)
 }
 
 func intakeListEndpoint(service IntakeService) Endpoint {
@@ -566,7 +570,8 @@ func writeIntakeServiceError(writer http.ResponseWriter, request *http.Request, 
 	case errors.As(err, &duplicate):
 		code = CodeDuplicateIntake
 	case errors.Is(err, applicationintake.ErrInvalidCommand), errors.Is(err, applicationintake.ErrInvalidTransition),
-		errors.Is(err, domainintake.ErrInvalid), errors.Is(err, domainintake.ErrInvalidLink), errors.Is(err, repository.ErrInvalidIntake):
+		errors.Is(err, domainintake.ErrInvalid), errors.Is(err, domainintake.ErrInvalidLink),
+		errors.Is(err, repository.ErrInvalidIntake), errors.Is(err, repository.ErrInvalidTask):
 		code = CodeInvalidIntake
 	case errors.Is(err, applicationintake.ErrStateConflict):
 		code = CodePreconditionFailed

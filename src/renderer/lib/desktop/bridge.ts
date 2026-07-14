@@ -5,6 +5,8 @@ import type { Subscribe } from '../api/events';
 export const DESKTOP_BRIDGE_OPERATION_KEYS = [
   'pickDirectory',
   'openProjectFolder',
+  'openProjectTerminal',
+  'openLogFolder',
   'openWorkspaceFile',
   'pickScriptFile',
   'pickTasksJson',

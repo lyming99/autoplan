@@ -322,12 +322,12 @@ describe('HttpAutoplanClient guarded read transport', () => {
     }
   });
 
-  it('delegates unmigrated mutations and existing events without changing identity', () => {
+  it('delegates unmigrated mutations and existing events without changing identity', async () => {
     const { client, fallback } = createClient(async () => {
       throw new Error('HTTP should not be used');
     });
-    const input = { name: 'fixture' };
-    const result = client.startLoop(input);
+    const input = { projectId: 7 };
+    const result = await client.startLoop(input);
     assert.strictEqual(result.args[0], input);
     assert.strictEqual(fallback.calls.at(-1).args[0], input);
 
@@ -529,7 +529,7 @@ describe('HttpAutoplanClient guarded read transport', () => {
       name: 'Fixture', workspace_path: '<fixture-workspace>/p7', description: '',
     });
     const configCall = calls.find((call) => call.url.endsWith('/loop-config') && call.init.method === 'PATCH');
-    assert.equal(configCall.body.version, 4);
+    assert.equal(configCall.body.version, 5);
     assert.equal(configCall.body.interval_seconds, 5);
     assert.equal(configCall.body.validation_command, 'synthetic-check');
     assert.equal(configCall.body.project_id, undefined);
@@ -631,7 +631,7 @@ describe('HttpAutoplanClient guarded read transport', () => {
     await assert.rejects(timedOut.ready(), (error) => error.code === 'request_timeout' && error.retryable);
   });
 
-  it('opens the authenticated SSE placeholder and owns an idempotent cancellation', async () => {
+  it('opens the authenticated project SSE route and owns an idempotent cancellation', async () => {
     const calls = [];
     const states = [];
     const { client } = createClient(async (url, init) => {
@@ -649,7 +649,7 @@ describe('HttpAutoplanClient guarded read transport', () => {
     unsubscribe();
 
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].url, 'http://127.0.0.1:43123/api/v1/skeleton/sse');
+    assert.equal(calls[0].url, 'http://127.0.0.1:43123/api/v1/projects/7/events');
     assert.equal(calls[0].init.headers.Accept, 'text/event-stream');
     assert.deepStrictEqual(states, ['connecting', 'unavailable', 'closed']);
   });
@@ -674,6 +674,156 @@ describe('HttpAutoplanClient guarded read transport', () => {
 
     const unsafe = createClient(async () => success([{ ...staticScript, body: 'private-script-body' }])).client;
     await assert.rejects(unsafe.listStaticScripts(7), (error) => error.code === 'invalid_response');
+  });
+
+  it('owns linked-plan actions, script creation, and static AI configuration through Go HTTP', async () => {
+    const snapshotValue = snapshot(project(7));
+    const staticScript = {
+      id: 3, project_id: 7, name: 'Fixture script', runtime: 'node', description: 'Fixture metadata.',
+      trigger_mode: 'manual', hook_stage: null, schedule_cron: null, enabled: true, timeout_seconds: 60,
+      fail_aborts: false, context_inject: 'none', sort_order: 1, last_status: null, last_exit_code: null,
+      last_duration_ms: null, last_run_at: null, source_type: 'inline', has_path: false, has_body: true,
+      has_work_dir: false, has_last_log: false, created_at: '2026-07-11T00:00:00.000Z',
+      updated_at: '2026-07-11T00:00:01.000Z', version: 1,
+    };
+    const aiConfig = {
+      id: 5, project_id: null, projectId: null, name: 'Codex', provider: 'openai',
+      base_url: 'https://api.example.test', baseUrl: 'https://api.example.test',
+      has_api_key: true, hasApiKey: true, masked_key: 'sk-***', maskedKey: 'sk-***',
+      model: 'gpt-5.5', temperature: '0.3', thinking_depth: 'high', thinkingDepth: 'high',
+      thinking_budget_tokens: null, thinkingBudgetTokens: null,
+      created_at: '2026-07-11T00:00:00.000Z', createdAt: '2026-07-11T00:00:00.000Z',
+      updated_at: '2026-07-11T00:00:01.000Z', updatedAt: '2026-07-11T00:00:01.000Z', version: 2,
+    };
+    const calls = [];
+    const { client, fallback } = createClient(async (target, init) => {
+      const url = new URL(target);
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      calls.push({ path: `${url.pathname}${url.search}`, method: init.method, body });
+      if (url.pathname.includes('/intake/') && url.pathname.includes('/actions/')) {
+        return success({ snapshot: snapshotValue });
+      }
+      if (url.pathname === '/api/v1/projects/7/scripts' && init.method === 'POST') return success(staticScript);
+      if (url.pathname === '/api/v1/projects/7/snapshot') return success(snapshotValue);
+      if (url.pathname === '/api/v1/ai-configs' && init.method === 'GET') return success([aiConfig]);
+      if (url.pathname === '/api/v1/ai-configs' && init.method === 'POST') return success(aiConfig);
+      if (url.pathname === '/api/v1/ai-configs/5' && init.method === 'GET') return success(aiConfig);
+      if (url.pathname === '/api/v1/ai-configs/5' && init.method === 'PATCH') return success({ ...aiConfig, name: body.name ?? aiConfig.name, version: 3 });
+      if (url.pathname === '/api/v1/ai-configs/5' && init.method === 'DELETE') return success({ deleted: true });
+      throw new Error(`unexpected Go business URL: ${url.pathname}`);
+    });
+
+    assert.deepStrictEqual(await client.interruptIntake({ projectId: 7, type: 'requirement', id: 9 }), snapshotValue);
+    assert.deepStrictEqual(await client.resumeIntake({ projectId: 7, type: 'requirement', id: 9 }), snapshotValue);
+    assert.deepStrictEqual(await client.appendIntakeTask({ projectId: 7, type: 'requirement', id: 9, title: 'Add regression tests' }), snapshotValue);
+    assert.deepStrictEqual(await client.createScript({
+      projectId: 7, name: 'Fixture script', runtime: 'node', body: 'console.log(1)', enabled: 1,
+    }), snapshotValue);
+    assert.equal((await client.aiConfigCreate({
+      name: 'Codex', provider: 'openai', baseUrl: 'https://api.example.test', apiKey: 'sk-secret',
+      model: 'gpt-5.5', temperature: '0.3', thinkingDepth: 'high',
+    })).id, 5);
+    assert.equal((await client.aiConfigUpdate({ configId: 5, name: 'Codex updated', apiKey: '' })).name, 'Codex updated');
+    assert.deepStrictEqual(await client.aiConfigDelete({ configId: 5 }), { deleted: true });
+    assert.equal((await client.chatGetConfig()).aiConfigId, 5);
+    assert.deepStrictEqual(await client.chatSaveConfig({
+      provider: 'openai', baseUrl: 'https://chat.example.test', apiKey: 'chat-secret', model: 'gpt-5.5', temperature: '0.2',
+    }), { saved: true });
+
+    const actionCalls = calls.filter((call) => call.path.includes('/intake/'));
+    assert.deepStrictEqual(actionCalls.map(({ path, body }) => ({ path, body })), [
+      { path: '/api/v1/projects/7/intake/requirement/9/actions/interrupt', body: {} },
+      { path: '/api/v1/projects/7/intake/requirement/9/actions/resume', body: {} },
+      { path: '/api/v1/projects/7/intake/requirement/9/actions/append-task', body: { title: 'Add regression tests' } },
+    ]);
+    const scriptCreate = calls.find((call) => call.path === '/api/v1/projects/7/scripts' && call.method === 'POST');
+    assert.deepStrictEqual(scriptCreate.body, {
+      name: 'Fixture script', runtime: 'node', body: 'console.log(1)', enabled: true,
+    });
+    const aiCreate = calls.find((call) => call.path === '/api/v1/ai-configs' && call.method === 'POST');
+    assert.equal(aiCreate.body.api_key, 'sk-secret');
+    const aiPatch = calls.find((call) => call.path === '/api/v1/ai-configs/5' && call.method === 'PATCH');
+    assert.deepStrictEqual(aiPatch.body, { name: 'Codex updated', api_key: '', version: 2 });
+    const chatPatch = calls.filter((call) => call.path === '/api/v1/ai-configs/5' && call.method === 'PATCH').at(-1);
+    assert.deepStrictEqual(chatPatch.body, {
+      provider: 'openai', base_url: 'https://chat.example.test', api_key: 'chat-secret',
+      model: 'gpt-5.5', temperature: '0.2', version: 2,
+    });
+    assert.equal(fallback.calls.some((call) => [
+      'interruptIntake', 'resumeIntake', 'appendIntakeTask', 'createScript',
+      'aiConfigCreate', 'aiConfigUpdate', 'aiConfigDelete', 'chatGetConfig', 'chatSaveConfig',
+    ].includes(call.key)), false);
+  });
+
+  it('creates the first Go-owned AI config when the compatibility chat form has no saved config', async () => {
+    const created = {
+      id: 1, project_id: null, projectId: null, name: '默认配置', provider: 'openai',
+      base_url: 'https://api.openai.com', baseUrl: 'https://api.openai.com',
+      has_api_key: true, hasApiKey: true, masked_key: '····cret', maskedKey: '····cret',
+      model: 'gpt-5.5', temperature: '0.3', thinking_depth: null, thinkingDepth: null,
+      thinking_budget_tokens: null, thinkingBudgetTokens: null,
+      created_at: '2026-07-11T00:00:00.000Z', createdAt: '2026-07-11T00:00:00.000Z',
+      updated_at: '2026-07-11T00:00:00.000Z', updatedAt: '2026-07-11T00:00:00.000Z', version: 1,
+    };
+    const calls = [];
+    const { client, fallback } = createClient(async (target, init) => {
+      const url = new URL(target);
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      calls.push({ path: url.pathname, method: init.method, body });
+      if (url.pathname === '/api/v1/ai-configs' && init.method === 'GET') return success([]);
+      if (url.pathname === '/api/v1/ai-configs' && init.method === 'POST') return success(created);
+      throw new Error(`unexpected Go business URL: ${url.pathname}`);
+    });
+
+    assert.deepStrictEqual(await client.chatGetConfig(), {
+      source: 'go-default', compatibilityOnly: false, provider: 'openai', baseUrl: 'https://api.openai.com',
+      hasApiKey: false, maskedKey: '', model: 'gpt-5.5', temperature: '0.3',
+      thinkingDepth: null, thinkingBudgetTokens: null,
+    });
+    assert.deepStrictEqual(await client.chatSaveConfig({ apiKey: 'chat-secret' }), { saved: true });
+    assert.deepStrictEqual(calls.at(-1).body, { name: '默认配置', api_key: 'chat-secret' });
+    assert.equal(fallback.calls.some((call) => call.key === 'chatGetConfig' || call.key === 'chatSaveConfig'), false);
+  });
+
+  it('accepts the synchronous retry mutation contract and immediately starts one loop cycle', async () => {
+    const resetSnapshot = snapshot(project(7));
+    resetSnapshot.requirements = [intake('requirement', 30)];
+    const runningSnapshot = snapshot(project(7));
+    runningSnapshot.state.phase = 'scan';
+    const calls = [];
+    const { client, fallback } = createClient(async (target, init) => {
+      const url = new URL(target);
+      calls.push({ path: `${url.pathname}${url.search}`, method: init.method, body: init.body });
+      if (url.pathname.endsWith('/retry-plan-generation')) {
+        return success({ snapshot: resetSnapshot });
+      }
+      if (url.pathname.endsWith('/loop/actions/run-once')) {
+        return success({
+          operation_id: 'loop.retry.1', type: 'loop.run_once', status: 'accepted',
+          request_id: requestId, accepted_at: '2026-07-14T00:00:00.000Z',
+        });
+      }
+      if (url.pathname.endsWith('/snapshot')) return success(runningSnapshot);
+      if (url.pathname.includes('/api/v1/operations/')) {
+        return response(503, {
+          code: 'service_unavailable', message: 'fixture stream unavailable',
+          request_id: requestId, retryable: true,
+        });
+      }
+      throw new Error(`unexpected retry URL: ${url.pathname}`);
+    }, {
+      runtimeFeatures: { go_acceptance_retry_actions: true, go_loop_actions: true },
+    });
+
+    assert.deepStrictEqual(await client.retryIntakePlanGeneration({
+      projectId: 7, type: 'requirement', id: 30,
+    }), runningSnapshot);
+    assert.deepStrictEqual(calls.slice(0, 3).map(({ path, method }) => ({ path, method })), [
+      { path: '/api/v1/projects/7/intake/requirement/30/actions/retry-plan-generation', method: 'POST' },
+      { path: '/api/v1/projects/7/loop/actions/run-once', method: 'POST' },
+      { path: '/api/v1/projects/7/snapshot', method: 'GET' },
+    ]);
+    assert.equal(fallback.calls.some((call) => call.key === 'retryIntakePlanGeneration'), false);
   });
 });
 

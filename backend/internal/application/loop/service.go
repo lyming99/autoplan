@@ -2,11 +2,14 @@ package loop
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/lyming99/autoplan/backend/internal/application/capabilities"
 	applicationoperations "github.com/lyming99/autoplan/backend/internal/application/operations"
@@ -65,6 +68,7 @@ type runtimeService struct {
 
 	schedules map[int64]*schedule
 	active    map[int64]*activeRun
+	instance  string
 	sequence  uint64
 	closed    bool
 }
@@ -87,7 +91,21 @@ func newRuntimeService(dependencies Dependencies) *runtimeService {
 		state: dependencies.State, runner: dependencies.Runner,
 		requested: dependencies.Operations != nil || dependencies.Scheduler != nil || dependencies.State != nil || dependencies.Runner != nil,
 		schedules: make(map[int64]*schedule), active: make(map[int64]*activeRun),
+		instance: automaticInstanceID(),
 	}
+}
+
+func automaticInstanceID() string {
+	value := make([]byte, 12)
+	if _, err := rand.Read(value); err == nil {
+		return hex.EncodeToString(value)
+	}
+	// rand.Read should only fail when the operating system random source is
+	// unavailable. Process identity plus wall time still avoids reverting to a
+	// plain sequence, whose persisted idempotency keys collide on restart.
+	fallback := fmt.Sprintf("%d:%d", os.Getpid(), time.Now().UnixNano())
+	sum := sha256.Sum256([]byte(fallback))
+	return hex.EncodeToString(sum[:12])
 }
 
 func (service *runtimeService) Requested() bool {
@@ -133,9 +151,10 @@ func (service *runtimeService) nextAutomaticIdentity(operationType string, proje
 	service.mu.Lock()
 	service.sequence++
 	sequence := service.sequence
+	instance := service.instance
 	service.mu.Unlock()
-	requestID := fmt.Sprintf("loop-auto-%d", sequence)
-	key := fmt.Sprintf("loop-%d-%d", projectID, sequence)
+	requestID := fmt.Sprintf("loop-auto-%s-%d", instance, sequence)
+	key := fmt.Sprintf("loop-%d-%s-%d", projectID, instance, sequence)
 	return requestID, key
 }
 

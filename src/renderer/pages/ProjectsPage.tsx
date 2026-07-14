@@ -679,7 +679,7 @@ function projectPhaseLabel(phase: string) {
       'generate-plan': '生成计划',
       'execute-task': '执行任务',
       validate: '验收',
-      waiting: '等待',
+      waiting: '等待下一轮',
       error: '异常',
     }[phase] || phase
   );

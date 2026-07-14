@@ -107,11 +107,37 @@ class GoDataClient {
   acceptItem(projectId, targetType, targetId, options) { return this.#acceptance(RUNTIME_COMMANDS.ACCEPTANCE_ACCEPT, projectId, targetType, targetId, options); }
   unacceptItem(projectId, targetType, targetId, options) { return this.#acceptance(RUNTIME_COMMANDS.ACCEPTANCE_UNACCEPT, projectId, targetType, targetId, options); }
   redoAcceptanceItem(projectId, targetType, targetId, options) { return this.#acceptance(RUNTIME_COMMANDS.ACCEPTANCE_REDO, projectId, targetType, targetId, options); }
-  acceptItems(projectId, options) { return this.executeRuntimeCommand(RUNTIME_COMMANDS.ACCEPTANCE_ACCEPT_BATCH, { projectId, action: 'batch' }, options); }
-  unacceptItems(projectId, options) { return this.executeRuntimeCommand(RUNTIME_COMMANDS.ACCEPTANCE_UNACCEPT_BATCH, { projectId, action: 'batch' }, options); }
-  retryIntakePlanGeneration(projectId, intakeType, intakeId, options) {
+  acceptItems(projectId, targets, options) { return this.#acceptanceBatch(RUNTIME_COMMANDS.ACCEPTANCE_ACCEPT_BATCH, projectId, targets, options); }
+  unacceptItems(projectId, targets, options) { return this.#acceptanceBatch(RUNTIME_COMMANDS.ACCEPTANCE_UNACCEPT_BATCH, projectId, targets, options); }
+  async retryIntakePlanGeneration(projectId, intakeType, intakeId, options = {}) {
     if (intakeType !== 'requirement' && intakeType !== 'feedback') throw new GoDataClientError('invalid_runtime_command');
-    return this.executeRuntimeCommand(RUNTIME_COMMANDS.INTAKE_RETRY_PLAN_GENERATION, { projectId, intakeId, action: intakeType }, options);
+    const project = positiveProcessIdentifier(projectId);
+    const id = positiveProcessIdentifier(intakeId);
+    const requestId = safeIdentifier(options.requestId, 64) || createIdentifier('node');
+    const idempotencyKey = safeIdentifier(options.idempotencyKey, 128) || createIdentifier('intent');
+    const callerScope = safeIdentifier(options.callerScope, 128) || this.callerScope;
+    const metadata = { requestId, idempotencyKey, callerScope, signal: options.signal, timeoutMs: options.timeoutMs };
+    const response = await this.#processRequest(
+      `${PROJECTS_PATH}/${project}/intake/${intakeType}/${id}/actions/retry-plan-generation`, metadata,
+    );
+    const snapshot = response?.data?.snapshot;
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) throw new GoDataClientError('service_unavailable');
+    this.snapshots.set(project, snapshot);
+    // Do not wait for the next interval after an explicit retry. Admission is
+    // still owned by the typed Loop command; an already active cycle is a safe
+    // no-op and the reset snapshot remains the successful retry result.
+    try {
+      const run = await this.runLoopOnce(project, {
+        ...options,
+        requestId: createIdentifier('retry'),
+        idempotencyKey: createIdentifier('retry-run'),
+      });
+      return { ...run, snapshot };
+    } catch (error) {
+      const stable = asGoDataClientError(error);
+      if (stable.code !== 'precondition_failed') throw stable;
+      return { snapshot };
+    }
   }
   sendChat(projectId, conversationId, content, options) { return this.executeRuntimeCommand(RUNTIME_COMMANDS.CHAT_SEND, { projectId, conversationId, chat: { content } }, options); }
   stopChat(projectId, conversationId, options) { return this.executeRuntimeCommand(RUNTIME_COMMANDS.CHAT_STOP, { projectId, conversationId }, options); }
@@ -134,7 +160,7 @@ class GoDataClient {
   stopExecutor(projectId, executorId, options) {
     return this.#processAction(projectId, executorId, 'executors', 'stop', ['executor.run', 'executor.action'], options);
   }
-  runExecutorAction(projectId, executorId, action, options) {
+  async runExecutorAction(projectId, executorId, action, options) {
     if (action === 'stop') return this.stopExecutor(projectId, executorId, options);
     if (action !== 'start' && action !== 'reload') throw new GoDataClientError('invalid_runtime_command');
     return this.#processAction(projectId, executorId, 'executors', action, ['executor.run', 'executor.action'], options);
@@ -150,9 +176,16 @@ class GoDataClient {
     if (targetType !== 'plan' && targetType !== 'task') throw new GoDataClientError('invalid_runtime_command');
     return this.executeRuntimeCommand(command, {
       projectId,
-      action: targetType,
-      ...(targetType === 'plan' ? { planId: targetId } : { taskId: targetId }),
+      acceptance: {
+        targets: [{ targetType, id: positiveProcessIdentifier(targetId) }],
+        ...(command === RUNTIME_COMMANDS.ACCEPTANCE_REDO && typeof options?.supplement === 'string'
+          ? { supplement: options.supplement } : {}),
+      },
     }, options);
+  }
+
+  #acceptanceBatch(command, projectId, targets, options) {
+    return this.executeRuntimeCommand(command, { projectId, acceptance: { targets } }, options);
   }
 
   #logRetry(error, attempt) {
@@ -273,7 +306,7 @@ function buildCommand(command, input) {
   ].includes(command)) {
     throw new GoDataClientError('invalid_runtime_command');
   }
-  const allowed = new Set(['projectId', 'planId', 'taskId', 'intakeId', 'conversationId', 'scriptId', 'executorId', 'expectedVersion', 'expectedUpdatedAt', 'action', 'chat', 'batches', 'terminal', 'updates']);
+  const allowed = new Set(['projectId', 'planId', 'taskId', 'intakeId', 'conversationId', 'scriptId', 'executorId', 'expectedVersion', 'expectedUpdatedAt', 'action', 'chat', 'batches', 'acceptance', 'terminal', 'updates']);
   if (Object.keys(input).some((key) => !allowed.has(key))) throw new GoDataClientError('invalid_runtime_command');
   const payload = { version: CONTRACT_VERSION, command, project_id: positiveOrZero(input.projectId) };
   copyPositive(payload, 'plan_id', input.planId);
@@ -287,6 +320,7 @@ function buildCommand(command, input) {
   copyText(payload, 'action', input.action, 64);
   if (input.chat !== undefined) payload.chat = validateChat(input.chat);
   if (input.batches !== undefined) payload.batches = validateBatches(input.batches);
+  if (input.acceptance !== undefined) payload.acceptance = validateAcceptance(input.acceptance);
   if (input.terminal !== undefined) payload.terminal = validateObject(input.terminal, ['default_profile', 'initial_cwd', 'font_size', 'scrollback_limit', 'retain_on_exit', 'confirm_before_kill']);
   if (input.updates !== undefined) payload.updates = validateObject(input.updates, ['auto_check', 'interval_minutes']);
   return payload;
@@ -366,6 +400,28 @@ function validateBatches(value) {
     });
     return { task_ids };
   });
+}
+
+function validateAcceptance(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value) ||
+      Object.keys(value).some((key) => !['targets', 'supplement'].includes(key)) ||
+      !Array.isArray(value.targets) || value.targets.length === 0 || value.targets.length > 100 ||
+      (value.supplement !== undefined && (typeof value.supplement !== 'string' ||
+        [...value.supplement].length > 2000 || /[\r\0]/.test(value.supplement)))) {
+    throw new GoDataClientError('invalid_runtime_command');
+  }
+  return {
+    targets: value.targets.map((target) => {
+      if (!target || typeof target !== 'object' || Array.isArray(target) ||
+          Object.keys(target).some((key) => !['targetType', 'target_type', 'id'].includes(key))) {
+        throw new GoDataClientError('invalid_runtime_command');
+      }
+      const targetType = target.targetType ?? target.target_type;
+      if (targetType !== 'plan' && targetType !== 'task') throw new GoDataClientError('invalid_runtime_command');
+      return { target_type: targetType, id: positiveProcessIdentifier(target.id) };
+    }),
+    ...(typeof value.supplement === 'string' ? { supplement: value.supplement } : {}),
+  };
 }
 
 function validateObject(value, allowed) {

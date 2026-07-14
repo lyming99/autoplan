@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lyming99/autoplan/backend/internal/application"
+	applicationacceptance "github.com/lyming99/autoplan/backend/internal/application/acceptance"
 	applicationattachments "github.com/lyming99/autoplan/backend/internal/application/attachments"
 	applicationautomation "github.com/lyming99/autoplan/backend/internal/application/automation"
 	applicationchat "github.com/lyming99/autoplan/backend/internal/application/chat"
@@ -31,6 +32,7 @@ import (
 	domainterminal "github.com/lyming99/autoplan/backend/internal/domain/terminal"
 	"github.com/lyming99/autoplan/backend/internal/httpapi"
 	"github.com/lyming99/autoplan/backend/internal/mcp"
+	mcptools "github.com/lyming99/autoplan/backend/internal/mcp/tools"
 	"github.com/lyming99/autoplan/backend/internal/platform/logging"
 	"github.com/lyming99/autoplan/backend/internal/platform/session"
 	"github.com/lyming99/autoplan/backend/internal/repository"
@@ -87,6 +89,7 @@ type DependencyOverrides struct {
 	ScriptStore         applicationscripts.Store
 	ScriptRunner        applicationscripts.Runner
 	ScriptFiles         applicationscripts.FilePolicy
+	ScriptFinalizer     applicationscripts.Finalizer
 	ExecutorStore       applicationexecutors.Store
 	ExecutorRunner      applicationexecutors.Runner
 	ExecutorFiles       applicationexecutors.FilePolicy
@@ -216,7 +219,43 @@ func (dependencies *Dependencies) RegisterRuntimeRoutes(
 	if err := httpapi.RegisterAutomation(router, securityPolicy, dependencies.Automation); err != nil {
 		return err
 	}
+	if err := httpapi.RegisterProcessActionRoutes(router, securityPolicy, dependencies.Scripts, dependencies.Executors); err != nil {
+		return err
+	}
+	if err := httpapi.RegisterPlanContent(router, securityPolicy, dependencies.Plans); err != nil {
+		return err
+	}
+	// Project snapshots are refreshed from the durable outbox stream. Keep the
+	// subscription routes in the same composition root as the mutations that
+	// publish those records; omitting this registration leaves the renderer on
+	// its initial snapshot even though the Loop continues in the background.
+	if err := httpapi.RegisterEvents(router, securityPolicy, dependencies.Projects, dependencies.Operations, dependencies.EventBus); err != nil {
+		return err
+	}
 	return httpapi.RegisterChatHistory(router, securityPolicy, dependencies.Chat)
+}
+
+// RegisterTerminalRoutes binds the REST control plane and private WebSocket
+// data plane to one feature decision and one application service.
+func (dependencies *Dependencies) RegisterTerminalRoutes(
+	router *httpapi.Router,
+	logger logging.Logger,
+	clock logging.Clock,
+	enabled bool,
+	runtimeConfig config.TerminalRuntime,
+) error {
+	securityPolicy, err := dependencies.NewHTTPSecurity(logger, clock)
+	if err != nil {
+		return err
+	}
+	if err := httpapi.RegisterTerminals(router, securityPolicy, httpapi.TerminalRoutesOptions{
+		Service: dependencies.TerminalService, FeatureEnabled: enabled,
+	}); err != nil {
+		return err
+	}
+	return httpapi.RegisterTerminalWebSocket(router, securityPolicy, httpapi.TerminalWebSocketOptions{
+		Service: dependencies.TerminalService, FeatureEnabled: enabled, Runtime: runtimeConfig,
+	})
 }
 
 // AssembleDependencies uses non-writing, unavailable defaults for repository
@@ -425,8 +464,18 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 		Writer: chatWriter, Clock: clock,
 	})
 	dispatcher := overrides.RuntimeDispatcher
+	var manualDispatcher *manualRuntimeDispatcher
 	if dispatcher == nil {
-		dispatcher = applicationloop.UnavailableDispatcher{}
+		for _, candidate := range []any{overrides.Repository, projectWriter, planWriter, intakeWriter} {
+			if activator, ok := candidate.(repository.DraftPlanTaskActivator); ok {
+				manualDispatcher = newManualRuntimeDispatcher(activator)
+				dispatcher = manualDispatcher
+				break
+			}
+		}
+		if dispatcher == nil {
+			dispatcher = applicationloop.UnavailableDispatcher{}
+		}
 	}
 	planEvents := applicationevents.NewService(planWriter)
 	eventSettings := config.DefaultEvents()
@@ -498,7 +547,8 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 		}
 	}
 	scriptService := applicationscripts.NewService(applicationscripts.Dependencies{
-		Store: scriptStore, Scheduler: runtimeScheduler, Runner: overrides.ScriptRunner, Files: overrides.ScriptFiles, Clock: clock,
+		Store: scriptStore, Scheduler: runtimeScheduler, Runner: overrides.ScriptRunner, Files: overrides.ScriptFiles,
+		Finalizer: overrides.ScriptFinalizer, Clock: clock,
 	})
 	if err := operationExecutors.Register(applicationscripts.NewOperationExecutor(scriptService)); err != nil {
 		sessionManager.Close()
@@ -515,17 +565,27 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 	}
 	operationHandlers := append([]applicationoperations.RecoveryHandler(nil), overrides.OperationHandlers...)
 	operationHandlers = append(operationHandlers, operationExecutors.RecoveryHandlers()...)
+	operationHandlers = append(operationHandlers, applicationacceptance.RecoveryHandlers()...)
+	if manualDispatcher != nil {
+		operationHandlers = append(operationHandlers,
+			manualRecoveryHandler{operationType: string(applicationloop.CommandTaskRun)},
+			manualRecoveryHandler{operationType: string(applicationloop.CommandTaskRunBatches)},
+		)
+	}
 	operationService := applicationoperations.NewService(applicationoperations.Dependencies{
 		Store: operationStore, Projects: operationProjects, Clock: clock,
 		QueuedRecoveryMaxAge: overrides.OperationQueueAge, RecoveryHandlers: operationHandlers,
 	})
 	loopService.BindOperations(operationService)
+	manualDispatcher.Bind(operationService, loopService)
 	scriptService.BindOperations(operationService)
 	runtimeExecutorService.BindOperations(operationService)
 	assembler.BindScripts(scriptService)
 	assembler.BindExecutors(runtimeExecutorService)
+	assembler.BindOperations(operationService)
 	runtimeBridge, err := applicationloop.NewBridge(
 		loopService,
+		applicationacceptance.NewRuntimeHandler(planService, operationService),
 		applicationplans.NewRuntimeHandler(dispatcher),
 		applicationtasks.NewRuntimeHandler(dispatcher),
 		applicationchat.NewRuntimeHandler(dispatcher),
@@ -550,7 +610,11 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 	}
 	mcpRegistry := overrides.MCPRegistry
 	if mcpRegistry == nil {
-		mcpRegistry, err = mcp.NewFrozenRegistry(nil)
+		mcpRegistry, err = mcp.NewRegistry(mcptools.Catalog(), mcptools.NewFactory(mcptools.Dependencies{
+			Projects: projectService, Intake: intakeService, Attachments: attachmentService,
+			Plans: planService, ExecutorCatalog: automationService, Executors: runtimeExecutorService,
+			Runtime: runtimeBridge,
+		}))
 		if err != nil {
 			sessionManager.Close()
 			return nil, ErrDependencyAssembly
@@ -575,6 +639,17 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 		sessionManager.Close()
 		return nil, ErrDependencyAssembly
 	}
+	assembler.BindMCPRuntime(func() map[string]any {
+		status := mcpServer.Status()
+		return map[string]any{
+			"enabled": status.Enabled, "running": status.Running, "status": status.State,
+			"transport": status.Transport, "host": status.Host, "port": status.Port, "url": status.URL,
+			"hasAuthToken": status.HasAuthToken, "authTokenMasked": status.AuthTokenMasked,
+			"authHeader": status.AuthHeader, "localOnly": status.LocalOnly,
+			"tools": status.Tools, "toolDocs": []any{}, "connectionExample": status.ConnectionExample,
+			"note": status.Note, "lastError": status.LastError, "startedAt": status.StartedAt,
+		}
+	})
 	return &Dependencies{
 		Config: configuration, Application: services, Services: services,
 		Clock: clock, Readiness: readiness, Repository: repositoryPort,

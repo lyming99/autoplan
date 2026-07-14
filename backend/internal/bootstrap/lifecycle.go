@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -30,6 +31,7 @@ import (
 	storesqlite "github.com/lyming99/autoplan/backend/internal/repository/sqlite"
 	backendruntime "github.com/lyming99/autoplan/backend/internal/runtime"
 	runtimelifecycle "github.com/lyming99/autoplan/backend/internal/runtime/lifecycle"
+	processruntime "github.com/lyming99/autoplan/backend/internal/runtime/process"
 	"github.com/lyming99/autoplan/backend/migrations"
 )
 
@@ -75,7 +77,7 @@ type daemonReadinessMessage struct {
 // only an explicitly supplied temporary data directory and a session supplied
 // once through stdin. It never discovers userData, reads a session from argv
 // or environment, or writes a readiness failure to stdout.
-func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
+func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) (exitCode int) {
 	options, err := parseDaemonOptions(args)
 	if err != nil {
 		return daemonFailure(stderr, exitUsage)
@@ -93,6 +95,20 @@ func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdou
 	if err != nil {
 		return daemonFailure(stderr, exitBlocked)
 	}
+	clock := backendruntime.SystemClock{}
+	logger, err := logging.NewJSONLogger(stderr, clock)
+	if err != nil {
+		return daemonFailure(stderr, exitFailure)
+	}
+	_ = logger.Log(logging.Event{Level: "info", Code: "daemon_process_started", Stage: "startup"})
+	defer func() {
+		event := logging.Event{Level: "info", Code: "daemon_process_stopped", Stage: "shutdown", ExitCode: exitCode}
+		if exitCode != exitOK {
+			event.Level = "error"
+			event.ErrorCode = "daemon_exit_nonzero"
+		}
+		_ = logger.Log(event)
+	}()
 
 	runContext, stopSignals := signal.NotifyContext(ctx, runtimelifecycle.TerminationSignals()...)
 	defer stopSignals()
@@ -125,6 +141,7 @@ func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdou
 		_ = databaseRuntime.Close(context.Background())
 		return daemonShutdown(manager, stderr, exitFailure)
 	}
+	_ = logger.Log(logging.Event{Level: "info", Code: "daemon_database_ready", Stage: "startup"})
 	if applicationGate.Check(runContext) != nil {
 		return daemonShutdown(manager, stderr, exitBlocked)
 	}
@@ -139,7 +156,6 @@ func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdou
 	if err != nil {
 		return daemonShutdown(manager, stderr, exitFailure)
 	}
-	clock := backendruntime.SystemClock{}
 	configuration := config.Config{
 		HTTP: config.HTTP{
 			ListenHost: config.DefaultListenHost, ListenPort: 0, AllowedOrigins: daemonAllowedOrigins(),
@@ -151,10 +167,43 @@ func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdou
 	}
 	mcpConfiguration := mcp.DefaultConfig()
 	mcpConfiguration.Enabled = features.GoMCPAPI
+	if portText := strings.TrimSpace(os.Getenv("AUTOPLAN_MCP_PORT")); portText != "" {
+		if port, parseErr := strconv.Atoi(portText); parseErr == nil && port > 0 && port <= 65535 && strconv.Itoa(port) == portText {
+			mcpConfiguration.Port = port
+			mcpConfiguration.PortExplicit = true
+		}
+	}
 	mcpConfiguration.AllowedOrigins = append([]string(nil), configuration.HTTP.AllowedOrigins...)
+	terminalConfiguration := config.DefaultTerminalRuntime()
+	terminalAccess := newRepositoryTerminalAccess(writer)
+	loopState := storesqlite.NewLoopStateStore(writer)
+	processConfiguration := config.DefaultProcessRuntime()
+	processRunner, err := processruntime.NewRunner(processruntime.Dependencies{
+		Config: processConfiguration, Policy: terminalAccess,
+		BaseEnvironment: loopProcessEnvironment(processConfiguration.AllowedEnvironment),
+	})
+	if err != nil {
+		_ = readiness.MarkFailed("application", "process_runner_failed")
+		return daemonShutdown(manager, stderr, exitBlocked)
+	}
+	if err := manager.Add(runtimelifecycle.CloserFunc(func(context.Context) error {
+		processRunner.Shutdown()
+		return nil
+	})); err != nil {
+		processRunner.Shutdown()
+		return daemonShutdown(manager, stderr, exitFailure)
+	}
 	dependencies, err := AssembleDependencies(configuration, DependencyOverrides{
 		Clock: clock, Readiness: applicationGate, Repository: writer, ProjectWriter: writer,
-		Logger: applicationLogger{logger: logging.Nop{}, clock: clock}, Random: bytes.NewReader(sessionRaw), MCPConfig: &mcpConfiguration,
+		Logger: applicationLogger{logger: logger, clock: clock}, Random: bytes.NewReader(sessionRaw), MCPConfig: &mcpConfiguration,
+		TerminalRuntime: &terminalConfiguration, TerminalPolicy: terminalAccess,
+		TerminalAuthorizer: terminalAccess, TerminalWorkspace: terminalAccess,
+		OperationProjects: terminalAccess, LoopState: loopState,
+		ScriptRunner: processRunner, ScriptFiles: terminalAccess, ScriptFinalizer: sqliteScriptFinalizer{writer: writer},
+		LoopRunner: sidecarLoopRunner{
+			store: repositoryLoopCycleStore{writer: writer, projects: writer}, runner: processRunner,
+			stateStore: loopState, logger: logger,
+		},
 	})
 	if err != nil || dependencies.Services.Ready(runContext) != nil {
 		_ = readiness.MarkFailed("application", "dependency_failed")
@@ -177,6 +226,7 @@ func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdou
 		_ = dependencies.Close(context.Background())
 		return daemonShutdown(manager, stderr, exitBlocked)
 	}
+	_ = logger.Log(logging.Event{Level: "info", Code: "daemon_recovery_completed", Stage: "startup"})
 	if err := manager.Add(dependencies); err != nil {
 		_ = dependencies.Close(context.Background())
 		return daemonShutdown(manager, stderr, exitFailure)
@@ -188,19 +238,20 @@ func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdou
 	_ = readiness.MarkReady("application")
 
 	router, err := httpapi.NewRouter(httpapi.RouterOptions{
-		Application: dependencies.Application, Logger: logging.Nop{}, Clock: clock,
+		Application: dependencies.Application, Logger: logger, Clock: clock,
 		BodyLimitBytes: config.DefaultBodyLimit,
 	})
-	securityPolicy, securityErr := dependencies.NewHTTPSecurity(logging.Nop{}, clock)
+	securityPolicy, securityErr := dependencies.NewHTTPSecurity(logger, clock)
 	if err != nil || securityErr != nil || httpapi.RegisterProbes(router, readiness, securityPolicy) != nil ||
-		dependencies.RegisterRuntimeRoutes(router, logging.Nop{}, clock) != nil {
+		dependencies.RegisterRuntimeRoutes(router, logger, clock) != nil ||
+		dependencies.RegisterTerminalRoutes(router, logger, clock, features.GoTerminalAPI, terminalConfiguration) != nil {
 		return daemonShutdown(manager, stderr, exitFailure)
 	}
 	httpServer, err := configuration.HTTP.NewServer(router)
 	if err != nil {
 		return daemonShutdown(manager, stderr, exitFailure)
 	}
-	httpServer.ErrorLog = logging.StandardLogger(logging.Nop{}, clock)
+	httpServer.ErrorLog = logging.StandardLogger(logger, clock)
 	if err := manager.Add(runtimelifecycle.CloserFunc(httpServer.Shutdown)); err != nil {
 		return daemonShutdown(manager, stderr, exitFailure)
 	}
@@ -242,6 +293,7 @@ func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdou
 	if err := json.NewEncoder(stdout).Encode(message); err != nil {
 		return daemonShutdown(manager, stderr, exitFailure)
 	}
+	_ = logger.Log(logging.Event{Level: "info", Code: "daemon_ready", Stage: "startup"})
 
 	select {
 	case <-runContext.Done():
@@ -369,10 +421,32 @@ func validateDaemonDataDirectory(value string) (string, string, error) {
 		return "", "", errors.New("daemon data directory invalid")
 	}
 	resolved, err := filepath.EvalSymlinks(filepath.Clean(value))
-	if err != nil || !withinDaemonDirectory(resolved, os.TempDir()) {
+	if err != nil || !allowedDaemonDataDirectory(resolved) {
 		return "", "", errors.New("daemon data directory invalid")
 	}
 	return resolved, filepath.Join(resolved, "autoplan.sqlite"), nil
+}
+
+func allowedDaemonDataDirectory(resolved string) bool {
+	explicit := strings.TrimSpace(os.Getenv("AUTOPLAN_SIDECAR_DATA_DIR"))
+	if filepath.IsAbs(explicit) {
+		explicitResolved, err := filepath.EvalSymlinks(filepath.Clean(explicit))
+		if err == nil && sameDaemonDirectory(resolved, explicitResolved) {
+			return true
+		}
+	}
+	if withinDaemonDirectory(resolved, os.TempDir()) {
+		return true
+	}
+	userConfig, err := os.UserConfigDir()
+	return err == nil && withinDaemonDirectory(resolved, userConfig)
+}
+
+func sameDaemonDirectory(left, right string) bool {
+	if goruntime.GOOS == "windows" {
+		return strings.EqualFold(filepath.Clean(left), filepath.Clean(right))
+	}
+	return filepath.Clean(left) == filepath.Clean(right)
 }
 
 func verifyMigratedDatabase(databasePath string) error {

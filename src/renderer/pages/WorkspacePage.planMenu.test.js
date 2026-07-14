@@ -51,7 +51,8 @@ describe('Plan card action menu regression', () => {
     expectIncludes(planList, 'aria-expanded={menuOpen}', 'More-actions button should expose the open state');
     expectIncludes(planList, 'aria-controls={menuOpen ? menuId : undefined}', 'More-actions button should reference the open menu');
     expectIncludes(planList, 'data-plan-action-menu="true"', 'Menu wrapper should remain marked as a card-interactive region');
-    expectIncludes(planList, 'setOpenMenuPlanId((current) => (current === plan.id ? null : plan.id))', 'Menu trigger should toggle a single open menu');
+    expectIncludes(planList, 'if (openMenuPlanId === plan.id)', 'Menu trigger should close the currently open menu');
+    expectIncludes(planList, 'setOpenMenuPlanId(plan.id)', 'Menu trigger should open only its plan menu');
     expectIncludes(planList, "target.closest('[data-plan-action-menu=\"true\"]')", 'Outside pointer handling should ignore menu interactions');
     expectIncludes(planList, "event.key === 'Escape'", 'Escape should close the open menu');
     expectIncludes(planList, 'setOpenMenuPlanId(null);', 'Blur, outside click, and menu actions should close the menu');
@@ -60,7 +61,7 @@ describe('Plan card action menu regression', () => {
   it('keeps stop and delete actions exposed as role menuitems with disabled and danger states', () => {
     const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
 
-    expectIncludes(planList, '<div className="plan-action-menu ctx-menu" id={menuId} role="menu">', 'Plan card popup should render as a menu');
+    expectIncludes(planList, 'className="plan-action-menu ctx-menu"', 'Plan card popup should render as a menu');
     expectCountAtLeast(planList, 'role="menuitem"', 2, 'Plan card popup should expose stop and delete menu items');
     expectIncludes(planList, '<span>停止</span>', 'Plan card menu should include the stop item');
     expectIncludes(planList, '<span>删除</span>', 'Plan card menu should include the delete item');
@@ -72,8 +73,9 @@ describe('Plan card action menu regression', () => {
     expectIncludes(planList, '<Icon name="trash" size={15} aria-hidden />', 'Delete item should keep its icon');
   });
 
-  it('keeps the menu in layout flow and opens it downward from the button anchor', () => {
+  it('portals the menu outside the scrolling card list and keeps it inside the viewport', () => {
     const styles = source('src', 'renderer', 'styles', 'components.css');
+	const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
     const actionsRule = cssRuleBody(styles, '.plan-actions');
     const mainRule = cssRuleBody(styles, '.plan-action-main');
     const wrapRule = cssRuleBody(styles, '.plan-action-menu-wrap');
@@ -99,12 +101,15 @@ describe('Plan card action menu regression', () => {
     expectNotIncludes(wrapRule, 'right:', 'Menu wrapper should not depend on card-corner right offsets');
     expectNotIncludes(wrapRule, 'bottom:', 'Menu wrapper should not depend on card-corner bottom offsets');
 
-    expectIncludes(menuRule, 'right: 0', 'Popup should remain aligned to the button container');
-    expectIncludes(menuRule, 'top: calc(100% + 8px)', 'Popup should open below the button container');
-    expectIncludes(menuRule, 'z-index: 80', 'Popup should keep its established stacking level');
+    expectIncludes(menuRule, 'position: fixed', 'Popup should use viewport positioning outside overflow containers');
+    expectIncludes(menuRule, 'z-index: 1000', 'Popup should render above cards and panels');
     expectIncludes(menuRule, 'min-width: 156px', 'Popup should keep its menu width floor');
     expectIncludes(menuRule, 'max-width: min(220px, calc(100vw - 32px))', 'Popup should keep viewport-aware width bounds');
-    expectNotIncludes(menuRule, 'bottom:', 'Popup should not use upward-opening bottom positioning');
+    expectIncludes(planList, 'createPortal(', 'Popup should escape the scrolling plan list through a portal');
+    expectIncludes(planList, 'document.body', 'Popup portal should target the document body');
+    expectIncludes(planList, "document.addEventListener('scroll', updatePosition, true)", 'Popup should track nested scrolling containers');
+    expectIncludes(planList, "window.addEventListener('resize', updatePosition)", 'Popup should track viewport resize');
+    expectIncludes(planList, 'const openAbove =', 'Popup should open above when the lower viewport has insufficient room');
     expectIncludes(styles, '.plan-action-menu { max-width: calc(100vw - 48px); }', 'Narrow screens should keep the menu within the viewport');
   });
 });

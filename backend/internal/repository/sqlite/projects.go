@@ -262,7 +262,7 @@ func (transaction *writeTransaction) DeleteProject(ctx context.Context, projectI
 	if running != 0 {
 		return repository.ErrProjectRunning
 	}
-	blocked, err := transaction.hasDeleteBlocker(ctx, projectID)
+	blocked, err := transaction.hasActiveDeleteBlocker(ctx, projectID)
 	if err != nil {
 		return err
 	}
@@ -270,15 +270,27 @@ func (transaction *writeTransaction) DeleteProject(ctx context.Context, projectI
 		return repository.ErrRelationConflict
 	}
 
-	// P01/P04 FK RESTRICT relations are deleted explicitly in child-first
-	// order; valid intake links and tasks cascade from plans.
+	// FK RESTRICT relations are deleted explicitly in child-first order.
+	// Project deletion is a user-requested aggregate deletion: historical
+	// operations, automation, configuration and outbox rows belong to that
+	// aggregate and must not turn into permanent relation blockers.
 	for _, statement := range []struct {
 		label string
 		query string
 	}{
+		{"event_outbox:delete-project", "DELETE FROM event_outbox WHERE project_id = ? OR operation_id IN (SELECT operation_id FROM operations WHERE project_id = ?1)"},
+		{"operations:delete-project", "DELETE FROM operations WHERE project_id = ?"},
+		{"event_retention_watermarks:delete-project", "DELETE FROM event_retention_watermarks WHERE project_id = ?"},
+		{"project_revisions:delete-project", "DELETE FROM project_revisions WHERE project_id = ?"},
+		{"attachments:delete-project", "DELETE FROM attachments WHERE project_id = ?"},
+		{"intake_plan_links:delete-project", "DELETE FROM intake_plan_links WHERE project_id = ?"},
 		{"feedback:delete-project", "DELETE FROM feedback WHERE project_id = ?"},
 		{"requirements:delete-project", "DELETE FROM requirements WHERE project_id = ?"},
 		{"plans:delete-project", "DELETE FROM plans WHERE project_id = ?"},
+		{"scripts:delete-project", "DELETE FROM scripts WHERE project_id = ?"},
+		{"executors:delete-project", "DELETE FROM executors WHERE project_id = ?"},
+		{"ai_configs:delete-project", "DELETE FROM ai_configs WHERE project_id = ?"},
+		{"claude_cli_configs:delete-project", "DELETE FROM claude_cli_configs WHERE project_id = ?"},
 	} {
 		if _, err := transaction.tx.ExecContext(ctx, statement.query, projectID); err != nil {
 			return safeSQLError(ctx, err)
@@ -306,34 +318,15 @@ func (transaction *writeTransaction) DeleteProject(ctx context.Context, projectI
 	return transaction.wrote("projects:delete")
 }
 
-func (transaction *writeTransaction) hasDeleteBlocker(ctx context.Context, projectID int64) (bool, error) {
-	queries := []string{
-		"SELECT COUNT(*) FROM attachments WHERE project_id = ?",
-		"SELECT COUNT(*) FROM scripts WHERE project_id = ?",
-		"SELECT COUNT(*) FROM executors WHERE project_id = ?",
-		"SELECT COUNT(*) FROM operations WHERE project_id = ?",
-		"SELECT COUNT(*) FROM event_outbox WHERE project_id = ?",
-		"SELECT COUNT(*) FROM ai_configs WHERE project_id = ?",
-		"SELECT COUNT(*) FROM claude_cli_configs WHERE project_id = ?",
-		`SELECT COUNT(*) FROM intake_plan_links AS links
-		  WHERE links.project_id = ? AND (
-		    NOT EXISTS (SELECT 1 FROM plans WHERE plans.id = links.plan_id AND plans.project_id = links.project_id)
-		    OR (links.intake_type = 'requirement' AND NOT EXISTS (
-		      SELECT 1 FROM requirements WHERE requirements.id = links.intake_id AND requirements.project_id = links.project_id))
-		    OR (links.intake_type = 'feedback' AND NOT EXISTS (
-		      SELECT 1 FROM feedback WHERE feedback.id = links.intake_id AND feedback.project_id = links.project_id))
-		  )`,
+func (transaction *writeTransaction) hasActiveDeleteBlocker(ctx context.Context, projectID int64) (bool, error) {
+	var count int64
+	if err := transaction.tx.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM operations WHERE project_id = ? AND status IN ('queued', 'running')",
+		projectID,
+	).Scan(&count); err != nil {
+		return false, safeSQLError(ctx, err)
 	}
-	for _, query := range queries {
-		var count int64
-		if err := transaction.tx.QueryRowContext(ctx, query, projectID).Scan(&count); err != nil {
-			return false, safeSQLError(ctx, err)
-		}
-		if count != 0 {
-			return true, nil
-		}
-	}
-	return false, nil
+	return count != 0, nil
 }
 
 func requireOneRow(result sql.Result) error {

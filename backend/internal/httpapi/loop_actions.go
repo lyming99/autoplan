@@ -48,7 +48,7 @@ func RegisterRuntimeActionRoutes(router *Router, security *Security, service Run
 	if err := RegisterAcceptanceActionRoutes(router, security, service); err != nil {
 		return err
 	}
-	return RegisterIntakeActionRoutes(router, security, service)
+	return nil
 }
 
 func RegisterLoopActionRoutes(router *Router, security *Security, service RuntimeActionService) error {

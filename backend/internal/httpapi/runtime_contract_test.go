@@ -25,6 +25,9 @@ func TestP11RuntimeRoutesRemainProjectScopedAcrossTransportAdapters(t *testing.T
 		AcceptanceAcceptBatchActionPath,
 		AcceptanceUnacceptBatchActionPath,
 		IntakeRetryPlanGenerationActionPath,
+		IntakeInterruptActionPath,
+		IntakeResumeActionPath,
+		IntakeAppendTaskActionPath,
 	} {
 		if !validResourceRoutePattern(route) {
 			t.Fatalf("runtime resource route is not bounded: %s", route)

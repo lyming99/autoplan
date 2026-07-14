@@ -277,7 +277,7 @@ func TestRunServerLifecycle(t *testing.T) {
 	if message.Version != 1 || message.Type != "autoplan_server_ready" || !message.Ready ||
 		message.Host != "127.0.0.1" || message.Port <= 0 || message.PID != os.Getpid() {
 		cancel()
-		t.Fatalf("readiness message drifted: %#v", message)
+		t.Fatalf("readiness message drifted: %#v raw=%s stderr=%s", message, line, stderr.String())
 	}
 
 	client := &http.Client{Timeout: 2 * time.Second}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"strconv"
 	"strings"
@@ -111,12 +112,8 @@ func (tools *RuntimeTools) AcceptanceAction(ctx context.Context, request ToolCon
 	if action != "accept" && action != "unaccept" && action != "redo" {
 		return applicationloop.Result{}, ToolError{Code: "invalid_request"}
 	}
-	command := applicationloop.Command{Version: applicationloop.ContractVersion, Kind: kind, ProjectID: projectID, Action: targetType}
-	if targetType == "plan" {
-		command.PlanID = targetID
-	} else {
-		command.TaskID = targetID
-	}
+	command := applicationloop.Command{Version: applicationloop.ContractVersion, Kind: kind, ProjectID: projectID,
+		Acceptance: &applicationloop.AcceptanceInput{Targets: []applicationloop.AcceptanceTarget{{TargetType: targetType, ID: targetID}}}}
 	return tools.action(ctx, request, command)
 }
 
@@ -138,10 +135,11 @@ func runtimeIdempotencyKey(command applicationloop.Command) string {
 	// No body/prompt or path is included: this fallback is only for the closed
 	// resource identifiers carried by Command and is stable for MCP retries
 	// using the same request_id.
+	acceptance, _ := json.Marshal(command.Acceptance)
 	material := strings.Join([]string{
 		"autoplan-mcp-runtime-v1", command.CallerScope, command.RequestID,
 		string(command.Kind), strconv.FormatInt(command.ProjectID, 10), strconv.FormatInt(command.PlanID, 10),
-		strconv.FormatInt(command.TaskID, 10), strconv.FormatInt(command.IntakeID, 10), command.Action,
+		strconv.FormatInt(command.TaskID, 10), strconv.FormatInt(command.IntakeID, 10), command.Action, string(acceptance),
 	}, "\x00")
 	sum := sha256.Sum256([]byte(material))
 	return "mcp-" + hex.EncodeToString(sum[:20])

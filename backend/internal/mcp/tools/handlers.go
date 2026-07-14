@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	applicationautomation "github.com/lyming99/autoplan/backend/internal/application/automation"
+	applicationintake "github.com/lyming99/autoplan/backend/internal/application/intake"
 	applicationplans "github.com/lyming99/autoplan/backend/internal/application/plans"
 	applicationprojects "github.com/lyming99/autoplan/backend/internal/application/projects"
 	"github.com/lyming99/autoplan/backend/internal/domain/contracts"
@@ -309,7 +310,13 @@ func (factory *Factory) getIntake(ctx context.Context, source json.RawMessage, k
 	if factory == nil || factory.intake == nil {
 		return nil, unavailable()
 	}
-	item, err := factory.intake.Get(ctx, projectID, kind, id)
+	input := mcp.ItemRequest{ProjectID: projectID, ID: id}
+	var item applicationintake.IntakeDTO
+	if kind == domainintake.Feedback {
+		item, err = factory.intake.GetFeedback(ctx, input)
+	} else {
+		item, err = factory.intake.GetRequirement(ctx, input)
+	}
 	if err != nil {
 		return nil, err
 	}

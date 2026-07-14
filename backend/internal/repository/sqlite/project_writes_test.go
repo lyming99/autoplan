@@ -372,7 +372,7 @@ func TestDeleteRelationPolicyRejectsBeforeMutationAndDeletesManagedTree(t *testi
 	t.Run("blocked", func(t *testing.T) {
 		backend := &scriptBackend{steps: []scriptStep{
 			queryStep("SELECT project_states.running", []string{"running"}, []driver.Value{int64(0)}),
-			queryStep("FROM attachments", []string{"count"}, []driver.Value{int64(1)}),
+			queryStep("FROM operations", []string{"count"}, []driver.Value{int64(1)}),
 		}}
 		writer, cleanup := newTestWriter(t, backend)
 		defer cleanup()
@@ -386,10 +386,13 @@ func TestDeleteRelationPolicyRejectsBeforeMutationAndDeletesManagedTree(t *testi
 	})
 	t.Run("managed tree", func(t *testing.T) {
 		steps := []scriptStep{queryStep("SELECT project_states.running", []string{"running"}, []driver.Value{int64(0)})}
-		for _, marker := range []string{"FROM attachments", "FROM scripts", "FROM executors", "FROM operations", "FROM event_outbox", "FROM ai_configs", "FROM claude_cli_configs", "FROM intake_plan_links"} {
-			steps = append(steps, queryStep(marker, []string{"count"}, []driver.Value{int64(0)}))
-		}
-		for _, marker := range []string{"DELETE FROM feedback", "DELETE FROM requirements", "DELETE FROM plans", "DELETE FROM secret_refs", "DELETE FROM projects"} {
+		steps = append(steps, queryStep("FROM operations", []string{"count"}, []driver.Value{int64(0)}))
+		for _, marker := range []string{
+			"DELETE FROM event_outbox", "DELETE FROM operations", "DELETE FROM event_retention_watermarks", "DELETE FROM project_revisions",
+			"DELETE FROM attachments", "DELETE FROM intake_plan_links",
+			"DELETE FROM feedback", "DELETE FROM requirements", "DELETE FROM plans", "DELETE FROM scripts", "DELETE FROM executors",
+			"DELETE FROM ai_configs", "DELETE FROM claude_cli_configs", "DELETE FROM secret_refs", "DELETE FROM projects",
+		} {
 			steps = append(steps, execStep(marker, 1, 0))
 		}
 		backend := &scriptBackend{steps: steps}

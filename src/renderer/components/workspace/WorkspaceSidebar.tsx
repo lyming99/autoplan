@@ -26,8 +26,6 @@ const WORKSPACE_NAV: NavItem[] = [
 
 const EXEC_NAV: NavItem[] = [
   { id: 'tasks', label: '计划与任务', icon: 'tasks' },
-  { id: 'terminal', label: '终端', icon: 'terminal' },
-  { id: 'executors', label: '执行器', icon: 'executor' },
   { id: 'scripts', label: '脚本', icon: 'script' },
   { id: 'events', label: '事件流', icon: 'events' },
 ];
@@ -135,6 +133,24 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
       }
     } catch (e) {
       window.alert(e instanceof Error ? e.message : String(e));
+    }
+  };
+
+  const openTerminal = async () => {
+    try {
+      const result = await window.autoplan.openProjectTerminal({ projectId });
+      if (!result.ok) window.alert(result.error || '无法启动系统终端');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const openLogs = async () => {
+    try {
+      const result = await window.autoplan.openLogFolder();
+      if (!result.ok) window.alert('无法打开日志文件夹');
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -267,17 +283,31 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
           ))}
         </select>
         {currentProject ? (
-          <button
-            type="button"
-            className="project-path project-path-link mono"
-            disabled={!currentProject.workspace_path}
-            onClick={() => {
-              if (currentProject.workspace_path) void openFolder();
-            }}
-            title={currentProject.workspace_path ? '在系统文件夹中打开' : undefined}
-          >
-            {currentProject.workspace_path || '未设置工作区'}
-          </button>
+          <div className="project-path-row">
+            <button
+              type="button"
+              className="project-path project-path-link mono"
+              disabled={!currentProject.workspace_path}
+              onClick={() => {
+                if (currentProject.workspace_path) void openFolder();
+              }}
+              title={currentProject.workspace_path ? '在系统文件夹中打开' : undefined}
+            >
+              {currentProject.workspace_path || '未设置工作区'}
+            </button>
+            <button
+              type="button"
+              className="project-terminal-btn"
+              disabled={!currentProject.workspace_path}
+              onClick={() => {
+                if (currentProject.workspace_path) void openTerminal();
+              }}
+              title="在此项目文件夹打开系统终端"
+              aria-label="在此项目文件夹打开系统终端"
+            >
+              <Icon name="terminal" size={15} aria-hidden />
+            </button>
+          </div>
         ) : null}
       </div>
 
@@ -487,16 +517,27 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebar({
               {state?.validation_command ? ` · ${state.validation_command}` : ' · 无验收命令'}
             </div>
           </div>
-          <button
-            type="button"
-            className={`sidebar-settings-btn${activeTab === 'settings' ? ' active' : ''}`}
-            title="打开设置"
-            aria-label="打开设置"
-            aria-current={activeTab === 'settings' ? 'page' : undefined}
-            onClick={() => onTab('settings')}
-          >
-            <Icon name="settings" size={16} aria-hidden="true" />
-          </button>
+          <div className="sidebar-footer-actions">
+            <button
+              type="button"
+              className="sidebar-settings-btn"
+              title="打开系统日志文件夹"
+              aria-label="打开系统日志文件夹"
+              onClick={() => { void openLogs(); }}
+            >
+              <Icon name="folder" size={16} aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className={`sidebar-settings-btn${activeTab === 'settings' ? ' active' : ''}`}
+              title="打开设置"
+              aria-label="打开设置"
+              aria-current={activeTab === 'settings' ? 'page' : undefined}
+              onClick={() => onTab('settings')}
+            >
+              <Icon name="settings" size={16} aria-hidden="true" />
+            </button>
+          </div>
         </div>
       </div>
       <button

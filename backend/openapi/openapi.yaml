@@ -1171,7 +1171,7 @@ paths:
     post:
       tags: [config]
       operationId: createAIConfig
-      summary: Create a static AI configuration without accepting a raw secret
+      summary: Create a static AI configuration with a write-only key and return it without raw secret data
       responses: {"201": {$ref: "#/components/responses/AIConfig"}}
   /api/v1/ai-configs/{ai_config_id}:
     get:
@@ -1183,7 +1183,7 @@ paths:
     patch:
       tags: [config]
       operationId: updateAIConfig
-      summary: Update static AI configuration with a body version and no raw secret field
+      summary: Update static AI configuration with a body version and return it without raw secret data
       parameters: [{name: ai_config_id, in: path, required: true, schema: {type: integer, format: int64, minimum: 1}}]
       responses: {"200": {$ref: "#/components/responses/AIConfig"}, "412": {$ref: "#/components/responses/PreconditionRequired"}}
     delete:
@@ -1201,7 +1201,7 @@ paths:
     post:
       tags: [config]
       operationId: createClaudeCLIConfig
-      summary: Create static Claude CLI configuration without a raw credential field
+      summary: Create static Claude CLI configuration with a write-only token and return it without raw secret data
       responses: {"201": {$ref: "#/components/responses/ClaudeConfig"}}
   /api/v1/claude-cli-configs/{claude_config_id}:
     get:
@@ -1238,7 +1238,7 @@ paths:
     patch:
       tags: [config]
       operationId: saveMCPConfig
-      summary: Save static MCP configuration without raw credential fields or listener side effects
+      summary: Save static MCP configuration with an optional write-only token, without raw secret output or listener side effects
       responses: {"200": {$ref: "#/components/responses/MCPConfig"}}
   /api/v1/mcp/status:
     get:
@@ -1669,7 +1669,43 @@ paths:
       security: [{ SessionHeader: [] }, { SessionCookie: [] }]
       parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimeIntakeType" }, { $ref: "#/components/parameters/IntakeID" }]
       requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
-      responses: { "202": { $ref: "#/components/responses/RuntimeActionAccepted" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" }, "504": { $ref: "#/components/responses/RequestTimeout" } }
+  /api/v1/projects/{project_id}/intake/{intake_type}/{intake_id}/actions/interrupt:
+    post:
+      tags: [runtime]
+      operationId: interruptIntakeLinkedPlans
+      summary: Interrupt unfinished plans linked to one intake
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimeIntakeType" }, { $ref: "#/components/parameters/IntakeID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/projects/{project_id}/intake/{intake_type}/{intake_id}/actions/resume:
+    post:
+      tags: [runtime]
+      operationId: resumeIntakeLinkedPlans
+      summary: Resume interrupted plans linked to one intake
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimeIntakeType" }, { $ref: "#/components/parameters/IntakeID" }]
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "./schemas/runtime-action.schema.json#/$defs/empty" } } } }
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
+  /api/v1/projects/{project_id}/intake/{intake_type}/{intake_id}/actions/append-task:
+    post:
+      tags: [runtime]
+      operationId: appendIntakeLinkedPlanTask
+      summary: Append one pending task to the current linked plan
+      security: [{ SessionHeader: [] }, { SessionCookie: [] }]
+      parameters: [{ $ref: "#/components/parameters/Origin" }, { $ref: "#/components/parameters/ActionIdempotencyKey" }, { $ref: "#/components/parameters/ProjectID" }, { $ref: "#/components/parameters/RuntimeIntakeType" }, { $ref: "#/components/parameters/IntakeID" }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [title]
+              properties:
+                title: { type: string, minLength: 1, maxLength: 500 }
+      responses: { "200": { $ref: "#/components/responses/IntakeMutation" }, "400": { $ref: "#/components/responses/BadRequest" }, "401": { $ref: "#/components/responses/Unauthorized" }, "403": { $ref: "#/components/responses/Forbidden" }, "404": { $ref: "#/components/responses/NotFound" }, "409": { $ref: "#/components/responses/Conflict" }, "422": { $ref: "#/components/responses/ErrorResponse" }, "503": { $ref: "#/components/responses/ServiceUnavailable" } }
 components:
   securitySchemes:
     SessionHeader:

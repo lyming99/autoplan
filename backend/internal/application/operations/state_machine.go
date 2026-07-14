@@ -69,10 +69,11 @@ type Transaction interface {
 }
 
 type ListQuery struct {
-	ProjectID int64
-	Type      string
-	Status    domainoperation.Status
-	Limit     int
+	ProjectID  int64
+	Type       string
+	Status     domainoperation.Status
+	Limit      int
+	Descending bool
 }
 
 type Transition struct {

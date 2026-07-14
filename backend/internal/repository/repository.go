@@ -57,6 +57,100 @@ type IntakeStatus = domainintake.Status
 type IntakePlanLink = domainintake.PlanLink
 type Plan = domainplan.Plan
 type PlanTask = domainplan.Task
+
+// IntakePlanAction is the closed persistence command used by the Intake
+// application service for its linked-plan controls. It deliberately carries
+// only resource identity and user-authored task text; the repository chooses
+// the affected linked plan inside the same transaction as the state change.
+type IntakePlanAction string
+
+const (
+	IntakePlanInterrupt IntakePlanAction = "interrupt"
+	IntakePlanResume    IntakePlanAction = "resume"
+	IntakePlanAppend    IntakePlanAction = "append_task"
+)
+
+type IntakePlanActionInput struct {
+	ProjectID int64
+	Type      domainintake.Type
+	IntakeID  int64
+	Action    IntakePlanAction
+	Title     string
+	UpdatedAt string
+}
+
+type IntakePlanActionResult struct {
+	PlanIDs         []int64
+	AffectedPlanIDs []int64
+	AffectedTasks   int64
+	PlanID          int64
+	TaskID          int64
+	TaskKey         string
+	Reactivated     bool
+	UpdatedAt       string
+}
+
+// IntakePlanActions is an optional, narrow transaction extension. Keeping it
+// separate from IntakeWriteTransaction avoids granting unrelated P06 test
+// doubles or callers any arbitrary Plan mutation capability.
+type IntakePlanActions interface {
+	ApplyIntakePlanAction(context.Context, IntakePlanActionInput) (IntakePlanActionResult, error)
+}
+
+type GeneratedPlanTask struct {
+	Key, Title, RawLine, Scope string
+	SortOrder                  int64
+}
+
+type GeneratedPlanInput struct {
+	ProjectID                   int64
+	IntakeType                  domainintake.Type
+	IntakeID                    int64
+	Status                      domainplan.Status
+	IssueHash, FilePath, Digest string
+	AgentCLI                    domainintake.AgentCLIConfig
+	PlanGeneration              domainintake.PlanGenerationConfig
+	Tasks                       []GeneratedPlanTask
+	CreatedAt                   string
+}
+
+type GeneratedPlanWriter interface {
+	CreateGeneratedPlan(context.Context, GeneratedPlanInput) (int64, error)
+}
+
+type LoopPlanTaskClaim struct {
+	Plan domainplan.Plan
+	Task domainplan.Task
+}
+
+type LoopPlanTaskCompletion struct {
+	ProjectID   int64
+	PlanID      int64
+	TaskID      int64
+	OperationID string
+	Succeeded   bool
+	FailureCode string
+	Digest      string
+	FinishedAt  string
+	DurationMS  int64
+}
+
+type DraftPlanTaskActivation struct {
+	ProjectID, PlanID, TaskID int64
+	OperationID, ActivatedAt  string
+}
+
+type DraftPlanTaskActivator interface {
+	ActivateDraftPlanTask(context.Context, DraftPlanTaskActivation) (bool, error)
+}
+
+// LoopPlanTaskWriter is the bounded persistence surface used by the daemon's
+// autonomous plan executor. It exposes lifecycle transitions only; callers
+// cannot issue SQL or mutate arbitrary plan fields.
+type LoopPlanTaskWriter interface {
+	ClaimNextPlanTask(context.Context, int64, string, string) (LoopPlanTaskClaim, bool, error)
+	FinishPlanTask(context.Context, LoopPlanTaskCompletion) error
+}
 type Event = domainevent.Event
 type Script = domainautomation.Script
 type Executor = domainautomation.Executor

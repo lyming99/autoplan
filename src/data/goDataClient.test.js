@@ -81,4 +81,40 @@ describe('GoDataClient runtime bridge', () => {
     ));
     assert.deepEqual(warnings, []);
   });
+
+  it('retries intake generation through the fixed mutation route and immediately admits one loop cycle', async () => {
+    const calls = [];
+    const snapshot = { activeProjectId: 7, requirements: [{ id: 11, generate_fail_count: 0 }] };
+    const client = new GoDataClient({
+      baseUrl: 'http://127.0.0.1:43123',
+      fetch: async (url, init) => {
+        calls.push({ url, init });
+        const requestId = init.headers['x-request-id'];
+        if (url.endsWith('/actions/retry-plan-generation')) {
+          return response(200, { data: { snapshot }, request_id: requestId });
+        }
+        const command = JSON.parse(init.body);
+        return response(202, {
+          data: {
+            operation: {
+              operation_id: 'op-loop-retry', type: command.command, status: 'accepted',
+              request_id: requestId, accepted_at: '2026-07-14T00:00:00Z',
+            },
+          },
+          request_id: requestId,
+        });
+      },
+    });
+
+    const result = await client.retryIntakePlanGeneration(7, 'requirement', 11, {
+      requestId: 'req-retry', idempotencyKey: 'intent-retry', callerScope: 'node-runtime',
+    });
+
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].url, 'http://127.0.0.1:43123/api/v1/projects/7/intake/requirement/11/actions/retry-plan-generation');
+    assert.equal(calls[0].init.body, '{}');
+    assert.equal(JSON.parse(calls[1].init.body).command, 'loop.run_once');
+    assert.deepEqual(result.snapshot, snapshot);
+    assert.equal(result.operation.operation_id, 'op-loop-retry');
+  });
 });

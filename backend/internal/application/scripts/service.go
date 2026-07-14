@@ -58,6 +58,24 @@ type FilePolicy interface {
 	AuthorizeWorkingDirectory(context.Context, string, string) (domainfiles.Decision, error)
 }
 
+// Finalizer commits the terminal Operation, Script last_* state, bounded log
+// archive and business event in one repository transaction.
+type Finalizer interface {
+	FinalizeScriptRun(context.Context, RunFinalization) (domainoperation.Operation, error)
+}
+
+type RunFinalization struct {
+	ProjectID, ScriptID          int64
+	OperationID, RequestID       string
+	ExpectedVersion              int64
+	Target                       domainoperation.Status
+	Status, FailureCode, Summary string
+	ExitCode, DurationMS         int64
+	StdoutTail, StderrTail       string
+	Output                       domainoperation.OutputMetadata
+	OccurredAt                   string
+}
+
 var _ FilePolicy = (*filesapp.Service)(nil)
 
 type Clock interface{ Now() time.Time }
@@ -72,6 +90,7 @@ type Dependencies struct {
 	Scheduler  *scheduler.Manager
 	Runner     Runner
 	Files      FilePolicy
+	Finalizer  Finalizer
 	Clock      Clock
 }
 
@@ -137,6 +156,7 @@ type Service struct {
 	scheduler  *scheduler.Manager
 	runner     Runner
 	files      FilePolicy
+	finalizer  Finalizer
 	clock      Clock
 
 	mu        sync.Mutex
@@ -176,7 +196,7 @@ func NewService(dependencies Dependencies) *Service {
 	}
 	return &Service{
 		store: dependencies.Store, operations: dependencies.Operations, scheduler: dependencies.Scheduler,
-		runner: dependencies.Runner, files: dependencies.Files, clock: clock,
+		runner: dependencies.Runner, files: dependencies.Files, finalizer: dependencies.Finalizer, clock: clock,
 		active: make(map[scriptKey]*activeRun), last: make(map[scriptKey]runtimeLast), scheduled: make(map[scriptKey]string),
 	}
 }
@@ -188,7 +208,7 @@ func (service *Service) Configured() bool {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	return !service.closed && service.store != nil && service.operations != nil && service.operations.Configured() &&
-		service.scheduler != nil && service.runner != nil && service.files != nil && service.clock != nil
+		service.scheduler != nil && service.runner != nil && service.files != nil && service.finalizer != nil && service.clock != nil
 }
 
 // BindOperations completes bootstrap's cycle: the Script executor must be

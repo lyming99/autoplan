@@ -244,7 +244,7 @@ function phaseLabel(phase: string) {
       'execute-task': '执行任务',
       validate: '验收',
       completed: '完成',
-      waiting: '等待',
+      waiting: '等待下一轮',
       error: '异常',
     }[phase] || phase
   );

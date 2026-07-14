@@ -3,6 +3,7 @@ package loop
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lyming99/autoplan/backend/internal/application/capabilities"
@@ -68,5 +69,25 @@ func TestCommandValidationRejectsUnboundedRuntimeInputs(t *testing.T) {
 	command.Batches = []TaskBatch{{TaskIDs: []int64{1, 1}}}
 	if err := ValidateCommand(command); !errors.Is(err, ErrInvalidCommand) {
 		t.Fatalf("duplicate batch task error=%v", err)
+	}
+}
+
+func TestCommandValidationBoundsAcceptanceIntent(t *testing.T) {
+	command := Command{
+		Version: ContractVersion, Kind: CommandAcceptanceAcceptBatch, ProjectID: 7,
+		CallerScope: "fixture", RequestID: "request-fixture", IdempotencyKey: "intent-fixture",
+		Acceptance: &AcceptanceInput{Targets: []AcceptanceTarget{{TargetType: "plan", ID: 3}, {TargetType: "task", ID: 8}}},
+	}
+	if err := ValidateCommand(command); err != nil {
+		t.Fatalf("valid acceptance input error=%v", err)
+	}
+	command.Acceptance.Targets = append(command.Acceptance.Targets, AcceptanceTarget{TargetType: "plan", ID: 3})
+	if err := ValidateCommand(command); !errors.Is(err, ErrInvalidCommand) {
+		t.Fatalf("duplicate acceptance target error=%v", err)
+	}
+	command.Acceptance.Targets = []AcceptanceTarget{{TargetType: "plan", ID: 3}}
+	command.Acceptance.Supplement = strings.Repeat("补", 2001)
+	if err := ValidateCommand(command); !errors.Is(err, ErrInvalidCommand) {
+		t.Fatalf("oversized acceptance supplement error=%v", err)
 	}
 }

@@ -59,7 +59,9 @@ function createApi(overrides = {}) {
   for (const key of operationKeys) {
     api[key] = (...args) => {
       calls.push({ key, args });
-      return overrides[key]?.(...args) ?? { operation: key };
+      return Object.prototype.hasOwnProperty.call(overrides, key)
+        ? overrides[key](...args)
+        : { operation: key };
     };
   }
   api.onUpdateStatus = (handler) => {
@@ -113,9 +115,11 @@ describe('DesktopBridge controlled capability boundary', () => {
 
   it('keeps one stable default bridge outside React StrictMode rendering', () => {
     const provider = source('src', 'renderer', 'lib', 'api', 'provider.tsx');
-    const instanceAt = provider.indexOf('const defaultDesktopBridge: DesktopBridge = new IpcDesktopBridge();');
+    const instanceAt = provider.indexOf('const defaultDesktopBridge: DesktopBridge = getDefaultDesktopBridge();');
     const componentAt = provider.indexOf('export function AutoplanProvider');
     assert.ok(instanceAt >= 0 && instanceAt < componentAt);
+    const bridge = source('src', 'renderer', 'lib', 'desktop', 'ipcBridge.ts');
+    assert.match(bridge, /defaultDesktopBridge \?\?= new IpcDesktopBridge\(\)/);
     assert.match(provider, /export function useDesktopBridge\(\): DesktopBridge/);
   });
 });

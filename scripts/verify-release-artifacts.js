@@ -91,6 +91,16 @@ function requireArtifact(files, expression) {
   return matches[0];
 }
 
+function currentPackageVersionPattern() {
+  let value;
+  try { value = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).version; }
+  catch { throw new ReleaseArtifactError('release_package_version_invalid'); }
+  if (typeof value !== 'string' || !/^[0-9A-Za-z][0-9A-Za-z.+-]{0,127}$/.test(value)) {
+    throw new ReleaseArtifactError('release_package_version_invalid');
+  }
+  return value.replaceAll('.', '\\.').replaceAll('+', '\\+');
+}
+
 function runRequired(command, args, code) {
   const result = spawnSync(command, args, { encoding: 'utf8', windowsHide: true, shell: false });
   if (result.error || result.status !== 0) throw new ReleaseArtifactError(code);
@@ -112,9 +122,10 @@ function findAppBundles(root) {
 
 function verifyMac(options) {
   const files = listFiles(options.releaseDir);
+  const version = currentPackageVersionPattern();
   for (const arch of ['x64', 'arm64']) {
-    requireArtifact(files, new RegExp(`-mac-${arch}\\.dmg$`));
-    requireArtifact(files, new RegExp(`-mac-${arch}\\.zip$`));
+    requireArtifact(files, new RegExp(`-${version}-mac-${arch}\\.dmg$`));
+    requireArtifact(files, new RegExp(`-${version}-mac-${arch}\\.zip$`));
   }
   const apps = findAppBundles(options.releaseDir);
   if (apps.length === 0) throw new ReleaseArtifactError('release_app_bundle_missing');
@@ -140,7 +151,8 @@ function verifyMac(options) {
 
 function verifyWindows(options) {
   const files = listFiles(options.releaseDir);
-  requireArtifact(files, /-win-x64-Setup\.exe$/);
+  const version = currentPackageVersionPattern();
+  requireArtifact(files, new RegExp(`-${version}-win-x64-Setup\\.exe$`));
   const unpacked = path.join(options.releaseDir, 'win-unpacked');
   const sidecar = inspectSidecar(unpacked, 'win32', 'x64');
   if (options.mode === 'signed-notarized') {
@@ -150,8 +162,9 @@ function verifyWindows(options) {
 
 function verifyLinux(options) {
   const files = listFiles(options.releaseDir);
-  requireArtifact(files, LINUX_APP_IMAGE);
-  requireArtifact(files, LINUX_DEB);
+  const version = currentPackageVersionPattern();
+  requireArtifact(files, new RegExp(`-${version}-linux-(?:x64|x86_64)\\.AppImage$`));
+  requireArtifact(files, new RegExp(`-${version}-linux-(?:x64|amd64)\\.deb$`));
   inspectSidecar(path.join(options.releaseDir, 'linux-unpacked'), 'linux', 'x64');
 }
 

@@ -15,6 +15,7 @@ import {
   type ScriptDraftState,
 } from '../../utils/workspaceForms';
 import { Icon } from '../icons';
+import { useAutoplanClient } from '../../lib/api/provider';
 import {
   RUNTIME_META,
   HOOK_STAGE_OPTIONS,
@@ -49,6 +50,7 @@ export function ScriptEditorModal({
   /** 切换当前编辑目标：null=新建态，number=切换到既有脚本（新建保存/复制时用） */
   onScriptIdChange: (scriptId: number | null) => void;
 }) {
+  const client = useAutoplanClient();
   // draft 仅在挂载时按初始 script 初始化一次，避免运行/保存后的 prop 刷新覆盖用户编辑。
   const [draft, setDraft] = useState<ScriptDraftState>(() => createScriptDraft(script));
   const [logTab, setLogTab] = useState<LogTab>('merged');
@@ -118,7 +120,7 @@ export function ScriptEditorModal({
     setError(null);
     try {
       if (draft.id == null) {
-        const snapshot = await window.autoplan.createScript(scriptCreateInputFromDraft(projectId, draft));
+        const snapshot = await client.createScript(scriptCreateInputFromDraft(projectId, draft));
         onSync(snapshot);
         const created = pickNewlyCreatedScript(snapshot, projectId);
         if (created) {
@@ -126,7 +128,7 @@ export function ScriptEditorModal({
           onScriptIdChange(created.id);
         }
       } else {
-        const snapshot = await window.autoplan.updateScript(scriptUpdateInputFromDraft(projectId, draft));
+        const snapshot = await client.updateScript(scriptUpdateInputFromDraft(projectId, draft));
         onSync(snapshot);
       }
     } catch (e) {
@@ -145,7 +147,7 @@ export function ScriptEditorModal({
     setError(null);
     setLogHidden(false);
     try {
-      const result = await window.autoplan.runScript({ projectId, scriptId: draft.id });
+      const result = await client.runScript({ projectId, scriptId: draft.id });
       onSync(result.snapshot);
     } catch (e) {
       setError(getErrorMessage(e, '运行脚本失败'));
@@ -157,7 +159,7 @@ export function ScriptEditorModal({
   async function handleStop() {
     if (draft.id == null) return;
     try {
-      const snapshot = await window.autoplan.stopScript({ projectId, scriptId: draft.id });
+      const snapshot = await client.stopScript({ projectId, scriptId: draft.id });
       onSync(snapshot);
       setError(null);
     } catch (e) {
@@ -169,7 +171,7 @@ export function ScriptEditorModal({
     if (draft.id == null) return;
     if (!window.confirm(`确认删除脚本「${draft.name || '未命名脚本'}」？此操作不可撤销。`)) return;
     try {
-      const snapshot = await window.autoplan.deleteScript({ projectId, scriptId: draft.id });
+      const snapshot = await client.deleteScript({ projectId, scriptId: draft.id });
       onSync(snapshot);
       onClose();
     } catch (e) {

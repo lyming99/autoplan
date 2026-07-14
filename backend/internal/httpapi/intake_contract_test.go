@@ -44,6 +44,26 @@ func (spy *p008IntakeServiceSpy) SetAcceptance(context.Context, applicationintak
 	return applicationintake.MutationResult{}, spy.err
 }
 
+func (spy *p008IntakeServiceSpy) RetryPlanGeneration(context.Context, applicationintake.RetryPlanGenerationCommand, domainproject.Visibility) (applicationintake.MutationResult, error) {
+	spy.calls++
+	return applicationintake.MutationResult{}, spy.err
+}
+
+func (spy *p008IntakeServiceSpy) InterruptPlans(context.Context, applicationintake.PlanActionCommand, domainproject.Visibility) (applicationintake.MutationResult, error) {
+	spy.calls++
+	return applicationintake.MutationResult{}, spy.err
+}
+
+func (spy *p008IntakeServiceSpy) ResumePlans(context.Context, applicationintake.PlanActionCommand, domainproject.Visibility) (applicationintake.MutationResult, error) {
+	spy.calls++
+	return applicationintake.MutationResult{}, spy.err
+}
+
+func (spy *p008IntakeServiceSpy) AppendTask(context.Context, applicationintake.PlanActionCommand, domainproject.Visibility) (applicationintake.MutationResult, error) {
+	spy.calls++
+	return applicationintake.MutationResult{}, spy.err
+}
+
 func (spy *p008IntakeServiceSpy) Links(context.Context, int64, domainintake.Type, int64) ([]applicationintake.LinkedPlanDTO, error) {
 	spy.calls++
 	return nil, spy.err

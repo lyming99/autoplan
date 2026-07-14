@@ -53,6 +53,7 @@ type aiConfigRequest struct {
 	Name                 *string `json:"name"`
 	Provider             *string `json:"provider"`
 	BaseURL              *string `json:"base_url"`
+	APIKey               *string `json:"api_key"`
 	Model                *string `json:"model"`
 	Temperature          *string `json:"temperature"`
 	ThinkingDepth        *string `json:"thinking_depth"`
@@ -61,10 +62,11 @@ type aiConfigRequest struct {
 }
 
 type claudeConfigRequest struct {
-	Name    *string `json:"name"`
-	BaseURL *string `json:"base_url"`
-	Model   *string `json:"model"`
-	Version *int64  `json:"version"`
+	Name      *string `json:"name"`
+	BaseURL   *string `json:"base_url"`
+	AuthToken *string `json:"auth_token"`
+	Model     *string `json:"model"`
+	Version   *int64  `json:"version"`
 }
 
 type mcpConfigRequest struct {
@@ -73,6 +75,7 @@ type mcpConfigRequest struct {
 	Host      *string `json:"host"`
 	Port      *int64  `json:"port"`
 	Path      *string `json:"path"`
+	AuthToken *string `json:"auth_token"`
 }
 
 type envVarRequest struct {
@@ -374,7 +377,7 @@ func mcpConfigEndpoint(service StaticConfigService, bodyLimit int64) Endpoint {
 				WriteError(writer, request, *failure)
 				return
 			}
-			result, err := service.SaveMCPConfig(request.Context(), domainconfig.MCPInput{Enabled: input.Enabled, Transport: input.Transport, Host: input.Host, Port: input.Port, Path: input.Path})
+			result, err := service.SaveMCPConfig(request.Context(), domainconfig.MCPInput{Enabled: input.Enabled, Transport: input.Transport, Host: input.Host, Port: input.Port, Path: input.Path, AuthToken: input.AuthToken})
 			if err != nil {
 				writeStaticConfigError(writer, request, err)
 				return
@@ -385,10 +388,10 @@ func mcpConfigEndpoint(service StaticConfigService, bodyLimit int64) Endpoint {
 }
 
 func (input aiConfigRequest) value() domainconfig.AIConfigInput {
-	return domainconfig.AIConfigInput{Name: input.Name, Provider: input.Provider, BaseURL: input.BaseURL, Model: input.Model, Temperature: input.Temperature, ThinkingDepth: input.ThinkingDepth, ThinkingBudgetTokens: input.ThinkingBudgetTokens}
+	return domainconfig.AIConfigInput{Name: input.Name, Provider: input.Provider, BaseURL: input.BaseURL, APIKey: input.APIKey, Model: input.Model, Temperature: input.Temperature, ThinkingDepth: input.ThinkingDepth, ThinkingBudgetTokens: input.ThinkingBudgetTokens}
 }
 func (input claudeConfigRequest) value() domainconfig.ClaudeCLIConfigInput {
-	return domainconfig.ClaudeCLIConfigInput{Name: input.Name, BaseURL: input.BaseURL, Model: input.Model}
+	return domainconfig.ClaudeCLIConfigInput{Name: input.Name, BaseURL: input.BaseURL, AuthToken: input.AuthToken, Model: input.Model}
 }
 
 func staticConfigID(path, collection, field string) (int64, *APIError) {

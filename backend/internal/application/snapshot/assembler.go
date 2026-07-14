@@ -13,12 +13,14 @@ import (
 
 	applicationevents "github.com/lyming99/autoplan/backend/internal/application/events"
 	applicationexecutors "github.com/lyming99/autoplan/backend/internal/application/executors"
+	applicationoperations "github.com/lyming99/autoplan/backend/internal/application/operations"
 	applicationplans "github.com/lyming99/autoplan/backend/internal/application/plans"
 	applicationscripts "github.com/lyming99/autoplan/backend/internal/application/scripts"
 	domainautomation "github.com/lyming99/autoplan/backend/internal/domain/automation"
 	"github.com/lyming99/autoplan/backend/internal/domain/contracts"
 	domainevent "github.com/lyming99/autoplan/backend/internal/domain/event"
 	domainintake "github.com/lyming99/autoplan/backend/internal/domain/intake"
+	domainoperation "github.com/lyming99/autoplan/backend/internal/domain/operation"
 	domainplan "github.com/lyming99/autoplan/backend/internal/domain/plan"
 	domainproject "github.com/lyming99/autoplan/backend/internal/domain/project"
 	"github.com/lyming99/autoplan/backend/internal/repository"
@@ -50,6 +52,8 @@ type Assembler struct {
 	attachments AttachmentSnapshotSource
 	scripts     *applicationscripts.Service
 	executors   *applicationexecutors.Service
+	operations  *applicationoperations.Service
+	mcpRuntime  func() map[string]any
 }
 
 func New(read ReadSession) *Assembler { return &Assembler{read: read} }
@@ -87,6 +91,25 @@ func (assembler *Assembler) BindExecutors(executors *applicationexecutors.Servic
 		return
 	}
 	assembler.executors = executors
+}
+
+// BindOperations adds the Go-owned long-running operation projection after
+// the service graph is assembled. Only bounded lifecycle metadata is exposed;
+// prompts, process output and filesystem capabilities never enter snapshots.
+func (assembler *Assembler) BindOperations(operations *applicationoperations.Service) {
+	if assembler == nil {
+		return
+	}
+	assembler.operations = operations
+}
+
+// BindMCPRuntime overlays the transport's live, redacted status on persisted
+// configuration. The callback has no token or lifecycle mutation capability.
+func (assembler *Assembler) BindMCPRuntime(runtime func() map[string]any) {
+	if assembler == nil {
+		return
+	}
+	assembler.mcpRuntime = runtime
 }
 
 func DirectReader(store repository.ReadOnly) ReadSession {
@@ -183,7 +206,7 @@ func (assembler *Assembler) Assemble(
 		if err != nil {
 			return err
 		}
-		mcp, err := mcpSnapshot(ctx, store)
+		mcp, err := mcpSnapshot(ctx, store, assembler.mcpRuntime)
 		if err != nil {
 			return err
 		}
@@ -246,18 +269,145 @@ func (assembler *Assembler) Assemble(
 		}
 		return validateSnapshot(result)
 	})
-	if err != nil || projectID == nil || result.ActiveProjectID == nil || assembler.attachments == nil {
+	if err != nil || projectID == nil || result.ActiveProjectID == nil {
 		return result, err
 	}
-	attachments, err := assembler.attachments.ListAttachmentSnapshots(ctx, *result.ActiveProjectID)
-	if err != nil {
-		return contracts.AppSnapshot{}, err
+	if assembler.operations != nil && assembler.operations.Configured() {
+		operations, operationErr := assembler.operations.ListForSnapshot(ctx, *result.ActiveProjectID, 20)
+		if operationErr != nil {
+			return contracts.AppSnapshot{}, operationErr
+		}
+		if operationErr = applyOperationSnapshots(&result, operations); operationErr != nil {
+			return contracts.AppSnapshot{}, operationErr
+		}
 	}
-	result.Attachments, err = attachmentSnapshots(attachments)
-	if err != nil {
-		return contracts.AppSnapshot{}, err
+	if assembler.attachments != nil {
+		attachments, attachmentErr := assembler.attachments.ListAttachmentSnapshots(ctx, *result.ActiveProjectID)
+		if attachmentErr != nil {
+			return contracts.AppSnapshot{}, attachmentErr
+		}
+		result.Attachments, attachmentErr = attachmentSnapshots(attachments)
+		if attachmentErr != nil {
+			return contracts.AppSnapshot{}, attachmentErr
+		}
 	}
 	return result, validateSnapshot(result)
+}
+
+func applyOperationSnapshots(snapshot *contracts.AppSnapshot, operations []domainoperation.Operation) error {
+	if snapshot == nil {
+		return domainproject.ErrInvalidRecord
+	}
+	active := make([]contracts.SanitizedObject, 0)
+	var last *contracts.SanitizedObject
+	for _, operation := range operations {
+		mapped, err := operationSnapshot(operation)
+		if err != nil {
+			return err
+		}
+		if operation.Status == domainoperation.StatusQueued || operation.Status == domainoperation.StatusRunning {
+			active = append(active, mapped)
+			continue
+		}
+		if last == nil && operation.Status.Terminal() {
+			copy := mapped
+			last = &copy
+		}
+	}
+	snapshot.ActiveOperations = active
+	if len(active) > 0 {
+		copy := active[0]
+		snapshot.ActiveOperation = &copy
+	} else {
+		snapshot.ActiveOperation = nil
+	}
+	snapshot.LastOperation = last
+	return nil
+}
+
+type operationResultCounts struct {
+	PendingIntakes int `json:"pending_intakes"`
+	GeneratedPlans int `json:"generated_plans"`
+	ProcessedPlans int `json:"processed_plans"`
+}
+
+func operationSnapshot(operation domainoperation.Operation) (contracts.SanitizedObject, error) {
+	activity := make([]map[string]any, 0, 3)
+	logLines := make([]string, 0, 3)
+	appendLine := func(at, text string) {
+		if strings.TrimSpace(at) == "" || strings.TrimSpace(text) == "" {
+			return
+		}
+		activity = append(activity, map[string]any{"role": "system", "text": text, "at": at})
+		logLines = append(logLines, text)
+	}
+	appendLine(operation.CreatedAt, "任务已进入 Go 运行队列")
+	if operation.StartedAt != nil {
+		appendLine(*operation.StartedAt, "Agent CLI 已启动")
+	}
+	if operation.FinishedAt != nil {
+		appendLine(*operation.FinishedAt, operationTerminalText(operation))
+	}
+	var exitCode any
+	if operation.Status == domainoperation.StatusSucceeded {
+		exitCode = 0
+	} else if operation.Status == domainoperation.StatusFailed || operation.Status == domainoperation.StatusInterrupted {
+		exitCode = 1
+	}
+	cancelled := operation.Status == domainoperation.StatusCancelled
+	var cancelledAt *string
+	if cancelled {
+		cancelledAt = operation.FinishedAt
+	}
+	return sanitizedObject(map[string]any{
+		"label": operationLabel(operation.Type), "operationId": operation.OperationID,
+		"runtimeOwner": "go", "projectId": operation.ProjectID, "planId": nil, "taskId": nil,
+		"operationType": operation.Type, "startedAt": operation.StartedAt, "finishedAt": operation.FinishedAt,
+		"exitCode": exitCode, "cancelled": cancelled, "cancelledAt": cancelledAt,
+		"logTail": strings.Join(logLines, "\n"), "activity": activity,
+	})
+}
+
+func operationLabel(operationType string) string {
+	switch operationType {
+	case "loop.start":
+		return "启动工作循环"
+	case "loop.stop":
+		return "停止工作循环"
+	case "loop.run_once":
+		return "执行工作循环"
+	case "script.run":
+		return "执行脚本"
+	case "executor.run", "executor.action":
+		return "执行器运行"
+	default:
+		return operationType
+	}
+}
+
+func operationTerminalText(operation domainoperation.Operation) string {
+	switch operation.Status {
+	case domainoperation.StatusSucceeded:
+		counts := operationResultCounts{}
+		if operation.Result != nil {
+			_ = json.Unmarshal(*operation.Result, &counts)
+		}
+		if counts.GeneratedPlans > 0 || counts.ProcessedPlans > 0 {
+			return "本轮完成：生成计划 " + strconv.Itoa(counts.GeneratedPlans) + "，执行任务 " + strconv.Itoa(counts.ProcessedPlans)
+		}
+		return "本轮执行成功"
+	case domainoperation.StatusFailed:
+		if operation.Error != nil {
+			return "本轮执行失败（" + operation.Error.Code + "）"
+		}
+		return "本轮执行失败"
+	case domainoperation.StatusCancelled:
+		return "本轮执行已取消"
+	case domainoperation.StatusInterrupted:
+		return "本轮执行被中断"
+	default:
+		return ""
+	}
 }
 
 func automationSnapshots(
@@ -325,7 +475,7 @@ func scriptSnapshot(value domainautomation.Script, runtime *applicationscripts.S
 		"timeout_seconds": value.TimeoutSeconds, "fail_aborts": failAborts, "context_inject": value.ContextInject,
 		"sort_order": value.SortOrder, "last_status": copyOptionalString(value.LastStatus),
 		"last_exit_code": copyOptionalInt64(value.LastExitCode), "last_duration_ms": copyOptionalInt64(value.LastDurationMS),
-		"last_log": nil, "last_run_at": copyOptionalString(value.LastRunAt), "created_at": value.CreatedAt,
+		"last_log": copyOptionalString(value.LastLog), "last_run_at": copyOptionalString(value.LastRunAt), "created_at": value.CreatedAt,
 		"updated_at": value.UpdatedAt, "source_type": value.SourceType,
 		"running": false, "runStatus": scriptRunStatus(value.LastStatus), "activeOperation": nil,
 	}
@@ -372,7 +522,7 @@ func executorSnapshot(value domainautomation.Executor, runtime *applicationexecu
 		"group_kind": copyOptionalString(value.GroupKind), "group_is_default": groupDefault,
 		"depends_order": value.DependsOrder, "enabled": enabled, "sort_order": value.SortOrder,
 		"last_status": copyOptionalString(value.LastStatus), "last_exit_code": copyOptionalInt64(value.LastExitCode),
-		"last_duration_ms": copyOptionalInt64(value.LastDurationMS), "last_log": nil,
+		"last_duration_ms": copyOptionalInt64(value.LastDurationMS), "last_log": copyOptionalString(value.LastLog),
 		"last_run_at": copyOptionalString(value.LastRunAt), "created_at": value.CreatedAt, "updated_at": value.UpdatedAt,
 		"running": false, "runStatus": executorRunStatus(value.LastStatus), "activeOperation": nil,
 		"plugin_state": nil,
@@ -726,7 +876,7 @@ func projectContract(record repository.Project, state *repository.ProjectState, 
 		Description: record.Description, CreatedAt: createdAt, UpdatedAt: updatedAt,
 	}
 	if state != nil {
-		running := 0
+		running := int(state.Running)
 		phase := normalizedPhase(state.Phase)
 		interval := int(state.IntervalSeconds)
 		validationCommand, projectPrompt := state.ValidationCommand, state.ProjectPrompt
@@ -761,7 +911,6 @@ func projectContract(record repository.Project, state *repository.ProjectState, 
 func stateOrDefault(project repository.Project, state repository.ProjectState, exists bool) *repository.ProjectState {
 	if exists {
 		copy := state
-		copy.Running = 0
 		copy.Phase = normalizedPhase(copy.Phase)
 		copy.AgentCLIProvider = normalizedProvider(copy.AgentCLIProvider)
 		return &copy
@@ -793,7 +942,7 @@ func stateSnapshot(
 		environment = domainproject.RedactedEnvironment
 	}
 	fields := map[string]any{
-		"project_id": value.ProjectID, "running": 0, "phase": normalizedPhase(value.Phase),
+		"project_id": value.ProjectID, "running": value.Running, "phase": normalizedPhase(value.Phase),
 		"interval_seconds": value.IntervalSeconds, "validation_command": value.ValidationCommand,
 		"project_prompt": value.ProjectPrompt, "agent_cli_provider": normalizedProvider(value.AgentCLIProvider),
 		"agent_cli_command": value.AgentCLICommand, "codex_reasoning_effort": value.CodexReasoningEffort,
@@ -822,7 +971,10 @@ func stateSnapshot(
 	return sanitizedObject(fields)
 }
 
-func mcpSnapshot(ctx context.Context, store QueryStore) (contracts.SanitizedObject, error) {
+func mcpSnapshot(ctx context.Context, store QueryStore, runtime func() map[string]any) (contracts.SanitizedObject, error) {
+	if runtime != nil {
+		return sanitizedObject(runtime())
+	}
 	settings, err := store.ListSettings(ctx, "mcp.")
 	if err != nil {
 		return nil, err
@@ -940,14 +1092,10 @@ func normalizedProvider(value string) string {
 
 func normalizedPhase(value string) string {
 	phase := strings.TrimSpace(value)
-	switch phase {
-	case "running", "scan", "generate-plan", "execute-task", "validate":
-		return "stopped"
-	case "":
+	if phase == "" {
 		return "idle"
-	default:
-		return phase
 	}
+	return phase
 }
 
 func maskToken(value string) string {

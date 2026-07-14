@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -118,6 +119,117 @@ func TestStartDatabaseRepairsV2OperationsAndRestartsWithStoredWorkspace(t *testi
 	defer second.Close(ctx)
 	if err := second.Close(ctx); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestLoopTaskLifecyclePersistsAtomicallyInSQLite(t *testing.T) {
+	ctx := context.Background()
+	root := canonicalTemporaryDirectory(t)
+	readiness, err := NewDatabaseReadiness()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := StartDatabase(ctx, DatabaseStartupOptions{
+		Target: filepath.Join(root, "autoplan.sqlite"), DriverName: "sqlite", AllowCreate: true,
+		LockTimeout: time.Second, AuthorizedRoots: []string{root}, Readiness: readiness,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(ctx)
+	connection, ok := runtime.Connection().(*storesqlite.Connection)
+	if !ok {
+		t.Fatal("startup connection type drifted")
+	}
+	gate, err := readiness.Gate("configuration", "prerequisites", "application", "listener")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writer, err := storesqlite.NewWriter(storesqlite.WriterOptions{
+		Connection: connection, Readiness: gate, Owner: runtime,
+		AuthorizedCopy: true, SchemaVersion: storesqlite.SchemaVersion,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer writer.Close()
+
+	createdAt := "2026-07-14T01:02:03.000Z"
+	startedAt := "2026-07-14T01:02:04.000Z"
+	finishedAt := "2026-07-14T01:02:05.000Z"
+	statements := []struct {
+		query string
+		args  []any
+	}{
+		{`INSERT INTO projects (id, name, workspace_path, description, created_at, updated_at)
+		  VALUES (1, 'loop fixture', ?, '', ?, ?)`, []any{root, createdAt, createdAt}},
+		{`INSERT INTO project_states (project_id, updated_at) VALUES (1, ?)`, []any{createdAt}},
+		{`INSERT INTO plans (
+			id, project_id, issue_hash, file_path, hash, status, sort_order, total_tasks,
+			completed_tasks, validation_passed, agent_cli_provider, agent_cli_command,
+			plan_generation_strategy, plan_execution_strategy, plan_execution_provider,
+			plan_execution_command, created_at, updated_at
+		  ) VALUES (1, 1, 'issue-digest', '.autoplan/plans/fixture.md', 'before-digest',
+			'pending', 1, 1, 0, 0, 'codex', 'codex', 'external-cli-structured',
+			'external-cli', 'codex', 'codex', ?, ?)`, []any{createdAt, createdAt}},
+		{`INSERT INTO plan_tasks (
+			id, plan_id, task_key, title, raw_line, scope, status, sort_order, updated_at
+		  ) VALUES (1, 1, 'TASK-001', 'Implement fixture', '- [ ] TASK-001 Implement fixture',
+			'backend/**', 'pending', 1, ?)`, []any{createdAt}},
+		{`INSERT INTO operations (
+			operation_id, project_id, type, status, request_id, idempotency_scope,
+			request_hash, created_at, updated_at, started_at
+		  ) VALUES ('loop-operation', 1, 'loop.run_once', 'running', 'loop-request',
+			'loop:project:1', ?, ?, ?, ?)`, []any{strings.Repeat("a", 64), createdAt, createdAt, createdAt}},
+	}
+	for _, statement := range statements {
+		if _, err := connection.ExecContext(ctx, statement.query, statement.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	claim, claimed, err := writer.ClaimNextPlanTask(ctx, 1, "loop-operation", startedAt)
+	if err != nil || !claimed {
+		t.Fatalf("claim = %#v, claimed=%t, err=%v", claim, claimed, err)
+	}
+	if claim.Plan.Status != "running" || claim.Task.Status != "running" || claim.Task.Key != "TASK-001" {
+		t.Fatalf("unexpected claimed lifecycle: plan=%#v task=%#v", claim.Plan, claim.Task)
+	}
+	if err := writer.FinishPlanTask(ctx, repository.LoopPlanTaskCompletion{
+		ProjectID: 1, PlanID: claim.Plan.ID, TaskID: claim.Task.ID, OperationID: "loop-operation",
+		Succeeded: true, Digest: "after-digest", FinishedAt: finishedAt, DurationMS: 1000,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	var taskStatus, planStatus, digest, succeededMeta string
+	var completedTasks, validationPassed, durableEvents int64
+	if err := connection.QueryRowContext(ctx, `SELECT task.status, plan.status, plan.hash,
+		plan.completed_tasks, plan.validation_passed
+		FROM plan_tasks AS task JOIN plans AS plan ON plan.id = task.plan_id
+		WHERE task.id = 1`).Scan(&taskStatus, &planStatus, &digest, &completedTasks, &validationPassed); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.QueryRowContext(ctx, `SELECT COUNT(*) FROM event_outbox
+		WHERE operation_id = 'loop-operation' AND type IN ('business.task_started', 'business.task_succeeded')
+		AND project_revision IS NOT NULL`).Scan(&durableEvents); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.QueryRowContext(ctx, `SELECT data_json FROM event_outbox
+		WHERE operation_id = 'loop-operation' AND type = 'business.task_succeeded'`).Scan(&succeededMeta); err != nil {
+		t.Fatal(err)
+	}
+	var eventMeta map[string]any
+	if err := json.Unmarshal([]byte(succeededMeta), &eventMeta); err != nil {
+		t.Fatal(err)
+	}
+	if eventMeta["task_title"] != "Implement fixture" {
+		t.Fatalf("task event title = %#v, want %q", eventMeta["task_title"], "Implement fixture")
+	}
+	if taskStatus != "completed" || planStatus != "completed" || digest != "after-digest" ||
+		completedTasks != 1 || validationPassed != 1 || durableEvents != 2 {
+		t.Fatalf("persisted lifecycle task=%q plan=%q digest=%q completed=%d validation=%d events=%d",
+			taskStatus, planStatus, digest, completedTasks, validationPassed, durableEvents)
 	}
 }
 

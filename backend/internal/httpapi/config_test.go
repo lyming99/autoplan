@@ -131,6 +131,23 @@ func TestConfigStableMutationErrors(t *testing.T) {
 	}
 }
 
+func TestStaticConfigRequestsPreserveWriteOnlySecrets(t *testing.T) {
+	apiKey := "sk-write-only"
+	authToken := "claude-write-only"
+	ai := (aiConfigRequest{APIKey: &apiKey}).value()
+	claude := (claudeConfigRequest{AuthToken: &authToken}).value()
+	if ai.APIKey == nil || *ai.APIKey != apiKey {
+		t.Fatalf("AI API key was dropped: %#v", ai.APIKey)
+	}
+	if claude.AuthToken == nil || *claude.AuthToken != authToken {
+		t.Fatalf("Claude auth token was dropped: %#v", claude.AuthToken)
+	}
+	mcp := mcpConfigRequest{AuthToken: &authToken}
+	if mcp.AuthToken == nil || *mcp.AuthToken != authToken {
+		t.Fatalf("MCP auth token was dropped: %#v", mcp.AuthToken)
+	}
+}
+
 func newConfigRouter(t *testing.T, service ConfigService) (*Router, string) {
 	t.Helper()
 	clock := fixedClock{value: time.Date(2026, 7, 11, 10, 0, 0, 0, time.UTC)}

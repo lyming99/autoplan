@@ -1373,6 +1373,7 @@ export interface AcceptBatchInput extends ProjectIdInput {
 
 export interface TaskIdInput extends ProjectIdInput {
   taskId: number;
+  planId: number;
 }
 
 export interface PlanIdInput extends ProjectIdInput {
@@ -2005,6 +2006,8 @@ export interface AutoplanApi {
   onLoopPatch: (handler: (patch: WorkspaceSnapshotPatch) => void) => () => void;
   pickDirectory: () => Promise<string | null>;
   openProjectFolder: (input: ProjectIdInput) => Promise<{ ok: boolean; error: string | null }>;
+  openProjectTerminal: (input: ProjectIdInput) => Promise<{ ok: boolean; error: string | null }>;
+  openLogFolder: () => Promise<{ ok: boolean; error: string | null }>;
   openWorkspaceFile: (input: OpenWorkspaceFileInput) => Promise<OpenWorkspaceFileResult>;
   updateStatus: () => Promise<UpdateStatus>;
   checkForUpdates: () => Promise<UpdateCheckResult>;

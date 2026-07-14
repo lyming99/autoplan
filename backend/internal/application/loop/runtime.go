@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/lyming99/autoplan/backend/internal/application/capabilities"
 	applicationoperations "github.com/lyming99/autoplan/backend/internal/application/operations"
@@ -44,6 +45,12 @@ const (
 	CommandTaskRunBatches CommandKind = "task.run_batches"
 	CommandTaskStop       CommandKind = "task.stop"
 
+	CommandAcceptanceAccept        CommandKind = "acceptance.accept"
+	CommandAcceptanceUnaccept      CommandKind = "acceptance.unaccept"
+	CommandAcceptanceRedo          CommandKind = "acceptance.redo"
+	CommandAcceptanceAcceptBatch   CommandKind = "acceptance.accept_batch"
+	CommandAcceptanceUnacceptBatch CommandKind = "acceptance.unaccept_batch"
+
 	CommandChatSend          CommandKind = "chat.send"
 	CommandChatStop          CommandKind = "chat.stop"
 	CommandChatPump          CommandKind = "chat.pump"
@@ -69,25 +76,26 @@ const (
 // authorized by the runtime owner. Request and idempotency identity is
 // transport metadata and cannot be supplied in a JSON body.
 type Command struct {
-	Version           string      `json:"version"`
-	Kind              CommandKind `json:"command"`
-	ProjectID         int64       `json:"project_id"`
-	PlanID            int64       `json:"plan_id,omitempty"`
-	TaskID            int64       `json:"task_id,omitempty"`
-	IntakeID          int64       `json:"intake_id,omitempty"`
-	ConversationID    int64       `json:"conversation_id,omitempty"`
-	ScriptID          int64       `json:"script_id,omitempty"`
-	ExecutorID        int64       `json:"executor_id,omitempty"`
-	ExpectedVersion   int64       `json:"expected_version,omitempty"`
-	ExpectedUpdatedAt string      `json:"expected_updated_at,omitempty"`
-	Action            string      `json:"action,omitempty"`
-	Chat              *ChatInput  `json:"chat,omitempty"`
-	Batches           []TaskBatch `json:"batches,omitempty"`
-	Terminal          *Terminal   `json:"terminal,omitempty"`
-	Updates           *Updates    `json:"updates,omitempty"`
-	CallerScope       string      `json:"-"`
-	RequestID         string      `json:"-"`
-	IdempotencyKey    string      `json:"-"`
+	Version           string           `json:"version"`
+	Kind              CommandKind      `json:"command"`
+	ProjectID         int64            `json:"project_id"`
+	PlanID            int64            `json:"plan_id,omitempty"`
+	TaskID            int64            `json:"task_id,omitempty"`
+	IntakeID          int64            `json:"intake_id,omitempty"`
+	ConversationID    int64            `json:"conversation_id,omitempty"`
+	ScriptID          int64            `json:"script_id,omitempty"`
+	ExecutorID        int64            `json:"executor_id,omitempty"`
+	ExpectedVersion   int64            `json:"expected_version,omitempty"`
+	ExpectedUpdatedAt string           `json:"expected_updated_at,omitempty"`
+	Action            string           `json:"action,omitempty"`
+	Chat              *ChatInput       `json:"chat,omitempty"`
+	Batches           []TaskBatch      `json:"batches,omitempty"`
+	Acceptance        *AcceptanceInput `json:"acceptance,omitempty"`
+	Terminal          *Terminal        `json:"terminal,omitempty"`
+	Updates           *Updates         `json:"updates,omitempty"`
+	CallerScope       string           `json:"-"`
+	RequestID         string           `json:"-"`
+	IdempotencyKey    string           `json:"-"`
 }
 
 // ChatInput is write-only intent. A response contains an operation and an
@@ -98,6 +106,19 @@ type ChatInput struct {
 
 type TaskBatch struct {
 	TaskIDs []int64 `json:"task_ids"`
+}
+
+// AcceptanceInput is the bounded write-only intent shared by REST, MCP and
+// the Node compatibility client. It contains identifiers only; optimistic
+// database versions are resolved and checked inside the Plan transaction.
+type AcceptanceInput struct {
+	Targets    []AcceptanceTarget `json:"targets"`
+	Supplement string             `json:"supplement,omitempty"`
+}
+
+type AcceptanceTarget struct {
+	TargetType string `json:"target_type"`
+	ID         int64  `json:"id"`
 }
 
 type Terminal struct {
@@ -320,6 +341,23 @@ func ValidateCommand(command Command) error {
 				return ErrInvalidCommand
 			}
 			seenTasks[id] = struct{}{}
+		}
+	}
+	if command.Acceptance != nil {
+		if len(command.Acceptance.Targets) == 0 || len(command.Acceptance.Targets) > 100 ||
+			utf8.RuneCountInString(command.Acceptance.Supplement) > 2000 ||
+			strings.ContainsAny(command.Acceptance.Supplement, "\r\x00") {
+			return ErrInvalidCommand
+		}
+		seenTargets := make(map[AcceptanceTarget]struct{}, len(command.Acceptance.Targets))
+		for _, target := range command.Acceptance.Targets {
+			if target.ID <= 0 || (target.TargetType != "plan" && target.TargetType != "task") {
+				return ErrInvalidCommand
+			}
+			if _, duplicate := seenTargets[target]; duplicate {
+				return ErrInvalidCommand
+			}
+			seenTargets[target] = struct{}{}
 		}
 	}
 	return nil

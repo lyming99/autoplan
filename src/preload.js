@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld(HTTP_RUNTIME_CONFIG_KEY, runtimeConfig);
 contextBridge.exposeInMainWorld('autoplan', Object.freeze({
   pickDirectory: () => ipcRenderer.invoke('projects:pickDirectory'),
   openProjectFolder: (input) => ipcRenderer.invoke('projects:openFolder', input),
+  openProjectTerminal: (input) => ipcRenderer.invoke('projects:openTerminal', input),
+  openLogFolder: () => ipcRenderer.invoke('logs:openFolder'),
   openWorkspaceFile: (input) => ipcRenderer.invoke('workspace:openFile', input),
   pickScriptFile: () => ipcRenderer.invoke('scripts:pickFile'),
   pickTasksJson: () => ipcRenderer.invoke('executors:pickTasksJson'),

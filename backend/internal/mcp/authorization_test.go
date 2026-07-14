@@ -45,7 +45,7 @@ func TestHTTPAuthorizationRequiresLoopbackOriginSessionAndToken(t *testing.T) {
 }
 
 func authorizedMCPRequest() *http.Request {
-	request := httptest.NewRequest(http.MethodPost, "http://127.0.0.1:43847/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 	request.Host = "127.0.0.1:43847"
 	request.Header.Set("Origin", "http://127.0.0.1:1")
 	request.Header.Set("Authorization", "Bearer "+strings.Repeat("a", 32))

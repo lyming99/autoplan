@@ -94,7 +94,7 @@ describe('Workspace task page structure', () => {
     expectIncludes(types, 'openWorkspaceFile: (input: OpenWorkspaceFileInput) => Promise<OpenWorkspaceFileResult>;', 'renderer API should expose openWorkspaceFile with typed input and result');
     expectIncludes(controller, 'const openScopeFile = useCallback', 'controller should expose a scope file opener');
     expectIncludes(controller, 'const result = await desktopBridge.openWorkspaceFile({', 'scope opener should call DesktopBridge openWorkspaceFile');
-    expectIncludes(controller, 'projectId,\n          filePath,\n          mode: scopeFileOpenSettings.mode,\n          command: scopeFileOpenSettings.command,', 'scope opener should pass current project, file path, mode, and command');
+    expectIncludes(controller, 'projectId,\n          filePath,\n          mode,\n          command: scopeFileOpenSettings.command,', 'scope opener should pass current project, file path, mode, and command');
     expectIncludes(controller, "throw new Error(result.error || '打开 scope 文件失败');", 'scope opener should surface backend open errors');
     expectIncludes(controller, 'showError(e);', 'scope opener failures should use the workspace error display path');
     expectIncludes(controller, 'openScopeFile,', 'controller return value should include the scope opener');
@@ -103,6 +103,7 @@ describe('Workspace task page structure', () => {
     expectIncludes(page, 'onOpenScopeFile={openScopeFile}', 'WorkspacePage should pass the scope opener into the task list');
   });
   it('renders Plan cards with progress, concurrency, metadata, and actions', () => {
+    const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
     const planList = source('src', 'renderer', 'components', 'plans', 'PlanList.tsx');
     const wrappedPlanList = source('src', 'renderer', 'components', 'PlanLists.tsx');
 
@@ -115,6 +116,9 @@ describe('Workspace task page structure', () => {
     expectIncludes(planList, "className={`plan-validation ${plan.validation_passed ? 'passed' : 'pending'}`}", 'Plan card should expose validation state');
     expectIncludes(planList, 'plan-parallel-link', 'Plan card should preserve parallel execution entry');
     expectIncludes(planList, 'plan-read-link', 'Plan card should preserve read-full-plan entry');
+    expectIncludes(planList, 'className="plan-path plan-file-link"', 'Plan file path should render as an interactive link');
+    expectIncludes(planList, 'void onOpenPlanFile?.(plan);', 'Plan file link should call the desktop reveal handler');
+    expectIncludes(page, "onOpenPlanFile={(plan) => openScopeFile(plan.file_path, 'folder')}", 'Plan file links should reveal the generated file in the system folder');
   });
 
   it('wires Plan card stop/delete popup menu actions without hijacking card selection', () => {
@@ -127,7 +131,8 @@ describe('Workspace task page structure', () => {
     expectIncludes(planList, 'aria-haspopup="menu"', 'Plan card more-actions button should expose menu semantics');
     expectIncludes(planList, 'aria-expanded={menuOpen}', 'Plan card more-actions button should expose expanded state');
     expectIncludes(planList, 'aria-label={`更多操作：${title || plan.file_path || `Plan #${plan.id}`}`}', 'Plan card more-actions button should have a readable label');
-    expectIncludes(planList, '<div className="plan-action-menu ctx-menu" id={menuId} role="menu">', 'Plan card popup should render as a menu');
+    expectIncludes(planList, 'className="plan-action-menu ctx-menu"', 'Plan card popup should render as a menu');
+    expectIncludes(planList, 'createPortal(', 'Plan card popup should escape the scrolling card container');
     expectCountAtLeast(planList, 'role="menuitem"', 2, 'Plan card popup should expose stop and delete menu items');
     expectIncludes(planList, '<span>停止</span>', 'Plan card menu should include the stop item');
     expectIncludes(planList, '<span>删除</span>', 'Plan card menu should include the delete item');
@@ -142,7 +147,8 @@ describe('Workspace task page structure', () => {
     expectIncludes(planList, "'[role=\"menuitem\"]'", 'Plan card interactive selector should include menu items');
     expectIncludes(planList, 'event.stopPropagation();', 'Plan menu interactions should not bubble into card selection');
     expectIncludes(planList, "event.key === 'Escape'", 'Plan menu should close on Escape');
-    expectIncludes(planList, 'setOpenMenuPlanId((current) => (current === plan.id ? null : plan.id))', 'Plan menu trigger should toggle a single open menu');
+    expectIncludes(planList, 'if (openMenuPlanId === plan.id)', 'Plan menu trigger should close the active menu');
+    expectIncludes(planList, 'setOpenMenuPlanId(plan.id)', 'Plan menu trigger should open only the selected plan menu');
     expectIncludes(planList, '删除后会先停止该计划运行，并删除计划文件和任务记录。', 'Delete confirmation should warn about stopping execution and deleting files/tasks');
     expectIncludes(planList, '关联的需求和反馈记录会保留，不会被删除。', 'Delete confirmation should clarify that intake records are retained');
 
@@ -788,6 +794,15 @@ describe('Script editor name input discoverability', () => {
     // 场景三：名称 input 仍带 mh-title-input 标识类，作为与样式联动的稳定钩子。
     expectIncludes(modal, 'ref={nameRef}', '聚焦目标应指向脚本名称输入框元素');
     expectIncludes(modal, 'className="mh-title-input"', '脚本名称输入框应保留 mh-title-input 标识类');
+  });
+
+  it('routes script business mutations through the injected Go client', () => {
+	const modal = source('src', 'renderer', 'components', 'workspace', 'ScriptEditorModal.tsx');
+	expectIncludes(modal, 'const client = useAutoplanClient();', 'Script editor should resolve the shared business client');
+	expectIncludes(modal, 'await client.createScript(', 'Script creation should use the Go-backed client');
+	expectIncludes(modal, 'await client.updateScript(', 'Script updates should use the Go-backed client');
+	expectIncludes(modal, 'await client.deleteScript(', 'Script deletion should use the Go-backed client');
+	expect(!modal.includes('window.autoplan.createScript'), 'Script creation must not call the removed preload business method');
   });
 });
 

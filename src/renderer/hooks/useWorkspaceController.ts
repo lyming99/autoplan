@@ -260,13 +260,16 @@ export function useWorkspaceController() {
     window.alert(msg);
   }, [setError]);
 
-  const openScopeFile = useCallback((filePath: string) => {
+  const openScopeFile = useCallback((
+    filePath: string,
+    mode: 'system' | 'folder' | 'vscode' | 'command' = scopeFileOpenSettings.mode,
+  ) => {
     void (async () => {
       try {
         const result = await desktopBridge.openWorkspaceFile({
           projectId,
           filePath,
-          mode: scopeFileOpenSettings.mode,
+          mode,
           command: scopeFileOpenSettings.command,
         });
         if (!result.ok) throw new Error(result.error || '打开 scope 文件失败');
@@ -898,8 +901,9 @@ export function useWorkspaceController() {
 
   const selectTab = useCallback(
     (tab: WorkspaceTab) => {
-      setActiveTab(tab);
-      setSearchParams(tab === DEFAULT_WORKSPACE_TAB ? {} : { tab }, { replace: true });
+      const visibleTab = resolveWorkspaceTab(tab);
+      setActiveTab(visibleTab);
+      setSearchParams(visibleTab === DEFAULT_WORKSPACE_TAB ? {} : { tab: visibleTab }, { replace: true });
     },
     [setSearchParams],
   );

@@ -63,8 +63,6 @@ const workspaceTabIds: WorkspaceTab[] = [
   'feedback',
   'acceptance',
   'tasks',
-  'terminal',
-  'executors',
   'scripts',
   'events',
   'settings',

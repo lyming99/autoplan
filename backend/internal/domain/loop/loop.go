@@ -14,12 +14,15 @@ var ErrInvalid = errors.New("loop state is invalid")
 type Phase string
 
 const (
-	PhaseIdle    Phase = "idle"
-	PhaseStopped Phase = "stopped"
-	PhaseRunning Phase = "running"
-	PhaseScan    Phase = "scan"
-	PhaseWaiting Phase = "waiting"
-	PhaseError   Phase = "error"
+	PhaseIdle         Phase = "idle"
+	PhaseStopped      Phase = "stopped"
+	PhaseRunning      Phase = "running"
+	PhaseScan         Phase = "scan"
+	PhaseGeneratePlan Phase = "generate-plan"
+	PhaseExecuteTask  Phase = "execute-task"
+	PhaseValidate     Phase = "validate"
+	PhaseWaiting      Phase = "waiting"
+	PhaseError        Phase = "error"
 )
 
 // State is the non-secret portion of a project's persisted Loop state. A
@@ -49,7 +52,7 @@ func (state State) Validate() error {
 
 func (phase Phase) Valid() bool {
 	switch phase {
-	case PhaseIdle, PhaseStopped, PhaseRunning, PhaseScan, PhaseWaiting, PhaseError:
+	case PhaseIdle, PhaseStopped, PhaseRunning, PhaseScan, PhaseGeneratePlan, PhaseExecuteTask, PhaseValidate, PhaseWaiting, PhaseError:
 		return true
 	default:
 		return false

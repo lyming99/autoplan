@@ -38,7 +38,7 @@ describe('renderer injected subscription boundary', () => {
     const provider = source('src', 'renderer', 'lib', 'api', 'provider.tsx');
     const componentAt = provider.indexOf('export function AutoplanProvider');
     assert.ok(provider.indexOf('const defaultClient = getAutoplanClient();') < componentAt);
-    assert.ok(provider.indexOf('const defaultDesktopBridge: DesktopBridge = new IpcDesktopBridge();') < componentAt);
+    assert.ok(provider.indexOf('const defaultDesktopBridge: DesktopBridge = getDefaultDesktopBridge();') < componentAt);
     assert.match(provider, /client\?: AutoplanClient/);
     assert.match(provider, /desktopBridge\?: DesktopBridge/);
   });
@@ -95,7 +95,7 @@ describe('chat, terminal, and update lifecycle guards', () => {
   it('uses DesktopBridge and replaces update status only while mounted', () => {
     const hook = source('src', 'renderer', 'hooks', 'useUpdateStatus.ts');
     assert.match(hook, /const desktopBridge = useDesktopBridge\(\)/);
-    assert.match(hook, /desktopBridge\.updateStatus\(\)/);
+    assert.match(hook, /desktopBridge\s*\.updateStatus\(\)/);
     assert.match(hook, /desktopBridge\.onUpdateStatus/);
     assert.match(hook, /mountedRef\.current = false/);
     assert.match(hook, /unsubscribe\(\)/);

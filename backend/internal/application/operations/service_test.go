@@ -30,6 +30,13 @@ func (operationTestHandler) CanRecover(context.Context, domainoperation.Operatio
 	return true, nil
 }
 
+type operationNonRecoveringHandler struct{ operationType string }
+
+func (handler operationNonRecoveringHandler) Type() string { return handler.operationType }
+func (operationNonRecoveringHandler) CanRecover(context.Context, domainoperation.Operation) (bool, error) {
+	return false, nil
+}
+
 type operationMemoryStore struct {
 	operations map[string]domainoperation.Operation
 	keys       map[string]string
@@ -197,6 +204,30 @@ func TestCreateOrReuseAndCancellationUseOneServiceBoundary(t *testing.T) {
 	})
 	if err != nil || replayed.Changed || replayed.Operation.Status != domainoperation.StatusCancelled {
 		t.Fatalf("cancel replay = %#v, %v", replayed, err)
+	}
+}
+
+func TestLiveClaimDoesNotUseStartupRecoveryAdmission(t *testing.T) {
+	clock := operationTestClock{now: time.Date(2026, 7, 12, 0, 0, 1, 0, time.UTC)}
+	store := newOperationMemoryStore()
+	service := NewService(Dependencies{
+		Store: store, Clock: clock, NewID: func() string { return "op-live-claim" },
+		RecoveryHandlers: []RecoveryHandler{operationNonRecoveringHandler{operationType: "script.run"}},
+	})
+	caller := Caller{ID: "renderer", ProjectID: 1}
+	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	created, err := service.CreateOrReuse(context.Background(), CreateCommand{
+		Caller: caller, ProjectID: 1, Type: "script.run", IdempotencyKey: "script-live", RequestID: "request-live", RequestDigest: digest,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := service.Claim(context.Background(), ClaimCommand{
+		Caller: caller, ProjectID: 1, OperationID: created.Operation.OperationID,
+		ExpectedVersion: created.Operation.Version, RequestDigest: digest, RequestID: "request-live",
+	})
+	if err != nil || claimed.Operation.Status != domainoperation.StatusRunning {
+		t.Fatalf("live claim = %#v, %v", claimed, err)
 	}
 }
 

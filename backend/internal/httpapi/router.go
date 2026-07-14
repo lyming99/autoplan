@@ -205,6 +205,11 @@ func validResourceRoutePattern(value string) bool {
 			return false
 		}
 	}
+	_, hasPlanID := seen["{plan_id}"]
+	_, hasTaskID := seen["{task_id}"]
+	if hasPlanID && hasTaskID {
+		return false
+	}
 	return identifiers > 0 && identifiers <= 3
 }
 

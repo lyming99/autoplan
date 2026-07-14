@@ -1,5 +1,6 @@
-import { memo, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
-import { useEffect, useId, useState } from 'react';
+import { memo, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { AgentCliProvider, Plan, PlanTask, WorkspacePlanReadState } from '../../types';
 import { planCliSummaryLabel } from '../shared';
 import { formatChinaDateTime } from '../../utils/time';
@@ -84,6 +85,26 @@ function canStopPlan(plan: Plan, hasRunningTask: boolean) {
   return hasRunningTask || plan.status === 'running';
 }
 
+const PLAN_ACTION_MENU_WIDTH = 176;
+const PLAN_ACTION_MENU_HEIGHT = 86;
+const PLAN_ACTION_MENU_GAP = 8;
+const PLAN_ACTION_MENU_MARGIN = 12;
+
+function positionPlanActionMenu(button: HTMLButtonElement): CSSProperties {
+  const anchor = button.getBoundingClientRect();
+  const left = Math.max(
+    PLAN_ACTION_MENU_MARGIN,
+    Math.min(anchor.right - PLAN_ACTION_MENU_WIDTH, window.innerWidth - PLAN_ACTION_MENU_WIDTH - PLAN_ACTION_MENU_MARGIN),
+  );
+  const below = anchor.bottom + PLAN_ACTION_MENU_GAP;
+  const openAbove = below + PLAN_ACTION_MENU_HEIGHT > window.innerHeight - PLAN_ACTION_MENU_MARGIN &&
+    anchor.top - PLAN_ACTION_MENU_GAP - PLAN_ACTION_MENU_HEIGHT >= PLAN_ACTION_MENU_MARGIN;
+  const top = openAbove
+    ? anchor.top - PLAN_ACTION_MENU_GAP - PLAN_ACTION_MENU_HEIGHT
+    : Math.min(below, window.innerHeight - PLAN_ACTION_MENU_HEIGHT - PLAN_ACTION_MENU_MARGIN);
+  return { position: 'fixed', left, top, right: 'auto', width: PLAN_ACTION_MENU_WIDTH, zIndex: 1000 };
+}
+
 export const PlanList = memo(function PlanList({
   emptyText = '暂无 plan。',
   latestReadingPlan,
@@ -91,6 +112,7 @@ export const PlanList = memo(function PlanList({
   onAppendPlanTask,
   onDeletePlan,
   onOpenReader,
+  onOpenPlanFile,
   onRecreatePlanFromIntake,
   onReExecutePlan,
   onResumePlan,
@@ -112,6 +134,7 @@ export const PlanList = memo(function PlanList({
   onAppendPlanTask?: (plan: Plan, title: string) => Promise<void> | void;
   onDeletePlan?: (plan: Plan) => Promise<void> | void;
   onOpenReader: (plan: Plan) => void;
+  onOpenPlanFile?: (plan: Plan) => Promise<void> | void;
   onRecreatePlanFromIntake?: (plan: Plan) => Promise<void> | void;
   onReExecutePlan?: (plan: Plan) => Promise<void> | void;
   onResumePlan?: (plan: Plan) => Promise<void> | void;
@@ -136,9 +159,12 @@ export const PlanList = memo(function PlanList({
   const [appendingTaskPlan, setAppendingTaskPlan] = useState<Plan | null>(null);
   const [appendingTaskTitle, setAppendingTaskTitle] = useState('');
   const [openMenuPlanId, setOpenMenuPlanId] = useState<number | null>(null);
+  const [planMenuStyle, setPlanMenuStyle] = useState<CSSProperties | null>(null);
+  const planMenuButtons = useRef(new Map<number, HTMLButtonElement>());
 
   useEffect(() => {
     if (openMenuPlanId === null) return undefined;
+    const menuPlanId = openMenuPlanId;
 
     function handlePointerDown(event: globalThis.PointerEvent) {
       const target = event.target;
@@ -150,11 +176,24 @@ export const PlanList = memo(function PlanList({
       if (event.key === 'Escape') setOpenMenuPlanId(null);
     }
 
+    function updatePosition() {
+      const button = planMenuButtons.current.get(menuPlanId);
+      if (!button) {
+        setOpenMenuPlanId(null);
+        return;
+      }
+      setPlanMenuStyle(positionPlanActionMenu(button));
+    }
+
     document.addEventListener('pointerdown', handlePointerDown, true);
     document.addEventListener('keydown', handleKeyDown, true);
+    document.addEventListener('scroll', updatePosition, true);
+    window.addEventListener('resize', updatePosition);
     return () => {
       document.removeEventListener('pointerdown', handlePointerDown, true);
       document.removeEventListener('keydown', handleKeyDown, true);
+      document.removeEventListener('scroll', updatePosition, true);
+      window.removeEventListener('resize', updatePosition);
     };
   }, [openMenuPlanId]);
 
@@ -213,7 +252,21 @@ export const PlanList = memo(function PlanList({
                   </span>
                 </div>
 
-                <div className="plan-path" title={plan.file_path}>{plan.file_path}</div>
+                {plan.file_path ? (
+                  <button
+                    type="button"
+                    role="link"
+                    className="plan-path plan-file-link"
+                    title={`在文件夹中显示：${plan.file_path}`}
+                    aria-label={`在文件夹中显示计划文件：${plan.file_path}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void onOpenPlanFile?.(plan);
+                    }}
+                  >
+                    {plan.file_path}
+                  </button>
+                ) : null}
 
                 <div className="plan-progress">
                   <div className="progress-head">
@@ -367,12 +420,15 @@ export const PlanList = memo(function PlanList({
                     data-plan-action-menu="true"
                     onBlur={(event) => {
                       const nextFocus = event.relatedTarget;
-                      if (!(nextFocus instanceof Node) || !event.currentTarget.contains(nextFocus)) {
-                        setOpenMenuPlanId(null);
-                      }
+                      if (nextFocus instanceof Element && nextFocus.closest('[data-plan-action-menu="true"]')) return;
+                      setOpenMenuPlanId(null);
                     }}
                   >
                     <button
+                      ref={(button) => {
+                        if (button) planMenuButtons.current.set(plan.id, button);
+                        else planMenuButtons.current.delete(plan.id);
+                      }}
                       type="button"
                       className="plan-action-menu-button"
                       aria-haspopup="menu"
@@ -382,13 +438,24 @@ export const PlanList = memo(function PlanList({
                       title="更多操作"
                       onClick={(event) => {
                         event.stopPropagation();
-                        setOpenMenuPlanId((current) => (current === plan.id ? null : plan.id));
+                        if (openMenuPlanId === plan.id) {
+                          setOpenMenuPlanId(null);
+                          return;
+                        }
+                        setPlanMenuStyle(positionPlanActionMenu(event.currentTarget));
+                        setOpenMenuPlanId(plan.id);
                       }}
                     >
                       <Icon name="more-horizontal" size={16} aria-hidden />
                     </button>
-                    {menuOpen ? (
-                      <div className="plan-action-menu ctx-menu" id={menuId} role="menu">
+                    {menuOpen && planMenuStyle && typeof document !== 'undefined' ? createPortal(
+                      <div
+                        className="plan-action-menu ctx-menu"
+                        data-plan-action-menu="true"
+                        id={menuId}
+                        role="menu"
+                        style={planMenuStyle}
+                      >
                         <button
                           type="button"
                           className="plan-action-menu-item"
@@ -419,7 +486,8 @@ export const PlanList = memo(function PlanList({
                           <Icon name="trash" size={15} aria-hidden />
                           <span>删除</span>
                         </button>
-                      </div>
+                      </div>,
+                      document.body,
                     ) : null}
                   </div>
                 </div>

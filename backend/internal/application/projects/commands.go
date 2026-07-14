@@ -181,7 +181,10 @@ func (service *Service) Delete(
 	occurredAt := service.timestamp()
 	prepared, err := service.idempotency.Prepare(applicationidempotency.Request{
 		Scope: command.Metadata.CallerScope, Key: command.Metadata.IdempotencyKey,
-		RequestID: command.Metadata.RequestID, Route: RouteDelete, ProjectID: &projectID,
+		// The delete intent is global to the caller/key and must survive removal
+		// of the aggregate it targets. Keeping this operation project-scoped
+		// creates an immediate FK blocker and makes every delete fail.
+		RequestID: command.Metadata.RequestID, Route: RouteDelete, ProjectID: nil,
 		Payload: struct{ ProjectID int64 }{projectID}, OccurredAt: occurredAt,
 	})
 	if err != nil {

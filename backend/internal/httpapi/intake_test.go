@@ -19,13 +19,18 @@ import (
 )
 
 type p005IntakeFixture struct {
-	items       []intake.IntakeDTO
-	item        intake.IntakeDTO
-	listCalls   int
-	createCalls int
-	lastCreate  intake.CreateCommand
-	getError    error
-	visible     bool
+	items              []intake.IntakeDTO
+	item               intake.IntakeDTO
+	listCalls          int
+	createCalls        int
+	retryCalls         int
+	planActionCalls    int
+	lastCreate         intake.CreateCommand
+	lastRetry          intake.RetryPlanGenerationCommand
+	lastPlanAction     intake.PlanActionCommand
+	lastPlanActionName string
+	getError           error
+	visible            bool
 }
 
 func (fixture *p005IntakeFixture) List(_ context.Context, query intake.ListQuery) ([]intake.IntakeDTO, error) {
@@ -52,6 +57,30 @@ func (fixture *p005IntakeFixture) Update(context.Context, intake.UpdateCommand, 
 }
 
 func (fixture *p005IntakeFixture) SetAcceptance(context.Context, intake.AcceptanceCommand, domainproject.Visibility) (intake.MutationResult, error) {
+	return intake.MutationResult{}, nil
+}
+
+func (fixture *p005IntakeFixture) RetryPlanGeneration(_ context.Context, command intake.RetryPlanGenerationCommand, _ domainproject.Visibility) (intake.MutationResult, error) {
+	fixture.retryCalls++
+	fixture.lastRetry = command
+	return intake.MutationResult{}, nil
+}
+
+func (fixture *p005IntakeFixture) InterruptPlans(_ context.Context, command intake.PlanActionCommand, _ domainproject.Visibility) (intake.MutationResult, error) {
+	fixture.planActionCalls++
+	fixture.lastPlanAction, fixture.lastPlanActionName = command, "interrupt"
+	return intake.MutationResult{}, nil
+}
+
+func (fixture *p005IntakeFixture) ResumePlans(_ context.Context, command intake.PlanActionCommand, _ domainproject.Visibility) (intake.MutationResult, error) {
+	fixture.planActionCalls++
+	fixture.lastPlanAction, fixture.lastPlanActionName = command, "resume"
+	return intake.MutationResult{}, nil
+}
+
+func (fixture *p005IntakeFixture) AppendTask(_ context.Context, command intake.PlanActionCommand, _ domainproject.Visibility) (intake.MutationResult, error) {
+	fixture.planActionCalls++
+	fixture.lastPlanAction, fixture.lastPlanActionName = command, "append-task"
 	return intake.MutationResult{}, nil
 }
 
@@ -115,6 +144,44 @@ func TestP005IntakeErrorsRemainTransportSafe(t *testing.T) {
 	assertContractError(t, response, http.StatusUnauthorized, string(CodeUnauthorized), false)
 }
 
+func TestP005RetryPlanGenerationUsesFixedIntakeMutationRoute(t *testing.T) {
+	service := &p005IntakeFixture{}
+	router, credential := newP005IntakeRouter(t, service)
+	response := serveP005IntakeRequest(router, credential, http.MethodPost,
+		"/api/v1/projects/4/intake/requirement/9/actions/retry-plan-generation", strings.NewReader(`{}`), "retry-plan-9")
+	if response.Code != http.StatusOK || service.retryCalls != 1 || service.lastRetry.ProjectID != 4 ||
+		service.lastRetry.Type != domainintake.Requirement || service.lastRetry.ID != 9 || service.lastRetry.Metadata.IdempotencyKey != "retry-plan-9" {
+		t.Fatalf("status=%d calls=%d command=%#v body=%s", response.Code, service.retryCalls, service.lastRetry, response.Body.String())
+	}
+}
+
+func TestIntakeLinkedPlanActionsUseGoServiceAndPreserveAppendTitle(t *testing.T) {
+	service := &p005IntakeFixture{}
+	router, credential := newP005IntakeRouter(t, service)
+	cases := []struct {
+		name, path, body, action, title string
+	}{
+		{"interrupt", "/api/v1/projects/4/intake/requirement/9/actions/interrupt", `{}`, "interrupt", ""},
+		{"resume", "/api/v1/projects/4/intake/feedback/9/actions/resume", `{}`, "resume", ""},
+		{"append", "/api/v1/projects/4/intake/requirement/9/actions/append-task", `{"title":"write Go tests"}`, "append-task", "write Go tests"},
+	}
+	for _, item := range cases {
+		t.Run(item.name, func(t *testing.T) {
+			response := serveP005IntakeRequest(router, credential, http.MethodPost, item.path,
+				strings.NewReader(item.body), "intake-action-"+item.name)
+			if response.Code != http.StatusOK || service.lastPlanActionName != item.action ||
+				service.lastPlanAction.ProjectID != 4 || service.lastPlanAction.ID != 9 ||
+				service.lastPlanAction.Title != item.title ||
+				service.lastPlanAction.Metadata.IdempotencyKey != "intake-action-"+item.name {
+				t.Fatalf("status=%d action=%s command=%#v body=%s", response.Code, service.lastPlanActionName, service.lastPlanAction, response.Body.String())
+			}
+		})
+	}
+	if service.planActionCalls != len(cases) {
+		t.Fatalf("plan action call count=%d", service.planActionCalls)
+	}
+}
+
 func newP005IntakeRouter(t *testing.T, service IntakeService) (*Router, string) {
 	t.Helper()
 	clock := fixedClock{value: time.Date(2026, 7, 11, 4, 0, 0, 0, time.UTC)}
@@ -148,7 +215,8 @@ func serveP005IntakeRequest(router http.Handler, credential, method, target stri
 	} else {
 		content = body
 	}
-	request := httptest.NewRequest(method, "http://"+testAuthority+target, content)
+	request := httptest.NewRequest(method, target, content)
+	request.Host = testAuthority
 	request.Header.Set("Origin", testOrigin)
 	request.Header.Set(session.HeaderName, credential)
 	if body != nil {

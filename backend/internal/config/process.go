@@ -84,7 +84,7 @@ func DefaultProcessRuntime() ProcessRuntime {
 		MaxProjectConcurrent:  DefaultProcessProjectConcurrent,
 		MaxGlobalConcurrent:   DefaultProcessGlobalConcurrent,
 		ReadChunkBytes:        DefaultProcessChunkBytes,
-		AllowedEnvironment:    []string{"PATH", "PATHEXT", "SystemRoot", "ComSpec", "TMP", "TEMP"},
+		AllowedEnvironment:    []string{"PATH", "PATHEXT", "SystemRoot", "ComSpec", "TMP", "TEMP", "HOME", "USERPROFILE", "APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "CODEX_HOME"},
 	}
 }
 

@@ -120,10 +120,31 @@ func (service *Service) SetAcceptances(
 	command BatchAcceptanceCommand,
 	visibility domainproject.Visibility,
 ) (MutationResult, error) {
+	return service.setAcceptances(ctx, command, visibility, true)
+}
+
+// SetRuntimeAcceptances resolves target versions inside the same transaction
+// that performs the writes. Runtime callers intentionally provide resource
+// identifiers only, while the persistence API above retains its explicit
+// optimistic-concurrency contract.
+func (service *Service) SetRuntimeAcceptances(
+	ctx context.Context,
+	command BatchAcceptanceCommand,
+	visibility domainproject.Visibility,
+) (MutationResult, error) {
+	return service.setAcceptances(ctx, command, visibility, false)
+}
+
+func (service *Service) setAcceptances(
+	ctx context.Context,
+	command BatchAcceptanceCommand,
+	visibility domainproject.Visibility,
+	requireExpectedVersion bool,
+) (MutationResult, error) {
 	if err := service.ready(ctx); err != nil {
 		return MutationResult{}, err
 	}
-	targets, err := normalizeAcceptanceTargets(command.Targets)
+	targets, err := normalizeAcceptanceTargetsForMutation(command.Targets, requireExpectedVersion)
 	if err != nil || command.ProjectID <= 0 {
 		return MutationResult{}, ErrInvalidCommand
 	}
@@ -140,6 +161,12 @@ func (service *Service) SetAcceptances(
 		resolved := make([]resolvedTarget, 0, len(targets))
 		clockInputs := make([]string, 0, len(targets))
 		for _, target := range targets {
+			if !requireExpectedVersion {
+				target, graphErr = graph.withCurrentVersion(target)
+				if graphErr != nil {
+					return graphErr
+				}
+			}
 			item, resolveErr := graph.resolve(target)
 			if resolveErr != nil {
 				return resolveErr
@@ -208,10 +235,31 @@ func (service *Service) Redo(
 	command RedoCommand,
 	visibility domainproject.Visibility,
 ) (MutationResult, error) {
+	return service.redo(ctx, command, visibility, true)
+}
+
+// RedoRuntime is the identifier-only runtime variant of Redo. All current
+// plan/task versions are captured inside the write transaction before the
+// state transition, so it cannot apply a partially stale target graph.
+func (service *Service) RedoRuntime(
+	ctx context.Context,
+	command RedoCommand,
+	visibility domainproject.Visibility,
+) (MutationResult, error) {
+	return service.redo(ctx, command, visibility, false)
+}
+
+func (service *Service) redo(
+	ctx context.Context,
+	command RedoCommand,
+	visibility domainproject.Visibility,
+	requireExpectedVersion bool,
+) (MutationResult, error) {
 	if err := service.ready(ctx); err != nil {
 		return MutationResult{}, err
 	}
-	if command.ProjectID <= 0 || !validTarget(command.Target) {
+	if command.ProjectID <= 0 || (requireExpectedVersion && !validTarget(command.Target)) ||
+		(!requireExpectedVersion && !validTargetSelector(command.Target)) {
 		return MutationResult{}, ErrInvalidCommand
 	}
 	command.Supplement = domainplan.NormalizeSupplement(command.Supplement)
@@ -221,24 +269,39 @@ func (service *Service) Redo(
 		if graphErr != nil {
 			return graphErr
 		}
-		resolved, resolveErr := graph.resolve(command.Target)
+		target := command.Target
+		if !requireExpectedVersion {
+			target, graphErr = graph.withCurrentVersion(target)
+			if graphErr != nil {
+				return graphErr
+			}
+		}
+		resolved, resolveErr := graph.resolve(target)
 		if resolveErr != nil {
 			return resolveErr
 		}
 		if resolved.target.TargetType == TargetPlan {
-			if len(command.ExpectedTaskUpdatedAt) != len(graph.tasksByPlan[resolved.plan.ID]) {
-				return ErrStateConflict
-			}
-			for _, task := range graph.tasksByPlan[resolved.plan.ID] {
-				if command.ExpectedTaskUpdatedAt[task.ID] != task.UpdatedAt {
+			expectedTaskUpdatedAt := command.ExpectedTaskUpdatedAt
+			if requireExpectedVersion {
+				if len(expectedTaskUpdatedAt) != len(graph.tasksByPlan[resolved.plan.ID]) {
 					return ErrStateConflict
+				}
+				for _, task := range graph.tasksByPlan[resolved.plan.ID] {
+					if expectedTaskUpdatedAt[task.ID] != task.UpdatedAt {
+						return ErrStateConflict
+					}
+				}
+			} else {
+				expectedTaskUpdatedAt = make(map[int64]string, len(graph.tasksByPlan[resolved.plan.ID]))
+				for _, task := range graph.tasksByPlan[resolved.plan.ID] {
+					expectedTaskUpdatedAt[task.ID] = task.UpdatedAt
 				}
 			}
 			mutationAt := nextMutationTimestamp(service.clock.Now(), append([]string{resolved.plan.UpdatedAt}, graph.taskTimes(resolved.plan.ID)...))
 			updated, updateErr := transaction.RedoPlan(ctx, domainplan.PlanRedo{
 				ProjectID: command.ProjectID, PlanID: resolved.plan.ID,
 				ExpectedPlanUpdatedAt: resolved.plan.UpdatedAt,
-				ExpectedTaskUpdatedAt: copyUpdatedAt(command.ExpectedTaskUpdatedAt),
+				ExpectedTaskUpdatedAt: copyUpdatedAt(expectedTaskUpdatedAt),
 				UpdatedAt:             mutationAt, Supplement: command.Supplement,
 			})
 			if updateErr != nil {
@@ -258,8 +321,8 @@ func (service *Service) Redo(
 			items = append(items, result)
 			return nil
 		}
-		if !domainplan.ValidUTCTimestamp(command.Target.ExpectedPlanUpdatedAt) ||
-			command.Target.ExpectedPlanUpdatedAt != resolved.plan.UpdatedAt {
+		if requireExpectedVersion && (!domainplan.ValidUTCTimestamp(command.Target.ExpectedPlanUpdatedAt) ||
+			command.Target.ExpectedPlanUpdatedAt != resolved.plan.UpdatedAt) {
 			return ErrStateConflict
 		}
 		mutationAt := nextMutationTimestamp(service.clock.Now(), []string{resolved.plan.UpdatedAt, resolved.task.UpdatedAt})
@@ -349,6 +412,31 @@ type resolvedTarget struct {
 	task   domainplan.Task
 }
 
+func (graph planGraph) withCurrentVersion(target AcceptanceTarget) (AcceptanceTarget, error) {
+	if !validTargetSelector(target) {
+		return AcceptanceTarget{}, ErrInvalidCommand
+	}
+	if target.TargetType == TargetPlan {
+		plan, exists := graph.planByID[target.ID]
+		if !exists {
+			return AcceptanceTarget{}, repository.ErrNotFound
+		}
+		target.ExpectedUpdatedAt = plan.UpdatedAt
+		return target, nil
+	}
+	task, exists := graph.taskByID[target.ID]
+	if !exists {
+		return AcceptanceTarget{}, repository.ErrNotFound
+	}
+	plan, exists := graph.planByID[task.PlanID]
+	if !exists {
+		return AcceptanceTarget{}, repository.ErrInvalidStore
+	}
+	target.ExpectedUpdatedAt = task.UpdatedAt
+	target.ExpectedPlanUpdatedAt = plan.UpdatedAt
+	return target, nil
+}
+
 func (graph planGraph) resolve(target AcceptanceTarget) (resolvedTarget, error) {
 	if !validTarget(target) {
 		return resolvedTarget{}, ErrInvalidCommand
@@ -409,13 +497,17 @@ func (graph planGraph) taskTimes(planID int64) []string {
 }
 
 func normalizeAcceptanceTargets(values []AcceptanceTarget) ([]AcceptanceTarget, error) {
+	return normalizeAcceptanceTargetsForMutation(values, true)
+}
+
+func normalizeAcceptanceTargetsForMutation(values []AcceptanceTarget, requireExpectedVersion bool) ([]AcceptanceTarget, error) {
 	if len(values) == 0 {
 		return nil, ErrInvalidCommand
 	}
 	result := make([]AcceptanceTarget, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
-		if !validTarget(value) {
+		if (!requireExpectedVersion && !validTargetSelector(value)) || (requireExpectedVersion && !validTarget(value)) {
 			return nil, ErrInvalidCommand
 		}
 		key := string(value.TargetType) + ":" + decimal(value.ID)
@@ -433,6 +525,10 @@ func normalizeAcceptanceTargets(values []AcceptanceTarget) ([]AcceptanceTarget, 
 
 func validTarget(value AcceptanceTarget) bool {
 	return value.TargetType.Valid() && value.ID > 0 && domainplan.ValidUTCTimestamp(value.ExpectedUpdatedAt)
+}
+
+func validTargetSelector(value AcceptanceTarget) bool {
+	return value.TargetType.Valid() && value.ID > 0 && value.ExpectedUpdatedAt == "" && value.ExpectedPlanUpdatedAt == ""
 }
 
 func nextMutationTimestamp(now time.Time, current []string) string {

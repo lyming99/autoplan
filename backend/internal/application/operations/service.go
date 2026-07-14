@@ -219,6 +219,46 @@ func (service *Service) Get(ctx context.Context, query Query) (domainoperation.O
 	return result, nil
 }
 
+// ListForSnapshot returns a bounded, newest-first project projection for the
+// trusted snapshot assembler. Authorization has already been established by
+// the project-scoped snapshot lookup; this method still accepts no global or
+// cross-project query shape.
+func (service *Service) ListForSnapshot(ctx context.Context, projectID int64, limit int) ([]domainoperation.Operation, error) {
+	if err := service.ready(ctx); err != nil {
+		return nil, err
+	}
+	if projectID <= 0 {
+		return nil, ErrInvalidCommand
+	}
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	result := make([]domainoperation.Operation, 0)
+	err := service.store.Transact(ctx, func(transaction Transaction) error {
+		items, listErr := transaction.List(ctx, ListQuery{
+			ProjectID: projectID, Limit: limit, Descending: true,
+		})
+		if listErr != nil {
+			return listErr
+		}
+		result = append(result, items...)
+		return nil
+	})
+	if err != nil {
+		return nil, mapStoreError(err)
+	}
+	sort.SliceStable(result, func(left, right int) bool {
+		if result[left].UpdatedAt == result[right].UpdatedAt {
+			return result[left].OperationID > result[right].OperationID
+		}
+		return result[left].UpdatedAt > result[right].UpdatedAt
+	})
+	return result, nil
+}
+
 func (service *Service) Claim(ctx context.Context, command ClaimCommand) (Result, error) {
 	if err := service.ready(ctx); err != nil {
 		return Result{}, err
@@ -250,11 +290,6 @@ func (service *Service) Claim(ctx context.Context, command ClaimCommand) (Result
 		if handler == nil {
 			if !directRuntimeOperation(current.Type) {
 				return ErrHandlerUnavailable
-			}
-		} else {
-			claimable, handlerErr := safeCanRecover(ctx, handler, current)
-			if handlerErr != nil || !claimable {
-				return ErrRecoveryNotClaimable
 			}
 		}
 		updatedAt := nextTimestamp(service.clock, current.UpdatedAt)
@@ -481,6 +516,7 @@ func (transaction sqliteTransaction) Get(ctx context.Context, projectID int64, o
 func (transaction sqliteTransaction) List(ctx context.Context, query ListQuery) ([]domainoperation.Operation, error) {
 	return transaction.transaction.List(ctx, sqlite.OperationListQuery{
 		ProjectID: query.ProjectID, Type: query.Type, Status: query.Status, Limit: query.Limit,
+		Descending: query.Descending,
 	})
 }
 

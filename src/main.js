@@ -12,14 +12,18 @@ const { migrateLegacyDatabase, isLegacyMigrationCompleted, markLegacyMigrationCo
 const { readLegacyProjects, restoreLegacyProjects } = require('./data/legacyProjectRestore');
 const { GoDaemonSupervisor } = require('./daemon/supervisor');
 const { resolveDaemonBinary } = require('./daemon/binaryPath');
+const { packagedGoDataDirectory, packagedLogDirectory } = require('./daemon/dataDirectory');
+const { RuntimeFileLogger, safeErrorCode } = require('./logging/runtimeFileLogger');
 const { GoRuntimeAdapter } = require('./loop/goRuntimeAdapter');
+const { daemonRuntimeFeatureEnvironment, runtimeFeatureFlags } = require('./runtimeFeatures');
+const { openProjectFolderFromRuntime } = require('./desktop/projectFolder');
+const { openSystemTerminal } = require('./desktop/systemTerminal');
 const { createIntakeService, titleFromBody } = require('./intakeService');
 const { LoopService, nextIntakeAgentCliConfig, nextIntakePlanGenerationConfig } = require('./loopService');
 const intakePlanLinks = require('./loop/intakePlanLinks');
 const { parseCron } = require('./loop/scriptHooks');
 const { createExecutorStore } = require('./executors/executorStore');
-const { mcpServerConfig, saveMcpSettings } = require('./mcpConfig');
-const { createMcpServer } = require('./mcpServer');
+const { saveMcpSettings } = require('./mcpConfig');
 const { registerTerminalIpc } = require('./terminal/terminalIpc');
 const { TerminalService } = require('./terminal/terminalService');
 const { terminalLegacyAdmissionForPlatform } = require('./terminal/terminalTypes');
@@ -69,6 +73,9 @@ if (protocol?.registerSchemesAsPrivileged) {
 
 configureDevelopmentSessionData();
 configurePackagedGoRuntime();
+const runtimeLogger = createRuntimeFileLogger();
+installCriticalLogHandlers();
+runtimeLogger.log('info', 'electron_process_started', { source: 'electron', pid: process.pid, stage: 'startup' });
 
 const PRIMARY_INSTANCE_DATA = Object.freeze({ version: 1, type: 'autoplan_primary_instance' });
 const isPrimaryInstance = app.requestSingleInstanceLock(PRIMARY_INSTANCE_DATA);
@@ -77,7 +84,6 @@ if (!isPrimaryInstance) app.quit();
 let mainWindow;
 let db;
 let loop;
-let mcpServer;
 let updateChecker;
 let chatControllers;
 let terminalService;
@@ -111,12 +117,12 @@ function configureDevelopmentSessionData() {
 // Packaged launches have no launcher script to inject the Go runtime
 // environment that scripts/dev.js sets in development. Default the owner,
 // the non-routable ownership marker (the real authority comes from the
-// supervisor's readiness handshake), and a temp-resident data directory
+// supervisor's readiness handshake), and a persistent userData directory
 // before the owner guard and supervisor run.
 function configurePackagedGoRuntime() {
   if (!app.isPackaged) return;
   if (process.env.AUTOPLAN_DATABASE_OWNER) return;
-  const dataDir = path.join(os.tmpdir(), 'autoplan-sidecar');
+  const dataDir = packagedGoDataDirectory(app.getPath('userData'));
   try {
     fs.mkdirSync(dataDir, { recursive: true });
   } catch {
@@ -128,21 +134,26 @@ function configurePackagedGoRuntime() {
   process.env.AUTOPLAN_GO_DATA_DIR = dataDir;
 }
 
-// On a packaged Go-mode launch the sidecar opens a fresh temp-resident
-// database. Before the owner guard selects Go, copy the legacy Node database
-// (in userData) into that temp directory so the user's projects, plans and
-// tasks survive the upgrade. The migration is idempotent: a sentinel file
-// prevents re-running it on subsequent launches. Failures are logged but do
+// On the first packaged Go-mode launch, migrate the previous temp-resident Go
+// database when present, otherwise migrate the legacy Node database. The new
+// database remains below Electron userData. A sentinel prevents re-running.
 // not block startup — the Go sidecar still boots with an empty database.
 async function migrateLegacyDatabaseIfNeeded() {
   if (!app.isPackaged || process.env.AUTOPLAN_DATABASE_OWNER !== 'go') return;
   const dataDir = process.env.AUTOPLAN_GO_DATA_DIR;
   if (!dataDir || !path.isAbsolute(dataDir)) return;
   if (isLegacyMigrationCompleted(dataDir)) return;
-  const sourceDbPath = path.join(app.getPath('userData'), 'data', 'autoplan.sqlite');
-  if (!fs.existsSync(sourceDbPath)) return;
   const targetDbPath = path.join(dataDir, 'autoplan.sqlite');
-  const sourceAttachmentsDir = path.join(app.getPath('userData'), 'data', 'attachments');
+  if (fs.existsSync(targetDbPath)) return;
+  const oldGoDataDir = path.join(os.tmpdir(), 'autoplan-sidecar');
+  const oldGoDatabase = path.join(oldGoDataDir, 'autoplan.sqlite');
+  const legacyDataDir = path.join(app.getPath('userData'), 'data');
+  const sourceDataDir = fs.existsSync(oldGoDatabase) ? oldGoDataDir : legacyDataDir;
+  const sourceDbPath = fs.existsSync(oldGoDatabase)
+    ? oldGoDatabase
+    : path.join(legacyDataDir, 'autoplan.sqlite');
+  if (!fs.existsSync(sourceDbPath)) return;
+  const sourceAttachmentsDir = path.join(sourceDataDir, 'attachments');
   const targetAttachmentsDir = path.join(dataDir, 'attachments');
   try {
     const result = await migrateLegacyDatabase({
@@ -154,8 +165,12 @@ async function migrateLegacyDatabaseIfNeeded() {
       sqlJsOptions: { locateFile: (file) => path.join(__dirname, '..', 'node_modules', 'sql.js', 'dist', file) },
     });
     markLegacyMigrationCompleted(dataDir);
+    runtimeLogger.log('info', 'legacy_database_migrated', { source: 'electron', stage: 'migration' });
     console.log('[autoplan] legacy database migrated:', JSON.stringify(result.tables));
   } catch (error) {
+    runtimeLogger.log('error', 'legacy_database_migration_failed', {
+      source: 'electron', stage: 'migration', error_code: safeErrorCode(error),
+    });
     console.error('[autoplan] legacy database migration failed:', error?.code || error?.message || 'unknown');
   }
 }
@@ -170,7 +185,13 @@ const MAINTENANCE_READ_ONLY_CHANNELS = new Set([
   'mcp:readAuthToken', 'chat:history', 'chat:queueList', 'chat:getConfig',
   'file-access:get', 'ai-config:list', 'ai-config:get', 'claude-cli-config:list',
   'claude-cli-config:get', 'conversation:list', 'scripts:pickFile',
-  'executors:pickTasksJson', 'projects:pickDirectory',
+  'executors:pickTasksJson', 'projects:pickDirectory', 'logs:openFolder',
+]);
+const KEY_IPC_CHANNELS = new Set([
+  'projects:create', 'projects:update', 'projects:delete', 'projects:openFolder', 'projects:openTerminal',
+  'loop:configure', 'loop:start', 'loop:stop', 'loop:runOnce', 'intake:retryGeneratePlan',
+  'plans:reExecute', 'plans:recreate', 'tasks:run', 'tasks:runParallel', 'tasks:stop',
+  'terminal:create', 'terminal:kill', 'terminal:close', 'logs:openFolder',
 ]);
 const maintenanceIpcGates = new WeakSet();
 
@@ -179,11 +200,48 @@ function installMaintenanceIpcGate() {
   const register = ipcMain.handle.bind(ipcMain);
   maintenanceIpcGates.add(ipcMain);
   ipcMain.handle = (channel, handler) => register(channel, async (...args) => {
+    const startedAt = Date.now();
+    const projectId = ipcProjectID(args[1]);
     if (maintenanceState.mutationsBlocked && !MAINTENANCE_READ_ONLY_CHANNELS.has(channel)) {
+      runtimeLogger.log('warn', 'ipc_request_rejected', {
+        source: 'electron', channel, error_code: 'maintenance_mode', duration_ms: Date.now() - startedAt,
+        ...(projectId ? { project_id: projectId } : {}),
+      });
       throw new Error('maintenance_mode');
     }
-    return handler(...args);
+    if (KEY_IPC_CHANNELS.has(channel)) {
+      runtimeLogger.log('info', 'ipc_request_started', {
+        source: 'electron', channel, ...(projectId ? { project_id: projectId } : {}),
+      });
+    }
+    try {
+      const result = await handler(...args);
+      const failedResult = result && typeof result === 'object' && result.ok === false;
+      if (failedResult) {
+        runtimeLogger.log('error', 'ipc_request_failed', {
+          source: 'electron', channel, error_code: safeErrorCode({ code: result.error }),
+          duration_ms: Date.now() - startedAt, ...(projectId ? { project_id: projectId } : {}),
+        });
+      } else if (KEY_IPC_CHANNELS.has(channel)) {
+        runtimeLogger.log('info', 'ipc_request_finished', {
+          source: 'electron', channel, duration_ms: Date.now() - startedAt,
+          ...(projectId ? { project_id: projectId } : {}),
+        });
+      }
+      return result;
+    } catch (error) {
+      runtimeLogger.log('error', 'ipc_request_failed', {
+        source: 'electron', channel, error_code: safeErrorCode(error), duration_ms: Date.now() - startedAt,
+        ...(projectId ? { project_id: projectId } : {}),
+      });
+      throw error;
+    }
   });
+}
+
+function ipcProjectID(input) {
+  const value = Number(input?.projectId || input?.id || 0);
+  return Number.isSafeInteger(value) && value > 0 ? value : 0;
 }
 
 installMaintenanceIpcGate();
@@ -269,6 +327,7 @@ function installTrustedRendererNavigation(webContents) {
 }
 
 async function createApp() {
+  runtimeLogger.log('info', 'electron_app_initializing', { source: 'electron', stage: 'startup' });
   assertRendererLaunchConfiguration();
   Menu.setApplicationMenu(null);
   await migrateLegacyDatabaseIfNeeded();
@@ -319,8 +378,9 @@ async function createApp() {
       mainWindow.webContents.send('loop:patch', patch);
     }
   });
-  // 模块级 mcpServer 在启停过程中被重新赋值，故以闭包懒读取其最新状态注入快照。
-  loop.setMcpStatusProvider(() => mcpServer?.status?.());
+  // Go owns the MCP runtime. Legacy snapshots must not probe or start a
+  // second Node listener.
+  loop.setMcpStatusProvider(() => undefined);
   if (!isGoRuntimeMode()) loop.startScheduler();
   // 更新检查器：检查完成后经 onCheck 向渲染进程推送 updates:status；安装包只下载到 userData 受控目录。
   if (!isGoRuntimeMode()) {
@@ -347,6 +407,11 @@ async function createApp() {
       nodeIntegration: false,
     },
   });
+  mainWindow.on('close', (event) => {
+    // Keep the window alive until the supervised Go process has closed its
+    // listener, database and child process tree.
+    if (beginGoDaemonShutdown()) event.preventDefault();
+  });
   installTrustedRendererNavigation(mainWindow.webContents);
   installSidecarRequestAuthentication(mainWindow.webContents);
   if (!app.isPackaged) {
@@ -356,9 +421,9 @@ async function createApp() {
   }
   await loadRenderer(mainWindow);
   if (!isGoRuntimeMode()) {
-    scheduleMcpServerStart();
     scheduleUpdateCheck();
   }
+  runtimeLogger.log('info', 'electron_app_ready', { source: 'electron', stage: 'startup' });
 }
 
 if (isPrimaryInstance) {
@@ -371,6 +436,9 @@ if (isPrimaryInstance) {
       await createApp();
     } catch (error) {
       const code = startupFailureCode(error);
+      runtimeLogger.log('error', 'electron_startup_failed', {
+        source: 'electron', stage: 'startup', error_code: code,
+      });
       console.error('[app] startup failed', code);
       try {
         dialog.showErrorBox(
@@ -384,20 +452,57 @@ if (isPrimaryInstance) {
   });
 }
 
+function createRuntimeFileLogger() {
+  const directory = packagedLogDirectory(app.getPath('userData'));
+  try {
+    return new RuntimeFileLogger({ directory });
+  } catch {
+    return {
+      directory,
+      filePath: '',
+      log: () => false,
+      writeExternalChunk: () => undefined,
+      flushExternal: () => undefined,
+    };
+  }
+}
+
+function installCriticalLogHandlers() {
+  process.on('uncaughtExceptionMonitor', (error) => {
+    runtimeLogger.log('error', 'electron_uncaught_exception', {
+      source: 'electron', stage: 'process', error_code: safeErrorCode(error),
+    });
+  });
+  process.on('unhandledRejection', (error) => {
+    runtimeLogger.log('error', 'electron_unhandled_rejection', {
+      source: 'electron', stage: 'process', error_code: safeErrorCode(error),
+    });
+  });
+  app.on('render-process-gone', (_event, _webContents, details = {}) => {
+    runtimeLogger.log('error', 'electron_renderer_gone', {
+      source: 'electron', stage: 'renderer', error_code: safeErrorCode({ code: details.reason }, 'renderer_gone'),
+      exit_code: Number.isSafeInteger(details.exitCode) ? details.exitCode : 0,
+    });
+  });
+  app.on('child-process-gone', (_event, details = {}) => {
+    runtimeLogger.log('error', 'electron_child_process_gone', {
+      source: 'electron', stage: safeErrorCode({ code: details.type }, 'child'),
+      error_code: safeErrorCode({ code: details.reason }, 'child_process_gone'),
+      exit_code: Number.isSafeInteger(details.exitCode) ? details.exitCode : 0,
+    });
+  });
+}
+
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
 app.on('before-quit', (event) => {
-  if (daemonSupervisor && !daemonQuitPending) {
+  runtimeLogger.log('info', 'electron_app_stopping', { source: 'electron', stage: 'shutdown' });
+  if (beginGoDaemonShutdown()) {
     event.preventDefault();
-    daemonQuitPending = true;
-    daemonSupervisor.stop()
-      .catch(() => undefined)
-      .finally(() => app.quit());
     return;
   }
-  if (mcpServer) mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
   if (terminalService) terminalService.disposeAll();
   if (loop) {
     loop.stopScheduler();
@@ -405,6 +510,19 @@ app.on('before-quit', (event) => {
   }
   if (updateChecker) updateChecker.stop();
 });
+
+function beginGoDaemonShutdown() {
+  if (!daemonSupervisor || daemonQuitPending) return false;
+  daemonQuitPending = true;
+  daemonSupervisor.stop()
+    .catch((error) => {
+      runtimeLogger.log('error', 'daemon_stop_failed', {
+        source: 'electron-supervisor', stage: 'shutdown', error_code: safeErrorCode(error, 'daemon_stop_failed'),
+      });
+    })
+    .finally(() => app.quit());
+  return true;
+}
 
 function isGoRuntimeMode() {
   return databaseOwner?.owner === DATABASE_OWNERS.GO;
@@ -422,20 +540,9 @@ function goDaemonLaunchOptions() {
     executablePath: binary.path,
     dataDir: process.env.AUTOPLAN_GO_DATA_DIR,
     runtimeFeatureEnvironment: daemonRuntimeFeatureEnvironment(process.env),
+    logger: runtimeLogger,
   };
 }
-
-const RUNTIME_FEATURE_ENV = Object.freeze({
-  go_loop_actions: 'AUTOPLAN_SIDECAR_GO_LOOP_ACTIONS',
-  go_plan_actions: 'AUTOPLAN_SIDECAR_GO_PLAN_ACTIONS',
-  go_task_actions: 'AUTOPLAN_SIDECAR_GO_TASK_ACTIONS',
-  go_acceptance_retry_actions: 'AUTOPLAN_SIDECAR_GO_ACCEPTANCE_RETRY_ACTIONS',
-  go_scripts_api: 'AUTOPLAN_SIDECAR_GO_SCRIPTS_API',
-  go_executors_api: 'AUTOPLAN_SIDECAR_GO_EXECUTORS_API',
-  go_chat_api: 'AUTOPLAN_SIDECAR_GO_CHAT_API',
-  go_terminal_api: 'AUTOPLAN_SIDECAR_GO_TERMINAL_API',
-  go_agent_cli_runtime: 'AUTOPLAN_SIDECAR_GO_AGENT_CLI_RUNTIME',
-});
 
 function rendererRuntimeConfig() {
   if (!isGoRuntimeMode()) return null;
@@ -479,35 +586,6 @@ async function sidecarProjectRequest(client, route, method, body, idempotencyKey
   const value = await response.json().catch(() => null);
   if (!response.ok || !value || typeof value !== 'object') throw new GoDataClientError('service_unavailable');
   return value;
-}
-
-function runtimeFeatureFlags(env) {
-  const result = {};
-  for (const [feature, name] of Object.entries(RUNTIME_FEATURE_ENV)) {
-    const value = env?.[name];
-    if (value === undefined || value === 'false') {
-      result[feature] = false;
-    } else if (value === 'true') {
-      result[feature] = true;
-    } else {
-      // Runtime feature parsing is fail-closed. A malformed launch value must
-      // leave every P12 process route on its existing owner, rather than
-      // partially enabling an HTTP route with uncertain ownership.
-      for (const key of Object.keys(RUNTIME_FEATURE_ENV)) result[key] = false;
-      return Object.freeze(result);
-    }
-  }
-  return Object.freeze(result);
-}
-
-function daemonRuntimeFeatureEnvironment(env) {
-  const features = runtimeFeatureFlags(env);
-  const result = Object.fromEntries(Object.entries(RUNTIME_FEATURE_ENV)
-    .map(([feature, name]) => [name, features[feature] === true]));
-  // MCP has no renderer transport flag, but it is still an independently
-  // fail-closed sidecar feature and must not inherit arbitrary parent env.
-  result.AUTOPLAN_SIDECAR_GO_MCP_API = env?.AUTOPLAN_SIDECAR_GO_MCP_API === 'true';
-  return Object.freeze(result);
 }
 
 function isGoChatHTTPEnabled() {
@@ -561,13 +639,28 @@ function installSidecarRequestAuthentication(webContents) {
     responseHeaders['Access-Control-Expose-Headers'] = ['X-Request-ID'];
     callback({ cancel: false, responseHeaders });
   });
-  if (!app.isPackaged && typeof request.onErrorOccurred === 'function') {
+  if (typeof request.onErrorOccurred === 'function') {
     request.onErrorOccurred({ urls: ['http://127.0.0.1/*'] }, (details) => {
       if (details?.webContentsId !== webContents.id || !isLoopbackAPIPath(details?.url)) return;
       // React refreshes and explicit AbortControllers intentionally cancel a
       // stale request; Chromium reports that as ERR_ABORTED.
       if (details.error === 'net::ERR_ABORTED') return;
-      console.error(`[autoplan] sidecar request failed: ${String(details.error || 'unknown_error')}`);
+      runtimeLogger.log('error', 'sidecar_network_request_failed', {
+        source: 'electron-network', method: details.method,
+        error_code: safeErrorCode({ code: details.error }, 'network_error'), retryable: true,
+      });
+      if (!app.isPackaged) console.error(`[autoplan] sidecar request failed: ${String(details.error || 'unknown_error')}`);
+    });
+  }
+  if (typeof request.onCompleted === 'function') {
+    request.onCompleted({ urls: ['http://127.0.0.1/*'] }, (details) => {
+      if (details?.webContentsId !== webContents.id || !isLoopbackAPIPath(details?.url) || details.statusCode < 400) return;
+      let route = '';
+      try { route = new URL(details.url).pathname; } catch { route = ''; }
+      runtimeLogger.log('error', 'sidecar_http_request_failed', {
+        source: 'electron-network', method: details.method, route, status: details.statusCode,
+        error_code: `http_${details.statusCode}`, retryable: details.statusCode >= 500,
+      });
     });
   }
 }
@@ -631,10 +724,6 @@ function assertLegacyChatAdapterEnabled() {
   if (isGoChatHTTPEnabled()) throw new GoDataClientError('legacy_adapter_disabled');
 }
 
-function assertLegacyMcpAdapterEnabled() {
-  if (isGoMcpTransportEnabled()) throw new GoDataClientError('legacy_adapter_disabled');
-}
-
 function daemonStatus() {
   return daemonSupervisor?.status?.() || { state: 'unavailable', ready: false, host: null, port: null, baseUrl: null, origin: null };
 }
@@ -671,7 +760,6 @@ async function enterMaintenanceMode({ operationId = 'electron-cutover', stage = 
   updateMaintenanceState({ operationId, mode: 'maintenance', stage, code, mutationsBlocked: true });
   try {
     if (updateChecker) updateChecker.stop();
-    if (mcpServer) await stopMcpServer();
     if (loop) {
       loop.stopScheduler?.();
       await loop.stop?.();
@@ -783,6 +871,19 @@ ipcMain.handle('updates:setAutoCheck', (_event, input = {}) => {
 });
 
 ipcMain.handle('updates:openInstaller', async () => openDownloadedUpdateInstaller());
+
+ipcMain.handle('logs:openFolder', async () => {
+  try {
+    fs.mkdirSync(runtimeLogger.directory, { recursive: true });
+    const error = await shell.openPath(runtimeLogger.directory);
+    return error ? { ok: false, error: 'log_folder_open_failed' } : { ok: true, error: null };
+  } catch (error) {
+    runtimeLogger.log('error', 'log_folder_open_failed', {
+      source: 'electron', error_code: safeErrorCode(error),
+    });
+    return { ok: false, error: 'log_folder_open_failed' };
+  }
+});
 
 // 外链统一经主进程 shell.openExternal 打开（需求 #24 更新提醒等），仅放行 http/https，避免渲染进程直接跳转。
 ipcMain.handle('shell:openExternal', async (_event, input = {}) => {
@@ -1029,6 +1130,13 @@ ipcMain.handle('projects:delete', (_event, input = {}) => {
 });
 ipcMain.handle('projects:pickDirectory', async () => (await dialog.showOpenDialog(mainWindow, { properties: ['openDirectory'] }))?.filePaths?.[0] || null);
 ipcMain.handle('projects:openFolder', (_event, input = {}) => openProjectFolder(input));
+ipcMain.handle('projects:openTerminal', async (_event, input = {}) => {
+  try {
+    return openSystemTerminal(await loadProjectWorkspacePath(input));
+  } catch {
+    return { ok: false, error: '无法读取项目工作区路径' };
+  }
+});
 
 ipcMain.handle('loop:configure', (_event, config = {}) => {
   if (isGoRuntimeMode()) throw new GoDataClientError('service_unavailable');
@@ -1131,7 +1239,9 @@ ipcMain.handle('acceptance:redo', async (_event, input = {}) => {
   const projectId = requiredProjectId(input);
   if (isGoRuntimeMode()) {
     return goDataSnapshot(projectId, () => goDataClient.redoAcceptanceItem(
-      projectId, normalizeAcceptanceTargetType(input.targetType), requiredRecordId(input),
+      projectId, normalizeAcceptanceTargetType(input.targetType), requiredRecordId(input), {
+        supplement: input.supplement == null ? '' : String(input.supplement),
+      },
     ));
   }
   loop.redoAcceptanceItem(projectId, {
@@ -1144,16 +1254,16 @@ ipcMain.handle('acceptance:redo', async (_event, input = {}) => {
 
 ipcMain.handle('acceptance:acceptBatch', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  if (isGoRuntimeMode()) return goDataSnapshot(projectId, () => goDataClient.acceptItems(projectId));
   const targets = normalizeAcceptanceBatchTargets(input.targets, '批量验收目标列表为空');
+  if (isGoRuntimeMode()) return goDataSnapshot(projectId, () => goDataClient.acceptItems(projectId, targets));
   loop.acceptItems(projectId, targets);
   return loop.snapshot(projectId);
 });
 
 ipcMain.handle('acceptance:unacceptBatch', (_event, input = {}) => {
   const projectId = requiredProjectId(input);
-  if (isGoRuntimeMode()) return goDataSnapshot(projectId, () => goDataClient.unacceptItems(projectId));
   const targets = normalizeAcceptanceBatchTargets(input.targets, '批量取消验收目标列表为空');
+  if (isGoRuntimeMode()) return goDataSnapshot(projectId, () => goDataClient.unacceptItems(projectId, targets));
   loop.unacceptItems(projectId, targets);
   return loop.snapshot(projectId);
 });
@@ -1957,53 +2067,32 @@ async function readExecutorTasksJsonInput(input = {}) {
 }
 
 function scheduleMcpServerStart() {
-  if (isGoMcpTransportEnabled()) return;
-  setTimeout(() => startMcpServer().catch((error) => recordMcpStartupError(error)), 0);
+  // MCP is started by the Go daemon lifecycle. Electron never owns a
+  // listener, including in compatibility mode.
 }
 
 function scheduleMcpServerRestart() {
-  if (isGoMcpTransportEnabled()) return;
-  setTimeout(() => restartMcpServer().catch((error) => recordMcpStartupError(error)), 0);
+  // Persisted configuration is consumed by the next Go daemon lifecycle.
 }
 
-async function restartMcpServer() { if (mcpServer) await mcpServer.stop().catch((error) => console.error('[mcp] stop before restart failed', error)); return startMcpServer(); }
-
 async function startMcpServer() {
-  if (isGoRuntimeMode()) {
-    const result = await goDataClient.startMcp();
-    return { enabled: true, running: true, owner: 'go', operation: result.operation, gate: isGoMcpTransportEnabled() ? 'go_mcp_api' : 'compatibility' };
-  }
-  assertLegacyMcpAdapterEnabled();
-  // 幂等守卫：已运行则直接返回当前状态，避免重建第二个实例导致 EADDRINUSE。
-  if (mcpServer?.status?.()?.running) return mcpServer.status();
-  mcpServer = createMcpServer({ db, loop, intakeService: intakeService(), config: mcpServerConfig(db), logger: console });
-  const state = await mcpServer.start();
-  const projectId = loop?.defaultProjectId?.();
-  if (projectId && state.enabled && state.running) loop.addEvent(projectId, 'mcp.started', mcpStatusMessage(state), { mcp: state });
-  return state;
+  if (!isGoRuntimeMode()) throw new GoDataClientError('go_mcp_transport_required');
+  const result = await goDataClient.startMcp();
+  return { enabled: true, running: true, owner: 'go', operation: result.operation, gate: 'go_mcp_api' };
 }
 
 async function stopMcpServer() {
-  if (isGoRuntimeMode()) {
-    const result = await goDataClient.stopMcp();
-    return { enabled: true, running: false, owner: 'go', operation: result.operation, gate: isGoMcpTransportEnabled() ? 'go_mcp_api' : 'compatibility' };
-  }
-  assertLegacyMcpAdapterEnabled();
-  if (!mcpServer) return null;
-  const state = await mcpServer.stop().catch((error) => console.error('[mcp] stop failed', error));
-  const projectId = loop?.defaultProjectId?.();
-  if (projectId) loop.addEvent(projectId, 'mcp.stopped', 'MCP 服务已停止', { mcp: state || mcpServer?.status?.() || null });
-  return state;
+  if (!isGoRuntimeMode()) throw new GoDataClientError('go_mcp_transport_required');
+  const result = await goDataClient.stopMcp();
+  return { enabled: true, running: false, owner: 'go', operation: result.operation, gate: 'go_mcp_api' };
 }
 
 function recordMcpStartupError(error) {
   const message = error?.message || String(error || '未知错误');
   console.error('[mcp] start failed', error);
   const projectId = loop?.defaultProjectId?.();
-  if (projectId) loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, { mcp: mcpServer?.status?.() || null, error: message });
+  if (projectId) loop.addEvent(projectId, 'mcp.start.failed', `MCP 服务启动失败：${message}`, { error: message });
 }
-
-function mcpStatusMessage(state = {}) { return state.transport === 'stdio' ? 'MCP 服务已启动：stdio' : `MCP 服务已启动：${state.url || 'http://127.0.0.1:43847/mcp'}`; }
 
 function readSavedMcpAuthToken() {
   if (isGoRuntimeMode()) return { hasAuthToken: false, authToken: '' };
@@ -2191,12 +2280,11 @@ async function openWorkspaceFile(input = {}) {
   if (!projectId) return openFileResult(false, '项目不存在');
   if (!relativePath) return openFileResult(false, '文件路径为空');
 
-  const project = db.get('SELECT id, workspace_path FROM projects WHERE id = ?', [projectId]);
-  if (!project) return openFileResult(false, '项目不存在');
-  if (!String(project.workspace_path || '').trim()) return openFileResult(false, '项目工作区路径为空');
-
   try {
-    const filePath = await resolveWorkspaceFilePath(project.workspace_path, relativePath);
+    // Resolve the workspace through the active runtime owner. Go mode has no
+    // readable Node database and must never fall back to one for file access.
+    const workspacePath = await loadProjectWorkspacePath({ projectId });
+    const filePath = await resolveWorkspaceFilePath(workspacePath, relativePath);
     const mode = normalizeOpenFileMode(input.mode || readSetting('scopeFileOpenMode') || 'system');
     const command = String(input.command || readSetting('scopeFileOpenCommand') || '').trim();
     await openResolvedFilePath(filePath, mode, command);
@@ -2207,9 +2295,35 @@ async function openWorkspaceFile(input = {}) {
 }
 
 async function openProjectFolder(input = {}) {
-  const folder = String(db.get('SELECT workspace_path FROM projects WHERE id = ?', [Number(input.projectId || input.id || 0)])?.workspace_path || '').trim();
-  const openError = folder ? await shell.openPath(folder) : '项目工作区路径为空';
-  return { ok: !openError, error: openError || null };
+  return openProjectFolderFromRuntime({
+    projectId: Number(input.projectId || input.id || 0),
+    goRuntime: isGoRuntimeMode(),
+    database: db,
+    shell,
+    loadGoProject: async (projectId) => {
+      const response = await sidecarProjectRequest(
+        daemonSupervisor.clientOptions(),
+        `/api/v1/projects/${projectId}`,
+        'GET',
+      );
+      return response?.data;
+    },
+  });
+}
+
+async function loadProjectWorkspacePath(input = {}) {
+  const projectId = Number(input.projectId || input.id || 0);
+  if (!Number.isSafeInteger(projectId) || projectId <= 0) throw new Error('project_not_found');
+  const project = isGoRuntimeMode()
+    ? (await sidecarProjectRequest(
+      daemonSupervisor.clientOptions(),
+      `/api/v1/projects/${projectId}`,
+      'GET',
+    ))?.data
+    : db.get('SELECT workspace_path FROM projects WHERE id = ?', [projectId]);
+  const workspacePath = String(project?.workspace_path || '').trim();
+  if (!workspacePath) throw new Error('project_workspace_empty');
+  return workspacePath;
 }
 
 async function resolveWorkspaceFilePath(workspacePath, filePath) {

@@ -66,6 +66,37 @@ func TestIdempotentCreateReplaysWithoutSecondBusinessWrite(t *testing.T) {
 	}
 }
 
+func TestRetryPlanGenerationClearsFailureStateIdempotently(t *testing.T) {
+	store := newMemoryStore()
+	failedAt := applicationTestTime
+	failure := "plan_generation_failed"
+	store.seedIntake(domainintake.Intake{
+		ID: 8, ProjectID: 1, Type: domainintake.Requirement, Title: "Retry", Body: "Body",
+		Status: domainintake.StatusDraft, CreatedAt: applicationTestTime, UpdatedAt: applicationTestTime,
+		Failure: domainintake.GenerationFailure{Count: 3, LastFailedAt: &failedAt, LastError: &failure},
+	})
+	service := newTestService(store, nil, nil)
+	command := RetryPlanGenerationCommand{
+		ProjectID: 1, Type: domainintake.Requirement, ID: 8,
+		Metadata: MutationMetadata{CallerScope: "test", IdempotencyKey: "retry-8", RequestID: "request-retry-8"},
+	}
+	result, err := service.RetryPlanGeneration(context.Background(), command, domainproject.Visibility{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := store.intakes[intakeKey(domainintake.Requirement, 8)]
+	if updated.Failure.Count != 0 || updated.Failure.LastError != nil || updated.Failure.LastFailedAt != nil || len(result.Snapshot.Requirements) != 1 {
+		t.Fatalf("failure=%#v snapshot=%#v", updated.Failure, result.Snapshot.Requirements)
+	}
+	commits, events := store.businessCommits, len(store.events)
+	if _, err := service.RetryPlanGeneration(context.Background(), command, domainproject.Visibility{}); err != nil {
+		t.Fatal(err)
+	}
+	if store.businessCommits != commits || len(store.events) != events {
+		t.Fatalf("idempotent retry wrote twice: commits=%d/%d events=%d/%d", commits, store.businessCommits, events, len(store.events))
+	}
+}
+
 func TestConcurrentIdempotentCreateCommitsOnce(t *testing.T) {
 	store := newMemoryStore()
 	service := newTestService(store, nil, nil)

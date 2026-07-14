@@ -19,6 +19,8 @@ const {
 
 const DAEMON_ORIGIN = 'http://127.0.0.1:1';
 const RENDERER_ORIGIN_ENVIRONMENT = 'AUTOPLAN_SIDECAR_RENDERER_ORIGIN';
+const DATA_DIRECTORY_ENVIRONMENT = 'AUTOPLAN_SIDECAR_DATA_DIR';
+const MCP_PORT_ENVIRONMENT = 'AUTOPLAN_MCP_PORT';
 const RUNTIME_FEATURE_ENVIRONMENT = Object.freeze([
   'AUTOPLAN_SIDECAR_GO_LOOP_ACTIONS',
   'AUTOPLAN_SIDECAR_GO_PLAN_ACTIONS',
@@ -49,9 +51,11 @@ class GoDaemonSupervisor extends EventEmitter {
     this.executablePath = validateExecutablePath(options.executablePath);
     this.dataDir = validateDataDirectory(options.dataDir);
     this.runtimeFeatureEnvironment = normalizeRuntimeFeatureEnvironment(options.runtimeFeatureEnvironment);
+    this.mcpPort = normalizeMCPPort(options.mcpPort);
     this.rendererOrigin = normalizeRendererOrigin(options.rendererOrigin ?? process.env[RENDERER_ORIGIN_ENVIRONMENT]);
     this.readyTimeoutMs = boundedTimeout(options.readyTimeoutMs, 15000);
     this.shutdownTimeoutMs = boundedTimeout(options.shutdownTimeoutMs, 5000);
+    this.logger = normalizeLogger(options.logger);
     this.child = null;
     this.starting = null;
     this.stopping = null;
@@ -98,6 +102,7 @@ class GoDaemonSupervisor extends EventEmitter {
 
   async startInternal() {
     this.state = 'starting';
+    this.record('info', 'daemon_starting', { state: this.state });
     this.session = createDaemonSession(this.randomBytes);
     const collector = new ReadinessCollector();
     let child;
@@ -107,40 +112,62 @@ class GoDaemonSupervisor extends EventEmitter {
         detached: process.platform !== 'win32',
         windowsHide: true,
         stdio: ['pipe', 'pipe', 'pipe'],
-        env: controlledEnvironment(process.env, this.runtimeFeatureEnvironment, this.rendererOrigin),
+        env: controlledEnvironment(process.env, this.runtimeFeatureEnvironment, this.rendererOrigin, process.platform, os.tmpdir(), this.dataDir, this.mcpPort),
       });
-      if (!child || !Number.isSafeInteger(child.pid) || child.pid <= 0 || !child.stdin || !child.stdout) {
+      if (!child || !Number.isSafeInteger(child.pid) || child.pid <= 0 || !child.stdin || !child.stdout || !child.stderr) {
         throw new DaemonSupervisorError('daemon_spawn_failed');
       }
       this.child = child;
+      this.attachDiagnostics(child);
+      this.record('info', 'daemon_spawned', { state: this.state, child_pid: child.pid });
       this.attachUnexpectedExit(child);
       const ready = await awaitReadiness(child, collector, this.session, this.readyTimeoutMs);
       await probeReady(this.fetch, ready, this.session, this.readyTimeoutMs);
       if (child.exitCode !== null || child.signalCode) throw new DaemonSupervisorError('daemon_exited_early');
       this.readiness = ready;
       this.state = 'ready';
+      this.record('info', 'daemon_ready', { state: this.state, child_pid: child.pid });
       child.stdout.on('data', () => {
         // A daemon may never emit a second readiness line or ordinary stdout
         // diagnostics after becoming available. Any such output revokes the
         // trusted state and stops the whole child tree.
+        this.record('error', 'daemon_stdout_protocol_violation', { state: this.state, child_pid: child.pid });
         this.failClosed().then(() => this.emit('failed', this.status())).catch(() => undefined);
       });
       this.emit('ready', this.status());
       return this.status();
     } catch (error) {
+      this.record('error', 'daemon_start_failed', { state: this.state, error_code: supervisorErrorCode(error) });
       await this.failClosed();
       throw normalizeSupervisorError(error);
     }
   }
 
   attachUnexpectedExit(child) {
-    child.once('exit', () => {
+    child.once('exit', (exitCode) => {
       if (this.child !== child || this.state === 'stopping' || this.state === 'stopped') return;
       this.readiness = null;
       revokeSession(this);
       this.state = 'failed';
+      this.record('error', 'daemon_unexpected_exit', {
+        state: this.state, child_pid: child.pid,
+        ...(Number.isSafeInteger(exitCode) ? { exit_code: exitCode } : {}),
+      });
       this.emit('failed', this.status());
     });
+  }
+
+  attachDiagnostics(child) {
+    child.stderr.on('data', (chunk) => {
+      try { this.logger?.writeExternalChunk?.('go-sidecar', chunk); } catch { /* logging is best effort */ }
+    });
+    child.stderr.once('end', () => {
+      try { this.logger?.flushExternal?.('go-sidecar'); } catch { /* logging is best effort */ }
+    });
+  }
+
+  record(level, code, fields = {}) {
+    try { this.logger?.log?.(level, code, { source: 'electron-supervisor', ...fields }); } catch { /* logging is best effort */ }
   }
 
   async stop() {
@@ -186,6 +213,10 @@ class GoDaemonSupervisor extends EventEmitter {
   async stopInternal() {
     this.state = 'stopping';
     const child = this.child;
+    this.record('info', 'daemon_stopping', {
+      state: this.state,
+      ...(Number.isSafeInteger(child?.pid) ? { child_pid: child.pid } : {}),
+    });
     this.child = null;
     this.readiness = null;
     revokeSession(this);
@@ -193,7 +224,9 @@ class GoDaemonSupervisor extends EventEmitter {
       gracefulTimeoutMs: this.shutdownTimeoutMs,
       forceTimeoutMs: this.shutdownTimeoutMs,
     });
+    try { this.logger?.flushExternal?.('go-sidecar'); } catch { /* logging is best effort */ }
     this.state = 'stopped';
+    this.record('info', 'daemon_stopped', { state: this.state });
     this.emit('stopped', this.status());
   }
 
@@ -274,9 +307,14 @@ function controlledEnvironment(
   rendererOrigin = '',
   platform = process.platform,
   temporaryRoot = os.tmpdir(),
+  dataDirectory = '',
+  mcpPort = 0,
 ) {
   const result = Object.create(null);
-  for (const key of platform === 'win32' ? ['SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'Path', 'PATH'] : ['PATH']) {
+  const inheritedPaths = platform === 'win32'
+    ? ['SystemRoot', 'SYSTEMROOT', 'WINDIR', 'COMSPEC', 'Path', 'PATH', 'PATHEXT', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'CODEX_HOME']
+    : ['PATH', 'HOME', 'XDG_CONFIG_HOME', 'CODEX_HOME'];
+  for (const key of inheritedPaths) {
     if (typeof env[key] === 'string' && env[key]) result[key] = env[key];
   }
   const absoluteTemporaryRoot = temporaryRootForPlatform(temporaryRoot, platform);
@@ -293,7 +331,20 @@ function controlledEnvironment(
     if (value === 'true' || value === 'false') result[name] = value;
   }
   if (rendererOrigin) result[RENDERER_ORIGIN_ENVIRONMENT] = rendererOrigin;
+  if (dataDirectory && path.isAbsolute(dataDirectory)) result[DATA_DIRECTORY_ENVIRONMENT] = path.resolve(dataDirectory);
+  if (Number.isSafeInteger(mcpPort) && mcpPort > 0 && mcpPort <= 65535) {
+    result[MCP_PORT_ENVIRONMENT] = String(mcpPort);
+  }
   return result;
+}
+
+function normalizeMCPPort(value) {
+  if (value === undefined || value === null || value === '') return 0;
+  const port = Number(value);
+  if (!Number.isSafeInteger(port) || port <= 0 || port > 65535) {
+    throw new DaemonSupervisorError('daemon_mcp_port_invalid');
+  }
+  return port;
 }
 
 function temporaryRootForPlatform(value, platform) {
@@ -356,8 +407,18 @@ function normalizeSupervisorError(error) {
   return new DaemonSupervisorError('daemon_start_failed');
 }
 
+function supervisorErrorCode(error) {
+  const code = String(error?.code || error?.message || 'daemon_start_failed');
+  return /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/.test(code) ? code : 'daemon_start_failed';
+}
+
+function normalizeLogger(value) {
+  return value && typeof value === 'object' ? value : null;
+}
+
 module.exports = {
   DAEMON_ORIGIN,
+  MCP_PORT_ENVIRONMENT,
   RUNTIME_FEATURE_ENVIRONMENT,
   DaemonSupervisorError,
   GoDaemonSupervisor,
