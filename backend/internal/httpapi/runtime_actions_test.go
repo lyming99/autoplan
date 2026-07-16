@@ -1,6 +1,12 @@
 package httpapi
 
-import "testing"
+import (
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	applicationloop "github.com/lyming99/autoplan/backend/internal/application/loop"
+)
 
 func TestRuntimeActionPathParsersRejectAmbiguousIdentifiers(t *testing.T) {
 	if projectID, failure := projectIDFromRuntimeActionPath("/api/v1/projects/7/loop/actions/start"); failure != nil || projectID != 7 {
@@ -40,5 +46,26 @@ func TestRuntimeActionPatternsSupportScopedResourcesOnly(t *testing.T) {
 	}
 	if validResourceRoutePattern("/api/v1/projects/{project_id}/intake/{intake_type}/{intake_id}/tasks/{task_id}/actions/run") {
 		t.Fatal("unbounded four-resource action route was accepted")
+	}
+}
+
+func TestPlanStopRuntimeErrorsUseStableHTTPCodes(t *testing.T) {
+	for _, item := range []struct {
+		name   string
+		err    error
+		status int
+		code   ErrorCode
+	}{
+		{"missing plan", applicationloop.ErrNotFound, http.StatusNotFound, CodeNotFound},
+		{"state conflict", applicationloop.ErrStateConflict, http.StatusPreconditionFailed, CodePreconditionFailed},
+		{"repository unavailable", applicationloop.ErrRepositoryUnavailable, http.StatusServiceUnavailable, CodeRepositoryUnavailable},
+		{"cancellation failed", applicationloop.ErrCancellationFailed, http.StatusConflict, CodeOperationCancelled},
+	} {
+		t.Run(item.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/projects/7/plans/11/actions/stop", nil)
+			response := httptest.NewRecorder()
+			writeRuntimeActionError(response, request, item.err)
+			assertContractError(t, response, item.status, string(item.code), item.code == CodeRepositoryUnavailable)
+		})
 	}
 }

@@ -26,6 +26,10 @@ const (
 	SchemaV3Name        = "operation_start_times_v3"
 	SchemaV3UserVersion = 3
 	SchemaV3Checksum    = "218a31580d985a36b58abf254ef1695688685bab5ab2dacca112afb136449c32"
+	SchemaV4Version     = 4
+	SchemaV4Name        = "model_usage_v4"
+	SchemaV4UserVersion = 4
+	SchemaV4Checksum    = "b764fa51c8945ec4c164c0b5511d92d5999e35147232e62967f7ed08d822f651"
 )
 
 var (
@@ -36,6 +40,8 @@ var (
 	schemaV2SQL string
 	//go:embed 0003_operation_start_times_v3.sql
 	schemaV3SQL string
+	//go:embed 0004_model_usage_v4.sql
+	schemaV4SQL string
 )
 
 type Migration struct {
@@ -92,6 +98,11 @@ func NewRegistry(catalog Catalog) Registry {
 				Version: SchemaV3Version, Name: SchemaV3Name,
 				Checksum: SchemaV3Checksum, TargetUserVersion: SchemaV3UserVersion,
 				SQL: canonicalMigrationSQL(schemaV3SQL),
+			},
+			{
+				Version: SchemaV4Version, Name: SchemaV4Name,
+				Checksum: SchemaV4Checksum, TargetUserVersion: SchemaV4UserVersion,
+				SQL: canonicalMigrationSQL(schemaV4SQL),
 			},
 		},
 	}

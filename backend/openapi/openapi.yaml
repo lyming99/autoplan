@@ -730,13 +730,59 @@ paths:
       tags: [capabilities]
       operationId: listCapabilities
       summary: Discover the fixed P07 capability surface
-      description: Returns pure persistence capabilities as enabled and every long-running action as disabled. The result is static for this release and cannot be changed by request input or development configuration.
+      description: Returns pure persistence capabilities, including plans.delete, as enabled and every long-running action as disabled. The result is static for this release and cannot be changed by request input or development configuration.
       security: [{ SessionHeader: [] }, { SessionCookie: [] }]
       parameters: [{ $ref: "#/components/parameters/Origin" }]
       responses:
         "200": { $ref: "#/components/responses/Capabilities" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
+  /api/v1/plans:
+    delete:
+      tags: [plans]
+      operationId: deletePlan
+      summary: Delete one idle plan and return the committed project snapshot
+      description: |
+        Implements the enabled plans.delete capability. The request body is the
+        same versioned mutation payload sent by HttpAutoplanClient. Deletion is
+        rejected when the target is missing, the supplied updated_at is stale,
+        or protected running relations exist. A successful response contains a
+        freshly assembled snapshot that no longer includes the deleted plan.
+        Query parameters are not accepted.
+      security:
+        - SessionHeader: []
+        - SessionCookie: []
+      parameters:
+        - $ref: "#/components/parameters/Origin"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PlanDeleteRequest"
+      responses:
+        "200":
+          description: Plan deleted and the committed snapshot reread.
+          headers:
+            X-Request-ID: { $ref: "#/components/headers/RequestID" }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlanMutationEnvelope" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "405": { $ref: "#/components/responses/MethodNotAllowed" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "412": { $ref: "#/components/responses/ErrorResponse" }
+        "413": { $ref: "#/components/responses/ErrorResponse" }
+        "415": { $ref: "#/components/responses/ErrorResponse" }
+        "422": { $ref: "#/components/responses/ErrorResponse" }
+        "423": { $ref: "#/components/responses/Locked" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/ServiceUnavailable" }
+        "504": { $ref: "#/components/responses/RequestTimeout" }
   /api/v1/plans/actions/run:
     post:
       tags: [plans]
@@ -1948,6 +1994,17 @@ components:
       $ref: "./schemas/project.schema.json#/$defs/create_request"
     UpdateProjectRequest:
       $ref: "./schemas/project.schema.json#/$defs/update_request"
+    PlanDeleteRequest:
+      type: object
+      additionalProperties: false
+      required: [project_id, plan_id, expected_updated_at]
+      properties:
+        project_id: { type: integer, format: int64, minimum: 1 }
+        plan_id: { type: integer, format: int64, minimum: 1 }
+        expected_updated_at:
+          type: string
+          format: date-time
+          pattern: "Z$"
     LoopConfigRequest:
       $ref: "./schemas/config.schema.json#/$defs/loop_config_request"
     ResetConfigRequest:
@@ -2280,6 +2337,19 @@ components:
       properties:
         data:
           $ref: "#/components/schemas/AuthorizedAppSnapshot"
+        request_id:
+          $ref: "#/components/schemas/RequestIDValue"
+    PlanMutationEnvelope:
+      type: object
+      additionalProperties: false
+      required: [data, request_id]
+      properties:
+        data:
+          type: object
+          additionalProperties: false
+          required: [snapshot]
+          properties:
+            snapshot: { $ref: "#/components/schemas/AuthorizedAppSnapshot" }
         request_id:
           $ref: "#/components/schemas/RequestIDValue"
     ProjectListEnvelope:

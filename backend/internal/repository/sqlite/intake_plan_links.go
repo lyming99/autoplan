@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"sort"
+	"strconv"
 	"strings"
 
 	domainintake "github.com/lyming99/autoplan/backend/internal/domain/intake"
@@ -121,13 +122,20 @@ func (transaction *writeTransaction) ListIntakesForPlan(
 	if closeErr := rows.Close(); closeErr != nil || rows.Err() != nil {
 		return nil, repository.ErrTransaction
 	}
-	if len(references) != 0 {
-		return references, nil
+	seen := make(map[string]struct{}, len(references))
+	for _, reference := range references {
+		seen[string(reference.IntakeType)+":"+strconv.FormatInt(reference.IntakeID, 10)] = struct{}{}
 	}
 	for _, intakeType := range []domainintake.Type{domainintake.Requirement, domainintake.Feedback} {
 		legacyRows, queryErr := transaction.tx.QueryContext(ctx,
-			"SELECT project_id, id FROM "+intakeType.Table()+" WHERE project_id = ? AND linked_plan_id = ? ORDER BY id ASC",
-			projectID, planID)
+			`SELECT source.project_id, source.id FROM `+intakeType.Table()+` AS source
+			  WHERE source.project_id = ? AND source.linked_plan_id = ?
+			    AND NOT EXISTS (
+			      SELECT 1 FROM intake_plan_links AS links
+			       WHERE links.project_id = source.project_id
+			         AND links.intake_type = ? AND links.intake_id = source.id
+			    )
+			  ORDER BY source.id ASC`, projectID, planID, string(intakeType))
 		if queryErr != nil {
 			return nil, safeSQLError(ctx, queryErr)
 		}
@@ -138,12 +146,23 @@ func (transaction *writeTransaction) ListIntakesForPlan(
 				_ = legacyRows.Close()
 				return nil, safeSQLError(ctx, err)
 			}
+			key := string(reference.IntakeType) + ":" + strconv.FormatInt(reference.IntakeID, 10)
+			if _, duplicate := seen[key]; duplicate {
+				continue
+			}
+			seen[key] = struct{}{}
 			references = append(references, reference)
 		}
 		if closeErr := legacyRows.Close(); closeErr != nil || legacyRows.Err() != nil {
 			return nil, repository.ErrTransaction
 		}
 	}
+	sort.SliceStable(references, func(left, right int) bool {
+		if references[left].IntakeType == references[right].IntakeType {
+			return references[left].IntakeID < references[right].IntakeID
+		}
+		return references[left].IntakeType < references[right].IntakeType
+	})
 	return references, nil
 }
 

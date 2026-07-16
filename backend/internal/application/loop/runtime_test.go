@@ -7,11 +7,58 @@ import (
 	"testing"
 
 	"github.com/lyming99/autoplan/backend/internal/application/capabilities"
+	domainoperation "github.com/lyming99/autoplan/backend/internal/domain/operation"
 )
 
 type dispatcherSpy struct {
 	command Command
 	err     error
+}
+
+func TestTaskCancellationDoesNotTargetAnotherActiveLoopOperation(t *testing.T) {
+	service := &Service{runtime: &runtimeService{active: map[int64]*activeRun{
+		7: {operation: domainoperation.Operation{OperationID: "loop-operation-active"}},
+	}}}
+	cancelled, err := service.CancelTaskExecution(context.Background(), 7, "loop-operation-stale")
+	if err != nil || cancelled {
+		t.Fatalf("mismatched task cancellation = %t, %v", cancelled, err)
+	}
+}
+
+func TestPlanCancellationRequiresExactClaimedPlanAssociation(t *testing.T) {
+	runtime := &runtimeService{active: map[int64]*activeRun{
+		7: {operation: domainoperation.Operation{OperationID: "loop-operation-active"}},
+	}}
+	service := &Service{runtime: runtime}
+	if !runtime.associatePlan(7, "loop-operation-active", 11) {
+		t.Fatal("active operation did not accept its claimed plan association")
+	}
+	if runtime.associatePlan(7, "loop-operation-stale", 12) || runtime.active[7].planID != 11 {
+		t.Fatal("stale operation replaced the active plan association")
+	}
+	for _, target := range [][2]int64{{7, 12}, {8, 11}} {
+		cancelled, err := service.CancelPlanExecution(context.Background(), target[0], target[1])
+		if err != nil || cancelled {
+			t.Fatalf("unrelated plan cancellation %v = %t, %v", target, cancelled, err)
+		}
+	}
+}
+
+func TestPlanCancellationIntentClosesClaimAssociationRace(t *testing.T) {
+	runtime := &runtimeService{active: map[int64]*activeRun{
+		7: {operation: domainoperation.Operation{OperationID: "loop-operation-active"}},
+	}}
+	service := &Service{runtime: runtime}
+	cancelled, err := service.CancelPlanExecution(context.Background(), 7, 11)
+	if err != nil || cancelled {
+		t.Fatalf("pre-association cancellation = %t, %v", cancelled, err)
+	}
+	if runtime.associatePlan(7, "loop-operation-active", 11) {
+		t.Fatal("runner was allowed to start work after plan stop intent")
+	}
+	if runtime.active[7].planID != 11 {
+		t.Fatal("claimed plan association was not retained for cancellation")
+	}
 }
 
 func (spy *dispatcherSpy) Dispatch(_ context.Context, command Command) (Result, error) {

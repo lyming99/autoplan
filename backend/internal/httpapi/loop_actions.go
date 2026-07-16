@@ -120,6 +120,12 @@ func writeRuntimeActionError(writer http.ResponseWriter, request *http.Request, 
 		WriteError(writer, request, NewAPIError(CodeServiceUnavailable, nil))
 	case errors.Is(err, applicationloop.ErrProjectNotFound):
 		WriteError(writer, request, NewAPIError(CodeProjectNotFound, nil))
+	case errors.Is(err, applicationloop.ErrNotFound):
+		WriteError(writer, request, NewAPIError(CodeNotFound, nil))
+	case errors.Is(err, applicationloop.ErrRepositoryUnavailable):
+		WriteError(writer, request, NewAPIError(CodeRepositoryUnavailable, nil))
+	case errors.Is(err, applicationloop.ErrCancellationFailed):
+		WriteError(writer, request, NewAPIError(CodeOperationCancelled, nil))
 	case errors.Is(err, applicationloop.ErrRuntimeBusy), errors.Is(err, applicationloop.ErrStateConflict):
 		WriteError(writer, request, NewAPIError(CodePreconditionFailed, nil))
 	default:

@@ -1,5 +1,6 @@
 const { nowIso } = require('../database');
 const planLifecycle = require('./planLifecycle');
+const intakePlanLinks = require('./intakePlanLinks');
 
 // 计划/任务人工验收态与执行态正交：只允许对「已完成」项验收（计划 status='completed'、任务 status ∈ 已完成集合），
 // 与渲染层 matchesTaskStatusFilter 的「已完成」语义一致，不新增 status 取值。
@@ -25,7 +26,10 @@ const INTAKE_ACCEPTANCE_TARGETS = Object.freeze({
 function acceptItem(service, projectId, { targetType, id } = {}) {
   const target = acceptanceTargetRow(service, projectId, targetType, id);
   const acceptedAt = nowIso();
-  const result = writeAcceptance(service, targetType, target, acceptedAt, projectId);
+  const result = writeAcceptance(service, targetType, target, acceptedAt, projectId, acceptedAt, {
+    suppressUpdate: true,
+  });
+  if (targetType === 'plan') syncLinkedIntakeAcceptance(service, projectId, [target.id], acceptedAt);
   service.emitUpdate(projectId);
   return result;
 }
@@ -34,7 +38,10 @@ function acceptItem(service, projectId, { targetType, id } = {}) {
 function unacceptItem(service, projectId, { targetType, id } = {}) {
   const target = acceptanceTargetRow(service, projectId, targetType, id, { requireCompleted: false });
   const updatedAt = nowIso();
-  const result = writeAcceptance(service, targetType, target, null, projectId, updatedAt);
+  const result = writeAcceptance(service, targetType, target, null, projectId, updatedAt, {
+    suppressUpdate: true,
+  });
+  if (targetType === 'plan') syncLinkedIntakeAcceptance(service, projectId, [target.id], updatedAt);
   service.emitUpdate(projectId);
   return result;
 }
@@ -44,7 +51,9 @@ function acceptIntakeItem(service, projectId, { intakeType, type, id } = {}) {
   const normalizedType = normalizeIntakeAcceptanceType(intakeType ?? type);
   const target = intakeAcceptanceTargetRow(service, projectId, normalizedType, id);
   const acceptedAt = nowIso();
-  const result = writeIntakeAcceptance(service, normalizedType, target, acceptedAt, projectId);
+  const result = writeIntakeAcceptance(service, normalizedType, target, acceptedAt, projectId, acceptedAt, {
+    suppressUpdate: true,
+  });
   service.emitUpdate(projectId);
   return result;
 }
@@ -54,7 +63,9 @@ function unacceptIntakeItem(service, projectId, { intakeType, type, id } = {}) {
   const normalizedType = normalizeIntakeAcceptanceType(intakeType ?? type);
   const target = intakeAcceptanceTargetRow(service, projectId, normalizedType, id);
   const updatedAt = nowIso();
-  const result = writeIntakeAcceptance(service, normalizedType, target, null, projectId, updatedAt);
+  const result = writeIntakeAcceptance(service, normalizedType, target, null, projectId, updatedAt, {
+    suppressUpdate: true,
+  });
   service.emitUpdate(projectId);
   return result;
 }
@@ -82,7 +93,10 @@ function redoAcceptanceItem(service, projectId, { targetType, id, supplement } =
         previousValidationPassed: Number(target.validation_passed || 0),
         supplement: normalizedSupplement,
       },
+      suppressEmit: true,
     });
+    syncLinkedIntakeAcceptance(service, projectId, [target.id], updatedAt);
+    service.emitUpdate(projectId);
     return {
       targetType: 'plan',
       id: target.id,
@@ -101,7 +115,10 @@ function redoAcceptanceItem(service, projectId, { targetType, id, supplement } =
       supplement: normalizedSupplement,
       previousAcceptedAt: target.accepted_at || null,
     },
+    suppressEmit: true,
   });
+  syncLinkedIntakeAcceptance(service, projectId, [target.plan_id], updatedAt);
+  service.emitUpdate(projectId);
   return {
     targetType: 'task',
     id: target.id,
@@ -224,30 +241,38 @@ function normalizeRedoSupplement(value) {
  * acceptedAt 为 null → 取消验收（accepted_at=NULL、updated_at=updatedAt，记 *.unaccepted 事件）。
  * 返回 { targetType, id, accepted_at }，供单目标/批量调用方回传。
  */
-function writeAcceptance(service, targetType, row, acceptedAt, projectId, updatedAt = acceptedAt ?? nowIso()) {
+function writeAcceptance(
+  service,
+  targetType,
+  row,
+  acceptedAt,
+  projectId,
+  updatedAt = acceptedAt ?? nowIso(),
+  options = {},
+) {
   if (targetType === 'plan') {
     if (acceptedAt) {
       service.db.run(
         'UPDATE plans SET accepted_at = ?, updated_at = ? WHERE id = ? AND project_id = ?',
         [acceptedAt, acceptedAt, row.id, projectId],
       );
-      service.addEvent(projectId, 'plan.accepted', `plan #${row.id} 已验收`, {
+      addAcceptanceEvent(service, projectId, 'plan.accepted', `plan #${row.id} 已验收`, {
         targetType: 'plan',
         id: row.id,
         planId: row.id,
         accepted_at: acceptedAt,
-      });
+      }, options);
     } else {
       service.db.run(
         'UPDATE plans SET accepted_at = NULL, updated_at = ? WHERE id = ? AND project_id = ?',
         [updatedAt, row.id, projectId],
       );
-      service.addEvent(projectId, 'plan.unaccepted', `plan #${row.id} 已取消验收`, {
+      addAcceptanceEvent(service, projectId, 'plan.unaccepted', `plan #${row.id} 已取消验收`, {
         targetType: 'plan',
         id: row.id,
         planId: row.id,
         accepted_at: null,
-      });
+      }, options);
     }
     return { targetType, id: row.id, accepted_at: acceptedAt ?? null };
   }
@@ -256,32 +281,40 @@ function writeAcceptance(service, targetType, row, acceptedAt, projectId, update
       'UPDATE plan_tasks SET accepted_at = ?, updated_at = ? WHERE id = ?',
       [acceptedAt, acceptedAt, row.id],
     );
-    service.addEvent(projectId, 'task.accepted', `${row.task_key} 已验收`, {
+    addAcceptanceEvent(service, projectId, 'task.accepted', `${row.task_key} 已验收`, {
       targetType: 'task',
       id: row.id,
       taskId: row.id,
       planId: row.plan_id,
       taskKey: row.task_key,
       accepted_at: acceptedAt,
-    });
+    }, options);
   } else {
     service.db.run(
       'UPDATE plan_tasks SET accepted_at = NULL, updated_at = ? WHERE id = ?',
       [updatedAt, row.id],
     );
-    service.addEvent(projectId, 'task.unaccepted', `${row.task_key} 已取消验收`, {
+    addAcceptanceEvent(service, projectId, 'task.unaccepted', `${row.task_key} 已取消验收`, {
       targetType: 'task',
       id: row.id,
       taskId: row.id,
       planId: row.plan_id,
       taskKey: row.task_key,
       accepted_at: null,
-    });
+    }, options);
   }
   return { targetType, id: row.id, accepted_at: acceptedAt ?? null };
 }
 
-function writeIntakeAcceptance(service, intakeType, row, acceptedAt, projectId, updatedAt = acceptedAt ?? nowIso()) {
+function writeIntakeAcceptance(
+  service,
+  intakeType,
+  row,
+  acceptedAt,
+  projectId,
+  updatedAt = acceptedAt ?? nowIso(),
+  options = {},
+) {
   const normalizedType = normalizeIntakeAcceptanceType(intakeType);
   const config = INTAKE_ACCEPTANCE_TARGETS[normalizedType];
   const id = Number(row.id);
@@ -299,13 +332,27 @@ function writeIntakeAcceptance(service, intakeType, row, acceptedAt, projectId, 
       `UPDATE ${config.table} SET accepted_at = ?, updated_at = ? WHERE id = ? AND project_id = ?`,
       [acceptedAt, acceptedAt, id, projectId],
     );
-    service.addEvent(projectId, `${config.eventPrefix}.accepted`, `${config.label} #${id} 已验收`, meta);
+    addAcceptanceEvent(
+      service,
+      projectId,
+      `${config.eventPrefix}.accepted`,
+      `${config.label} #${id} 已验收`,
+      meta,
+      options,
+    );
   } else {
     service.db.run(
       `UPDATE ${config.table} SET accepted_at = NULL, updated_at = ? WHERE id = ? AND project_id = ?`,
       [updatedAt, id, projectId],
     );
-    service.addEvent(projectId, `${config.eventPrefix}.unaccepted`, `${config.label} #${id} 已取消验收`, meta);
+    addAcceptanceEvent(
+      service,
+      projectId,
+      `${config.eventPrefix}.unaccepted`,
+      `${config.label} #${id} 已取消验收`,
+      meta,
+      options,
+    );
   }
 
   return {
@@ -314,6 +361,44 @@ function writeIntakeAcceptance(service, intakeType, row, acceptedAt, projectId, 
     id,
     accepted_at: acceptedAt ?? null,
   };
+}
+
+function addAcceptanceEvent(service, projectId, type, message, meta, options = {}) {
+  service.addEvent(
+    projectId,
+    type,
+    message,
+    meta,
+    options.suppressUpdate ? { suppressUpdate: true } : undefined,
+  );
+}
+
+/** Synchronize requirement/feedback acceptance from all of their linked plans. */
+function syncLinkedIntakeAcceptance(service, projectId, planIds, updatedAt = nowIso()) {
+  const affectedPlanIds = new Set((planIds || []).map(Number).filter((id) => id > 0));
+  if (affectedPlanIds.size === 0) return [];
+  const groupedPlans = intakePlanLinks.getPlansByIntakeForProject(service, projectId);
+
+  const results = [];
+  for (const [key, plans] of groupedPlans) {
+    if (!plans.some((link) => affectedPlanIds.has(Number(link.planId)))) continue;
+    const [intakeType, intakeIdValue] = key.split(':');
+    const intakeId = Number(intakeIdValue);
+    const row = intakeAcceptanceTargetRow(service, projectId, intakeType, intakeId);
+    const shouldBeAccepted = plans.length > 0
+      && plans.every((link) => Boolean(link.plan?.accepted_at));
+    if (shouldBeAccepted === Boolean(row.accepted_at)) continue;
+    results.push(writeIntakeAcceptance(
+      service,
+      intakeType,
+      row,
+      shouldBeAccepted ? updatedAt : null,
+      projectId,
+      updatedAt,
+      { suppressUpdate: true },
+    ));
+  }
+  return results;
 }
 
 /**
@@ -332,7 +417,13 @@ function acceptItems(service, projectId, targets) {
   // 全部校验通过 → 用同一时间戳逐条写入 + 记事件（不执行任何脚本/任务）
   const acceptedAt = nowIso();
   const items = rows.map(({ targetType, row }) =>
-    writeAcceptance(service, targetType, row, acceptedAt, projectId),
+    writeAcceptance(service, targetType, row, acceptedAt, projectId, acceptedAt, { suppressUpdate: true }),
+  );
+  syncLinkedIntakeAcceptance(
+    service,
+    projectId,
+    rows.filter(({ targetType }) => targetType === 'plan').map(({ row }) => row.id),
+    acceptedAt,
   );
   service.emitUpdate(projectId);
   return { accepted: items.length, items };
@@ -354,7 +445,13 @@ function unacceptItems(service, projectId, targets) {
   // 全部校验通过 → 用同一时间戳逐条写入 + 记事件
   const updatedAt = nowIso();
   const items = rows.map(({ targetType, row }) =>
-    writeAcceptance(service, targetType, row, null, projectId, updatedAt),
+    writeAcceptance(service, targetType, row, null, projectId, updatedAt, { suppressUpdate: true }),
+  );
+  syncLinkedIntakeAcceptance(
+    service,
+    projectId,
+    rows.filter(({ targetType }) => targetType === 'plan').map(({ row }) => row.id),
+    updatedAt,
   );
   service.emitUpdate(projectId);
   return { unaccepted: items.length, items };
@@ -397,6 +494,7 @@ module.exports = {
   unacceptItems,
   normalizeAcceptanceTargets,
   normalizeRedoSupplement,
+  syncLinkedIntakeAcceptance,
   ACCEPTABLE_PLAN_STATUS,
   ACCEPTABLE_TASK_STATUSES,
   REDO_SUPPLEMENT_MAX_LENGTH,

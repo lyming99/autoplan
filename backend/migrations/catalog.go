@@ -1,6 +1,7 @@
 // Package migrations is the explicit registration boundary for versioned
 // migrations. P10 adds the durable Operation/outbox schema as v2 history and
-// v3 repairs the start boundary of synchronous idempotency operations.
+// v3 repairs the start boundary of synchronous idempotency operations and v4
+// adds provider-neutral token accounting.
 package migrations
 
 // Descriptor is safe metadata for a future migration implementation.
@@ -20,6 +21,7 @@ func NewCatalog() Catalog {
 	return Catalog{entries: []Descriptor{
 		{ID: "operations-outbox-v2", Description: "P10 Operation, project revision, and event outbox contract"},
 		{ID: "operation-start-times-v3", Description: "Repair synchronous idempotency operation start timestamps"},
+		{ID: "model-usage-v4", Description: "Provider-neutral model token accounting"},
 	}}
 }
 

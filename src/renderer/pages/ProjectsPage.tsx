@@ -95,6 +95,7 @@ export function ProjectsPage() {
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [defaultSaved, setDefaultSaved] = useState(false);
   const [deleting, setDeleting] = useState<Project | null>(null);
+  const [deletePending, setDeletePending] = useState(false);
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
@@ -192,14 +193,18 @@ export function ProjectsPage() {
   };
 
   const confirmDelete = async () => {
-    if (!deleting) return;
+    if (!deleting || deletePending) return;
+    const target = deleting;
+    setDeletePending(true);
     try {
-      const next = await client.deleteProject({ projectId: deleting.id });
+      const next = await client.deleteProject({ projectId: target.id });
       setSnapshot(next);
       setDeleting(null);
       setError(null);
     } catch (e) {
       showError(e);
+    } finally {
+      setDeletePending(false);
     }
   };
 
@@ -426,7 +431,7 @@ export function ProjectsPage() {
       ) : null}
 
       {deleting ? (
-        <div className="modal-mask" onClick={() => setDeleting(null)}>
+        <div className="modal-mask" onClick={() => { if (!deletePending) setDeleting(null); }}>
           <div className="modal modal-confirm" onClick={(e) => e.stopPropagation()}>
             <div className="modal-danger-icon">
               <Icon name="warning" size={24} aria-hidden="true" />
@@ -438,11 +443,11 @@ export function ProjectsPage() {
               该操作会移除项目记录，<b className="danger-text">不会删除磁盘上的工作区文件</b>。
             </p>
             <div className="modal-foot">
-              <button type="button" className="btn" onClick={() => setDeleting(null)}>
+              <button type="button" className="btn" disabled={deletePending} onClick={() => setDeleting(null)}>
                 取消
               </button>
-              <button type="button" className="btn btn-danger" onClick={confirmDelete}>
-                确认删除
+              <button type="button" className="btn btn-danger" disabled={deletePending} onClick={confirmDelete}>
+                {deletePending ? '正在删除…' : '确认删除'}
               </button>
             </div>
           </div>

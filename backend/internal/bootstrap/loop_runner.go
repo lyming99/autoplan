@@ -14,11 +14,14 @@ import (
 	"time"
 
 	applicationloop "github.com/lyming99/autoplan/backend/internal/application/loop"
+	applicationmodelusage "github.com/lyming99/autoplan/backend/internal/application/modelusage"
 	domainintake "github.com/lyming99/autoplan/backend/internal/domain/intake"
 	domainloop "github.com/lyming99/autoplan/backend/internal/domain/loop"
+	domainmodelusage "github.com/lyming99/autoplan/backend/internal/domain/modelusage"
 	domainplan "github.com/lyming99/autoplan/backend/internal/domain/plan"
 	"github.com/lyming99/autoplan/backend/internal/platform/logging"
 	"github.com/lyming99/autoplan/backend/internal/repository"
+	"github.com/lyming99/autoplan/backend/internal/runtime/agentcli"
 	processruntime "github.com/lyming99/autoplan/backend/internal/runtime/process"
 )
 
@@ -44,6 +47,7 @@ type sidecarLoopRunner struct {
 	store      loopCycleStore
 	runner     loopInputRunner
 	stateStore applicationloop.StateStore
+	usage      applicationmodelusage.Recorder
 	logger     logging.Logger
 }
 
@@ -93,17 +97,26 @@ func (runner sidecarLoopRunner) RunOnce(ctx context.Context, input applicationlo
 			ProjectID: input.ProjectID, IntakeID: intake.ID, PendingIntakes: len(pending)})
 		startedAt := time.Now()
 		result, runErr := runner.runner.RunWithInput(ctx, spec, []byte(prompt))
+		generationDurationMS := processDurationMS(result, startedAt)
+		if usageErr := runner.recordAgentUsage(ctx, domainmodelusage.SourcePlanGeneration,
+			fmt.Sprintf("plan-generation:%s:%s:%d", input.OperationID, intake.Type, intake.ID),
+			input.ProjectID, input.OperationID, provider, planGenerationModel(intake), result); usageErr != nil {
+			runner.log(logging.Event{Level: "error", Code: "model_usage_persist_failed", ErrorCode: "repository_write_failed",
+				Stage: "plan_generation", Provider: provider, ProjectID: input.ProjectID, IntakeID: intake.ID})
+			_ = runner.store.Fail(ctx, intake)
+			return output, usageErr
+		}
 		// Codex writes repository inspection progress to stderr. A clean exit
 		// with safe stdout is usable even when that diagnostic stream could not
 		// be retained after redaction.
 		usableRedactedOutput := errors.Is(runErr, processruntime.ErrOutputRedaction) &&
 			!result.Stdout.RedactionFailed && strings.TrimSpace(result.Stdout.Tail) != ""
 		if (runErr != nil && !usableRedactedOutput) || result.ExitCode != 0 || result.TimedOut || result.Cancelled {
-			runner.log(agentFinishedEvent(input.ProjectID, intake.ID, provider, len(pending), result, startedAt, "error", agentFailureCode(runErr, result)))
+			runner.log(agentFinishedEvent(input.ProjectID, intake.ID, provider, len(pending), result, generationDurationMS, "error", agentFailureCode(runErr, result)))
 			_ = runner.store.Fail(ctx, intake)
 			return output, errLoopAgentExecution
 		}
-		runner.log(agentFinishedEvent(input.ProjectID, intake.ID, provider, len(pending), result, startedAt, "info", ""))
+		runner.log(agentFinishedEvent(input.ProjectID, intake.ID, provider, len(pending), result, generationDurationMS, "info", ""))
 		generated, parseErr := parseGeneratedPlan(result.Stdout.Tail)
 		if parseErr != nil {
 			runner.log(logging.Event{Level: "error", Code: "plan_parse_failed", ErrorCode: "invalid_agent_output", Stage: "plan_generation",
@@ -118,6 +131,7 @@ func (runner sidecarLoopRunner) RunOnce(ctx context.Context, input applicationlo
 			_ = runner.store.Fail(ctx, intake)
 			return output, errLoopAgentExecution
 		}
+		planInput.GenerationDurationMS = generationDurationMS
 		planID, saveErr := runner.store.SavePlan(ctx, intake, planInput)
 		if saveErr != nil {
 			runner.log(logging.Event{Level: "error", Code: "plan_persist_failed", ErrorCode: "repository_write_failed", Stage: "plan_generation",
@@ -127,7 +141,8 @@ func (runner sidecarLoopRunner) RunOnce(ctx context.Context, input applicationlo
 		}
 		output.GeneratedPlans = 1
 		runner.log(logging.Event{Level: "info", Code: "plan_generated", Stage: "plan_generation", Provider: provider,
-			ProjectID: input.ProjectID, IntakeID: intake.ID, PlanID: planID, PendingIntakes: len(pending), GeneratedPlans: 1})
+			ProjectID: input.ProjectID, IntakeID: intake.ID, PlanID: planID, PendingIntakes: len(pending), GeneratedPlans: 1,
+			DurationMS: generationDurationMS})
 	}
 
 	claimAt := time.Now().UTC().Format(time.RFC3339Nano)
@@ -140,6 +155,9 @@ func (runner sidecarLoopRunner) RunOnce(ctx context.Context, input applicationlo
 		runner.log(logging.Event{Level: "info", Code: "loop_cycle_idle", Stage: "waiting", ProjectID: input.ProjectID,
 			PendingIntakes: output.PendingIntakes, GeneratedPlans: output.GeneratedPlans})
 		return output, nil
+	}
+	if input.AssociatePlan != nil && !input.AssociatePlan(claim.Plan.ID) {
+		return output, context.Canceled
 	}
 	runner.setPhase(ctx, input.ProjectID, domainloop.PhaseExecuteTask)
 	if executeErr := runner.executeTask(ctx, project, input.OperationID, claim); executeErr != nil {
@@ -175,11 +193,11 @@ func (runner sidecarLoopRunner) log(event logging.Event) {
 	_ = runner.logger.Log(event)
 }
 
-func agentFinishedEvent(projectID, intakeID int64, provider string, pending int, result processruntime.Result, startedAt time.Time, level, errorCode string) logging.Event {
+func agentFinishedEvent(projectID, intakeID int64, provider string, pending int, result processruntime.Result, durationMS int64, level, errorCode string) logging.Event {
 	return logging.Event{
 		Level: level, Code: "agent_cli_finished", ErrorCode: errorCode, Stage: "plan_generation", Provider: provider,
 		ProjectID: projectID, IntakeID: intakeID, PendingIntakes: pending, ExitCode: result.ExitCode,
-		DurationMS: processDurationMS(result, startedAt), StdoutBytes: result.Stdout.Bytes, StderrBytes: result.Stderr.Bytes,
+		DurationMS: durationMS, StdoutBytes: result.Stdout.Bytes, StderrBytes: result.Stderr.Bytes,
 		StdoutLines: result.Stdout.Lines, StderrLines: result.Stderr.Lines, TimedOut: result.TimedOut, Cancelled: result.Cancelled,
 		OutputTruncated: result.Stdout.Truncated || result.Stderr.Truncated,
 		RedactionFailed: result.Stdout.RedactionFailed || result.Stderr.RedactionFailed,
@@ -190,7 +208,11 @@ func processDurationMS(result processruntime.Result, fallback time.Time) int64 {
 	if !result.StartedAt.IsZero() && !result.EndedAt.IsZero() && !result.EndedAt.Before(result.StartedAt) {
 		return result.EndedAt.Sub(result.StartedAt).Milliseconds()
 	}
-	return time.Since(fallback).Milliseconds()
+	durationMS := time.Since(fallback).Milliseconds()
+	if durationMS < 0 {
+		return 0
+	}
+	return durationMS
 }
 
 func agentFailureCode(runErr error, result processruntime.Result) string {
@@ -327,17 +349,79 @@ func (runner sidecarLoopRunner) executeTask(
 	operationID string,
 	claim repository.LoopPlanTaskClaim,
 ) error {
-	provider, spec, prompt := loopTaskAgentRequest(project, claim.Plan, claim.Task)
+	provider, spec, prompt := loopTaskAgentRequest(project, claim.Plan, claim.Task, claim.SessionID)
+	activeSessionID := agentcli.NormalizeSessionID(agentcli.Provider(provider), claim.SessionID)
+	requestedSessionID := activeSessionID
+	sessionMode, contextState := "new", "new-requested"
+	if requestedSessionID != "" {
+		sessionMode, contextState = "resume", "reuse-requested"
+	}
 	runner.log(logging.Event{Level: "info", Code: "task_cli_started", Stage: "task_execution", Provider: provider,
-		ProjectID: project.ID, PlanID: claim.Plan.ID, TaskID: claim.Task.ID})
+		ProjectID: project.ID, PlanID: claim.Plan.ID, TaskID: claim.Task.ID,
+		SessionMode: sessionMode, ContextState: contextState,
+		SessionFingerprint: loopSessionFingerprint(provider, requestedSessionID)})
 	startedAt := time.Now()
 	result, runErr := runner.runner.RunWithInput(ctx, spec, []byte(prompt))
+	if usageErr := runner.recordAgentUsage(ctx, domainmodelusage.SourceTaskExecution,
+		fmt.Sprintf("task-execution:%s:plan:%d:task:%d:attempt:1", operationID, claim.Plan.ID, claim.Task.ID),
+		project.ID, operationID, provider, claim.Plan.PlanExecution.Model, result); usageErr != nil {
+		runErr = usageErr
+	}
+	session := agentcli.ParseSessionMetadata(agentcli.Provider(provider), result)
+	fallbackUsed := false
+	if activeSessionID != "" && result.ExitCode != 0 && session.ID == "" && session.Missing &&
+		!result.TimedOut && !result.Cancelled && !errors.Is(runErr, processruntime.ErrTimedOut) &&
+		!errors.Is(runErr, processruntime.ErrCancelled) {
+		runner.log(logging.Event{Level: "warn", Code: "task_cli_session_fallback", Stage: "task_execution", Provider: provider,
+			ProjectID: project.ID, PlanID: claim.Plan.ID, TaskID: claim.Task.ID,
+			SessionMode: "fallback-new", ContextState: "resume-missing",
+			SessionFingerprint: loopSessionFingerprint(provider, activeSessionID)})
+		provider, spec, prompt = loopTaskAgentRequest(project, claim.Plan, claim.Task, "")
+		fallbackUsed = true
+		activeSessionID = ""
+		result, runErr = runner.runner.RunWithInput(ctx, spec, []byte(prompt))
+		if usageErr := runner.recordAgentUsage(ctx, domainmodelusage.SourceTaskExecution,
+			fmt.Sprintf("task-execution:%s:plan:%d:task:%d:attempt:2", operationID, claim.Plan.ID, claim.Task.ID),
+			project.ID, operationID, provider, claim.Plan.PlanExecution.Model, result); usageErr != nil {
+			runErr = usageErr
+		}
+		session = agentcli.ParseSessionMetadata(agentcli.Provider(provider), result)
+	}
 	failureCode := agentFailureCode(runErr, result)
 	succeeded := result.ExitCode == 0 && !result.TimedOut && !result.Cancelled &&
 		(runErr == nil || errors.Is(runErr, processruntime.ErrOutputRedaction))
+	sessionID := session.ID
+	if sessionID == "" && activeSessionID != "" && !session.Missing && !result.TimedOut && !result.Cancelled {
+		sessionID = activeSessionID
+	}
+	if succeeded && provider == string(agentcli.ProviderOpenCode) && sessionID == "" {
+		sessionID = runner.lookupOpenCodeSession(ctx, project, claim.Plan, spec.Executable)
+	}
 	if succeeded {
 		failureCode = ""
 	}
+	finishedMode := sessionMode
+	if fallbackUsed {
+		finishedMode = "fallback-new"
+	}
+	finishedContextState := "unverified"
+	switch {
+	case !succeeded && requestedSessionID != "":
+		finishedContextState = "reuse-failed"
+	case !succeeded:
+		finishedContextState = "new-failed"
+	case sessionID == "":
+		finishedContextState = "unverified"
+	case fallbackUsed:
+		finishedContextState = "replaced"
+	case requestedSessionID == "":
+		finishedContextState = "established"
+	case sessionID == requestedSessionID:
+		finishedContextState = "reused"
+	default:
+		finishedContextState = "replaced"
+	}
+	sessionFingerprint := loopSessionFingerprint(provider, sessionID)
 	level := "info"
 	if !succeeded {
 		level = "error"
@@ -345,6 +429,7 @@ func (runner sidecarLoopRunner) executeTask(
 	runner.log(logging.Event{
 		Level: level, Code: "task_cli_finished", ErrorCode: failureCode, Stage: "task_execution", Provider: provider,
 		ProjectID: project.ID, PlanID: claim.Plan.ID, TaskID: claim.Task.ID, ExitCode: result.ExitCode,
+		SessionMode: finishedMode, ContextState: finishedContextState, SessionFingerprint: sessionFingerprint,
 		DurationMS: processDurationMS(result, startedAt), StdoutBytes: result.Stdout.Bytes, StderrBytes: result.Stderr.Bytes,
 		StdoutLines: result.Stdout.Lines, StderrLines: result.Stderr.Lines, TimedOut: result.TimedOut, Cancelled: result.Cancelled,
 		OutputTruncated: result.Stdout.Truncated || result.Stderr.Truncated,
@@ -365,20 +450,119 @@ func (runner sidecarLoopRunner) executeTask(
 	defer cancel()
 	if err := runner.store.FinishTask(persistContext, repository.LoopPlanTaskCompletion{
 		ProjectID: project.ID, PlanID: claim.Plan.ID, TaskID: claim.Task.ID, OperationID: operationID,
-		Succeeded: succeeded, FailureCode: failureCode, Digest: digest, FinishedAt: finishedAt,
+		Succeeded: succeeded, Cancelled: result.Cancelled || errors.Is(runErr, processruntime.ErrCancelled) || errors.Is(ctx.Err(), context.Canceled),
+		FailureCode: failureCode, Digest: digest, SessionID: sessionID, FinishedAt: finishedAt,
 		DurationMS: processDurationMS(result, startedAt),
 	}); err != nil {
 		runner.log(logging.Event{Level: "error", Code: "plan_task_finish_failed", ErrorCode: "repository_write_failed",
 			Stage: "task_execution", ProjectID: project.ID, PlanID: claim.Plan.ID, TaskID: claim.Task.ID})
 		return err
 	}
+	continuityLevel := "info"
+	if finishedContextState == "replaced" || finishedContextState == "unverified" {
+		continuityLevel = "warn"
+	}
+	runner.log(logging.Event{
+		Level: continuityLevel, Code: "plan_context_continuity", Stage: "task_execution", Provider: provider,
+		ProjectID: project.ID, PlanID: claim.Plan.ID, TaskID: claim.Task.ID,
+		SessionMode: finishedMode, ContextState: finishedContextState, SessionFingerprint: sessionFingerprint,
+	})
 	if !succeeded {
 		return errLoopAgentExecution
 	}
 	return nil
 }
 
-func loopTaskAgentRequest(project repository.Project, plan domainplan.Plan, task domainplan.Task) (string, processruntime.Spec, string) {
+func (runner sidecarLoopRunner) recordAgentUsage(
+	ctx context.Context,
+	source domainmodelusage.Source,
+	invocationKey string,
+	projectID int64,
+	operationID string,
+	provider string,
+	model string,
+	result processruntime.Result,
+) error {
+	kind, supported := loopUsageParser(provider)
+	if !supported {
+		return nil
+	}
+	tokens := agentcli.ParseTokenUsage(kind, result)
+	if tokens == nil {
+		return nil
+	}
+	if runner.usage == nil {
+		return repository.ErrNotConfigured
+	}
+	collectedAt := time.Now().UTC()
+	if !result.EndedAt.IsZero() {
+		collectedAt = result.EndedAt.UTC()
+	}
+	var operation *string
+	if operationID != "" {
+		value := operationID
+		operation = &value
+	}
+	finalize, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	return runner.usage.Record(finalize, domainmodelusage.Record{
+		ProjectID: projectID, InvocationKey: invocationKey, Provider: provider, Model: model, Source: source,
+		OperationID: operation, Tokens: *tokens, CollectedAt: collectedAt.Format(time.RFC3339Nano),
+	})
+}
+
+func loopUsageParser(provider string) (agentcli.ParserKind, bool) {
+	switch provider {
+	case string(agentcli.ProviderCodex):
+		return agentcli.ParserCodex, true
+	case string(agentcli.ProviderClaude):
+		return agentcli.ParserClaude, true
+	case string(agentcli.ProviderOhMyPi):
+		return agentcli.ParserOhMyPi, true
+	default:
+		return "", false
+	}
+}
+
+func planGenerationModel(intake domainintake.Intake) string {
+	if intake.PlanGeneration.Model != "" {
+		return intake.PlanGeneration.Model
+	}
+	return intake.PlanGeneration.ClaudeModel
+}
+
+func loopSessionFingerprint(provider, sessionID string) string {
+	normalized := agentcli.NormalizeSessionID(agentcli.Provider(provider), sessionID)
+	if normalized == "" {
+		return ""
+	}
+	digest := sha256.Sum256([]byte("autoplan-plan-session/v1\x00" + provider + "\x00" + normalized))
+	return "sha256:" + hex.EncodeToString(digest[:])
+}
+
+func (runner sidecarLoopRunner) lookupOpenCodeSession(
+	ctx context.Context,
+	project repository.Project,
+	plan domainplan.Plan,
+	executable string,
+) string {
+	title := loopOpenCodeSessionTitle(project.ID, plan.ID)
+	result, err := runner.runner.RunWithInput(ctx, processruntime.Spec{
+		ProjectID: project.ID, Workspace: project.WorkspacePath, WorkingDirectory: project.WorkspacePath,
+		Executable: executable, Args: []string{"session", "list", "--format", "json", "--max-count", "50"},
+		Timeout: 15 * time.Second,
+	}, nil)
+	if err != nil || result.ExitCode != 0 || result.TimedOut || result.Cancelled {
+		return ""
+	}
+	sessionID, found := agentcli.ParseOpenCodeSessionList(result, title)
+	if !found {
+		return ""
+	}
+	return sessionID
+}
+
+func loopTaskAgentRequest(project repository.Project, plan domainplan.Plan, task domainplan.Task, sessionID string) (string, processruntime.Spec, string) {
 	provider := "codex"
 	if plan.PlanExecution.Provider != nil {
 		provider = strings.ToLower(strings.TrimSpace(*plan.PlanExecution.Provider))
@@ -409,16 +593,23 @@ Exit successfully only when this task is complete.`, filepath.ToSlash(plan.Sourc
 	args := []string{}
 	switch provider {
 	case "claude":
-		args = []string{"--print", "--output-format", "text", "--dangerously-skip-permissions"}
+		args = []string{"--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"}
+		if resumeID := agentcli.NormalizeSessionID(agentcli.ProviderClaude, sessionID); resumeID != "" {
+			args = append(args, "--resume", resumeID)
+		}
 	case "opencode":
-		args = []string{"run", "--format", "default", "--auto", compactLoopPrompt(prompt)}
+		args = []string{"run", "--format", "default", "--auto"}
+		if resumeID := agentcli.NormalizeSessionID(agentcli.ProviderOpenCode, sessionID); resumeID != "" {
+			args = append(args, "--session", resumeID)
+		}
+		args = append(args, "--title", loopOpenCodeSessionTitle(project.ID, plan.ID), compactLoopPrompt(prompt))
 		prompt = ""
 	case "oh-my-pi", "omp":
 		provider = "oh-my-pi"
 		if command == "oh-my-pi" {
 			command = "omp"
 		}
-		args = []string{"--print"}
+		args = []string{"--mode", "json"}
 	default:
 		provider, command = "codex", firstNonEmpty(command, "codex")
 		effort := "medium"
@@ -430,12 +621,20 @@ Exit successfully only when this task is complete.`, filepath.ToSlash(plan.Sourc
 		if effort != "low" && effort != "medium" && effort != "high" && effort != "xhigh" {
 			effort = "medium"
 		}
-		args = []string{"exec", "-c", `model_reasoning_effort="` + effort + `"`, "--color", "never", "--sandbox", "danger-full-access", "--skip-git-repo-check", "-"}
+		if resumeID := agentcli.NormalizeSessionID(agentcli.ProviderCodex, sessionID); resumeID != "" {
+			args = []string{"exec", "resume", "-c", `model_reasoning_effort="` + effort + `"`, "--json", "--skip-git-repo-check", resumeID, "-"}
+		} else {
+			args = []string{"exec", "-c", `model_reasoning_effort="` + effort + `"`, "--json", "--color", "never", "--sandbox", "danger-full-access", "--skip-git-repo-check", "-"}
+		}
 	}
 	return provider, processruntime.Spec{
 		ProjectID: project.ID, Workspace: project.WorkspacePath, WorkingDirectory: project.WorkspacePath,
 		Executable: command, Args: args, Timeout: 30 * time.Minute,
 	}, prompt
+}
+
+func loopOpenCodeSessionTitle(projectID, planID int64) string {
+	return fmt.Sprintf("AutoPlan project %d plan %d", projectID, planID)
 }
 
 func markPlanTaskCompleted(workspace, sourceRef, taskKey string) (string, error) {
@@ -506,7 +705,7 @@ Requirement body:
 	args := []string{}
 	switch provider {
 	case "claude":
-		args = []string{"--print", "--output-format", "text", "--dangerously-skip-permissions"}
+		args = []string{"--print", "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"}
 	case "opencode":
 		args = []string{"run", "--format", "default", "--auto", compactLoopPrompt(prompt)}
 		prompt = ""
@@ -514,7 +713,7 @@ Requirement body:
 		if command == "oh-my-pi" {
 			command = "omp"
 		}
-		args = []string{"--print"}
+		args = []string{"--mode", "json"}
 	default:
 		provider, command = "codex", firstNonEmpty(command, "codex")
 		effort := "medium"
@@ -524,7 +723,7 @@ Requirement body:
 		if effort != "low" && effort != "medium" && effort != "high" && effort != "xhigh" {
 			effort = "medium"
 		}
-		args = []string{"exec", "-c", `model_reasoning_effort="` + effort + `"`, "--color", "never", "--sandbox", "danger-full-access", "--skip-git-repo-check", "-"}
+		args = []string{"exec", "-c", `model_reasoning_effort="` + effort + `"`, "--json", "--color", "never", "--sandbox", "danger-full-access", "--skip-git-repo-check", "-"}
 	}
 	return processruntime.Spec{ProjectID: project.ID, Workspace: project.WorkspacePath, WorkingDirectory: project.WorkspacePath,
 		Executable: command, Args: args, Timeout: 45 * time.Minute}, prompt
@@ -543,6 +742,22 @@ type generatedPlanSpec struct {
 
 func parseGeneratedPlan(output string) (generatedPlanSpec, error) {
 	output = strings.TrimSpace(output)
+	candidates := []string{output}
+	for _, line := range strings.Split(output, "\n") {
+		var event any
+		if json.Unmarshal([]byte(strings.TrimSpace(line)), &event) == nil {
+			collectGeneratedPlanCandidates(event, &candidates)
+		}
+	}
+	for _, candidate := range candidates {
+		if value, ok := parseGeneratedPlanCandidate(candidate); ok {
+			return value, nil
+		}
+	}
+	return generatedPlanSpec{}, errors.New("generated plan invalid")
+}
+
+func parseGeneratedPlanCandidate(output string) (generatedPlanSpec, bool) {
 	for index := 0; index < len(output); index++ {
 		if output[index] != '{' {
 			continue
@@ -566,10 +781,30 @@ func parseGeneratedPlan(output string) (generatedPlanSpec, error) {
 			}
 		}
 		if valid {
-			return value, nil
+			return value, true
 		}
 	}
-	return generatedPlanSpec{}, errors.New("generated plan invalid")
+	return generatedPlanSpec{}, false
+}
+
+func collectGeneratedPlanCandidates(value any, candidates *[]string) {
+	if candidates == nil || len(*candidates) >= 128 {
+		return
+	}
+	switch current := value.(type) {
+	case string:
+		if len(current) <= 1<<20 && strings.Contains(current, "{") {
+			*candidates = append(*candidates, current)
+		}
+	case []any:
+		for _, item := range current {
+			collectGeneratedPlanCandidates(item, candidates)
+		}
+	case map[string]any:
+		for _, item := range current {
+			collectGeneratedPlanCandidates(item, candidates)
+		}
+	}
 }
 
 func buildGeneratedPlan(project repository.Project, intake domainintake.Intake, plan generatedPlanSpec) (repository.GeneratedPlanInput, string, error) {

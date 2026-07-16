@@ -32,16 +32,36 @@ function transpiledModule(file, runtimeImports = {}) {
   return module.exports;
 }
 
-function clients(api, fetchImpl) {
-  const events = transpiledModule('src/renderer/lib/api/events.ts');
-  const { IpcAutoplanClient } = transpiledModule('src/renderer/lib/api/ipcClient.ts', {
+function client(fetchImpl) {
+  const { UnavailableAutoplanClient } = transpiledModule('src/renderer/lib/api/ipcClient.ts', {
     './client': { AUTOPLAN_CLIENT_OPERATION_KEYS: operationKeys },
   });
   const { HttpAutoplanClient } = transpiledModule('src/renderer/lib/api/httpClient.ts', {
     './client': { AUTOPLAN_CLIENT_OPERATION_KEYS: operationKeys },
-    './events': { ...events, AUTOPLAN_CLIENT_EVENT_KEYS: eventKeys },
+    './events': {
+      AUTOPLAN_CLIENT_EVENT_KEYS: eventKeys,
+      consumeProjectEventPlaceholder: async () => {},
+      createResumableChatEventStream: () => () => {},
+      createResumableEventStream: () => () => {},
+      isTerminalOperationEvent: () => false,
+    },
+    './terminalTransport': {
+      TerminalTransport: class {
+        constructor(options) { this.legacy = options.legacy; }
+        create(input) { return this.legacy.createTerminal(input); }
+        list(input) { return this.legacy.listTerminals(input); }
+        write(input) { return this.legacy.writeTerminal(input); }
+        resize(input) { return this.legacy.resizeTerminal(input); }
+        kill(input) { return this.legacy.killTerminal(input); }
+        close(input) { return this.legacy.closeTerminal(input); }
+        rename(input) { return this.legacy.renameTerminal(input); }
+        replay(input) { return this.legacy.replayTerminal(input); }
+        clear(input) { return this.legacy.clearTerminal(input); }
+        connect(...args) { return this.legacy.connectTerminal(...args); }
+      },
+    },
   });
-  const ipc = new IpcAutoplanClient(api);
+  const unavailable = new UnavailableAutoplanClient();
   let intentSequence = 0;
   const http = new HttpAutoplanClient({
     baseUrl: 'http://127.0.0.1:43123',
@@ -49,9 +69,9 @@ function clients(api, fetchImpl) {
     timeoutMs: 1_000,
     fetchImpl,
     idempotencyKeyFactory: () => `renderer:contract-${++intentSequence}`,
-    delegate: ipc,
+    delegate: unavailable,
   });
-  return { ipc, http };
+  return http;
 }
 
 function project(id) {
@@ -71,22 +91,6 @@ function snapshot(projects, active = null) {
     scanSummary: {}, scripts: [], executors: [], terminals: [], activeOperation: null,
     activeOperations: [], lastOperation: null,
   };
-}
-
-function apiFixture(projects) {
-  const api = {};
-  for (const key of operationKeys) {
-    if (key === 'mcpToolNames') api[key] = [];
-    else if (key === 'fileAccess') api[key] = { get: async () => ({}), save: async () => ({}) };
-    else if (key === 'snapshot') {
-      api[key] = async (projectId) => {
-        const active = projectId == null ? null : projects.find((item) => item.id === projectId) || null;
-        return snapshot(projects, active);
-      };
-    } else api[key] = async (input) => ({ key, input });
-  }
-  for (const key of eventKeys) api[key] = () => () => {};
-  return api;
 }
 
 function response(body, status = 200) {
@@ -134,14 +138,17 @@ function httpFixture(projects, captures) {
   };
 }
 
-describe('Project IPC/HTTP transport contract', () => {
-  it('returns identical project-list and active-project snapshots without DTO remapping', async () => {
+describe('Project Go HTTP transport contract', () => {
+  it('returns project-list and active-project snapshots without DTO remapping', async () => {
     const projects = [project(3), project(2), project(1)];
     const captures = [];
-    const { ipc, http } = clients(apiFixture(projects), httpFixture(projects, captures));
+    const http = client(httpFixture(projects, captures));
 
-    assert.deepStrictEqual(await http.snapshot(null), await ipc.snapshot(null));
-    assert.deepStrictEqual(await http.snapshot(2), await ipc.snapshot(2));
+    const projectList = await http.snapshot(null);
+    assert.deepStrictEqual(projectList.projects, projects);
+    assert.equal(projectList.activeProjectId, null);
+    assert.equal(projectList.activeProject, null);
+    assert.deepStrictEqual(await http.snapshot(2), snapshot(projects, projects[1]));
     assert.deepStrictEqual((await http.listProjects({ page: 1, pageSize: 2 })).data, projects.slice(0, 2));
     assert.deepStrictEqual((await http.listProjects({ page: 2, pageSize: 2 })).data, projects.slice(2));
     assert.deepStrictEqual(captures.map((item) => item.path), [
@@ -153,18 +160,10 @@ describe('Project IPC/HTTP transport contract', () => {
     assert.doesNotMatch(JSON.stringify(captures), /A{20}|env_vars|<fixture-workspace>/);
   });
 
-  it('returns identical Project/Config mutation snapshots while HTTP bypasses IPC writes', async () => {
+  it('returns Project/Config mutation snapshots without a business fallback', async () => {
     const projects = [project(1)];
-    const api = apiFixture(projects);
     const expected = snapshot(projects, projects[0]);
     expected.state.version = 2;
-    const ipcWrites = [];
-    for (const key of ['createProject', 'updateProject', 'deleteProject', 'configureLoop']) {
-      api[key] = async (input) => {
-        ipcWrites.push({ key, input });
-        return expected;
-      };
-    }
     const captures = [];
     const fetchImpl = async (target, init) => {
       const url = new URL(target);
@@ -176,7 +175,7 @@ describe('Project IPC/HTTP transport contract', () => {
       });
       return response({ data: expected, request_id: 'req_transport_contract' });
     };
-    const { ipc, http } = clients(api, fetchImpl);
+    const http = client(fetchImpl);
     const createInput = {
       name: 'Synthetic write', workspacePath: '<fixture-workspace>/project-1', description: '',
     };
@@ -204,10 +203,9 @@ describe('Project IPC/HTTP transport contract', () => {
       ['configureLoop', configInput],
       ['deleteProject', deleteInput],
     ]) {
-      assert.deepStrictEqual(await http[key](input), await ipc[key](input));
+      assert.deepStrictEqual(await http[key](input), expected);
     }
 
-    assert.equal(ipcWrites.length, 4, 'only the explicit IPC side of each comparison may write IPC');
     assert.deepStrictEqual(captures.map(({ path, method }) => ({ path, method })), [
       { path: '/api/v1/projects', method: 'POST' },
       { path: '/api/v1/projects/1', method: 'PATCH' },
@@ -225,17 +223,12 @@ describe('Project IPC/HTTP transport contract', () => {
   });
 
   it('makes HTTP mutation cancellation observable without falling back to IPC', async () => {
-    const projects = [project(1)];
-    const api = apiFixture(projects);
-    let delegated = false;
-    api.createProject = async () => {
-      delegated = true;
-      return snapshot(projects);
-    };
+    let fetches = 0;
     const pendingFetch = (_target, init) => new Promise((resolve, reject) => {
+      fetches += 1;
       init.signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true });
     });
-    const { http } = clients(api, pendingFetch);
+    const http = client(pendingFetch);
 
     const controller = new AbortController();
     const pending = http.createProject({
@@ -243,13 +236,15 @@ describe('Project IPC/HTTP transport contract', () => {
     }, { signal: controller.signal });
     controller.abort();
     await assert.rejects(pending, (error) => error.code === 'request_cancelled');
-    assert.equal(delegated, false);
+    assert.equal(fetches, 1);
   });
 
-  it('keeps the sole feature flag defaulting to IPC in the shared factory', () => {
+  it('keeps the sole renderer business transport locked to Go HTTP', () => {
     const transport = source('src/renderer/lib/api/transport.ts');
-    assert.match(transport, /DEFAULT_AUTOPLAN_TRANSPORT = 'ipc'/);
-    assert.match(transport, /production.*HTTP_AUTOPLAN_TRANSPORT|!production/);
+    assert.match(transport, /DEFAULT_AUTOPLAN_TRANSPORT = 'http'/);
+    assert.match(transport, /transport: HTTP_AUTOPLAN_TRANSPORT/);
+    assert.match(transport, /fellBackToIpc: false/);
+    assert.match(transport, /go_business_transport_unavailable/);
     assert.doesNotMatch(transport, /VITE_.*(?:PROJECT|SNAPSHOT|SSE)/);
   });
 });

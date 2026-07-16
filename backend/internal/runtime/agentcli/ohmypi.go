@@ -12,7 +12,7 @@ func (ohMyPiAdapter) Prepare(_ context.Context, request Request, _ ArtifactWrite
 		return Prepared{}, err
 	}
 	return Prepared{
-		Executable: command, Arguments: []string{"--print"}, PromptMode: PromptStdin, Prompt: request.Prompt,
+		Executable: command, Arguments: []string{"--mode", "json"}, PromptMode: PromptStdin, Prompt: request.Prompt,
 		Parser: ParserOhMyPi,
 	}, nil
 }

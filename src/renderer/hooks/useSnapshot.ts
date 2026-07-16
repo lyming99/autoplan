@@ -242,6 +242,7 @@ function applySnapshotPatchForProject(
     ...(hasOwn(patch, 'activeOperation') ? { activeOperation: patch.activeOperation ?? null } : {}),
     ...(hasOwn(patch, 'activeOperations') ? { activeOperations: patch.activeOperations || [] } : {}),
     ...(hasOwn(patch, 'lastOperation') ? { lastOperation: patch.lastOperation ?? null } : {}),
+    ...(hasOwn(patch, 'modelUsage') && patch.modelUsage ? { modelUsage: patch.modelUsage } : {}),
   };
 }
 
@@ -317,6 +318,7 @@ function snapshotContentKey(snapshot: AppSnapshot, projectId: number | null): st
   const tasks = snapshot.tasks || [];
   const events = snapshot.events || [];
   const plans = snapshot.plans || [];
+  const usage = snapshot.modelUsage;
   const parts: string[] = [
     `p${plans.length}`,
     `t${tasks.length}`,
@@ -327,6 +329,7 @@ function snapshotContentKey(snapshot: AppSnapshot, projectId: number | null): st
     `opst${op?.startedAt ?? ''}`,
     `opex${op?.exitCode ?? ''}`,
     `ac${activity?.length ?? 0}`,
+    `mu${usage.cumulative.totalTokens}:${usage.today.totalTokens}:${usage.cumulative.inputTokens}:${usage.cumulative.outputTokens}:${usage.cumulative.cachedTokens}:${usage.cumulative.reasoningTokens}`,
   ];
   if (tasks.length) {
     parts.push(`tf${tasks[0].id}`, `tl${tasks[tasks.length - 1].id}`);

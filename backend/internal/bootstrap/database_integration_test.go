@@ -34,6 +34,52 @@ func TestStartDatabaseMigratesEmptyTemporaryDatabase(t *testing.T) {
 	}
 }
 
+func TestStartDatabaseUpgradesVersionThreeToModelUsageV4(t *testing.T) {
+	ctx := context.Background()
+	root := canonicalTemporaryDirectory(t)
+	target := filepath.Join(root, "autoplan.sqlite")
+	seedVersionThreeModelUsageFixture(t, target, root)
+
+	readiness, err := NewDatabaseReadiness()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := StartDatabase(ctx, DatabaseStartupOptions{
+		Target: target, DriverName: "sqlite", AllowCreate: true, LockTimeout: time.Second,
+		AuthorizedRoots: []string{root}, AuthorizeStoredProjectWorkspaces: true, Readiness: readiness,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(ctx)
+	connection, ok := runtime.Connection().(*storesqlite.Connection)
+	if !ok {
+		t.Fatal("startup connection type drifted")
+	}
+
+	var userVersion, migrationCount, usageRows int
+	var projectName string
+	if err := connection.QueryRowContext(ctx, "PRAGMA user_version").Scan(&userVersion); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM schema_migrations WHERE version = 4 AND name = ? AND checksum = ?",
+		migrations.SchemaV4Name, migrations.SchemaV4Checksum,
+	).Scan(&migrationCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.QueryRowContext(ctx, "SELECT name FROM projects WHERE id = 1").Scan(&projectName); err != nil {
+		t.Fatal(err)
+	}
+	if err := connection.QueryRowContext(ctx, "SELECT COUNT(*) FROM model_usage").Scan(&usageRows); err != nil {
+		t.Fatal(err)
+	}
+	if userVersion != storesqlite.SchemaVersion || migrationCount != 1 || projectName != "v3 fixture" || usageRows != 0 {
+		t.Fatalf("upgraded database version=%d migration=%d project=%q usage_rows=%d",
+			userVersion, migrationCount, projectName, usageRows)
+	}
+}
+
 func TestStartDatabaseRepairsV2OperationsAndRestartsWithStoredWorkspace(t *testing.T) {
 	ctx := context.Background()
 	root := canonicalTemporaryDirectory(t)
@@ -290,6 +336,45 @@ func seedVersionTwoRestartFixture(t *testing.T, target, workspace string) {
 		"legacy-operation", "projects:create", "legacy-request", "legacy-scope", "legacy-key",
 		strings.Repeat("a", 64), "2026-07-13T00:00:00.000Z", "2026-07-13T00:00:00.000Z",
 		"2026-07-13T00:00:00.000Z", `{"kind":"active-project","project_id":1}`,
+	); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func seedVersionThreeModelUsageFixture(t *testing.T, target, workspace string) {
+	t.Helper()
+	ctx := context.Background()
+	connection, err := storesqlite.OpenConnection(ctx, storesqlite.ConnectionOptions{
+		DriverName: "sqlite", DataSourceName: target,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.Close()
+	entries := migrations.NewRegistry(migrations.NewCatalog()).Migrations()
+	for _, entry := range entries[:migrations.SchemaV3Version] {
+		if _, err := connection.ExecContext(ctx, entry.SQL); err != nil {
+			t.Fatalf("apply v%d fixture migration: %v", entry.Version, err)
+		}
+		if _, err := connection.ExecContext(ctx,
+			"INSERT INTO schema_migrations (version, name, checksum, applied_at) VALUES (?, ?, ?, ?)",
+			entry.Version, entry.Name, entry.Checksum, "2026-07-15T00:00:00Z",
+		); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := connection.ExecContext(ctx, fmt.Sprintf("PRAGMA user_version = %d", entry.TargetUserVersion)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := connection.ExecContext(ctx,
+		`INSERT INTO projects (id, name, workspace_path, description, created_at, updated_at)
+		 VALUES (1, 'v3 fixture', ?, '', '2026-07-15T00:00:00Z', '2026-07-15T00:00:00Z')`,
+		workspace,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := connection.ExecContext(ctx,
+		"INSERT INTO project_states (project_id, updated_at) VALUES (1, '2026-07-15T00:00:00Z')",
 	); err != nil {
 		t.Fatal(err)
 	}

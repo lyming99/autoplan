@@ -34,7 +34,10 @@ class DesktopBridgeStub {}
 const provider = compile('src/renderer/lib/api/provider.tsx', {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
-  './client': {},
+  './client': {
+    getHttpChatOperations: () => null,
+    getTerminalConnectionOperations: () => null,
+  },
   './transport': { getAutoplanClient: () => ({ transport: 'default-ipc' }) },
   '../desktop/ipcBridge': { IpcDesktopBridge: DesktopBridgeStub, getDefaultDesktopBridge: () => new DesktopBridgeStub() },
 });
@@ -151,6 +154,8 @@ describe('ProjectsPage unchanged IPC/HTTP provider contract', () => {
     const pageSource = source('src/renderer/pages/ProjectsPage.tsx');
     assert.match(pageSource, /useSnapshot\(null\)/);
     assert.match(pageSource, /useAutoplanClient\(\)/);
+    assert.match(pageSource, /if \(!deleting \|\| deletePending\) return/);
+    assert.match(pageSource, /disabled=\{deletePending\}/);
     assert.doesNotMatch(pageSource, /HttpAutoplanClient|IpcAutoplanClient|VITE_AUTOPLAN_TRANSPORT/);
   });
 });

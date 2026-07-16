@@ -1,13 +1,12 @@
 export {};
 
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, it } from 'node:test';
+
 type TestRegistrar = (name: string, fn: () => void) => void;
 
-declare function require(id: string): unknown;
 declare const process: { cwd(): string };
-
-const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };
-const { readFileSync } = require('node:fs') as { readFileSync: (path: string, encoding: string) => string };
-const { join } = require('node:path') as { join: (...parts: string[]) => string };
 
 function source(...parts: string[]) {
   return readFileSync(join(process.cwd(), ...parts), 'utf8');
@@ -48,7 +47,22 @@ describe('P11 runtime transport owner contract', () => {
     const runtimeSubmission = http.slice(start, http.indexOf('async #submitAcceptanceAction', start));
     expect(!runtimeSubmission.includes('this.#delegate.'), 'HTTP runtime submission must not fall back to IPC');
     expect(!runtimeSubmission.includes('retryTransportFailure: true'), 'HTTP runtime mutation must not be replayed');
-    expect(transport.includes('runtimeAvailable || (!production'), 'production HTTP requires the supervised runtime handoff');
+    expect(transport.includes('transport: HTTP_AUTOPLAN_TRANSPORT'), 'the renderer must remain pinned to HTTP');
+    expect(transport.includes('fellBackToIpc: false'), 'the renderer must report that IPC fallback is disabled');
+    expect(transport.includes("throw new HttpClientError('go_business_transport_unavailable')"),
+      'a missing supervised runtime handoff must fail closed');
+  });
+
+  it('routes plan.stop through HTTP when go_plan_actions is enabled without IPC fallback', () => {
+    const stopStart = http.indexOf('stopPlan = async (');
+    const stopEnd = http.indexOf('\n  resumePlan = async (', stopStart);
+    const stopPlan = http.slice(stopStart, stopEnd);
+    expect(stopStart >= 0 && stopEnd > stopStart, 'stopPlan implementation is missing');
+    expect(stopPlan.includes("this.#runtimeFeatureEnabled('go_plan_actions')"), 'plan.stop is not gated by Go ownership');
+    expect(stopPlan.includes('/plans/${planId}/actions/stop'), 'plan.stop does not use the scoped HTTP resource route');
+    const goBranch = stopPlan.slice(stopPlan.indexOf("if (!this.#runtimeFeatureEnabled('go_plan_actions'))"));
+    expect(goBranch.includes('return this.#submitRuntimeAction'), 'enabled plan.stop does not submit to Go Runtime');
+    expect(!goBranch.includes('catch'), 'enabled plan.stop must not catch HTTP failures for IPC fallback');
   });
 
   it('keeps Node compatibility access behind GoDataClient and blocks sql.js ownership', () => {
@@ -63,7 +77,7 @@ describe('P11 runtime transport owner contract', () => {
       '/plans/${planId}/actions/stop', '/plans/${planId}/actions/resume',
       '/plans/${planId}/actions/re-execute', '/plans/${planId}/actions/recreate',
       '/tasks/${taskId}/actions/run', '/tasks/${taskId}/actions/stop',
-      '/actions/run-batches', '/acceptance/actions/accept', '/acceptance/actions/redo',
+      '/actions/run-batches', '/acceptance/actions/${action}',
       '/actions/retry-plan-generation',
     ]) {
       expect(http.includes(route), `missing Runtime REST route fragment ${route}`);

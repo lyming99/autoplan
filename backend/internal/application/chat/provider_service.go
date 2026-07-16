@@ -8,17 +8,22 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
+	applicationmodelusage "github.com/lyming99/autoplan/backend/internal/application/modelusage"
 	applicationoperations "github.com/lyming99/autoplan/backend/internal/application/operations"
 	domainchat "github.com/lyming99/autoplan/backend/internal/domain/chat"
+	domainmodelusage "github.com/lyming99/autoplan/backend/internal/domain/modelusage"
 	domainoperation "github.com/lyming99/autoplan/backend/internal/domain/operation"
 	platformsecrets "github.com/lyming99/autoplan/backend/internal/platform/secrets"
+	"github.com/lyming99/autoplan/backend/internal/repository"
 	"github.com/lyming99/autoplan/backend/internal/runtime/agentcli"
 	"github.com/lyming99/autoplan/backend/internal/runtime/process"
 )
@@ -62,6 +67,7 @@ type ProviderCLI interface {
 type ProviderDependencies struct {
 	Turns      ProviderTurnStore
 	Operations ProviderOperations
+	Usage      applicationmodelusage.Recorder
 	HTTP       ProviderHTTPClient
 	CLI        ProviderCLI
 	Secrets    *platformsecrets.ChatMapper
@@ -70,6 +76,7 @@ type ProviderDependencies struct {
 type ProviderService struct {
 	turns      ProviderTurnStore
 	operations ProviderOperations
+	usage      applicationmodelusage.Recorder
 	http       ProviderHTTPClient
 	cli        ProviderCLI
 	secrets    *platformsecrets.ChatMapper
@@ -98,15 +105,16 @@ type ProviderCommand struct {
 }
 
 type ProviderRun struct {
-	OperationID        string                 `json:"operation_id"`
-	ProjectID          int64                  `json:"project_id"`
-	ConversationID     int64                  `json:"conversation_id"`
-	MessageID          int64                  `json:"message_id"`
-	TurnID             string                 `json:"turn_id"`
-	AssistantMessageID int64                  `json:"assistant_message_id,omitempty"`
-	OperationStatus    domainoperation.Status `json:"operation_status"`
-	Chunks             int64                  `json:"chunks"`
-	Replayed           bool                   `json:"replayed"`
+	OperationID        string                   `json:"operation_id"`
+	ProjectID          int64                    `json:"project_id"`
+	ConversationID     int64                    `json:"conversation_id"`
+	MessageID          int64                    `json:"message_id"`
+	TurnID             string                   `json:"turn_id"`
+	AssistantMessageID int64                    `json:"assistant_message_id,omitempty"`
+	OperationStatus    domainoperation.Status   `json:"operation_status"`
+	Chunks             int64                    `json:"chunks"`
+	Replayed           bool                     `json:"replayed"`
+	Usage              *domainmodelusage.Tokens `json:"-"`
 }
 
 type ProviderStopCommand struct {
@@ -118,7 +126,7 @@ type ProviderStopCommand struct {
 func NewProviderService(dependencies ProviderDependencies) *ProviderService {
 	return &ProviderService{
 		turns: dependencies.Turns, operations: dependencies.Operations, http: dependencies.HTTP,
-		cli: dependencies.CLI, secrets: dependencies.Secrets, active: make(map[string]activeProvider),
+		usage: dependencies.Usage, cli: dependencies.CLI, secrets: dependencies.Secrets, active: make(map[string]activeProvider),
 	}
 }
 
@@ -229,8 +237,12 @@ func (service *ProviderService) executeClaimed(ctx context.Context, command Prov
 	executionCtx, cancel := context.WithCancel(ctx)
 	service.activate(claimed.Operation.OperationID, command.ProjectID, claimed.Operation.Version, cancel)
 	defer service.deactivate(claimed.Operation.OperationID)
-	chunks, output, executeErr := service.runProvider(executionCtx, command)
+	chunks, usage, output, executeErr := service.runProvider(executionCtx, command)
+	run.Usage = usage
 	operation := service.activeOperation(claimed.Operation)
+	if usageErr := service.recordUsage(ctx, command, claim, operation.OperationID, usage); usageErr != nil {
+		return service.failExecution(ctx, command, claim, operation, output, run, usageErr)
+	}
 	if executeErr != nil {
 		return service.failExecution(ctx, command, claim, operation, output, run, executeErr)
 	}
@@ -266,18 +278,18 @@ func (service *ProviderService) executeClaimed(ctx context.Context, command Prov
 	return run, nil
 }
 
-func (service *ProviderService) runProvider(ctx context.Context, command ProviderCommand) ([]domainchat.ProviderChunk, *applicationoperations.OutputCapture, error) {
+func (service *ProviderService) runProvider(ctx context.Context, command ProviderCommand) ([]domainchat.ProviderChunk, *domainmodelusage.Tokens, *applicationoperations.OutputCapture, error) {
 	switch command.Profile.Kind {
 	case domainchat.ProviderOpenAI, domainchat.ProviderAnthropic:
 		return service.runHTTP(ctx, command)
 	case domainchat.ProviderClaudeCLI, domainchat.ProviderCodexCLI:
 		return service.runCLI(ctx, command)
 	default:
-		return nil, nil, ErrProviderUnavailable
+		return nil, nil, nil, ErrProviderUnavailable
 	}
 }
 
-func (service *ProviderService) runCLI(ctx context.Context, command ProviderCommand) ([]domainchat.ProviderChunk, *applicationoperations.OutputCapture, error) {
+func (service *ProviderService) runCLI(ctx context.Context, command ProviderCommand) ([]domainchat.ProviderChunk, *domainmodelusage.Tokens, *applicationoperations.OutputCapture, error) {
 	launch := agentcli.ChatLaunch{
 		ProjectID: command.ProjectID, Workspace: command.Workspace, WorkingDirectory: command.WorkingDir,
 		Prompt: command.Prompt, Model: command.Profile.Model, ReasoningEffort: command.Profile.ReasoningEffort,
@@ -289,7 +301,7 @@ func (service *ProviderService) runCLI(ctx context.Context, command ProviderComm
 		if command.Profile.Credential != nil {
 			environment, err := platformsecrets.ClaudeEnvironment(command.Profile.Credential.Binding, command.Profile.Credential.Reference)
 			if err != nil {
-				return nil, nil, ErrProviderUnavailable
+				return nil, nil, nil, ErrProviderUnavailable
 			}
 			launch.Credential = &process.SecretEnvironment{Name: environment.Name, Binding: environment.Binding, Reference: environment.Reference}
 		}
@@ -298,29 +310,64 @@ func (service *ProviderService) runCLI(ctx context.Context, command ProviderComm
 	}
 	raw, err := service.cli.Run(ctx, launch)
 	output := &applicationoperations.OutputCapture{Stdout: []byte(raw.Stdout.Tail), Stderr: []byte(raw.Stderr.Tail)}
+	usage := agentcli.ParseChatTokenUsage(launch.Provider, raw)
 	if err != nil || raw.ExitCode != 0 || raw.TimedOut || raw.Cancelled || raw.Stdout.RedactionFailed || raw.Stderr.RedactionFailed {
 		if err != nil {
-			return nil, output, err
+			return nil, usage, output, err
 		}
-		return nil, output, ErrProviderRejected
+		return nil, usage, output, ErrProviderRejected
 	}
 	parsed := agentcli.ParseChatOutput(launch.Provider, raw)
-	return chatChunksFromCLI(parsed), output, nil
+	return chatChunksFromCLI(parsed), usage, output, nil
 }
 
-func (service *ProviderService) runHTTP(ctx context.Context, command ProviderCommand) ([]domainchat.ProviderChunk, *applicationoperations.OutputCapture, error) {
+func (service *ProviderService) recordUsage(
+	ctx context.Context,
+	command ProviderCommand,
+	claim TurnClaim,
+	operationID string,
+	tokens *domainmodelusage.Tokens,
+) error {
+	if tokens == nil {
+		return nil
+	}
+	if service.usage == nil {
+		return repository.ErrNotConfigured
+	}
+	finalize, cancel := providerFinalizationContext(ctx)
+	defer cancel()
+	return service.usage.Record(finalize, domainmodelusage.Record{
+		ProjectID:     command.ProjectID,
+		InvocationKey: fmt.Sprintf("chat:%s:conversation:%d:turn:%d", operationID, command.ConversationID, claim.MessageID),
+		Provider:      chatUsageProvider(command.Profile.Kind), Model: command.Profile.Model, Source: domainmodelusage.SourceChat,
+		OperationID: &operationID, Tokens: *tokens, CollectedAt: time.Now().UTC().Format(time.RFC3339Nano),
+	})
+}
+
+func chatUsageProvider(kind domainchat.ProviderKind) string {
+	switch kind {
+	case domainchat.ProviderClaudeCLI:
+		return "claude"
+	case domainchat.ProviderCodexCLI:
+		return "codex"
+	default:
+		return string(kind)
+	}
+}
+
+func (service *ProviderService) runHTTP(ctx context.Context, command ProviderCommand) ([]domainchat.ProviderChunk, *domainmodelusage.Tokens, *applicationoperations.OutputCapture, error) {
 	credential, err := service.secrets.ResolveHTTP(ctx, httpProvider(command.Profile.Kind), command.Profile.Credential.Binding, command.Profile.Credential.Reference)
 	if err != nil {
-		return nil, nil, ErrProviderUnavailable
+		return nil, nil, nil, ErrProviderUnavailable
 	}
 	defer credential.Clear()
 	body, endpoint, err := providerHTTPRequest(command)
 	if err != nil {
-		return nil, nil, ErrProviderUnavailable
+		return nil, nil, nil, ErrProviderUnavailable
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return nil, nil, ErrProviderUnavailable
+		return nil, nil, nil, ErrProviderUnavailable
 	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(credential.Name, credential.Value)
@@ -330,16 +377,17 @@ func (service *ProviderService) runHTTP(ctx context.Context, command ProviderCom
 	response, err := service.http.Do(request)
 	request.Header.Del(credential.Name)
 	if err != nil {
-		return nil, nil, ErrProviderRejected
+		return nil, nil, nil, ErrProviderRejected
 	}
 	if response == nil || response.Body == nil {
-		return nil, nil, ErrProviderRejected
+		return nil, nil, nil, ErrProviderRejected
 	}
 	defer response.Body.Close()
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, nil, ErrProviderRejected
+		return nil, nil, nil, ErrProviderRejected
 	}
-	return parseHTTPChunks(response.Body, response.Header.Get("Content-Type"), command.Profile.Kind)
+	chunks, usage, err := parseHTTPChunks(response.Body, response.Header.Get("Content-Type"), command.Profile.Kind)
+	return chunks, usage, nil, err
 }
 
 func (service *ProviderService) persistChunks(ctx context.Context, command ProviderCommand, claim TurnClaim, values []domainchat.ProviderChunk) (int64, int64, error) {
@@ -549,7 +597,7 @@ func providerHTTPRequest(command ProviderCommand) ([]byte, string, error) {
 	case domainchat.ProviderOpenAI:
 		endpoint += "/v1/chat/completions"
 		payload = map[string]any{
-			"model": command.Profile.Model, "stream": true,
+			"model": command.Profile.Model, "stream": true, "stream_options": map[string]bool{"include_usage": true},
 			"messages": []map[string]string{{"role": "user", "content": command.Prompt}},
 		}
 	case domainchat.ProviderAnthropic:
@@ -568,7 +616,7 @@ func providerHTTPRequest(command ProviderCommand) ([]byte, string, error) {
 	return encoded, endpoint, nil
 }
 
-func parseHTTPChunks(reader io.Reader, contentType string, provider domainchat.ProviderKind) ([]domainchat.ProviderChunk, *applicationoperations.OutputCapture, error) {
+func parseHTTPChunks(reader io.Reader, contentType string, provider domainchat.ProviderKind) ([]domainchat.ProviderChunk, *domainmodelusage.Tokens, error) {
 	limited := io.LimitReader(reader, maximumHTTPProviderResponseBytes+1)
 	body, err := io.ReadAll(limited)
 	if err != nil || len(body) > maximumHTTPProviderResponseBytes {
@@ -578,13 +626,19 @@ func parseHTTPChunks(reader io.Reader, contentType string, provider domainchat.P
 		scanner := bufio.NewScanner(bytes.NewReader(body))
 		scanner.Buffer(make([]byte, 4096), 64<<10)
 		chunks := make([]domainchat.ProviderChunk, 0)
+		usage := &httpUsageAccumulator{}
+		terminated := false
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if !strings.HasPrefix(line, "data:") {
 				continue
 			}
 			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if data == "" || data == "[DONE]" {
+			if data == "" {
+				continue
+			}
+			if data == "[DONE]" {
+				terminated = provider == domainchat.ProviderOpenAI
 				continue
 			}
 			parsed, err := parseProviderJSON([]byte(data), provider)
@@ -592,14 +646,30 @@ func parseHTTPChunks(reader io.Reader, contentType string, provider domainchat.P
 				return nil, nil, err
 			}
 			chunks = append(chunks, parsed...)
+			if !usage.push([]byte(data), provider) {
+				return nil, nil, ErrProviderOutput
+			}
+			if provider == domainchat.ProviderAnthropic && anthropicEventType([]byte(data)) == "message_stop" {
+				terminated = true
+			}
 		}
 		if err := scanner.Err(); err != nil {
 			return nil, nil, ErrProviderOutput
 		}
-		return chunks, nil, nil
+		if !terminated {
+			return nil, nil, ErrProviderOutput
+		}
+		return chunks, usage.tokens(), nil
 	}
 	chunks, err := parseProviderJSON(body, provider)
-	return chunks, nil, err
+	if err != nil {
+		return nil, nil, err
+	}
+	usage := &httpUsageAccumulator{}
+	if !usage.push(body, provider) {
+		return nil, nil, ErrProviderOutput
+	}
+	return chunks, usage.tokens(), nil
 }
 
 func parseProviderJSON(data []byte, provider domainchat.ProviderKind) ([]domainchat.ProviderChunk, error) {
@@ -607,6 +677,125 @@ func parseProviderJSON(data []byte, provider domainchat.ProviderKind) ([]domainc
 		return parseAnthropicJSON(data)
 	}
 	return parseOpenAIJSON(data)
+}
+
+type httpUsageAccumulator struct {
+	input, output, cached, reasoning, total *int64
+	seen                                    bool
+}
+
+func (usage *httpUsageAccumulator) push(data []byte, provider domainchat.ProviderKind) bool {
+	if usage == nil {
+		return false
+	}
+	if provider == domainchat.ProviderAnthropic {
+		var event struct {
+			Type    string `json:"type"`
+			Message struct {
+				Usage struct {
+					Input         *int64 `json:"input_tokens"`
+					Output        *int64 `json:"output_tokens"`
+					CacheRead     *int64 `json:"cache_read_input_tokens"`
+					CacheCreation *int64 `json:"cache_creation_input_tokens"`
+				} `json:"usage"`
+			} `json:"message"`
+			Usage struct {
+				Input         *int64 `json:"input_tokens"`
+				Output        *int64 `json:"output_tokens"`
+				CacheRead     *int64 `json:"cache_read_input_tokens"`
+				CacheCreation *int64 `json:"cache_creation_input_tokens"`
+			} `json:"usage"`
+		}
+		if json.Unmarshal(data, &event) != nil {
+			return false
+		}
+		fields := event.Usage
+		if event.Type == "message_start" {
+			fields = event.Message.Usage
+		}
+		cached, ok := checkedOptionalSum(fields.CacheRead, fields.CacheCreation)
+		if !ok || !usage.replace(fields.Input, fields.Output, cached, nil, nil) {
+			return false
+		}
+		return true
+	}
+
+	var event struct {
+		Usage *struct {
+			Input     *int64 `json:"prompt_tokens"`
+			Output    *int64 `json:"completion_tokens"`
+			Total     *int64 `json:"total_tokens"`
+			InputInfo struct {
+				Cached *int64 `json:"cached_tokens"`
+			} `json:"prompt_tokens_details"`
+			OutputInfo struct {
+				Reasoning *int64 `json:"reasoning_tokens"`
+			} `json:"completion_tokens_details"`
+		} `json:"usage"`
+	}
+	if json.Unmarshal(data, &event) != nil {
+		return false
+	}
+	if event.Usage == nil {
+		return true
+	}
+	return usage.replace(event.Usage.Input, event.Usage.Output, event.Usage.InputInfo.Cached, event.Usage.OutputInfo.Reasoning, event.Usage.Total)
+}
+
+func (usage *httpUsageAccumulator) replace(input, output, cached, reasoning, total *int64) bool {
+	for _, value := range []*int64{input, output, cached, reasoning, total} {
+		if value != nil && *value < 0 {
+			return false
+		}
+	}
+	for _, pair := range []struct {
+		target **int64
+		value  *int64
+	}{{&usage.input, input}, {&usage.output, output}, {&usage.cached, cached}, {&usage.reasoning, reasoning}, {&usage.total, total}} {
+		if pair.value != nil {
+			value := *pair.value
+			*pair.target = &value
+			usage.seen = true
+		}
+	}
+	return true
+}
+
+func (usage *httpUsageAccumulator) tokens() *domainmodelusage.Tokens {
+	if usage == nil || !usage.seen {
+		return nil
+	}
+	return &domainmodelusage.Tokens{
+		Input: usage.input, Output: usage.output, Cached: usage.cached,
+		Reasoning: usage.reasoning, Total: usage.total,
+	}
+}
+
+func checkedOptionalSum(left, right *int64) (*int64, bool) {
+	if left == nil && right == nil {
+		return nil, true
+	}
+	var total int64
+	for _, value := range []*int64{left, right} {
+		if value == nil {
+			continue
+		}
+		if *value < 0 || total > math.MaxInt64-*value {
+			return nil, false
+		}
+		total += *value
+	}
+	return &total, true
+}
+
+func anthropicEventType(data []byte) string {
+	var event struct {
+		Type string `json:"type"`
+	}
+	if json.Unmarshal(data, &event) != nil {
+		return ""
+	}
+	return event.Type
 }
 
 func parseOpenAIJSON(data []byte) ([]domainchat.ProviderChunk, error) {

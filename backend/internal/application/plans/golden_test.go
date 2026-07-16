@@ -51,7 +51,7 @@ func TestPlanGoldenSnapshotHasStableSnakeCaseSurface(t *testing.T) {
 	if err := json.Unmarshal(snapshot["file_path"], &sourceRef); err != nil || sourceRef != "docs/plan/fixture.md" {
 		t.Fatalf("file_path=%q error=%v", sourceRef, err)
 	}
-	if err := json.Unmarshal(snapshot["title"], &title); err != nil || title != sourceRef {
+	if err := json.Unmarshal(snapshot["title"], &title); err != nil || title != "Plan #8" {
 		t.Fatalf("title=%q error=%v", title, err)
 	}
 }

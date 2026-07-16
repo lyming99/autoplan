@@ -1046,6 +1046,26 @@ export interface ExecutorImportTasksJsonResult {
   snapshot: AppSnapshot;
 }
 
+export interface ModelUsageTotals {
+  inputTokens: number;
+  outputTokens: number;
+  cachedTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+}
+
+export interface ModelUsageProvider {
+  provider: string;
+  cumulative: ModelUsageTotals;
+  today: ModelUsageTotals;
+}
+
+export interface ModelUsageSummary {
+  cumulative: ModelUsageTotals;
+  today: ModelUsageTotals;
+  byProvider: ModelUsageProvider[];
+}
+
 export interface AppSnapshot {
   activeProjectId: number | null;
   activeProject: Project | null;
@@ -1066,6 +1086,7 @@ export interface AppSnapshot {
   activeOperation: ActiveOperation | null;
   activeOperations: ActiveOperation[];
   lastOperation: ActiveOperation | null;
+  modelUsage: ModelUsageSummary;
 }
 
 export interface WorkspaceSnapshotPatch {
@@ -1077,6 +1098,7 @@ export interface WorkspaceSnapshotPatch {
   activeOperation?: ActiveOperation | null;
   activeOperations?: ActiveOperation[];
   lastOperation?: ActiveOperation | null;
+  modelUsage?: ModelUsageSummary;
 }
 
 export interface ActivityLine { role: string; text: string; at: string; }

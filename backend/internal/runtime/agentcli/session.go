@@ -26,6 +26,13 @@ type Session struct {
 var codexSessionID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var agentSessionID = regexp.MustCompile(`^[A-Za-z0-9._:-]{1,256}$`)
 
+// NormalizeSessionID is the safe persistence/argv boundary for callers that
+// own session lifecycle state. Invalid provider-specific identifiers collapse
+// to an empty value and must therefore start a new session.
+func NormalizeSessionID(provider Provider, value string) string {
+	return normalizeSessionID(provider, value)
+}
+
 func normalizeSession(provider Provider, requested Session) (Session, error) {
 	if !provider.SupportsSession() {
 		return Session{}, nil

@@ -22,9 +22,12 @@ function loadMainIpcHandlers(db, loop, options = {}) {
   };
   const fakeElectron = {
     app: {
+      isPackaged: false,
       getPath: () => path.join(os.tmpdir(), 'autoplan-smoke-user-data'),
       on: () => {},
       quit: () => {},
+      requestSingleInstanceLock: () => true,
+      setPath: () => {},
       whenReady: () => ({ then: () => undefined }),
     },
     BrowserWindow: function SmokeBrowserWindow() {

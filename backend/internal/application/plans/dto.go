@@ -91,15 +91,17 @@ type MutationResult struct {
 	Items    []AcceptanceResult    `json:"items,omitempty"`
 }
 
-func planDTO(value domainplan.Plan) PlanDTO {
+func planDTO(value domainplan.Plan, titleOverride ...string) PlanDTO {
 	validationPassed := 0
 	if value.ValidationPassed {
 		validationPassed = 1
 	}
 	filePath := safeRelativeReference(value.SourceRef)
-	title := filePath
-	if title == "" {
-		title = "Plan #" + decimal(value.ID)
+	title := "Plan #" + decimal(value.ID)
+	if len(titleOverride) > 0 {
+		if override := cleanPlanTitle(titleOverride[0]); override != "" {
+			title = override
+		}
 	}
 	return PlanDTO{
 		ID: value.ID, ProjectID: value.ProjectID, IssueHash: value.IssueHash, FilePath: filePath, Hash: value.Digest,
@@ -124,7 +126,9 @@ func planDTO(value domainplan.Plan) PlanDTO {
 
 // PlanDTOFromDomain is used by sibling application projections that need the
 // same redacted source-reference and title semantics as Plan queries.
-func PlanDTOFromDomain(value domainplan.Plan) PlanDTO { return planDTO(value) }
+func PlanDTOFromDomain(value domainplan.Plan, titleOverride ...string) PlanDTO {
+	return planDTO(value, titleOverride...)
+}
 
 func taskDTO(value domainplan.Task, plan PlanDTO) TaskDTO {
 	return TaskDTO{
@@ -139,8 +143,8 @@ func taskDTO(value domainplan.Task, plan PlanDTO) TaskDTO {
 // PlanSnapshot and TaskSnapshot are used by the committed AppSnapshot
 // assembler. They retain Node-compatible snake_case fields while excluding
 // session IDs, credential values, and absolute filesystem capabilities.
-func PlanSnapshot(value domainplan.Plan) (contracts.SanitizedObject, error) {
-	dto := planDTO(value)
+func PlanSnapshot(value domainplan.Plan, titleOverride ...string) (contracts.SanitizedObject, error) {
+	dto := planDTO(value, titleOverride...)
 	return sanitized(map[string]any{
 		"id": dto.ID, "project_id": dto.ProjectID, "issue_hash": dto.IssueHash,
 		"file_path": dto.FilePath, "hash": dto.Hash, "status": dto.Status,
@@ -174,8 +178,8 @@ func PlanSnapshot(value domainplan.Plan) (contracts.SanitizedObject, error) {
 	})
 }
 
-func TaskSnapshot(value domainplan.Task, parent domainplan.Plan) (contracts.SanitizedObject, error) {
-	dto := taskDTO(value, planDTO(parent))
+func TaskSnapshot(value domainplan.Task, parent domainplan.Plan, planTitleOverride ...string) (contracts.SanitizedObject, error) {
+	dto := taskDTO(value, planDTO(parent, planTitleOverride...))
 	return sanitized(map[string]any{
 		"id": dto.ID, "project_id": dto.ProjectID, "plan_id": dto.PlanID,
 		"task_key": dto.TaskKey, "title": dto.Title, "raw_line": dto.RawLine,

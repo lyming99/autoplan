@@ -22,6 +22,7 @@ const GO_WRITER_COMMANDS = new Set([
 ]);
 const REQUIRED_HTTP_ROUTES = [
   '/api/v1/capabilities:',
+  '/api/v1/plans:',
   '/api/v1/plans/actions/run:',
   '/api/v1/plans/actions/stop:',
   '/api/v1/plans/actions/resume:',
@@ -213,7 +214,8 @@ function inspectSourceSafety(rootDir = ROOT) {
   }
 
   const openapi = requireSource(root, 'backend/openapi/openapi.yaml',
-    [...REQUIRED_HTTP_ROUTES, 'CapabilitiesEnvelope', 'ActionAccepted', 'not_implemented'],
+    [...REQUIRED_HTTP_ROUTES, 'operationId: deletePlan', 'PlanDeleteRequest', 'PlanMutationEnvelope',
+      'CapabilitiesEnvelope', 'ActionAccepted', 'not_implemented'],
     'openapi_p07_surface_drift');
   const capabilitySchema = readJson(path.join(root, 'backend/openapi/schemas/capability.schema.json'));
   const actionSchema = readJson(path.join(root, 'backend/openapi/schemas/action.schema.json'));
@@ -229,19 +231,30 @@ function inspectSourceSafety(rootDir = ROOT) {
     ['DatabaseOwnerProof', 'AuthorizedCopy', 'ErrWriterUnauthorized', 'LevelSerializable', 'BeginTx'],
     'database_owner_guard_drift');
   const capabilityService = requireSource(root, 'backend/internal/application/capabilities/service.go',
-    ['PlansRun', 'TasksRunBatches', 'Enabled: false', 'ErrNotImplemented', 'options object'],
+    ['PlansRun', 'TasksRunBatches', 'Enabled: false', '{ID: PlansDelete, Enabled: true}',
+      'ErrNotImplemented', 'options object'],
     'capability_catalog_drift');
   const planActions = requireSource(root, 'backend/internal/httpapi/plan_actions.go',
     ['DisabledActionEndpoint', 'does not decode', 'CodeNotImplemented', 'Capability'],
     'plan_action_boundary_drift');
+  requireSource(root, 'backend/internal/httpapi/plans.go',
+    ['PlansPath = "/api/v1/plans"', 'http.MethodDelete', 'RegisterPlanMutations', 'planDeleteRequest'],
+    'plan_delete_route_drift');
+  requireSource(root, 'backend/internal/bootstrap/dependencies.go',
+    ['RegisterRuntimeRoutes', 'RegisterCapabilityRoutes(router, securityPolicy)',
+      'RegisterPlanMutations(router, securityPolicy, dependencies.Plans)'],
+    'plan_delete_runtime_composition_drift');
   const taskActions = requireSource(root, 'backend/internal/httpapi/task_actions.go',
     ['TaskRunBatchesActionPath', 'DisabledActionEndpoint', 'capabilities.TasksRunBatches'],
     'task_action_boundary_drift');
   const renderer = requireSource(root, 'src/renderer/lib/api/httpClient.ts',
-    ['#supportsCapabilities', 'return this.#delegate', 'not_implemented', 'plans.reorder'],
+    ['#supportsCapabilities', 'return this.#delegate', 'not_implemented', 'plans.reorder',
+      "#supportsCapabilities(['plans.delete'])", "'/api/v1/plans'", "'DELETE'",
+      'expected_updated_at: plan.updated_at'],
     'renderer_capability_transport_drift');
   requireSource(root, 'src/renderer/lib/api/transport.ts',
-    ['long-running', 'Plan/Task action remains', 'new HttpAutoplanClient', 'delegate: options.ipcClient'],
+    ['Go HTTP/SSE/WebSocket', 'no business IPC fallback', 'new HttpAutoplanClient',
+      'delegate: options.unavailableClient'],
     'renderer_transport_owner_drift');
   const comparator = requireSource(root, 'scripts/migration-p07/compare-plan-golden.js',
     ['assertStrictEqual', 'a separately reset Go artifact path is required', 'unknown scenario'],

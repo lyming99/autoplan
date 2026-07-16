@@ -19,6 +19,7 @@ var (
 	ErrInvalidTask   = errors.New("plan task is invalid")
 	ErrInvalidOrder  = errors.New("plan order is invalid")
 	ErrInvalidRedo   = errors.New("plan redo is invalid")
+	ErrInvalidStop   = errors.New("plan stop is invalid")
 )
 
 // Status is intentionally open when reading historical data. Mutations only
@@ -175,6 +176,22 @@ type TaskRedo struct {
 	Supplement            string
 }
 
+// PlanStop identifies a plan through both its project and aggregate IDs. The
+// project ID is part of the command so persistence adapters never resolve or
+// mutate a plan through a globally-scoped ID.
+type PlanStop struct {
+	ProjectID int64
+	PlanID    int64
+	UpdatedAt string
+}
+
+// PlanStopResult is the committed aggregate state. AffectedTasks contains
+// only unfinished tasks whose status changed to blocked.
+type PlanStopResult struct {
+	Plan          Plan
+	AffectedTasks []Task
+}
+
 type Delete struct {
 	ProjectID         int64
 	PlanID            int64
@@ -279,6 +296,13 @@ func ValidateTaskRedo(value TaskRedo) error {
 		!validTimestamp(value.UpdatedAt) || !timestampAfter(value.UpdatedAt, value.ExpectedPlanUpdatedAt) ||
 		!timestampAfter(value.UpdatedAt, value.ExpectedTaskUpdatedAt) || !validSupplement(value.Supplement) {
 		return ErrInvalidRedo
+	}
+	return nil
+}
+
+func ValidatePlanStop(value PlanStop) error {
+	if value.ProjectID <= 0 || value.PlanID <= 0 || !validTimestamp(value.UpdatedAt) {
+		return ErrInvalidStop
 	}
 	return nil
 }

@@ -336,6 +336,40 @@ describe('Workspace intake plan generation failure retry UI', () => {
   });
 });
 
+describe('P003 workspace intake filter and locate regressions', () => {
+  const page = source('src', 'renderer', 'pages', 'WorkspacePage.tsx');
+  const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');
+  const controller = source('src', 'renderer', 'hooks', 'useWorkspaceController.ts');
+
+  it('gives requirement and feedback their own IntakePanel instance with built-in filtering', () => {
+    expectCountAtLeast(page, '<WorkspaceIntakePanel', 2, 'WorkspacePage should render the requirement and feedback intake panels');
+    expectIncludes(page, 'items={filteredItems.requirements}', 'the requirement panel should receive requirement search results');
+    expectIncludes(page, 'type="requirement"', 'the requirement panel should preserve its intake type');
+    expectIncludes(page, 'items={filteredItems.feedback}', 'the feedback panel should receive feedback search results');
+    expectIncludes(page, 'type="feedback"', 'the feedback panel should preserve its intake type');
+    expectIncludes(intakePanel, "const [listFilter, setListFilter] = useState<IntakeListFilter>('all');", 'each mounted panel should own its filter state');
+    expectIncludes(intakePanel, "items.filter(isIntakeGenerationFailure)", 'both panel instances should automatically share the failure classifier');
+  });
+
+  it('keeps workspace search and locateItemId expansion based on the active panel collection', () => {
+    expectIncludes(page, "locateItemId={intakeLocateItemId('requirement', pendingSearchTarget, pendingIntakeTarget)}", 'requirement search should keep its locate target');
+    expectIncludes(page, "locateItemId={intakeLocateItemId('feedback', pendingSearchTarget, pendingIntakeTarget)}", 'feedback search should keep its locate target');
+    expectIncludes(intakePanel, 'if (!locateItemId) return;', 'IntakePanel should still react to an explicit locate target');
+    expectIncludes(intakePanel, 'const targetIndex = filteredItems.findIndex((item) => Number(item.id) === Number(locateItemId));', 'locate expansion should use positions in the active filtered collection');
+    expectIncludes(intakePanel, 'setVisibleLimit((current) => Math.max(current, targetIndex + 1));', 'locating should reveal a target beyond the initial page');
+  });
+
+  it('keeps failure details and retry CLI option propagation intact on both panels', () => {
+    expectIncludes(intakePanel, 'const failure = hasPlan ? null : intakeGenerationFailure(item);', 'bound Plan cards should remain mutually exclusive with historical failure details');
+    expectIncludes(intakePanel, '<IntakeGenerateFailureCard', 'matching records should retain the failure detail card');
+    expectIncludes(intakePanel, 'await onRetryGeneratePlan(type, item.id, retryOptionsFromDraft(draft));', 'retry should retain intake identity and per-card CLI options');
+    expectCountAtLeast(page, 'onRetryGeneratePlan={retryIntakePlanGeneration}', 2, 'both intake panels should retain the retry callback');
+    expectCountAtLeast(page, 'retryAgentCliOptions={composerCliSelection.options}', 2, 'both intake panels should retain CLI provider options');
+    expectCountAtLeast(page, 'retryCodexReasoningOptions={composerCliSelection.reasoningOptions}', 2, 'both intake panels should retain Codex reasoning options');
+    expectIncludes(controller, 'client.retryIntakePlanGeneration({ projectId, type, id, ...options })', 'the controller should pass retry CLI options to the client unchanged');
+  });
+});
+
 describe('Workspace intake cascade delete wiring', () => {
   it('keeps the delete confirmation explicit about linked plans, tasks, and running executions', () => {
     const intakePanel = source('src', 'renderer', 'components', 'IntakePanel.tsx');

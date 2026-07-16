@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	domainmodelusage "github.com/lyming99/autoplan/backend/internal/domain/modelusage"
 	"github.com/lyming99/autoplan/backend/internal/runtime/process"
 )
 
@@ -112,7 +113,7 @@ func (adapter *ChatAdapter) Prepare(launch ChatLaunch) (process.Spec, error) {
 		if reasoning == "" {
 			reasoning = DefaultReasoning
 		}
-		spec.Args = []string{"exec", "--color", "never", "--model", launch.Model, "-c", `model_reasoning_effort="` + reasoning + `"`, "--sandbox", "read-only", "--skip-git-repo-check", "-"}
+		spec.Args = []string{"exec", "--json", "--color", "never", "--model", launch.Model, "-c", `model_reasoning_effort="` + reasoning + `"`, "--sandbox", "read-only", "--skip-git-repo-check", "-"}
 	default:
 		return process.Spec{}, ErrChatAdapter
 	}
@@ -127,8 +128,11 @@ func ParseChatOutput(provider ChatProvider, result process.Result) []ChatOutput 
 	if text == "" {
 		return nil
 	}
+	if provider == ChatProviderCodex {
+		return parseCodexChatOutput(text)
+	}
 	if provider != ChatProviderClaude {
-		return []ChatOutput{{Text: text}}
+		return nil
 	}
 	outputs := make([]ChatOutput, 0)
 	for _, line := range strings.Split(text, "\n") {
@@ -167,6 +171,47 @@ func ParseChatOutput(provider ChatProvider, result process.Result) []ChatOutput 
 		}
 	}
 	return outputs
+}
+
+func parseCodexChatOutput(text string) []ChatOutput {
+	outputs := make([]ChatOutput, 0)
+	valid := eachJSONLine(text, func(data []byte) bool {
+		var event struct {
+			Type string `json:"type"`
+			Item struct {
+				Type string `json:"type"`
+				Text string `json:"text"`
+			} `json:"item"`
+		}
+		if json.Unmarshal(data, &event) != nil {
+			return false
+		}
+		if event.Type == "item.completed" && event.Item.Text != "" {
+			switch event.Item.Type {
+			case "agent_message":
+				outputs = append(outputs, ChatOutput{Text: event.Item.Text})
+			case "reasoning":
+				outputs = append(outputs, ChatOutput{Reasoning: event.Item.Text})
+			}
+		}
+		return true
+	})
+	if !valid {
+		return nil
+	}
+	return outputs
+}
+
+// ParseChatTokenUsage exposes only normalized counters from a CLI chat run.
+func ParseChatTokenUsage(provider ChatProvider, result process.Result) *domainmodelusage.Tokens {
+	switch provider {
+	case ChatProviderClaude:
+		return ParseTokenUsage(ParserClaude, result)
+	case ChatProviderCodex:
+		return ParseTokenUsage(ParserCodex, result)
+	default:
+		return nil
+	}
 }
 
 func validChatLaunch(value ChatLaunch) bool {

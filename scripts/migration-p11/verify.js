@@ -199,7 +199,7 @@ function structuredPrerequisite(stdout) {
 function runRendererContract(rootDir = ROOT) {
   const sourcePath = path.join(rootDir, 'src', 'renderer', 'lib', 'api', 'runtimeTransport.contract.test.ts');
   const source = fs.readFileSync(sourcePath, 'utf8');
-  const nodeTestRegistration = "const { describe, it } = require('node:test') as { describe: TestRegistrar; it: TestRegistrar };";
+  const nodeTestRegistration = "import { describe, it } from 'node:test';";
   const harnessRegistration = "const describe: TestRegistrar = (_name, run) => run();\nconst it: TestRegistrar = (_name, run) => run();";
   if (!source.includes(nodeTestRegistration)) throw new Error('renderer_contract_harness_anchor_missing');
   const typescript = require('typescript');

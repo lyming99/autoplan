@@ -23,21 +23,30 @@ func (service *Service) List(ctx context.Context, query ListQuery) ([]PlanDTO, e
 		return nil, ErrInvalidCommand
 	}
 	query.Limit = boundedLimit(query.Limit, 100)
-	var result []PlanDTO
+	var records []domainplan.Plan
+	var workspace string
 	err := service.writer.TransactPlans(ctx, func(transaction repository.PlanWriteTransaction) error {
-		records, err := transaction.ListPlans(ctx, domainplan.ListOptions{
-			ProjectID: query.ProjectID, Limit: query.Limit, Offset: query.Offset,
-		})
+		project, found, err := transaction.GetProject(ctx, query.ProjectID)
 		if err != nil {
 			return err
 		}
-		result = make([]PlanDTO, 0, len(records))
-		for _, record := range records {
-			result = append(result, planDTO(record))
+		if !found {
+			return repository.ErrNotFound
 		}
-		return nil
+		workspace = project.WorkspacePath
+		records, err = transaction.ListPlans(ctx, domainplan.ListOptions{
+			ProjectID: query.ProjectID, Limit: query.Limit, Offset: query.Offset,
+		})
+		return err
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	result := make([]PlanDTO, 0, len(records))
+	for _, record := range records {
+		result = append(result, planDTO(record, ResolvePlanTitle(workspace, record)))
+	}
+	return result, nil
 }
 
 func (service *Service) Get(ctx context.Context, projectID, planID int64) (PlanDTO, error) {
@@ -47,19 +56,30 @@ func (service *Service) Get(ctx context.Context, projectID, planID int64) (PlanD
 	if projectID <= 0 || planID <= 0 {
 		return PlanDTO{}, ErrInvalidCommand
 	}
-	var result PlanDTO
+	var record domainplan.Plan
+	var workspace string
 	err := service.writer.TransactPlans(ctx, func(transaction repository.PlanWriteTransaction) error {
-		record, found, err := transaction.GetPlan(ctx, projectID, planID)
+		project, found, err := transaction.GetProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
 		if !found {
 			return repository.ErrNotFound
 		}
-		result = planDTO(record)
+		workspace = project.WorkspacePath
+		record, found, err = transaction.GetPlan(ctx, projectID, planID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return repository.ErrNotFound
+		}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return PlanDTO{}, err
+	}
+	return planDTO(record, ResolvePlanTitle(workspace, record)), nil
 }
 
 func (service *Service) ListTasks(ctx context.Context, projectID, planID int64) ([]TaskDTO, error) {
@@ -69,27 +89,37 @@ func (service *Service) ListTasks(ctx context.Context, projectID, planID int64) 
 	if projectID <= 0 || planID <= 0 {
 		return nil, ErrInvalidCommand
 	}
-	var result []TaskDTO
+	var parent domainplan.Plan
+	var records []domainplan.Task
+	var workspace string
 	err := service.writer.TransactPlans(ctx, func(transaction repository.PlanWriteTransaction) error {
-		parent, found, err := transaction.GetPlan(ctx, projectID, planID)
+		project, found, err := transaction.GetProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
 		if !found {
 			return repository.ErrNotFound
 		}
-		records, err := transaction.ListPlanTasks(ctx, projectID, planID)
+		workspace = project.WorkspacePath
+		parent, found, err = transaction.GetPlan(ctx, projectID, planID)
 		if err != nil {
 			return err
 		}
-		parentDTO := planDTO(parent)
-		result = make([]TaskDTO, 0, len(records))
-		for _, record := range records {
-			result = append(result, taskDTO(record, parentDTO))
+		if !found {
+			return repository.ErrNotFound
 		}
-		return nil
+		records, err = transaction.ListPlanTasks(ctx, projectID, planID)
+		return err
 	})
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+	parentDTO := planDTO(parent, ResolvePlanTitle(workspace, parent))
+	result := make([]TaskDTO, 0, len(records))
+	for _, record := range records {
+		result = append(result, taskDTO(record, parentDTO))
+	}
+	return result, nil
 }
 
 func (service *Service) GetTask(ctx context.Context, projectID, planID, taskID int64) (TaskDTO, error) {
@@ -99,26 +129,39 @@ func (service *Service) GetTask(ctx context.Context, projectID, planID, taskID i
 	if projectID <= 0 || planID <= 0 || taskID <= 0 {
 		return TaskDTO{}, ErrInvalidCommand
 	}
-	var result TaskDTO
+	var parent domainplan.Plan
+	var record domainplan.Task
+	var workspace string
 	err := service.writer.TransactPlans(ctx, func(transaction repository.PlanWriteTransaction) error {
-		parent, found, err := transaction.GetPlan(ctx, projectID, planID)
+		project, found, err := transaction.GetProject(ctx, projectID)
 		if err != nil {
 			return err
 		}
 		if !found {
 			return repository.ErrNotFound
 		}
-		record, found, err := transaction.GetPlanTask(ctx, projectID, planID, taskID)
+		workspace = project.WorkspacePath
+		parent, found, err = transaction.GetPlan(ctx, projectID, planID)
 		if err != nil {
 			return err
 		}
 		if !found {
 			return repository.ErrNotFound
 		}
-		result = taskDTO(record, planDTO(parent))
+		record, found, err = transaction.GetPlanTask(ctx, projectID, planID, taskID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return repository.ErrNotFound
+		}
 		return nil
 	})
-	return result, err
+	if err != nil {
+		return TaskDTO{}, err
+	}
+	parentDTO := planDTO(parent, ResolvePlanTitle(workspace, parent))
+	return taskDTO(record, parentDTO), nil
 }
 
 func (service *Service) Snapshot(

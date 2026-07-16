@@ -17,12 +17,15 @@ import (
 const ContractVersion = "v1"
 
 var (
-	ErrUnavailable        = errors.New("runtime command service unavailable")
-	ErrInvalidCommand     = errors.New("runtime command is invalid")
-	ErrUnsupportedCommand = errors.New("runtime command is unsupported")
-	ErrStateConflict      = errors.New("runtime command state conflicts")
-	ErrCancelled          = errors.New("runtime command was cancelled")
-	ErrRegistry           = errors.New("runtime command registry is invalid")
+	ErrUnavailable           = errors.New("runtime command service unavailable")
+	ErrInvalidCommand        = errors.New("runtime command is invalid")
+	ErrUnsupportedCommand    = errors.New("runtime command is unsupported")
+	ErrStateConflict         = errors.New("runtime command state conflicts")
+	ErrCancelled             = errors.New("runtime command was cancelled")
+	ErrNotFound              = errors.New("runtime command target was not found")
+	ErrRepositoryUnavailable = errors.New("runtime command repository is unavailable")
+	ErrCancellationFailed    = errors.New("runtime command cancellation failed")
+	ErrRegistry              = errors.New("runtime command registry is invalid")
 )
 
 type CommandKind string
@@ -256,6 +259,49 @@ func (service *Service) CancelActive(ctx context.Context, projectID int64) error
 	}
 	service.runtime.cancelActive(ctx, projectID)
 	return nil
+}
+
+// CancelTaskExecution requests cancellation only when operationID is the
+// currently active Loop run for projectID. It never falls back to cancelling
+// arbitrary project work when a task claim is stale or belongs elsewhere.
+func (service *Service) CancelTaskExecution(ctx context.Context, projectID int64, operationID string) (bool, error) {
+	if service == nil || service.runtime == nil || projectID <= 0 || strings.TrimSpace(operationID) == "" {
+		return false, ErrInvalidCommand
+	}
+	return service.runtime.cancelActiveOperation(ctx, projectID, operationID)
+}
+
+// CancelPlanExecution cancels only the active Loop run explicitly associated
+// with planID. Project ownership alone is not sufficient because one project
+// can contain multiple runnable plans.
+func (service *Service) CancelPlanExecution(ctx context.Context, projectID, planID int64) (bool, error) {
+	if service == nil || service.runtime == nil || projectID <= 0 || planID <= 0 {
+		return false, ErrInvalidCommand
+	}
+	service.runtime.mu.Lock()
+	active := service.runtime.active[projectID]
+	if active == nil {
+		service.runtime.mu.Unlock()
+		return false, nil
+	}
+	if active.planID == 0 {
+		if service.runtime.planStops == nil {
+			service.runtime.planStops = make(map[int64]map[int64]struct{})
+		}
+		if service.runtime.planStops[projectID] == nil {
+			service.runtime.planStops[projectID] = make(map[int64]struct{})
+		}
+		service.runtime.planStops[projectID][planID] = struct{}{}
+		service.runtime.mu.Unlock()
+		return false, nil
+	}
+	if active.planID != planID {
+		service.runtime.mu.Unlock()
+		return false, nil
+	}
+	operationID := active.operation.OperationID
+	service.runtime.mu.Unlock()
+	return service.runtime.cancelActiveOperation(ctx, projectID, operationID)
 }
 
 // Bridge is a closed dispatcher registry. Registration happens once during

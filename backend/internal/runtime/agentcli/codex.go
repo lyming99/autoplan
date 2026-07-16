@@ -25,6 +25,7 @@ func (codexAdapter) Prepare(_ context.Context, request Request, _ ArtifactWriter
 	}
 	arguments = append(arguments,
 		"-c", `model_reasoning_effort="`+reasoning+`"`,
+		"--json",
 	)
 	if session.Mode == SessionResume {
 		arguments = append(arguments, "-o", request.LastOutputFile, "--skip-git-repo-check", session.ID, "-")

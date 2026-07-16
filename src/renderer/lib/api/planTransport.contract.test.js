@@ -70,6 +70,10 @@ function snapshot() {
   };
 }
 
+function snapshotWithoutTargetPlan() {
+  return { ...snapshot(), plans: [], tasks: [] };
+}
+
 function response(body, status = 200) {
   const text = JSON.stringify(body);
   return {
@@ -190,6 +194,41 @@ describe('Plan IPC/HTTP capability transport contract', () => {
     });
   });
 
+  it('deletes a plan through capability discovery and HTTP without invoking IPC', async () => {
+    const captures = [];
+    const { client: http, calls } = client(async (target, init) => {
+      const url = new URL(target);
+      captures.push({ path: url.pathname, method: init.method, body: init.body });
+      if (url.pathname === '/api/v1/capabilities') {
+        return response({ data: { version: 'v1', capabilities: [
+          { id: 'plans.delete', enabled: true },
+        ] }, request_id: 'req_plan_delete' });
+      }
+      if (url.pathname === '/api/v1/projects/7/snapshot') {
+        return response({ data: snapshot(), request_id: 'req_plan_delete' });
+      }
+      if (url.pathname === '/api/v1/plans') {
+        assert.equal(init.headers['Idempotency-Key'], 'renderer:plan-contract');
+        return response({ data: { snapshot: snapshotWithoutTargetPlan() }, request_id: 'req_plan_delete' });
+      }
+      throw new Error(`unexpected HTTP path: ${url.pathname}`);
+    });
+
+    const result = await http.deletePlan({ projectId: 7, planId: 12 });
+
+    assert.equal(result.plans.some((item) => item.id === 12), false);
+    assert.equal(result.tasks.some((item) => item.plan_id === 12), false);
+    assert.equal(calls.length, 0, 'enabled plans.delete must never invoke the unavailable IPC transport');
+    assert.deepStrictEqual(captures.map(({ path, method }) => ({ path, method })), [
+      { path: '/api/v1/capabilities', method: 'GET' },
+      { path: '/api/v1/projects/7/snapshot', method: 'GET' },
+      { path: '/api/v1/plans', method: 'DELETE' },
+    ]);
+    assert.deepStrictEqual(JSON.parse(captures[2].body), {
+      project_id: 7, plan_id: 12, expected_updated_at: '2026-01-02T03:04:08.000Z',
+    });
+  });
+
   it('keeps disabled persistence capabilities and every long-running action with IPC', async () => {
     const { client: http, calls } = client(async (target) => {
       const url = new URL(target);
@@ -235,4 +274,40 @@ describe('Plan IPC/HTTP capability transport contract', () => {
       error.code === 'not_implemented' && error.status === 501 && error.request_id === 'req_plan_contract');
     assert.equal(calls.length, 0, 'a selected HTTP mutation failure must never replay through IPC');
   });
+
+  for (const failure of [
+    { name: 'version conflict', status: 412, code: 'precondition_failed' },
+    { name: 'missing plan', status: 404, code: 'not_found' },
+  ]) {
+    it(`preserves the ${failure.name} delete response without falling back to IPC`, async () => {
+      const captures = [];
+      const { client: http, calls } = client(async (target, init) => {
+        const url = new URL(target);
+        captures.push(`${init.method} ${url.pathname}`);
+        if (url.pathname === '/api/v1/capabilities') {
+          return response({ data: { version: 'v1', capabilities: [
+            { id: 'plans.delete', enabled: true },
+          ] }, request_id: 'req_plan_delete_failure' });
+        }
+        if (url.pathname === '/api/v1/projects/7/snapshot') {
+          return response({ data: snapshot(), request_id: 'req_plan_delete_failure' });
+        }
+        if (url.pathname === '/api/v1/plans') {
+          return response({ code: failure.code, message: failure.name,
+            request_id: 'req_plan_delete_failure', retryable: false }, failure.status);
+        }
+        throw new Error(`unexpected HTTP path: ${url.pathname}`);
+      });
+
+      await assert.rejects(http.deletePlan({ projectId: 7, planId: 12 }), (error) =>
+        error.code === failure.code && error.status === failure.status &&
+        error.request_id === 'req_plan_delete_failure');
+      assert.deepStrictEqual(captures, [
+        'GET /api/v1/capabilities',
+        'GET /api/v1/projects/7/snapshot',
+        'DELETE /api/v1/plans',
+      ]);
+      assert.equal(calls.length, 0, 'a failed HTTP delete must not be replayed through IPC');
+    });
+  }
 });

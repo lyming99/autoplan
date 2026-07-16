@@ -1,7 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-const { spawn } = require('node:child_process');
 const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, dialog, ipcMain, Menu, net, protocol, shell } = require('electron');
 const { saveAttachments } = require('./attachments');
@@ -17,6 +16,7 @@ const { RuntimeFileLogger, safeErrorCode } = require('./logging/runtimeFileLogge
 const { GoRuntimeAdapter } = require('./loop/goRuntimeAdapter');
 const { daemonRuntimeFeatureEnvironment, runtimeFeatureFlags } = require('./runtimeFeatures');
 const { openProjectFolderFromRuntime } = require('./desktop/projectFolder');
+const { openWorkspaceFileFromRuntime } = require('./desktop/workspaceFile');
 const { openSystemTerminal } = require('./desktop/systemTerminal');
 const { createIntakeService, titleFromBody } = require('./intakeService');
 const { LoopService, nextIntakeAgentCliConfig, nextIntakePlanGenerationConfig } = require('./loopService');
@@ -2282,21 +2282,42 @@ async function readPlan(input = {}) {
 async function openWorkspaceFile(input = {}) {
   const projectId = Number(input.projectId || 0);
   const relativePath = String(input.filePath || input.path || '').trim();
-  if (!projectId) return openFileResult(false, '项目不存在');
-  if (!relativePath) return openFileResult(false, '文件路径为空');
+  const goRuntime = isGoRuntimeMode();
+  const canLoadSettings = Number.isSafeInteger(projectId) && projectId > 0 && Boolean(relativePath);
+  const mode = goRuntime || !canLoadSettings
+    ? input.mode
+    : input.mode || readSetting('scopeFileOpenMode') || 'system';
+  const command = goRuntime || !canLoadSettings
+    ? input.command
+    : input.command || readSetting('scopeFileOpenCommand') || '';
 
-  try {
-    // Resolve the workspace through the active runtime owner. Go mode has no
-    // readable Node database and must never fall back to one for file access.
-    const workspacePath = await loadProjectWorkspacePath({ projectId });
-    const filePath = await resolveWorkspaceFilePath(workspacePath, relativePath);
-    const mode = normalizeOpenFileMode(input.mode || readSetting('scopeFileOpenMode') || 'system');
-    const command = String(input.command || readSetting('scopeFileOpenCommand') || '').trim();
-    await openResolvedFilePath(filePath, mode, command);
-    return openFileResult(true, '', { filePath, mode });
-  } catch (error) {
-    return openFileResult(false, openFileErrorMessage(error));
-  }
+  return openWorkspaceFileFromRuntime({
+    projectId,
+    filePath: relativePath,
+    mode,
+    command,
+    shell,
+    loadProject: async (id) => {
+      if (!goRuntime) {
+        return db.get('SELECT workspace_path FROM projects WHERE id = ?', [id]);
+      }
+      const response = await sidecarProjectRequest(
+        daemonSupervisor.clientOptions(),
+        `/api/v1/projects/${id}`,
+        'GET',
+      );
+      return response?.data;
+    },
+    loadFilePolicy: async ({ workspacePath }) => {
+      if (!goRuntime) return resolveFileAccessPolicy({ db, workspacePath });
+      const response = await sidecarProjectRequest(
+        daemonSupervisor.clientOptions(),
+        '/api/v1/file-access-policy',
+        'GET',
+      );
+      return response?.data;
+    },
+  });
 }
 
 async function openProjectFolder(input = {}) {
@@ -2331,83 +2352,8 @@ async function loadProjectWorkspacePath(input = {}) {
   return workspacePath;
 }
 
-async function resolveWorkspaceFilePath(workspacePath, filePath) {
-  const policy = resolveFileAccessPolicy({ db, workspacePath });
-  const workspaceRoot = path.resolve(workspacePath);
-  const requestedPath = path.resolve(workspaceRoot, filePath);
-  // 词法预校验：默认范围仅允许工作区内部，尽早拦截越界路径
-  assertPathAllowed(requestedPath, policy);
-
-  try {
-    await fs.promises.realpath(workspaceRoot);
-  } catch {
-    throw planReadError('WORKSPACE_UNAVAILABLE', '项目工作区不存在或无法访问');
-  }
-
-  let fileRealPath;
-  try {
-    fileRealPath = await fs.promises.realpath(requestedPath);
-  } catch (error) {
-    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
-      throw planReadError('FILE_NOT_FOUND', '文件不存在');
-    }
-    throw error;
-  }
-  // realpath 二次校验：拦截指向允许范围外部的符号链接逃逸
-  assertPathAllowed(fileRealPath, policy);
-  const stat = await fs.promises.stat(fileRealPath);
-  if (stat.isDirectory()) throw planReadError('FILE_IS_DIRECTORY', '路径指向目录，不能作为文件打开');
-  if (!stat.isFile()) throw planReadError('FILE_NOT_REGULAR', '路径不是普通文件');
-  return fileRealPath;
-}
-
-async function openResolvedFilePath(filePath, mode, command) {
-  if (mode === 'folder') {
-    shell.showItemInFolder(filePath);
-    return;
-  }
-  if (mode === 'vscode') {
-    await runOpenCommand(command || 'code', [filePath]);
-    return;
-  }
-  if (mode === 'command') {
-    if (!command) throw planReadError('OPEN_COMMAND_MISSING', '第三方编辑器命令未配置');
-    await runOpenCommand(command, [filePath], { template: command.includes('{file}') });
-    return;
-  }
-  const error = await shell.openPath(filePath);
-  if (error) throw planReadError('OPEN_FILE_FAILED', error);
-}
-
-function runOpenCommand(command, args, options = {}) {
-  return new Promise((resolve, reject) => {
-    const spawnCommand = options.template ? command.replaceAll('{file}', shellQuote(args[0])) : command;
-    const spawnArgs = options.template ? [] : args;
-    const child = spawn(spawnCommand, spawnArgs, { detached: true, stdio: 'ignore', shell: process.platform === 'win32' || options.template });
-    child.once('error', (error) => reject(planReadError('OPEN_COMMAND_FAILED', error?.message || '编辑器命令启动失败')));
-    child.once('spawn', () => {
-      child.unref();
-      resolve();
-    });
-  });
-}
-
-function shellQuote(value) {
-  return `"${String(value || '').replace(/"/g, '\\"')}"`;
-}
-
-function normalizeOpenFileMode(value) {
-  const mode = String(value || '').trim().toLowerCase();
-  if (mode === 'folder' || mode === 'vscode' || mode === 'command') return mode;
-  return 'system';
-}
-
 function readSetting(key) {
   return db.get('SELECT value FROM settings WHERE key = ?', [key])?.value || '';
-}
-
-function openFileResult(ok, error, extra = {}) {
-  return { ok, error: error || null, ...extra };
 }
 
 async function resolvePlanPath(workspacePath, filePath) {
@@ -2508,11 +2454,6 @@ function planReadErrorMessage(error) {
   if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return '计划文件不存在';
   if (error?.code === 'EACCES' || error?.code === 'EPERM') return '计划文件无法读取，请检查权限';
   return error?.message || '计划文件读取失败';
-}
-
-function openFileErrorMessage(error) {
-  if (error?.code === 'EACCES' || error?.code === 'EPERM') return '文件无法打开，请检查权限';
-  return error?.message || '文件打开失败';
 }
 
 function requireManualAction(input = {}, label = '操作') {

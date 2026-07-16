@@ -48,6 +48,29 @@ type Project struct {
 // credential/environment markers; all other sensitive keys remain rejected.
 type SanitizedObject map[string]json.RawMessage
 
+// ModelUsageTotals is deliberately outside SanitizedObject: token counters are
+// public accounting data, while SanitizedObject continues to reject fields
+// containing "token" as potential credentials.
+type ModelUsageTotals struct {
+	InputTokens     int64 `json:"inputTokens"`
+	OutputTokens    int64 `json:"outputTokens"`
+	CachedTokens    int64 `json:"cachedTokens"`
+	ReasoningTokens int64 `json:"reasoningTokens"`
+	TotalTokens     int64 `json:"totalTokens"`
+}
+
+type ModelUsageProvider struct {
+	Provider   string           `json:"provider"`
+	Cumulative ModelUsageTotals `json:"cumulative"`
+	Today      ModelUsageTotals `json:"today"`
+}
+
+type ModelUsageSummary struct {
+	Cumulative ModelUsageTotals     `json:"cumulative"`
+	Today      ModelUsageTotals     `json:"today"`
+	ByProvider []ModelUsageProvider `json:"byProvider"`
+}
+
 type AppSnapshot struct {
 	ActiveProjectID  *int64            `json:"activeProjectId"`
 	ActiveProject    *Project          `json:"activeProject"`
@@ -68,6 +91,7 @@ type AppSnapshot struct {
 	ActiveOperation  *SanitizedObject  `json:"activeOperation"`
 	ActiveOperations []SanitizedObject `json:"activeOperations"`
 	LastOperation    *SanitizedObject  `json:"lastOperation"`
+	ModelUsage       ModelUsageSummary `json:"modelUsage"`
 }
 
 type Error struct {

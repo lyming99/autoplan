@@ -204,6 +204,12 @@ func (dependencies *Dependencies) RegisterRuntimeRoutes(
 	if err := httpapi.RegisterRuntimeBridge(router, securityPolicy, dependencies.RuntimeBridge); err != nil {
 		return err
 	}
+	if err := httpapi.RegisterCapabilityRoutes(router, securityPolicy); err != nil {
+		return err
+	}
+	if err := httpapi.RegisterPlanMutations(router, securityPolicy, dependencies.Plans); err != nil {
+		return err
+	}
 	if err := httpapi.RegisterProjects(router, securityPolicy, dependencies.Projects); err != nil {
 		return err
 	}
@@ -436,6 +442,7 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 		attachmentSnapshots = attachmentService
 	}
 	assembler := applicationsnapshot.NewWithAttachments(readSession, attachmentSnapshots)
+	assembler.BindClock(clock)
 	idempotency := applicationidempotency.New()
 	projectService := applicationprojects.NewServiceWithDependencies(applicationprojects.Dependencies{
 		Assembler: assembler, Writer: projectWriter, Idempotency: idempotency, Clock: clock,
@@ -566,6 +573,7 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 	operationHandlers := append([]applicationoperations.RecoveryHandler(nil), overrides.OperationHandlers...)
 	operationHandlers = append(operationHandlers, operationExecutors.RecoveryHandlers()...)
 	operationHandlers = append(operationHandlers, applicationacceptance.RecoveryHandlers()...)
+	operationHandlers = append(operationHandlers, applicationplans.RecoveryHandlers()...)
 	if manualDispatcher != nil {
 		operationHandlers = append(operationHandlers,
 			manualRecoveryHandler{operationType: string(applicationloop.CommandTaskRun)},
@@ -587,7 +595,9 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 	runtimeBridge, err := applicationloop.NewBridge(
 		loopService,
 		applicationacceptance.NewRuntimeHandler(planService, operationService),
-		applicationplans.NewRuntimeHandler(dispatcher),
+		applicationplans.NewRuntimeHandler(dispatcher, applicationplans.RuntimeDependencies{
+			Plans: planService, Operations: operationService, Loop: loopService,
+		}),
 		applicationtasks.NewRuntimeHandler(dispatcher),
 		applicationchat.NewRuntimeHandler(dispatcher),
 		applicationautomation.NewRuntimeHandler(dispatcher),

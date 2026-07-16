@@ -43,6 +43,7 @@ import {
 
 type IntakeItem = Requirement | Feedback;
 type IntakeUpdate = { title?: string; body?: string; status?: string };
+type IntakeListFilter = 'all' | 'generation-failed';
 type PlanPreviewHandler = (item: IntakeItem, linkedPlan?: LinkedPlanSummary | null) => void;
 type IntakeRetryDraft = { agentCliProvider: AgentCliProvider; codexReasoningEffort: CodexReasoningEffort };
 type IntakeGenerateFailure = {
@@ -130,6 +131,7 @@ export function IntakePanel({
   const [acceptingKey, setAcceptingKey] = useState<string | null>(null);
   const acceptingKeyRef = useRef<string | null>(null);
   const [retryDrafts, setRetryDrafts] = useState<Record<string, IntakeRetryDraft>>({});
+  const [listFilter, setListFilter] = useState<IntakeListFilter>('all');
   const [visibleLimit, setVisibleLimit] = useState(INTAKE_INITIAL_VISIBLE_COUNT);
 
   const attachmentsByOwner = useMemo(() => {
@@ -155,21 +157,30 @@ export function IntakePanel({
     [attachments],
   );
 
+  const filteredItems = useMemo(
+    () => listFilter === 'generation-failed' ? items.filter(isIntakeGenerationFailure) : items,
+    [items, listFilter],
+  );
+  const generationFailedCount = useMemo(
+    () => items.filter(isIntakeGenerationFailure).length,
+    [items],
+  );
+
   useEffect(() => {
     setVisibleLimit(INTAKE_INITIAL_VISIBLE_COUNT);
-  }, [type]);
+  }, [type, listFilter]);
 
   useEffect(() => {
     if (!locateItemId) return;
-    const targetIndex = items.findIndex((item) => Number(item.id) === Number(locateItemId));
+    const targetIndex = filteredItems.findIndex((item) => Number(item.id) === Number(locateItemId));
     if (targetIndex < 0) return;
     setVisibleLimit((current) => Math.max(current, targetIndex + 1));
-  }, [items, locateItemId]);
+  }, [filteredItems, locateItemId]);
   useEffect(() => {
     const target = readIntakeMentionHashTarget();
     if (!target || target.type !== type) return undefined;
 
-    const targetIndex = items.findIndex((item) => Number(item.id) === Number(target.id));
+    const targetIndex = filteredItems.findIndex((item) => Number(item.id) === Number(target.id));
     if (targetIndex < 0) return undefined;
 
     setVisibleLimit((current) => Math.max(current, targetIndex + 1));
@@ -178,12 +189,12 @@ export function IntakePanel({
     }, INTAKE_MENTION_LOCATE_DELAY_MS);
 
     return () => window.clearTimeout(timer);
-  }, [items, type]);
+  }, [filteredItems, type]);
 
   const revealMentionTarget = (targetType: IntakeType, id: number) => {
     const anchorId = buildIntakeAnchorId(targetType, id);
     const targetIndex = targetType === type
-      ? items.findIndex((item) => Number(item.id) === Number(id))
+      ? filteredItems.findIndex((item) => Number(item.id) === Number(id))
       : -1;
 
     if (targetType === type && targetIndex >= 0) {
@@ -213,9 +224,12 @@ export function IntakePanel({
     revealMentionTarget(mention.type, mention.id);
   };
 
-  const visibleCount = Math.min(visibleLimit, items.length);
-  const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount]);
-  const hasMoreItems = visibleCount < items.length;
+  const visibleCount = Math.min(visibleLimit, filteredItems.length);
+  const visibleItems = useMemo(
+    () => filteredItems.slice(0, visibleCount),
+    [filteredItems, visibleCount],
+  );
+  const hasMoreItems = visibleCount < filteredItems.length;
 
   const startEdit = (item: IntakeItem) => {
     setEditingId(item.id);
@@ -289,13 +303,37 @@ export function IntakePanel({
   return (
     <div className="intake-layout">
       <div className="intake-stream">
-        <div className="section-heading">
-          <h2>{heading}</h2>
-          <span>{subtitle}</span>
+        <div className="intake-stream-heading">
+          <div className="section-heading">
+            <h2>{heading}</h2>
+            <span>{subtitle}</span>
+          </div>
+          <div className="filter-tabs intake-filter-tabs" role="tablist" aria-label={`${heading}筛选`}>
+            <button
+              type="button"
+              className={`filter-tab${listFilter === 'all' ? ' active' : ''}`}
+              role="tab"
+              aria-selected={listFilter === 'all'}
+              onClick={() => setListFilter('all')}
+            >
+              全部
+              <span className="count">{items.length}</span>
+            </button>
+            <button
+              type="button"
+              className={`filter-tab${listFilter === 'generation-failed' ? ' active' : ''}`}
+              role="tab"
+              aria-selected={listFilter === 'generation-failed'}
+              onClick={() => setListFilter('generation-failed')}
+            >
+              计划生成失败
+              <span className="count">{generationFailedCount}</span>
+            </button>
+          </div>
         </div>
         {unscopedAttachments.length ? <AttachmentGrid attachments={unscopedAttachments} /> : null}
         <div className="list intake-list">
-          {items.length ? (
+          {filteredItems.length ? (
             <>
             {visibleItems.map((item) => {
               const itemAttachments = attachmentsByOwner.get(intakeAttachmentKey(type, item.id)) || EMPTY_ATTACHMENTS;
@@ -474,11 +512,11 @@ export function IntakePanel({
             })}
             {hasMoreItems ? (
               <div className="intake-list-more">
-                <span>已显示 {visibleCount} / {items.length}</span>
+                <span>已显示 {visibleCount} / {filteredItems.length}</span>
                 <button
                   type="button"
                   className="btn btn-sm"
-                  onClick={() => setVisibleLimit((current) => Math.min(items.length, current + INTAKE_LOAD_MORE_COUNT))}
+                  onClick={() => setVisibleLimit((current) => Math.min(filteredItems.length, current + INTAKE_LOAD_MORE_COUNT))}
                 >
                   加载更多
                 </button>
@@ -486,7 +524,9 @@ export function IntakePanel({
             ) : null}
             </>
           ) : (
-            <div className="empty">{emptyText}</div>
+            <div className="empty">
+              {listFilter === 'generation-failed' ? '暂无计划生成失败记录' : emptyText}
+            </div>
           )}
         </div>
       </div>
@@ -1069,6 +1109,10 @@ function intakeGenerationFailure(item: IntakeItem): IntakeGenerateFailure | null
       ? normalizeCodexReasoningEffort(failedCodexReasoningText)
       : null,
   };
+}
+
+function isIntakeGenerationFailure(item: IntakeItem) {
+  return linkedPlansOf(item).length === 0 && intakeGenerationFailure(item) !== null;
 }
 
 function linkedPlansOf(item: IntakeItem) {

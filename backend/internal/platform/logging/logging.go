@@ -25,38 +25,42 @@ type Logger interface {
 
 // Event is the complete logging allowlist for the HTTP foundation.
 type Event struct {
-	OccurredAt      time.Time `json:"occurred_at"`
-	Level           string    `json:"level"`
-	Code            string    `json:"code"`
-	ErrorCode       string    `json:"error_code,omitempty"`
-	RequestID       string    `json:"request_id,omitempty"`
-	Method          string    `json:"method,omitempty"`
-	Route           string    `json:"route,omitempty"`
-	Provider        string    `json:"provider,omitempty"`
-	Stage           string    `json:"stage,omitempty"`
-	Status          int       `json:"status,omitempty"`
-	DurationMS      int64     `json:"duration_ms,omitempty"`
-	ProjectID       int64     `json:"project_id,omitempty"`
-	IntakeID        int64     `json:"intake_id,omitempty"`
-	PlanID          int64     `json:"plan_id,omitempty"`
-	TaskID          int64     `json:"task_id,omitempty"`
-	ExitCode        int       `json:"exit_code,omitempty"`
-	StdoutBytes     int64     `json:"stdout_bytes,omitempty"`
-	StderrBytes     int64     `json:"stderr_bytes,omitempty"`
-	StdoutLines     int64     `json:"stdout_lines,omitempty"`
-	StderrLines     int64     `json:"stderr_lines,omitempty"`
-	PendingIntakes  int       `json:"pending_intakes,omitempty"`
-	GeneratedPlans  int       `json:"generated_plans,omitempty"`
-	ProcessedPlans  int       `json:"processed_plans,omitempty"`
-	Retryable       bool      `json:"retryable"`
-	TimedOut        bool      `json:"timed_out,omitempty"`
-	Cancelled       bool      `json:"cancelled,omitempty"`
-	OutputTruncated bool      `json:"output_truncated,omitempty"`
-	RedactionFailed bool      `json:"redaction_failed,omitempty"`
+	OccurredAt         time.Time `json:"occurred_at"`
+	Level              string    `json:"level"`
+	Code               string    `json:"code"`
+	ErrorCode          string    `json:"error_code,omitempty"`
+	RequestID          string    `json:"request_id,omitempty"`
+	Method             string    `json:"method,omitempty"`
+	Route              string    `json:"route,omitempty"`
+	Provider           string    `json:"provider,omitempty"`
+	Stage              string    `json:"stage,omitempty"`
+	Status             int       `json:"status,omitempty"`
+	DurationMS         int64     `json:"duration_ms,omitempty"`
+	ProjectID          int64     `json:"project_id,omitempty"`
+	IntakeID           int64     `json:"intake_id,omitempty"`
+	PlanID             int64     `json:"plan_id,omitempty"`
+	TaskID             int64     `json:"task_id,omitempty"`
+	SessionMode        string    `json:"session_mode,omitempty"`
+	ContextState       string    `json:"context_state,omitempty"`
+	SessionFingerprint string    `json:"session_fingerprint,omitempty"`
+	ExitCode           int       `json:"exit_code,omitempty"`
+	StdoutBytes        int64     `json:"stdout_bytes,omitempty"`
+	StderrBytes        int64     `json:"stderr_bytes,omitempty"`
+	StdoutLines        int64     `json:"stdout_lines,omitempty"`
+	StderrLines        int64     `json:"stderr_lines,omitempty"`
+	PendingIntakes     int       `json:"pending_intakes,omitempty"`
+	GeneratedPlans     int       `json:"generated_plans,omitempty"`
+	ProcessedPlans     int       `json:"processed_plans,omitempty"`
+	Retryable          bool      `json:"retryable"`
+	TimedOut           bool      `json:"timed_out,omitempty"`
+	Cancelled          bool      `json:"cancelled,omitempty"`
+	OutputTruncated    bool      `json:"output_truncated,omitempty"`
+	RedactionFailed    bool      `json:"redaction_failed,omitempty"`
 }
 
 var safeToken = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$`)
 var safeRoute = regexp.MustCompile(`^/[a-zA-Z0-9._~!$&'()*+,;=:@%/-]{0,255}$`)
+var safeSessionFingerprint = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)
 
 type JSONLogger struct {
 	mu     sync.Mutex
@@ -121,6 +125,11 @@ func normalize(event Event, clock Clock) Event {
 	event.Method = safeOptional(event.Method)
 	event.Provider = safeOptional(event.Provider)
 	event.Stage = safeOptional(event.Stage)
+	event.SessionMode = safeOptional(event.SessionMode)
+	event.ContextState = safeOptional(event.ContextState)
+	if !safeSessionFingerprint.MatchString(event.SessionFingerprint) {
+		event.SessionFingerprint = ""
+	}
 	if event.Route != "" && event.Route != "unmatched" && !safeRoute.MatchString(event.Route) {
 		event.Route = "redacted"
 	}

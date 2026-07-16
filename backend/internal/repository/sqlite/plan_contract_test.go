@@ -105,6 +105,39 @@ func TestPlanContractProtectsRunningAggregateWithoutWrites(t *testing.T) {
 	backend.assertFinished(t, 0, 1)
 }
 
+func TestPlanContractDeleteSyncsLinkedRequirementBeforeRemovingAggregate(t *testing.T) {
+	backend := &scriptBackend{steps: []scriptStep{
+		queryStep("FROM plans WHERE project_id", planTestColumns(), planTestValues(8, 4, "draft", intakeTestTime, nil)),
+		queryStep("SELECT COUNT(*) FROM plan_tasks", []string{"count"}, []driver.Value{int64(0)}),
+		queryStep("FROM intake_plan_links AS links", []string{"project_id", "intake_type", "intake_id"},
+			[]driver.Value{int64(4), "requirement", int64(6)}),
+		execStep("DELETE FROM intake_plan_links", 1, 0),
+		execStep("UPDATE requirements SET linked_plan_id", 1, 0),
+		execStep("DELETE FROM plan_tasks", 2, 0),
+		execStep("DELETE FROM plans", 1, 0),
+		execStep("DELETE FROM scan_files", 1, 0),
+	}}
+	writer, cleanup := newTestWriter(t, backend)
+	defer cleanup()
+
+	var result domainplan.DeleteResult
+	err := writer.TransactPlans(context.Background(), func(transaction repository.PlanWriteTransaction) error {
+		var deleteErr error
+		result, deleteErr = transaction.DeletePlanAggregate(context.Background(), domainplan.Delete{
+			ProjectID: 4, PlanID: 8, ExpectedUpdatedAt: intakeTestTime, UpdatedAt: "2026-07-11T00:00:01.000Z",
+		})
+		return deleteErr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.PlanID != 8 || result.DeletedTaskCount != 2 || result.DeletedScanCount != 1 ||
+		len(result.LinkedIntakes) != 1 || result.LinkedIntakes[0].IntakeType != "requirement" {
+		t.Fatalf("delete result=%#v", result)
+	}
+	backend.assertFinished(t, 1, 0)
+}
+
 func TestPlanContractConcurrentEventWritesCommitIndependently(t *testing.T) {
 	metadata := `{}`
 	backend := &scriptBackend{steps: []scriptStep{

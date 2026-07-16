@@ -42,6 +42,12 @@ function overviewSnapshotKey(s: AppSnapshot): string {
     Boolean(s.activeOperation),
     acts,
     lastAct,
+    s.modelUsage.cumulative.totalTokens,
+    s.modelUsage.today.totalTokens,
+    s.modelUsage.cumulative.inputTokens,
+    s.modelUsage.cumulative.outputTokens,
+    s.modelUsage.cumulative.cachedTokens,
+    s.modelUsage.cumulative.reasoningTokens,
   ].join('|');
 }
 
@@ -127,6 +133,22 @@ export const WorkspaceOverviewView = memo(function WorkspaceOverviewView({
         />
       </div>
 
+      <section className="card model-usage-card" aria-label="模型 Token 消耗统计">
+        <div className="card-head model-usage-head">
+          <h2>模型 Token 消耗</h2>
+          <div className="model-usage-totals">
+            <span>累计 <b>{formatTokenCount(snapshot.modelUsage.cumulative.totalTokens)}</b></span>
+            <span>今日 <b>{formatTokenCount(snapshot.modelUsage.today.totalTokens)}</b></span>
+          </div>
+        </div>
+        <div className="model-usage-grid">
+          <UsageMetric label="输入" cumulative={snapshot.modelUsage.cumulative.inputTokens} today={snapshot.modelUsage.today.inputTokens} />
+          <UsageMetric label="输出" cumulative={snapshot.modelUsage.cumulative.outputTokens} today={snapshot.modelUsage.today.outputTokens} />
+          <UsageMetric label="缓存" cumulative={snapshot.modelUsage.cumulative.cachedTokens} today={snapshot.modelUsage.today.cachedTokens} />
+          <UsageMetric label="推理" cumulative={snapshot.modelUsage.cumulative.reasoningTokens} today={snapshot.modelUsage.today.reasoningTokens} />
+        </div>
+      </section>
+
       <div className="overview-grid">
         <div className="overview-main-column">
           <section className="card live-log-card">
@@ -209,6 +231,22 @@ export const WorkspaceOverviewView = memo(function WorkspaceOverviewView({
     </>
   );
 }, areOverviewPropsEqual);
+
+const tokenNumberFormatter = new Intl.NumberFormat('zh-CN');
+
+function formatTokenCount(value: number) {
+  return tokenNumberFormatter.format(value);
+}
+
+function UsageMetric({ label, cumulative, today }: { label: string; cumulative: number; today: number }) {
+  return (
+    <div className="model-usage-metric">
+      <span className="model-usage-label">{label}</span>
+      <strong>{formatTokenCount(cumulative)}</strong>
+      <span className="model-usage-today">今日 {formatTokenCount(today)}</span>
+    </div>
+  );
+}
 
 function StatCard({
   icon,

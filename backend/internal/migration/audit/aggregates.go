@@ -13,6 +13,24 @@ type aggregateSpec struct {
 	sampleQuery string
 }
 
+// RFC3339Nano omits trailing fractional zeroes, so valid timestamps from the
+// same second are not lexicographically sortable. SQLite's date conversion
+// preserves chronological ordering across those mixed-precision values.
+const invalidOperationStatePredicate = `status NOT IN ('queued','running','succeeded','failed','cancelled','interrupted')
+ OR (status = 'queued' AND (started_at IS NOT NULL OR finished_at IS NOT NULL OR error_json IS NOT NULL))
+ OR (status = 'running' AND (started_at IS NULL OR finished_at IS NOT NULL OR error_json IS NOT NULL))
+ OR (status = 'succeeded' AND (started_at IS NULL OR finished_at IS NULL OR error_json IS NOT NULL))
+ OR (status = 'failed' AND (started_at IS NULL OR finished_at IS NULL OR error_json IS NULL))
+ OR (status IN ('cancelled','interrupted') AND finished_at IS NULL)
+ OR julianday(created_at) IS NULL OR julianday(updated_at) IS NULL
+ OR (started_at IS NOT NULL AND julianday(started_at) IS NULL)
+ OR (finished_at IS NOT NULL AND julianday(finished_at) IS NULL)
+ OR julianday(created_at) > julianday(updated_at)
+ OR (started_at IS NOT NULL AND julianday(started_at) < julianday(created_at))
+ OR (finished_at IS NOT NULL AND started_at IS NOT NULL AND julianday(finished_at) < julianday(started_at))
+ OR (finished_at IS NOT NULL AND julianday(finished_at) > julianday(updated_at))
+ OR version <= 0`
+
 var aggregateSpecs = []aggregateSpec{
 	{
 		name: "plans.task_counts_and_validation", table: "plans", code: "plan_task_aggregate_mismatch",
@@ -118,26 +136,8 @@ GROUP BY COALESCE(project_id,0) HAVING COUNT(*) > 1 ORDER BY 1 LIMIT ?`,
 	},
 	{
 		name: "operations.state_machine", table: "operations", code: "invalid_operation_state",
-		countQuery: `SELECT COUNT(*) FROM operations WHERE
- status NOT IN ('queued','running','succeeded','failed','cancelled','interrupted')
- OR (status = 'queued' AND (started_at IS NOT NULL OR finished_at IS NOT NULL OR error_json IS NOT NULL))
- OR (status = 'running' AND (started_at IS NULL OR finished_at IS NOT NULL OR error_json IS NOT NULL))
- OR (status = 'succeeded' AND (started_at IS NULL OR finished_at IS NULL OR error_json IS NOT NULL))
- OR (status = 'failed' AND (started_at IS NULL OR finished_at IS NULL OR error_json IS NULL))
- OR (status IN ('cancelled','interrupted') AND finished_at IS NULL)
- OR created_at > updated_at OR (started_at IS NOT NULL AND started_at < created_at)
- OR (finished_at IS NOT NULL AND started_at IS NOT NULL AND finished_at < started_at)
- OR (finished_at IS NOT NULL AND finished_at > updated_at) OR version <= 0`,
-		sampleQuery: `SELECT operation_id FROM operations WHERE
- status NOT IN ('queued','running','succeeded','failed','cancelled','interrupted')
- OR (status = 'queued' AND (started_at IS NOT NULL OR finished_at IS NOT NULL OR error_json IS NOT NULL))
- OR (status = 'running' AND (started_at IS NULL OR finished_at IS NOT NULL OR error_json IS NOT NULL))
- OR (status = 'succeeded' AND (started_at IS NULL OR finished_at IS NULL OR error_json IS NOT NULL))
- OR (status = 'failed' AND (started_at IS NULL OR finished_at IS NULL OR error_json IS NULL))
- OR (status IN ('cancelled','interrupted') AND finished_at IS NULL)
- OR created_at > updated_at OR (started_at IS NOT NULL AND started_at < created_at)
- OR (finished_at IS NOT NULL AND started_at IS NOT NULL AND finished_at < started_at)
- OR (finished_at IS NOT NULL AND finished_at > updated_at) OR version <= 0
+		countQuery:  `SELECT COUNT(*) FROM operations WHERE ` + invalidOperationStatePredicate,
+		sampleQuery: `SELECT operation_id FROM operations WHERE ` + invalidOperationStatePredicate + `
 ORDER BY operation_id LIMIT ?`,
 	},
 	{

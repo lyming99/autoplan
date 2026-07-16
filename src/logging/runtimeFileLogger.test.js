@@ -45,6 +45,29 @@ describe('runtime file logger', () => {
     assert.equal(JSON.stringify(events).includes('not-json'), false);
   });
 
+  it('keeps plan context fingerprints but never raw session identifiers', () => {
+    const logger = fixture();
+    const rawSessionId = '00000000-aaaa-bbbb-cccc-000000000001';
+    const fingerprint = `sha256:${'a'.repeat(64)}`;
+    logger.writeExternalLine('go-sidecar', JSON.stringify({
+      level: 'info', code: 'plan_context_continuity', provider: 'codex',
+      plan_id: 11, task_id: 12, session_mode: 'resume', context_state: 'reused',
+      session_fingerprint: fingerprint, session_id: rawSessionId,
+    }));
+    logger.writeExternalLine('go-sidecar', JSON.stringify({
+      level: 'info', code: 'plan_context_continuity', session_fingerprint: rawSessionId,
+    }));
+
+    const text = fs.readFileSync(logger.filePath, 'utf8');
+    const events = text.trim().split('\n').map(JSON.parse);
+    assert.equal(events[0].session_fingerprint, fingerprint);
+    assert.equal(events[0].session_mode, 'resume');
+    assert.equal(events[0].context_state, 'reused');
+    assert.equal('session_id' in events[0], false);
+    assert.equal('session_fingerprint' in events[1], false);
+    assert.equal(text.includes(rawSessionId), false);
+  });
+
   it('rotates bounded log files', () => {
     const logger = fixture({ maxBytes: 256, archives: 2 });
     for (let index = 0; index < 20; index += 1) logger.log('info', `event_${index}`);

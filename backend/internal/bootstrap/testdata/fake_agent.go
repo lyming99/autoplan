@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -22,6 +23,13 @@ func main() {
 	if strings.Contains(string(content), "AutoPlan's plan generator") {
 		fmt.Print(`{"title":"Business smoke plan","summary":"Implement and verify the requested marker behavior","tasks":[{"title":"Implement marker behavior","scope":"src/marker.go","acceptance":"The marker behavior exists"},{"title":"Add regression coverage","scope":"src/marker_test.go","acceptance":"Regression tests cover the behavior"}],"finalValidation":"Run the complete test suite"}`)
 		return
+	}
+	// The packaged business smoke uses this task title to keep a real Agent
+	// process alive until task.stop cancels the owning Loop operation.
+	if strings.Contains(string(content), "Business smoke cancellable task") {
+		for {
+			time.Sleep(time.Second)
+		}
 	}
 	if err := os.WriteFile("autoplan-task-executed.txt", []byte("task execution reached the configured agent\n"), 0o600); err != nil {
 		os.Exit(3)

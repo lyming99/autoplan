@@ -81,31 +81,45 @@ func (service *runtimeService) disarm(projectID int64) {
 }
 
 func (service *runtimeService) cancelActive(ctx context.Context, projectID int64) {
-	operations, _, _, _, err := service.dependencies()
-	if err != nil {
-		return
-	}
 	service.mu.Lock()
 	active := service.active[projectID]
 	service.mu.Unlock()
 	if active == nil {
 		return
 	}
+	_, _ = service.cancelActiveOperation(ctx, projectID, active.operation.OperationID)
+}
+
+func (service *runtimeService) cancelActiveOperation(ctx context.Context, projectID int64, operationID string) (bool, error) {
+	service.mu.Lock()
+	active := service.active[projectID]
+	service.mu.Unlock()
+	if active == nil || active.operation.OperationID != operationID {
+		return false, nil
+	}
+	operations, _, _, _, err := service.dependencies()
+	if err != nil {
+		return false, err
+	}
 	cancelled, cancelErr := operations.RequestCancel(ctx, applicationoperations.CancelCommand{
 		Caller: applicationoperations.Caller{ID: "loop-system", ProjectID: projectID}, ProjectID: projectID,
 		OperationID: active.operation.OperationID, ExpectedVersion: active.operation.Version, RequestID: "loop-stop",
 	})
+	if cancelErr != nil {
+		return false, operationError(cancelErr)
+	}
+	requested := false
 	service.mu.Lock()
 	if current := service.active[projectID]; current != nil && current.operation.OperationID == active.operation.OperationID {
 		current.cancelled = true
-		if cancelErr == nil {
-			current.operation = cancelled.Operation
-		}
+		current.operation = cancelled.Operation
+		requested = true
 		if current.request != nil && current.request.submission != nil {
 			current.request.submission.Cancel()
 		}
 	}
 	service.mu.Unlock()
+	return requested, nil
 }
 
 func (service *runtimeService) RemoveProject(ctx context.Context, projectID int64) error {

@@ -46,6 +46,10 @@ type Runner interface {
 type RunInput struct {
 	ProjectID   int64
 	OperationID string
+	// AssociatePlan records the plan actually claimed by the runner. Runtime
+	// cancellation uses this association so plan.stop cannot cancel unrelated
+	// work in the same project.
+	AssociatePlan func(int64) bool
 }
 
 type RunOutput struct {
@@ -68,6 +72,7 @@ type runtimeService struct {
 
 	schedules map[int64]*schedule
 	active    map[int64]*activeRun
+	planStops map[int64]map[int64]struct{}
 	instance  string
 	sequence  uint64
 	closed    bool
@@ -82,6 +87,7 @@ type activeRun struct {
 	operation     domainoperation.Operation
 	requestDigest string
 	request       *commandRequest
+	planID        int64
 	cancelled     bool
 }
 
@@ -90,7 +96,7 @@ func newRuntimeService(dependencies Dependencies) *runtimeService {
 		operations: dependencies.Operations, scheduler: dependencies.Scheduler,
 		state: dependencies.State, runner: dependencies.Runner,
 		requested: dependencies.Operations != nil || dependencies.Scheduler != nil || dependencies.State != nil || dependencies.Runner != nil,
-		schedules: make(map[int64]*schedule), active: make(map[int64]*activeRun),
+		schedules: make(map[int64]*schedule), active: make(map[int64]*activeRun), planStops: make(map[int64]map[int64]struct{}),
 		instance: automaticInstanceID(),
 	}
 }

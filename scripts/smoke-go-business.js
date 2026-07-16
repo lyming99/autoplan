@@ -36,7 +36,7 @@ async function main() {
     await supervisor.start();
     const client = supervisor.clientOptions();
     let sequence = 0;
-    const request = async (method, route, body, key) => {
+    const requestResponse = async (method, route, body, key) => {
       sequence += 1;
       const response = await fetch(`${client.baseUrl}${route}`, {
         method,
@@ -53,8 +53,15 @@ async function main() {
       if (!response.ok) {
         throw new Error(`${method} ${route}: ${response.status} ${value?.code || 'invalid_response'}`);
       }
-      return value?.data;
+      return { status: response.status, data: value?.data };
     };
+    const request = async (...args) => (await requestResponse(...args)).data;
+    const capabilityCatalog = await request('GET', '/api/v1/capabilities');
+    if (!Array.isArray(capabilityCatalog?.capabilities) ||
+        !capabilityCatalog.capabilities.some((capability) =>
+          capability?.id === 'plans.delete' && capability?.enabled === true)) {
+      throw new Error('go_plans_delete_capability_unavailable');
+    }
     const created = await request('POST', '/api/v1/projects', {
       name: 'Business smoke', workspace_path: workspace, description: 'temporary',
     }, 'business-smoke-project');
@@ -202,17 +209,49 @@ async function main() {
       throw new Error('loop_agent_task_not_executed');
     }
 
+    const acceptanceFeedbackTitle = 'Business smoke linked acceptance feedback';
+    const createdAcceptanceFeedback = await request('POST', `/api/v1/projects/${project.id}/feedback`, {
+      requirement_id: requirementId, title: acceptanceFeedbackTitle,
+      body: 'Plan acceptance should synchronize this feedback without an intake acceptance request.', status: 'draft',
+      agent_cli: { provider: 'codex', command: fakeAgent, codex_reasoning_effort: 'medium' },
+    }, 'business-smoke-acceptance-feedback');
+    const acceptanceFeedback = createdAcceptanceFeedback?.snapshot?.feedback?.find(
+      (item) => item.title === acceptanceFeedbackTitle,
+    );
+    if (!acceptanceFeedback?.id) throw new Error('go_acceptance_feedback_not_created');
+    await request('PUT', `/api/v1/projects/${project.id}/feedback/${acceptanceFeedback.id}/plan-links`, {
+      links: [{ plan_id: linkedPlanId, phase_index: 0, phase_title: 'Business smoke acceptance' }],
+    }, 'business-smoke-acceptance-feedback-link');
+
     await request('POST', `/api/v1/projects/${project.id}/acceptance/actions/accept`, {
       target_type: 'plan', id: linkedPlanId,
     }, 'business-smoke-accept-plan');
-    let acceptanceSnapshot = await waitForSnapshot(request, project.id, (snapshot) =>
-      Boolean((snapshot?.plans || []).find((item) => Number(item.id) === linkedPlanId)?.accepted_at));
-    if (!acceptanceSnapshot) throw new Error('go_acceptance_plan_not_persisted');
+    let acceptanceObserved = {};
+    let acceptanceSnapshot = await waitForSnapshot(request, project.id, (snapshot) => {
+      const planAccepted = (snapshot?.plans || []).find((item) => Number(item.id) === linkedPlanId)?.accepted_at;
+      const requirementAccepted = (snapshot?.requirements || []).find(
+        (item) => Number(item.id) === requirementId,
+      )?.accepted_at;
+      const feedbackAccepted = (snapshot?.feedback || []).find(
+        (item) => Number(item.id) === Number(acceptanceFeedback.id),
+      )?.accepted_at;
+      acceptanceObserved = { planAccepted, requirementAccepted, feedbackAccepted };
+      return Boolean(planAccepted && requirementAccepted && feedbackAccepted);
+    });
+    if (!acceptanceSnapshot) throw new Error(`go_acceptance_plan_not_persisted:${JSON.stringify(acceptanceObserved)}`);
     await request('POST', `/api/v1/projects/${project.id}/acceptance/actions/unaccept`, {
       target_type: 'plan', id: linkedPlanId,
     }, 'business-smoke-unaccept-plan');
-    acceptanceSnapshot = await waitForSnapshot(request, project.id, (snapshot) =>
-      (snapshot?.plans || []).find((item) => Number(item.id) === linkedPlanId)?.accepted_at === null);
+    acceptanceSnapshot = await waitForSnapshot(request, project.id, (snapshot) => {
+      const planAccepted = (snapshot?.plans || []).find((item) => Number(item.id) === linkedPlanId)?.accepted_at;
+      const requirementAccepted = (snapshot?.requirements || []).find(
+        (item) => Number(item.id) === requirementId,
+      )?.accepted_at;
+      const feedbackAccepted = (snapshot?.feedback || []).find(
+        (item) => Number(item.id) === Number(acceptanceFeedback.id),
+      )?.accepted_at;
+      return planAccepted === null && requirementAccepted === null && feedbackAccepted === null;
+    });
     if (!acceptanceSnapshot) throw new Error('go_unacceptance_plan_not_persisted');
     const acceptanceTargets = completedTasks.slice(0, 2).map((task) => ({ target_type: 'task', id: Number(task.id) }));
     if (acceptanceTargets.length !== 2 || acceptanceTargets.some((target) => !target.id)) {
@@ -382,7 +421,20 @@ async function main() {
     }, 'business-smoke-terminal');
     await request('POST', `/api/v1/terminals/${terminal.id}/actions/close?project_id=${project.id}`, {}, 'business-smoke-terminal-close');
     await request('POST', `/api/v1/projects/${project.id}/loop/actions/stop`, {}, 'business-smoke-loop-stop');
-    const appendedTitle = 'Business smoke appended Go task';
+    const planDeleteSnapshot = await request('GET', `/api/v1/projects/${project.id}/snapshot`);
+    const planDeleteTarget = (planDeleteSnapshot?.plans || []).find(
+      (plan) => Number(plan.id) === Number(retryLinkedPlanId),
+    );
+    if (!planDeleteTarget?.updated_at) throw new Error('go_plan_delete_target_missing');
+    const planDelete = await requestResponse('DELETE', '/api/v1/plans', {
+      project_id: project.id, plan_id: retryLinkedPlanId,
+      expected_updated_at: planDeleteTarget.updated_at,
+    }, 'business-smoke-plan-delete');
+    if (planDelete.status !== 200 ||
+        (planDelete.data?.snapshot?.plans || []).some((plan) => Number(plan.id) === Number(retryLinkedPlanId))) {
+      throw new Error(`go_plan_delete_not_persisted:${planDelete.status}`);
+    }
+    const appendedTitle = 'Business smoke cancellable task';
     await request('POST', `/api/v1/projects/${project.id}/intake/requirement/${requirementId}/actions/append-task`, {
       title: appendedTitle,
     }, 'business-smoke-intake-append');
@@ -392,6 +444,44 @@ async function main() {
       return plan?.status === 'pending' && tasks.length === 4 && tasks.some((task) => task.title === appendedTitle && task.status === 'pending');
     });
     if (!appendedSnapshot) throw new Error('go_intake_append_task_not_persisted');
+    const appendedTask = (appendedSnapshot.tasks || []).find(
+      (task) => Number(task.plan_id) === linkedPlanId && task.title === appendedTitle,
+    );
+    if (!appendedTask?.id) throw new Error('go_task_stop_target_missing');
+    const taskRun = await requestResponse('POST',
+      `/api/v1/projects/${project.id}/tasks/${appendedTask.id}/actions/run`,
+      { plan_id: linkedPlanId }, 'business-smoke-cancellable-task-run');
+    if (taskRun.status !== 202 || taskRun.data?.type !== 'task.run') {
+      throw new Error(`go_task_run_not_accepted:${taskRun.status}`);
+    }
+    const runningTaskSnapshot = await waitForSnapshot(request, project.id, (snapshot) =>
+      (snapshot?.tasks || []).some((task) => Number(task.id) === Number(appendedTask.id) && task.status === 'running'),
+    10000);
+    if (!runningTaskSnapshot) throw new Error('go_task_stop_target_not_running');
+    const taskLoopOperation = (runningTaskSnapshot.activeOperations || []).find(
+      (operation) => operation.operationType === 'loop.run_once' && operation.operationId,
+    );
+    if (!taskLoopOperation?.operationId) throw new Error('go_task_loop_operation_missing');
+    const taskStop = await requestResponse('POST',
+      `/api/v1/projects/${project.id}/tasks/${appendedTask.id}/actions/stop`,
+      { plan_id: linkedPlanId }, 'business-smoke-cancellable-task-stop');
+    if (taskStop.status !== 202 || taskStop.data?.type !== 'task.stop' || !taskStop.data?.operation_id) {
+      throw new Error(`go_task_stop_not_accepted:${taskStop.status}:${taskStop.data?.type || 'missing'}`);
+    }
+    const stoppedTaskSnapshot = await waitForSnapshot(request, project.id, (snapshot) => {
+      const plan = (snapshot?.plans || []).find((item) => Number(item.id) === linkedPlanId);
+      const task = (snapshot?.tasks || []).find((item) => Number(item.id) === Number(appendedTask.id));
+      const operation = snapshot?.lastOperation;
+      return plan?.status === 'stopped' && task?.status === 'stopped' && Boolean(task.finished_at) &&
+        operation?.operationId === taskLoopOperation.operationId && operation?.cancelled === true;
+    }, 15000);
+    if (!stoppedTaskSnapshot) throw new Error('go_task_stop_not_persisted');
+    const deletedSnapshot = await request('DELETE', `/api/v1/projects/${project.id}`, undefined,
+      'business-smoke-project-delete');
+    if (deletedSnapshot?.activeProjectId !== null ||
+        (deletedSnapshot?.projects || []).some((item) => Number(item.id) === Number(project.id))) {
+      throw new Error('go_project_delete_not_persisted');
+    }
     process.stdout.write(`${JSON.stringify({
       status: 'verified', project_id: project.id,
       loop_operation: loop.operation_id, terminal_id: terminal.id, terminal_status: terminal.status,
@@ -401,8 +491,12 @@ async function main() {
       mcp_list_projects: true, draft_auto_skipped: true, draft_manual_status: draftPlan.status,
       script_status: scriptState.last_status, script_log_archived: true,
       retry_failure_count: 3, retry_reset_count: 0, retry_linked_plan_id: retryLinkedPlanId,
-      ai_config_crud: true, acceptance_single_and_batch: true,
+      ai_config_crud: true, acceptance_single_and_batch: true, acceptance_intake_sync: true,
       intake_interrupt_resume_append: true, appended_task_count: 4,
+      task_stop_http_status: taskStop.status, task_stop_status: 'stopped',
+      task_run_operation_status: 'cancelled', task_stop_operation_status: taskStop.data.status,
+      plans_delete_capability: true, plan_delete_http_status: planDelete.status,
+      project_delete_with_relations: true,
     })}\n`);
   } finally {
     eventAbort?.abort();

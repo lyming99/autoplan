@@ -16,7 +16,8 @@ func (writer *Writer) CreateGeneratedPlan(ctx context.Context, input repository.
 	}
 	if input.ProjectID <= 0 || input.IntakeID <= 0 || !input.IntakeType.Valid() ||
 		strings.TrimSpace(input.IssueHash) == "" || strings.TrimSpace(input.FilePath) == "" ||
-		strings.TrimSpace(input.Digest) == "" || !domainintake.ValidUTCTimestamp(input.CreatedAt) || len(input.Tasks) == 0 ||
+		strings.TrimSpace(input.Digest) == "" || input.GenerationDurationMS < 0 ||
+		!domainintake.ValidUTCTimestamp(input.CreatedAt) || len(input.Tasks) == 0 ||
 		(status != domainplan.StatusDraft && status != domainplan.StatusPending) {
 		return 0, repository.ErrInvalidPlan
 	}
@@ -51,13 +52,14 @@ func (writer *Writer) CreateGeneratedPlan(ctx context.Context, input repository.
 			plan_generation_strategy, plan_generation_provider, plan_generation_command, plan_generation_model,
 			plan_generation_codex_reasoning_effort, plan_generation_claude_config_id,
 			plan_execution_strategy, plan_execution_provider, plan_execution_command, plan_execution_codex_reasoning_effort,
-			created_at, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external-cli', ?, ?, ?, ?, ?)`,
+			plan_generation_duration_ms, created_at, updated_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external-cli', ?, ?, ?, ?, ?, ?)`,
 			input.ProjectID, input.IssueHash, input.FilePath, input.Digest, string(status), sortOrder, len(input.Tasks),
 			provider, input.AgentCLI.Command, optionalString(input.AgentCLI.CodexReasoningEffort),
 			strategy, generationProvider, input.PlanGeneration.Command, input.PlanGeneration.Model,
 			optionalString(input.PlanGeneration.CodexReasoningEffort), input.PlanGeneration.ClaudeConfigID,
-			provider, input.AgentCLI.Command, optionalString(input.AgentCLI.CodexReasoningEffort), input.CreatedAt, input.CreatedAt)
+			provider, input.AgentCLI.Command, optionalString(input.AgentCLI.CodexReasoningEffort),
+			input.GenerationDurationMS, input.CreatedAt, input.CreatedAt)
 		if err != nil {
 			return safeSQLError(ctx, err)
 		}

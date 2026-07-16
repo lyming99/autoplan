@@ -8,10 +8,11 @@ const DEFAULT_ARCHIVES = 5;
 const MAX_EXTERNAL_LINE_BYTES = 64 * 1024;
 const SAFE_TOKEN = /^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,127}$/;
 const SAFE_ROUTE = /^\/[a-zA-Z0-9._~!$&'()*+,;=:@%/-]{0,255}$/;
+const SAFE_SESSION_FINGERPRINT = /^sha256:[a-f0-9]{64}$/;
 const LEVELS = new Set(['debug', 'info', 'warn', 'error']);
 const TOKEN_FIELDS = new Set([
   'source', 'error_code', 'request_id', 'channel', 'state', 'method',
-  'provider', 'stage', 'operation_id',
+  'provider', 'stage', 'operation_id', 'session_mode', 'context_state',
 ]);
 const INTEGER_FIELDS = new Set([
   'status', 'duration_ms', 'project_id', 'intake_id', 'plan_id', 'task_id', 'pid', 'child_pid',
@@ -109,6 +110,10 @@ function sanitizeEvent(input, now, fallbackSource) {
     if (field === 'source') continue;
     const value = safeOptionalToken(input[field]);
     if (value) event[field] = value;
+  }
+  const sessionFingerprint = String(input.session_fingerprint || '').trim();
+  if (SAFE_SESSION_FINGERPRINT.test(sessionFingerprint)) {
+    event.session_fingerprint = sessionFingerprint;
   }
   if (input.route === 'unmatched' || SAFE_ROUTE.test(String(input.route || ''))) event.route = input.route;
   for (const field of INTEGER_FIELDS) {

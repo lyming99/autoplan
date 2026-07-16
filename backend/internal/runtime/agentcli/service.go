@@ -8,6 +8,7 @@ import (
 
 	filesapp "github.com/lyming99/autoplan/backend/internal/application/files"
 	secretsapp "github.com/lyming99/autoplan/backend/internal/application/secrets"
+	domainmodelusage "github.com/lyming99/autoplan/backend/internal/domain/modelusage"
 	domainsecrets "github.com/lyming99/autoplan/backend/internal/domain/secrets"
 	platformsecrets "github.com/lyming99/autoplan/backend/internal/platform/secrets"
 	"github.com/lyming99/autoplan/backend/internal/runtime/process"
@@ -58,6 +59,7 @@ type Result struct {
 	Session             Session
 	SessionLookupFailed bool
 	Summary             string
+	Usage               *domainmodelusage.Tokens
 }
 
 type attempt struct {
@@ -262,6 +264,7 @@ func resultFromAttempt(provider Provider, current attempt) Result {
 	if current.parsed.SessionID != "" {
 		result.Session.ID = current.parsed.SessionID
 	}
+	result.Usage = current.parsed.Usage
 	if result.TimedOut {
 		result.Summary = "timed_out"
 	} else if result.Cancelled {

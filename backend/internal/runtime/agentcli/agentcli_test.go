@@ -94,11 +94,26 @@ func TestOpenCodeLongPromptUsesControlledAttachment(t *testing.T) {
 }
 
 func TestCodexParserCapturesOnlyValidSessionMetadata(t *testing.T) {
-	parsed := parseOutput(ProviderCodex, ParserCodex, process.Result{
+	parsed := ParseSessionMetadata(ProviderCodex, process.Result{
 		Stdout: process.Output{Tail: `session id: 00000000-aaaa-bbbb-cccc-000000000001`},
 	})
-	if parsed.SessionID != "00000000-aaaa-bbbb-cccc-000000000001" || parsed.ParseFailed {
+	if parsed.ID != "00000000-aaaa-bbbb-cccc-000000000001" || parsed.Missing {
 		t.Fatalf("parsed=%#v", parsed)
+	}
+	missing := ParseSessionMetadata(ProviderCodex, process.Result{Stderr: process.Output{Tail: "session not found"}})
+	if missing.ID != "" || !missing.Missing {
+		t.Fatalf("missing=%#v", missing)
+	}
+}
+
+func TestOpenCodeSessionListReturnsOnlyExactPlanTitle(t *testing.T) {
+	result := process.Result{ExitCode: 0, Stdout: process.Output{Tail: `[
+		{"id":"session-other","title":"AutoPlan project 7 plan 10","directory":"/private/other"},
+		{"id":"session-plan-11","title":"AutoPlan project 7 plan 11","directory":"/private/workspace"}
+	]`}}
+	sessionID, found := ParseOpenCodeSessionList(result, "AutoPlan project 7 plan 11")
+	if !found || sessionID != "session-plan-11" {
+		t.Fatalf("session=%q found=%v", sessionID, found)
 	}
 }
 

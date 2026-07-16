@@ -10,6 +10,7 @@ import (
 	domainconfig "github.com/lyming99/autoplan/backend/internal/domain/config"
 	domainevent "github.com/lyming99/autoplan/backend/internal/domain/event"
 	domainintake "github.com/lyming99/autoplan/backend/internal/domain/intake"
+	domainmodelusage "github.com/lyming99/autoplan/backend/internal/domain/modelusage"
 	domainplan "github.com/lyming99/autoplan/backend/internal/domain/plan"
 	domainproject "github.com/lyming99/autoplan/backend/internal/domain/project"
 )
@@ -45,6 +46,7 @@ var (
 	ErrInvalidAutomation   = errors.New("repository automation is invalid")
 	ErrAutomationConflict  = errors.New("repository automation conflicts")
 	ErrCapabilityDisabled  = errors.New("repository capability is disabled")
+	ErrInvalidModelUsage   = errors.New("repository model usage is invalid")
 )
 
 type Project = domainproject.Project
@@ -57,6 +59,8 @@ type IntakeStatus = domainintake.Status
 type IntakePlanLink = domainintake.PlanLink
 type Plan = domainplan.Plan
 type PlanTask = domainplan.Task
+type ModelUsageRecord = domainmodelusage.Record
+type ModelUsageAggregate = domainmodelusage.Aggregate
 
 // IntakePlanAction is the closed persistence command used by the Intake
 // application service for its linked-plan controls. It deliberately carries
@@ -110,6 +114,7 @@ type GeneratedPlanInput struct {
 	IssueHash, FilePath, Digest string
 	AgentCLI                    domainintake.AgentCLIConfig
 	PlanGeneration              domainintake.PlanGenerationConfig
+	GenerationDurationMS        int64
 	Tasks                       []GeneratedPlanTask
 	CreatedAt                   string
 }
@@ -119,8 +124,9 @@ type GeneratedPlanWriter interface {
 }
 
 type LoopPlanTaskClaim struct {
-	Plan domainplan.Plan
-	Task domainplan.Task
+	Plan      domainplan.Plan
+	Task      domainplan.Task
+	SessionID string
 }
 
 type LoopPlanTaskCompletion struct {
@@ -129,10 +135,48 @@ type LoopPlanTaskCompletion struct {
 	TaskID      int64
 	OperationID string
 	Succeeded   bool
+	Cancelled   bool
 	FailureCode string
 	Digest      string
+	SessionID   string
 	FinishedAt  string
 	DurationMS  int64
+}
+
+// PlanTaskStopOutcome is the closed set of persistence decisions for a task
+// stop request. Business rejections are returned as data so callers can map
+// them without depending on database-specific errors.
+type PlanTaskStopOutcome string
+
+const (
+	PlanTaskStopRequested         PlanTaskStopOutcome = "stop_requested"
+	PlanTaskStopAlreadyRequested  PlanTaskStopOutcome = "already_stopping"
+	PlanTaskStopNotFound          PlanTaskStopOutcome = "not_found"
+	PlanTaskStopOwnershipMismatch PlanTaskStopOutcome = "ownership_mismatch"
+	PlanTaskStopNotRunning        PlanTaskStopOutcome = "not_running"
+	PlanTaskStopTerminal          PlanTaskStopOutcome = "terminal"
+)
+
+type PlanTaskStopInput struct {
+	ProjectID int64
+	PlanID    int64
+	TaskID    int64
+	UpdatedAt string
+}
+
+type PlanTaskStopResult struct {
+	Outcome        PlanTaskStopOutcome
+	PreviousStatus domainplan.TaskStatus
+	Status         domainplan.TaskStatus
+	OperationID    string
+	Changed        bool
+}
+
+// PlanTaskStopper validates the complete task target and persists the stop
+// request atomically. It is separate from the autonomous executor surface so
+// callers that only claim and finish tasks do not receive stop authority.
+type PlanTaskStopper interface {
+	RequestPlanTaskStop(context.Context, PlanTaskStopInput) (PlanTaskStopResult, error)
 }
 
 type DraftPlanTaskActivation struct {
@@ -267,6 +311,29 @@ type Transactional interface {
 	Close() error
 }
 
+// ModelUsageQueries and ModelUsageMutations form a narrow accounting port.
+// The aggregate is always project scoped and the write is idempotent by the
+// record's invocation key.
+type ModelUsageQueries interface {
+	AggregateModelUsage(context.Context, int64, string, string) (domainmodelusage.Aggregate, error)
+}
+
+type ModelUsageMutations interface {
+	RecordModelUsage(context.Context, domainmodelusage.Record) (bool, error)
+}
+
+type ModelUsageWriteTransaction interface {
+	WriteTransaction
+	ModelUsageQueries
+	ModelUsageMutations
+}
+
+type ModelUsageTransactional interface {
+	Readiness
+	TransactModelUsage(context.Context, func(ModelUsageWriteTransaction) error) error
+	Close() error
+}
+
 type IntakeTransactional interface {
 	Readiness
 	TransactIntake(context.Context, func(IntakeWriteTransaction) error) error
@@ -283,14 +350,16 @@ type PlanQueries interface {
 	ListEvents(context.Context, domainevent.ListOptions) ([]domainevent.Event, error)
 }
 
-// PlanMutations contain the P07 pure-persistence operations. Runtime actions
-// such as running, stopping, or generating a plan deliberately have no port.
+// PlanMutations contain bounded aggregate persistence operations. StopPlan is
+// deliberately available only through PlanWriteTransaction so its plan/task
+// transition can be committed with the caller's audit event.
 type PlanMutations interface {
 	ReorderPlans(context.Context, domainplan.Reorder) ([]domainplan.Plan, error)
 	SetPlanAcceptance(context.Context, domainplan.AcceptanceUpdate) (domainplan.Plan, error)
 	SetPlanTaskAcceptance(context.Context, domainplan.AcceptanceUpdate) (domainplan.Task, error)
 	RedoPlan(context.Context, domainplan.PlanRedo) (domainplan.Plan, error)
 	RedoPlanTask(context.Context, domainplan.TaskRedo) (domainplan.Task, error)
+	StopPlan(context.Context, domainplan.PlanStop) (domainplan.PlanStopResult, error)
 	DeletePlanAggregate(context.Context, domainplan.Delete) (domainplan.DeleteResult, error)
 	AppendEvent(context.Context, domainevent.PendingEvent) error
 }
@@ -305,6 +374,13 @@ type Plans interface {
 type PlanWriteTransaction interface {
 	WriteTransaction
 	Plans
+	// Plan acceptance is the authority for linked intake acceptance. Keep the
+	// bounded intake reads/writes on this same transaction so the plan, intake,
+	// compatibility event, and outbox record commit or roll back together.
+	GetIntake(context.Context, int64, domainintake.Type, int64) (domainintake.Intake, bool, error)
+	ListPlanLinksForIntake(context.Context, int64, domainintake.Type, int64) ([]domainintake.PlanLink, error)
+	ListIntakesForPlan(context.Context, int64, int64) ([]domainintake.IntakeRef, error)
+	SetIntakeAcceptance(context.Context, int64, domainintake.Type, int64, *string, string) (domainintake.Intake, error)
 }
 
 type PlanTransactional interface {

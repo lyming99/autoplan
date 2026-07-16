@@ -47,6 +47,7 @@ function sourceSafety() {
     expectedErrorScenarioCount: 8,
     openapiRoutes: [
       '/api/v1/capabilities',
+      '/api/v1/plans',
       '/api/v1/plans/actions/run',
       '/api/v1/plans/actions/stop',
       '/api/v1/plans/actions/resume',
@@ -148,7 +149,7 @@ test('coverage evidence records state, concurrency, HTTP, MCP, renderer and acti
   ].map((item) => ({ id: item.id, evaluation: { accepted: true } }));
   const coverage = coverageEvidence(commands, sourceSafety());
   assert.ok(coverage.matrix.every((item) => item.verified));
-  assert.equal(coverage.openapiCoverage.routes.length, 9);
+  assert.equal(coverage.openapiCoverage.routes.length, 10);
   assert.equal(coverage.longActions.disabledByDefault, true);
 });
 

@@ -24,7 +24,8 @@
     "terminals",
     "activeOperation",
     "activeOperations",
-    "lastOperation"
+    "lastOperation",
+    "modelUsage"
   ],
   "properties": {
     "activeProjectId": {
@@ -55,9 +56,42 @@
     "terminals": { "$ref": "#/$defs/safe_object_array" },
     "activeOperation": { "$ref": "#/$defs/nullable_safe_object" },
     "activeOperations": { "$ref": "#/$defs/safe_object_array" },
-    "lastOperation": { "$ref": "#/$defs/nullable_safe_object" }
+    "lastOperation": { "$ref": "#/$defs/nullable_safe_object" },
+    "modelUsage": { "$ref": "#/$defs/model_usage" }
   },
   "$defs": {
+    "model_usage_totals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["inputTokens", "outputTokens", "cachedTokens", "reasoningTokens", "totalTokens"],
+      "properties": {
+        "inputTokens": { "type": "integer", "minimum": 0 },
+        "outputTokens": { "type": "integer", "minimum": 0 },
+        "cachedTokens": { "type": "integer", "minimum": 0 },
+        "reasoningTokens": { "type": "integer", "minimum": 0 },
+        "totalTokens": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "model_usage_provider": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider", "cumulative", "today"],
+      "properties": {
+        "provider": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "cumulative": { "$ref": "#/$defs/model_usage_totals" },
+        "today": { "$ref": "#/$defs/model_usage_totals" }
+      }
+    },
+    "model_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cumulative", "today", "byProvider"],
+      "properties": {
+        "cumulative": { "$ref": "#/$defs/model_usage_totals" },
+        "today": { "$ref": "#/$defs/model_usage_totals" },
+        "byProvider": { "type": "array", "items": { "$ref": "#/$defs/model_usage_provider" } }
+      }
+    },
     "nullable_safe_object": {
       "oneOf": [
         { "$ref": "#/$defs/safe_object" },

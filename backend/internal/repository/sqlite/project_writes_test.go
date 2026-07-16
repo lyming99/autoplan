@@ -499,6 +499,7 @@ func queryStep(contains string, columns []string, rows ...[]driver.Value) script
 type scriptBackend struct {
 	mu        sync.Mutex
 	steps     []scriptStep
+	execArgs  [][]driver.NamedValue
 	commits   int
 	rollbacks int
 	commitErr error
@@ -527,6 +528,16 @@ func (backend *scriptBackend) assertFinished(t *testing.T, commits, rollbacks in
 	}
 }
 
+func (backend *scriptBackend) recordedExecArgs() [][]driver.NamedValue {
+	backend.mu.Lock()
+	defer backend.mu.Unlock()
+	result := make([][]driver.NamedValue, len(backend.execArgs))
+	for index := range backend.execArgs {
+		result[index] = append([]driver.NamedValue(nil), backend.execArgs[index]...)
+	}
+	return result
+}
+
 type scriptConnector struct{ backend *scriptBackend }
 
 func (connector scriptConnector) Connect(context.Context) (driver.Conn, error) {
@@ -548,7 +559,10 @@ func (connection *scriptConnection) Begin() (driver.Tx, error) {
 func (connection *scriptConnection) BeginTx(context.Context, driver.TxOptions) (driver.Tx, error) {
 	return &scriptTransaction{backend: connection.backend}, nil
 }
-func (connection *scriptConnection) ExecContext(_ context.Context, query string, _ []driver.NamedValue) (driver.Result, error) {
+func (connection *scriptConnection) ExecContext(_ context.Context, query string, arguments []driver.NamedValue) (driver.Result, error) {
+	connection.backend.mu.Lock()
+	connection.backend.execArgs = append(connection.backend.execArgs, append([]driver.NamedValue(nil), arguments...))
+	connection.backend.mu.Unlock()
 	step, err := connection.backend.next("exec", query)
 	if err != nil {
 		return nil, err

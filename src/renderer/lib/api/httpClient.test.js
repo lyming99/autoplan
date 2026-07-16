@@ -29,7 +29,7 @@ const eventKeys = tupleKeys(
   'AUTOPLAN_CLIENT_EVENT_KEYS',
 );
 
-function loadHttpClient() {
+function loadHttpClient(eventOverrides = {}) {
   const compiled = ts.transpileModule(
     source('src', 'renderer', 'lib', 'api', 'httpClient.ts'),
     {
@@ -46,6 +46,7 @@ function loadHttpClient() {
         return {
           AUTOPLAN_CLIENT_EVENT_KEYS: eventKeys,
           consumeProjectEventPlaceholder: async () => {},
+          ...eventOverrides,
         };
       }
       if (id === './terminalTransport') {
@@ -84,6 +85,22 @@ function project(id = 1) {
   };
 }
 
+function modelUsage(totalTokens = 0) {
+  const totals = (overrides = {}) => ({
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedTokens: 0,
+    reasoningTokens: 0,
+    totalTokens: 0,
+    ...overrides,
+  });
+  return {
+    cumulative: totals({ inputTokens: totalTokens, totalTokens }),
+    today: totals({ inputTokens: totalTokens, totalTokens }),
+    byProvider: [],
+  };
+}
+
 function snapshot(activeProject = project(1)) {
   return {
     activeProjectId: activeProject?.id ?? null,
@@ -109,6 +126,7 @@ function snapshot(activeProject = project(1)) {
     activeOperation: null,
     activeOperations: [],
     lastOperation: null,
+    modelUsage: modelUsage(),
   };
 }
 
@@ -218,7 +236,8 @@ function fallbackClient(snapshotValue = snapshot(null)) {
 }
 
 function createClient(fetchImpl, overrides = {}) {
-  const { HttpAutoplanClient } = loadHttpClient();
+  const { eventModule, ...clientOverrides } = overrides;
+  const { HttpAutoplanClient } = loadHttpClient(eventModule);
   const fallback = fallbackClient(overrides.snapshotValue);
   let idempotencySequence = 0;
   return {
@@ -229,7 +248,7 @@ function createClient(fetchImpl, overrides = {}) {
       fetchImpl,
       idempotencyKeyFactory: () => `renderer:intent-${++idempotencySequence}`,
       delegate: fallback.client,
-      ...overrides,
+      ...clientOverrides,
     }),
     fallback,
   };
@@ -293,6 +312,64 @@ describe('HttpAutoplanClient guarded read transport', () => {
     assert.equal(result.mcp.status, 'disabled');
     assert.equal(result.activeProjectId, null);
     assert.equal(fallback.calls.filter((call) => call.key === 'snapshot').length, 0);
+  });
+
+  it('strictly maps model usage and falls back to zero for a legacy snapshot', async () => {
+    const populated = snapshot(project(7));
+    populated.modelUsage = {
+      cumulative: {
+        inputTokens: 1200, outputTokens: 300, cachedTokens: 400,
+        reasoningTokens: 50, totalTokens: 1550,
+      },
+      today: {
+        inputTokens: 200, outputTokens: 30, cachedTokens: 40,
+        reasoningTokens: 5, totalTokens: 235,
+      },
+      byProvider: [{
+        provider: 'codex',
+        cumulative: {
+          inputTokens: 1200, outputTokens: 300, cachedTokens: 400,
+          reasoningTokens: 50, totalTokens: 1550,
+        },
+        today: {
+          inputTokens: 200, outputTokens: 30, cachedTokens: 40,
+          reasoningTokens: 5, totalTokens: 235,
+        },
+      }],
+    };
+    const populatedClient = createClient(async () => success(populated)).client;
+    assert.deepStrictEqual((await populatedClient.getProjectSnapshot(7)).modelUsage, populated.modelUsage);
+
+    const legacy = snapshot(project(7));
+    delete legacy.modelUsage;
+    const legacyClient = createClient(async () => success(legacy)).client;
+    assert.deepStrictEqual((await legacyClient.getProjectSnapshot(7)).modelUsage, modelUsage());
+
+    const malformed = snapshot(project(7));
+    malformed.modelUsage.cumulative.inputTokens = -1;
+    const malformedClient = createClient(async () => success(malformed)).client;
+    await assert.rejects(
+      malformedClient.getProjectSnapshot(7),
+      (error) => error.code === 'invalid_response',
+    );
+
+    for (const mutate of [
+      (value) => { value.modelUsage.today.totalTokens = null; },
+      (value) => { value.modelUsage.cumulative.totalTokens = Number.MAX_SAFE_INTEGER + 1; },
+      (value) => { value.modelUsage.byProvider = [{
+        provider: 'openai', cumulative: modelUsage().cumulative,
+        today: modelUsage().today, unexpected: true,
+      }]; },
+      (value) => { value.modelUsage.unexpected = true; },
+    ]) {
+      const invalid = snapshot(project(7));
+      mutate(invalid);
+      const invalidClient = createClient(async () => success(invalid)).client;
+      await assert.rejects(
+        invalidClient.getProjectSnapshot(7),
+        (error) => error.code === 'invalid_response',
+      );
+    }
   });
 
   it('binds the default Window fetch before invoking it later', async () => {
@@ -587,6 +664,34 @@ describe('HttpAutoplanClient guarded read transport', () => {
     await assert.rejects(first, (error) => error.code === 'mutation_response_superseded');
   });
 
+  it('coalesces concurrent deletion requests for the same project', async () => {
+    const calls = [];
+    let resolveDelete;
+    const fetchImpl = (url, init) => new Promise((resolve) => {
+      calls.push({ url, init });
+      resolveDelete = resolve;
+    });
+    const { client } = createClient(fetchImpl);
+
+    const first = client.deleteProject({ projectId: 7 });
+    const second = client.deleteProject({ projectId: 7 });
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.strictEqual(second, first);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].init.method, 'DELETE');
+    const deleted = snapshot(null);
+    resolveDelete(success(deleted));
+    assert.deepStrictEqual(await first, deleted);
+    assert.deepStrictEqual(await second, deleted);
+
+    const later = client.deleteProject({ projectId: 7 });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(calls.length, 2, 'the completed request must not stay cached');
+    resolveDelete(success(deleted));
+    assert.deepStrictEqual(await later, deleted);
+  });
+
   it('maps server, content-type, cancellation, and timeout failures to safe codes', async () => {
     const serverMessage = 'sensitive internal failure detail';
     const unauthorized = createClient(async () => response(401, {
@@ -783,6 +888,81 @@ describe('HttpAutoplanClient guarded read transport', () => {
     assert.deepStrictEqual(await client.chatSaveConfig({ apiKey: 'chat-secret' }), { saved: true });
     assert.deepStrictEqual(calls.at(-1).body, { name: '默认配置', api_key: 'chat-secret' });
     assert.equal(fallback.calls.some((call) => call.key === 'chatGetConfig' || call.key === 'chatSaveConfig'), false);
+  });
+
+  it('starts and stops a task through HTTP, follows cancellation, and refreshes the snapshot', async () => {
+    const calls = [];
+    const streams = [];
+    const taskSnapshot = (status) => {
+      const value = snapshot(project(7));
+      value.tasks = [{
+        id: 21, project_id: 7, plan_id: 12, task_key: 'P005', title: 'Desktop task stop smoke',
+        raw_line: '- [ ] P005: Desktop task stop smoke', scope: 'src/**', scope_files: [], status,
+        sort_order: 5, started_at: '2026-07-15T00:00:00.000Z',
+        finished_at: status === 'cancelled' ? '2026-07-15T00:00:01.000Z' : null,
+        duration_ms: status === 'cancelled' ? 1000 : 0, codex_session_id: null,
+        updated_at: '2026-07-15T00:00:01.000Z', accepted_at: null,
+        file_path: 'docs/plan/task-stop.md', plan_title: 'Task stop regression',
+      }];
+      return value;
+    };
+    let snapshotStatus = 'running';
+    const { client, fallback } = createClient(async (target, init) => {
+      const url = new URL(target);
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      calls.push({ path: `${url.pathname}${url.search}`, method: init.method, body });
+      if (url.pathname.endsWith('/tasks/21/actions/run')) {
+        snapshotStatus = 'running';
+        return success({
+          operation_id: 'task.run.21', type: 'task.run', status: 'accepted',
+          request_id: requestId, accepted_at: '2026-07-15T00:00:00.000Z',
+        });
+      }
+      if (url.pathname.endsWith('/tasks/21/actions/stop')) {
+        snapshotStatus = 'cancelled';
+        return success({
+          operation_id: 'task.stop.21', type: 'task.stop', status: 'accepted',
+          request_id: requestId, accepted_at: '2026-07-15T00:00:01.000Z',
+        });
+      }
+      if (url.pathname === '/api/v1/projects/7/snapshot') return success(taskSnapshot(snapshotStatus));
+      if (url.pathname.startsWith('/api/v1/operations/')) return response(200, {}, 'text/event-stream');
+      throw new Error(`unexpected task stop smoke URL: ${url.pathname}`);
+    }, {
+      runtimeFeatures: { go_task_actions: true },
+      eventModule: {
+        createResumableEventStream: (options) => {
+          const record = { options, stopped: false };
+          streams.push(record);
+          const stop = () => { record.stopped = true; };
+          stop.completeResync = () => {};
+          return stop;
+        },
+        isTerminalOperationEvent: (event) => event.type === 'operation.cancelled',
+      },
+    });
+
+    const running = await client.runTask({ projectId: 7, planId: 12, taskId: 21 });
+    const cancelled = await client.stopTask({ projectId: 7, planId: 12, taskId: 21 });
+
+    assert.equal(running.tasks[0].status, 'running');
+    assert.equal(cancelled.tasks[0].status, 'cancelled');
+    assert.deepStrictEqual(calls.filter((call) => call.path.includes('/tasks/21/actions/')).map(
+      ({ path, method, body }) => ({ path, method, body }),
+    ), [
+      { path: '/api/v1/projects/7/tasks/21/actions/run', method: 'POST', body: { plan_id: 12 } },
+      { path: '/api/v1/projects/7/tasks/21/actions/stop', method: 'POST', body: { plan_id: 12 } },
+    ]);
+    assert.equal(calls.filter((call) => call.path === '/api/v1/projects/7/snapshot').length, 2);
+    assert.equal(client.getRuntimeOperationOwner('task.stop.21'), 'go');
+    assert.equal(streams.length, 2);
+    await streams[1].options.open(null, new AbortController().signal);
+    assert.equal(calls.at(-1).path, '/api/v1/operations/task.stop.21/events?project_id=7');
+    streams[1].options.onEvent({
+      event_class: 'operation', type: 'operation.cancelled', operation_id: 'task.stop.21',
+    });
+    assert.equal(streams[1].stopped, true, 'the cancellation terminal event must close its Operation stream');
+    assert.equal(fallback.calls.some((call) => call.key === 'runTask' || call.key === 'stopTask'), false);
   });
 
   it('accepts the synchronous retry mutation contract and immediately starts one loop cycle', async () => {

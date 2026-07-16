@@ -60,14 +60,14 @@ func (service *Service) ReadContent(ctx context.Context, projectID, planID int64
 	if err != nil {
 		return ContentDTO{}, err
 	}
-	planValue := planDTO(plan)
-	result := ContentDTO{Plan: planValue, Tasks: make([]TaskDTO, 0, len(tasks))}
-	for _, task := range tasks {
-		result.Tasks = append(result.Tasks, taskDTO(task, planValue))
-	}
 	markdown, code, readErr := readWorkspacePlan(project.WorkspacePath, plan.SourceRef)
 	if readErr != nil {
 		return ContentDTO{}, readErr
+	}
+	planValue := planDTO(plan, extractMarkdownTitle(markdown))
+	result := ContentDTO{Plan: planValue, Tasks: make([]TaskDTO, 0, len(tasks))}
+	for _, task := range tasks {
+		result.Tasks = append(result.Tasks, taskDTO(task, planValue))
 	}
 	result.Markdown, result.ErrorCode = markdown, code
 	return result, nil

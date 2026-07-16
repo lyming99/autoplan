@@ -20,6 +20,7 @@ import (
 	"github.com/lyming99/autoplan/backend/internal/domain/contracts"
 	domainevent "github.com/lyming99/autoplan/backend/internal/domain/event"
 	domainintake "github.com/lyming99/autoplan/backend/internal/domain/intake"
+	domainmodelusage "github.com/lyming99/autoplan/backend/internal/domain/modelusage"
 	domainoperation "github.com/lyming99/autoplan/backend/internal/domain/operation"
 	domainplan "github.com/lyming99/autoplan/backend/internal/domain/plan"
 	domainproject "github.com/lyming99/autoplan/backend/internal/domain/project"
@@ -54,12 +55,13 @@ type Assembler struct {
 	executors   *applicationexecutors.Service
 	operations  *applicationoperations.Service
 	mcpRuntime  func() map[string]any
+	now         func() time.Time
 }
 
-func New(read ReadSession) *Assembler { return &Assembler{read: read} }
+func New(read ReadSession) *Assembler { return &Assembler{read: read, now: time.Now} }
 
 func NewWithAttachments(read ReadSession, attachments AttachmentSnapshotSource) *Assembler {
-	return &Assembler{read: read, attachments: attachments}
+	return &Assembler{read: read, attachments: attachments, now: time.Now}
 }
 
 // NewWithAttachmentsAndScripts keeps static Script records in the repository
@@ -71,7 +73,18 @@ func NewWithAttachmentsAndScripts(
 	attachments AttachmentSnapshotSource,
 	scripts *applicationscripts.Service,
 ) *Assembler {
-	return &Assembler{read: read, attachments: attachments, scripts: scripts}
+	return &Assembler{read: read, attachments: attachments, scripts: scripts, now: time.Now}
+}
+
+type Clock interface{ Now() time.Time }
+
+// BindClock keeps local-day accounting deterministic under the application's
+// shared clock while retaining time.Local as the user's civil-day boundary.
+func (assembler *Assembler) BindClock(clock Clock) {
+	if assembler == nil || clock == nil {
+		return
+	}
+	assembler.now = clock.Now
 }
 
 // BindScripts completes bootstrap's Operation/Script cycle without requiring
@@ -240,21 +253,29 @@ func (assembler *Assembler) Assemble(
 		result.ActiveProjectID = &id
 		result.ActiveProject = &active
 		result.State = &state
-		planRecords := map[int64]domainplan.Plan(nil)
-		if planStore, ok := store.(repository.PlanQueries); ok {
-			loadedPlans, plans, tasks, events, loadErr := planSnapshotRows(ctx, planStore, record.ID)
+		if usageStore, ok := store.(repository.ModelUsageQueries); ok {
+			usage, loadErr := modelUsageSnapshot(ctx, usageStore, record.ID, assembler.currentTime())
 			if loadErr != nil {
 				return loadErr
 			}
-			planRecords = loadedPlans
+			result.ModelUsage = usage
+		}
+		planRecords := map[int64]domainplan.Plan(nil)
+		planTitles := map[int64]string(nil)
+		if planStore, ok := store.(repository.PlanQueries); ok {
+			loadedPlans, loadedTitles, plans, tasks, events, loadErr := planSnapshotRows(ctx, planStore, record.ID, record.WorkspacePath)
+			if loadErr != nil {
+				return loadErr
+			}
+			planRecords, planTitles = loadedPlans, loadedTitles
 			result.Plans, result.Tasks, result.Events = plans, tasks, events
 		}
 		if intakeStore, ok := store.(repository.IntakeQueries); ok {
-			requirements, loadErr := intakeSnapshots(ctx, intakeStore, record.ID, domainintake.Requirement, planRecords)
+			requirements, loadErr := intakeSnapshots(ctx, intakeStore, record.ID, domainintake.Requirement, planRecords, planTitles)
 			if loadErr != nil {
 				return loadErr
 			}
-			feedback, loadErr := intakeSnapshots(ctx, intakeStore, record.ID, domainintake.Feedback, planRecords)
+			feedback, loadErr := intakeSnapshots(ctx, intakeStore, record.ID, domainintake.Feedback, planRecords, planTitles)
 			if loadErr != nil {
 				return loadErr
 			}
@@ -292,6 +313,44 @@ func (assembler *Assembler) Assemble(
 		}
 	}
 	return result, validateSnapshot(result)
+}
+
+func (assembler *Assembler) currentTime() time.Time {
+	if assembler != nil && assembler.now != nil {
+		return assembler.now()
+	}
+	return time.Now()
+}
+
+func modelUsageSnapshot(ctx context.Context, store repository.ModelUsageQueries, projectID int64, now time.Time) (contracts.ModelUsageSummary, error) {
+	local := now.In(time.Local)
+	dayStart := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, local.Location())
+	dayEnd := dayStart.AddDate(0, 0, 1)
+	aggregate, err := store.AggregateModelUsage(ctx, projectID,
+		dayStart.UTC().Format(time.RFC3339Nano), dayEnd.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return contracts.ModelUsageSummary{}, err
+	}
+	result := contracts.ModelUsageSummary{
+		Cumulative: modelUsageTotals(aggregate.Cumulative), Today: modelUsageTotals(aggregate.Today),
+		ByProvider: make([]contracts.ModelUsageProvider, 0, len(aggregate.ByProvider)),
+	}
+	for _, provider := range aggregate.ByProvider {
+		result.ByProvider = append(result.ByProvider, contracts.ModelUsageProvider{
+			Provider: provider.Provider, Cumulative: modelUsageTotals(provider.Cumulative), Today: modelUsageTotals(provider.Today),
+		})
+	}
+	if result.Validate() != nil {
+		return contracts.ModelUsageSummary{}, domainproject.ErrInvalidRecord
+	}
+	return result, nil
+}
+
+func modelUsageTotals(value domainmodelusage.Totals) contracts.ModelUsageTotals {
+	return contracts.ModelUsageTotals{
+		InputTokens: value.Input, OutputTokens: value.Output, CachedTokens: value.Cached,
+		ReasoningTokens: value.Reasoning, TotalTokens: value.Total,
+	}
 }
 
 func applyOperationSnapshots(snapshot *contracts.AppSnapshot, operations []domainoperation.Operation) error {
@@ -575,13 +634,14 @@ func planSnapshotRows(
 	ctx context.Context,
 	store repository.PlanQueries,
 	projectID int64,
-) (map[int64]domainplan.Plan, []contracts.SanitizedObject, []contracts.SanitizedObject, []contracts.SanitizedObject, error) {
+	workspace string,
+) (map[int64]domainplan.Plan, map[int64]string, []contracts.SanitizedObject, []contracts.SanitizedObject, []contracts.SanitizedObject, error) {
 	const pageSize = 200
 	plans := make([]domainplan.Plan, 0)
 	for offset := 0; ; offset += pageSize {
 		page, err := store.ListPlans(ctx, domainplan.ListOptions{ProjectID: projectID, Limit: pageSize, Offset: offset})
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 		plans = append(plans, page...)
 		if len(page) < pageSize {
@@ -591,38 +651,41 @@ func planSnapshotRows(
 	planSnapshots := make([]contracts.SanitizedObject, 0, len(plans))
 	taskSnapshots := make([]contracts.SanitizedObject, 0)
 	planByID := make(map[int64]domainplan.Plan, len(plans))
+	planTitles := make(map[int64]string, len(plans))
 	for _, plan := range plans {
-		mappedPlan, err := applicationplans.PlanSnapshot(plan)
+		title := applicationplans.ResolvePlanTitle(workspace, plan)
+		mappedPlan, err := applicationplans.PlanSnapshot(plan, title)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 		planSnapshots = append(planSnapshots, mappedPlan)
 		planByID[plan.ID] = plan
+		planTitles[plan.ID] = title
 		tasks, err := store.ListPlanTasks(ctx, projectID, plan.ID)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 		for _, task := range tasks {
-			mappedTask, mapErr := applicationplans.TaskSnapshot(task, plan)
+			mappedTask, mapErr := applicationplans.TaskSnapshot(task, plan, title)
 			if mapErr != nil {
-				return nil, nil, nil, nil, mapErr
+				return nil, nil, nil, nil, nil, mapErr
 			}
 			taskSnapshots = append(taskSnapshots, mappedTask)
 		}
 	}
 	events, err := store.ListEvents(ctx, domainevent.ListOptions{ProjectID: projectID, Limit: 80, Offset: 0})
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 	eventSnapshots := make([]contracts.SanitizedObject, 0, len(events))
 	for _, event := range events {
 		mapped, mapErr := applicationevents.EventSnapshot(event)
 		if mapErr != nil {
-			return nil, nil, nil, nil, mapErr
+			return nil, nil, nil, nil, nil, mapErr
 		}
 		eventSnapshots = append(eventSnapshots, mapped)
 	}
-	return planByID, planSnapshots, taskSnapshots, eventSnapshots, nil
+	return planByID, planTitles, planSnapshots, taskSnapshots, eventSnapshots, nil
 }
 
 func intakeSnapshots(
@@ -631,6 +694,7 @@ func intakeSnapshots(
 	projectID int64,
 	intakeType domainintake.Type,
 	plans map[int64]domainplan.Plan,
+	planTitles map[int64]string,
 ) ([]contracts.SanitizedObject, error) {
 	const pageSize = 200
 	records := make([]domainintake.Intake, 0)
@@ -652,7 +716,7 @@ func intakeSnapshots(
 		if err != nil {
 			return nil, err
 		}
-		mapped, err := intakeSnapshot(record, links, plans)
+		mapped, err := intakeSnapshot(record, links, plans, planTitles)
 		if err != nil {
 			return nil, err
 		}
@@ -661,7 +725,7 @@ func intakeSnapshots(
 	return result, nil
 }
 
-func intakeSnapshot(value domainintake.Intake, links []domainintake.PlanLink, plans map[int64]domainplan.Plan) (contracts.SanitizedObject, error) {
+func intakeSnapshot(value domainintake.Intake, links []domainintake.PlanLink, plans map[int64]domainplan.Plan, planTitles map[int64]string) (contracts.SanitizedObject, error) {
 	createdAt, err := utcTimestamp(value.CreatedAt)
 	if err != nil {
 		return nil, err
@@ -680,6 +744,7 @@ func intakeSnapshot(value domainintake.Intake, links []domainintake.PlanLink, pl
 	}
 	linked := make([]any, 0, len(links))
 	currentPlanID := currentPlanLinkID(links, plans)
+	currentPlanTitle := ""
 	for _, link := range links {
 		var linkID any
 		if link.ID > 0 {
@@ -691,7 +756,7 @@ func intakeSnapshot(value domainintake.Intake, links []domainintake.PlanLink, pl
 		var completed, total any
 		var validation any
 		if exists {
-			planDTO := applicationplans.PlanDTOFromDomain(plan)
+			planDTO := applicationplans.PlanDTOFromDomain(plan, planTitles[plan.ID])
 			filePath, title = planDTO.FilePath, planDTO.Title
 			status, completed, total = string(plan.Status), plan.CompletedTasks, plan.TotalTasks
 			if plan.ValidationPassed {
@@ -705,6 +770,9 @@ func intakeSnapshot(value domainintake.Intake, links []domainintake.PlanLink, pl
 		}
 		if title == "" {
 			title = "Plan #" + strconv.FormatInt(link.PlanID, 10)
+		}
+		if currentPlanID == link.PlanID {
+			currentPlanTitle = title
 		}
 		linked = append(linked, map[string]any{
 			"link_id": linkID, "intake_type": link.IntakeType, "intake_id": link.IntakeID,
@@ -738,6 +806,10 @@ func intakeSnapshot(value domainintake.Intake, links []domainintake.PlanLink, pl
 	}
 	if value.Type == domainintake.Feedback {
 		fields["requirement_id"] = value.RequirementID
+	}
+	if currentPlanTitle != "" {
+		fields["plan_title"] = currentPlanTitle
+		fields["linked_plan_title"] = currentPlanTitle
 	}
 	return sanitizedObject(fields)
 }
@@ -1037,6 +1109,7 @@ func emptySnapshot(projects []contracts.Project, mcp contracts.SanitizedObject) 
 		}),
 		Scripts: empty(), Executors: empty(), Terminals: empty(), ActiveOperation: nil,
 		ActiveOperations: empty(), LastOperation: nil,
+		ModelUsage: contracts.ModelUsageSummary{ByProvider: make([]contracts.ModelUsageProvider, 0)},
 	}
 }
 

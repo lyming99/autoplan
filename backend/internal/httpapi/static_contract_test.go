@@ -38,11 +38,20 @@ func TestStaticRESTContractDocumentsOnlyStaticPersistenceRoutes(t *testing.T) {
 	}
 	text := string(openAPI)
 	for _, route := range []string{
+		PlansPath,
 		ProjectScriptsPath, ProjectExecutorsPath, ProjectConversationsPath, ProjectMessagesPath,
 		AIConfigsPath, ClaudeCLIConfigsPath, MCPConfigPath,
 	} {
 		if !strings.Contains(text, route+":") {
 			t.Fatalf("OpenAPI is missing static route %q", route)
+		}
+	}
+	for _, statement := range []string{
+		"operationId: deletePlan", "#/components/schemas/PlanDeleteRequest",
+		"#/components/schemas/PlanMutationEnvelope", "#/components/parameters/IdempotencyKey",
+	} {
+		if !strings.Contains(text, statement) {
+			t.Fatalf("OpenAPI plan deletion contract is missing %q", statement)
 		}
 	}
 	for _, statement := range []string{

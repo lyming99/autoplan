@@ -7,6 +7,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 )
 
 var (
@@ -99,7 +101,7 @@ func (snapshot *AppSnapshot) UnmarshalJSON(data []byte) error {
 	required := []string{
 		"activeProjectId", "activeProject", "projects", "mcp", "state", "requirements",
 		"feedback", "attachments", "plans", "tasks", "events", "scans", "scanSummary",
-		"scripts", "executors", "terminals", "activeOperation", "activeOperations", "lastOperation",
+		"scripts", "executors", "terminals", "activeOperation", "activeOperations", "lastOperation", "modelUsage",
 	}
 	if snapshot == nil || decodeObject(data, &value, required...) != nil {
 		return ErrInvalidContract
@@ -118,6 +120,9 @@ func (snapshot AppSnapshot) Validate() error {
 		snapshot.Tasks == nil || snapshot.Events == nil || snapshot.Scans == nil ||
 		snapshot.ScanSummary == nil || snapshot.Scripts == nil || snapshot.Executors == nil ||
 		snapshot.Terminals == nil || snapshot.ActiveOperations == nil {
+		return ErrInvalidContract
+	}
+	if snapshot.ModelUsage.Validate() != nil {
 		return ErrInvalidContract
 	}
 	if (snapshot.ActiveProjectID == nil) != (snapshot.ActiveProject == nil) {
@@ -161,6 +166,73 @@ func (snapshot AppSnapshot) Validate() error {
 				return ErrInvalidContract
 			}
 		}
+	}
+	return nil
+}
+
+func (summary *ModelUsageSummary) UnmarshalJSON(data []byte) error {
+	type wire ModelUsageSummary
+	var value wire
+	if summary == nil || rejectNullKeys(data, "cumulative", "today", "byProvider") != nil ||
+		decodeObject(data, &value, "cumulative", "today", "byProvider") != nil {
+		return ErrInvalidContract
+	}
+	candidate := ModelUsageSummary(value)
+	if candidate.Validate() != nil {
+		return ErrInvalidContract
+	}
+	*summary = candidate
+	return nil
+}
+
+func (summary ModelUsageSummary) Validate() error {
+	if summary.Cumulative.Validate() != nil || summary.Today.Validate() != nil {
+		return ErrInvalidContract
+	}
+	seen := make(map[string]struct{}, len(summary.ByProvider))
+	for _, provider := range summary.ByProvider {
+		if strings.TrimSpace(provider.Provider) == "" || len(provider.Provider) > 64 ||
+			provider.Provider != strings.TrimSpace(provider.Provider) ||
+			!utf8.ValidString(provider.Provider) || strings.ContainsFunc(provider.Provider, unicode.IsControl) ||
+			provider.Cumulative.Validate() != nil || provider.Today.Validate() != nil {
+			return ErrInvalidContract
+		}
+		if _, duplicate := seen[provider.Provider]; duplicate {
+			return ErrInvalidContract
+		}
+		seen[provider.Provider] = struct{}{}
+	}
+	return nil
+}
+
+func (summary ModelUsageSummary) MarshalJSON() ([]byte, error) {
+	type wire ModelUsageSummary
+	value := wire(summary)
+	if value.ByProvider == nil {
+		value.ByProvider = make([]ModelUsageProvider, 0)
+	}
+	return json.Marshal(value)
+}
+
+func (totals *ModelUsageTotals) UnmarshalJSON(data []byte) error {
+	type wire ModelUsageTotals
+	var value wire
+	if totals == nil || decodeObject(data, &value,
+		"inputTokens", "outputTokens", "cachedTokens", "reasoningTokens", "totalTokens") != nil {
+		return ErrInvalidContract
+	}
+	candidate := ModelUsageTotals(value)
+	if candidate.Validate() != nil {
+		return ErrInvalidContract
+	}
+	*totals = candidate
+	return nil
+}
+
+func (totals ModelUsageTotals) Validate() error {
+	if totals.InputTokens < 0 || totals.OutputTokens < 0 || totals.CachedTokens < 0 ||
+		totals.ReasoningTokens < 0 || totals.TotalTokens < 0 {
+		return ErrInvalidContract
 	}
 	return nil
 }

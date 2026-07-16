@@ -297,6 +297,7 @@ func (service *runtimeService) clearActive(projectID int64, operationID string) 
 	service.mu.Lock()
 	if active := service.active[projectID]; active != nil && active.operation.OperationID == operationID {
 		delete(service.active, projectID)
+		delete(service.planStops, projectID)
 	}
 	service.mu.Unlock()
 }

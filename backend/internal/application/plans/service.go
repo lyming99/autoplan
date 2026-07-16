@@ -7,11 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/lyming99/autoplan/backend/internal/domain/contracts"
 	domainevent "github.com/lyming99/autoplan/backend/internal/domain/event"
+	domainintake "github.com/lyming99/autoplan/backend/internal/domain/intake"
 	domainplan "github.com/lyming99/autoplan/backend/internal/domain/plan"
 	domainproject "github.com/lyming99/autoplan/backend/internal/domain/project"
 	"github.com/lyming99/autoplan/backend/internal/repository"
@@ -218,7 +220,14 @@ func (service *Service) setAcceptances(
 			}
 			items = append(items, result)
 		}
-		return nil
+		planIDs := make([]int64, 0, len(resolved))
+		for _, item := range resolved {
+			if item.target.TargetType == TargetPlan {
+				planIDs = append(planIDs, item.plan.ID)
+			}
+		}
+		return syncLinkedIntakeAcceptance(ctx, transaction, command.ProjectID, planIDs,
+			mutationAt, route, command.RequestID)
 	})
 	if err != nil {
 		return MutationResult{}, mapMutationError(err)
@@ -319,7 +328,8 @@ func (service *Service) redo(
 				return eventErr
 			}
 			items = append(items, result)
-			return nil
+			return syncLinkedIntakeAcceptance(ctx, transaction, command.ProjectID, []int64{updated.ID},
+				mutationAt, RouteRedo, command.RequestID)
 		}
 		if requireExpectedVersion && (!domainplan.ValidUTCTimestamp(command.Target.ExpectedPlanUpdatedAt) ||
 			command.Target.ExpectedPlanUpdatedAt != resolved.plan.UpdatedAt) {
@@ -346,7 +356,8 @@ func (service *Service) redo(
 			return eventErr
 		}
 		items = append(items, result)
-		return nil
+		return syncLinkedIntakeAcceptance(ctx, transaction, command.ProjectID, []int64{updated.PlanID},
+			mutationAt, RouteRedo, command.RequestID)
 	})
 	if err != nil {
 		return MutationResult{}, mapMutationError(err)
@@ -356,6 +367,129 @@ func (service *Service) redo(
 		return MutationResult{}, err
 	}
 	return MutationResult{Snapshot: snapshot, Items: items}, nil
+}
+
+// syncLinkedIntakeAcceptance derives intake acceptance exclusively from all
+// linked plans. It runs after every plan mutation in the batch, while still
+// inside the plan transaction, so multi-phase intake state is never computed
+// from an intermediate batch state. Task acceptance is intentionally absent;
+// only redo of a task participates because it also invalidates its parent plan.
+func syncLinkedIntakeAcceptance(
+	ctx context.Context,
+	transaction repository.PlanWriteTransaction,
+	projectID int64,
+	planIDs []int64,
+	mutationAt, route, requestID string,
+) error {
+	uniquePlans := make(map[int64]struct{}, len(planIDs))
+	references := make(map[string]domainintake.IntakeRef)
+	for _, planID := range planIDs {
+		if planID <= 0 {
+			continue
+		}
+		if _, duplicate := uniquePlans[planID]; duplicate {
+			continue
+		}
+		uniquePlans[planID] = struct{}{}
+		linked, err := transaction.ListIntakesForPlan(ctx, projectID, planID)
+		if err != nil {
+			return err
+		}
+		for _, reference := range linked {
+			if reference.ProjectID != projectID || !reference.IntakeType.Valid() || reference.IntakeID <= 0 {
+				return repository.ErrInvalidStore
+			}
+			key := string(reference.IntakeType) + ":" + decimal(reference.IntakeID)
+			references[key] = reference
+		}
+	}
+	keys := make([]string, 0, len(references))
+	for key := range references {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		reference := references[key]
+		current, found, err := transaction.GetIntake(ctx, projectID, reference.IntakeType, reference.IntakeID)
+		if err != nil {
+			return err
+		}
+		if !found {
+			return repository.ErrInvalidStore
+		}
+		links, err := transaction.ListPlanLinksForIntake(ctx, projectID, reference.IntakeType, reference.IntakeID)
+		if err != nil {
+			return err
+		}
+		if len(links) == 0 {
+			continue
+		}
+		allAccepted := true
+		for _, link := range links {
+			plan, exists, getErr := transaction.GetPlan(ctx, projectID, link.PlanID)
+			if getErr != nil {
+				return getErr
+			}
+			if !exists {
+				return repository.ErrInvalidStore
+			}
+			if plan.AcceptedAt == nil {
+				allAccepted = false
+			}
+		}
+		if allAccepted == (current.AcceptedAt != nil) {
+			continue
+		}
+		var acceptedAt *string
+		if allAccepted {
+			value := mutationAt
+			acceptedAt = &value
+		}
+		updated, err := transaction.SetIntakeAcceptance(ctx, projectID, reference.IntakeType,
+			reference.IntakeID, acceptedAt, mutationAt)
+		if err != nil {
+			return err
+		}
+		if err := appendLinkedIntakeEvent(ctx, transaction, route, requestID, updated,
+			current.AcceptedAt, mutationAt); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func appendLinkedIntakeEvent(
+	ctx context.Context,
+	transaction repository.PlanWriteTransaction,
+	route, requestID string,
+	updated domainintake.Intake,
+	previousAcceptedAt *string,
+	occurredAt string,
+) error {
+	requestID = strings.TrimSpace(requestID)
+	if requestID == "" {
+		requestID = "local-plan-mutation"
+	}
+	data, err := json.Marshal(map[string]any{
+		"intake_type": updated.Type, "intake_id": updated.ID,
+		"accepted_at": updated.AcceptedAt, "previous_accepted_at": previousAcceptedAt,
+	})
+	if err != nil {
+		return ErrInvalidCommand
+	}
+	eventType := string(updated.Type) + ".unaccepted"
+	if updated.AcceptedAt != nil {
+		eventType = string(updated.Type) + ".accepted"
+	}
+	eventID, sequence := planEventIdentity(route, requestID, updated.ProjectID,
+		string(updated.Type), updated.ID, occurredAt)
+	metadata := string(data)
+	return transaction.AppendEvent(ctx, domainevent.PendingEvent{
+		EventID: eventID, StreamKey: fmt.Sprintf("project:%d:intake:%s:%d", updated.ProjectID, updated.Type, updated.ID),
+		Sequence: sequence, Type: eventType, RequestID: requestID, ProjectID: updated.ProjectID,
+		Message: fmt.Sprintf("%s #%d acceptance updated", updated.Type, updated.ID), MetaJSON: &metadata,
+		OccurredAt: occurredAt, CreatedAt: occurredAt,
+	})
 }
 
 type planGraph struct {
@@ -565,7 +699,7 @@ func appendPlanEvent(
 		return ErrInvalidCommand
 	}
 	metadata := string(encoded)
-	eventID, sequence := planEventIdentity(route, requestID, projectID, targetType, targetID, occurredAt)
+	eventID, sequence := planEventIdentity(route, requestID, projectID, string(targetType), targetID, occurredAt)
 	return transaction.AppendEvent(ctx, domainevent.PendingEvent{
 		EventID: eventID, StreamKey: fmt.Sprintf("project:%d:plan:%s:%d", projectID, targetType, targetID),
 		Sequence: sequence, Type: eventType, RequestID: requestID, ProjectID: projectID,
@@ -573,7 +707,7 @@ func appendPlanEvent(
 	})
 }
 
-func planEventIdentity(route, requestID string, projectID int64, targetType TargetType, targetID int64, occurredAt string) (string, int64) {
+func planEventIdentity(route, requestID string, projectID int64, targetType string, targetID int64, occurredAt string) (string, int64) {
 	digest := sha256.Sum256([]byte(fmt.Sprintf("p07\x00%s\x00%s\x00%d\x00%s\x00%d\x00%s", route, requestID, projectID, targetType, targetID, occurredAt)))
 	sequence := int64(0)
 	for index := 0; index < 7; index++ {

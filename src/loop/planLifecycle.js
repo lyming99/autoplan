@@ -313,9 +313,10 @@ function reExecutePlan(service, projectId, planId, options = {}) {
         resetTasks: completedTaskCount,
         ...(options.eventMeta || {}),
       },
+      options.suppressEmit ? { suppressUpdate: true } : undefined,
     );
   }
-  service.emitUpdate(normalizedProjectId);
+  if (!options.suppressEmit) service.emitUpdate(normalizedProjectId);
   return service.db.get('SELECT * FROM plans WHERE id = ? AND project_id = ?', [plan.id, normalizedProjectId]);
 }
 
@@ -378,9 +379,10 @@ function redoTask(service, projectId, taskId, options = {}) {
         status: 'pending',
         ...(options.eventMeta || {}),
       },
+      options.suppressEmit ? { suppressUpdate: true } : undefined,
     );
   }
-  service.emitUpdate(normalizedProjectId);
+  if (!options.suppressEmit) service.emitUpdate(normalizedProjectId);
   return service.db.get('SELECT * FROM plan_tasks WHERE id = ?', [task.id]);
 }
 

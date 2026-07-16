@@ -23,6 +23,7 @@ import (
 	"strings"
 	"time"
 
+	applicationmodelusage "github.com/lyming99/autoplan/backend/internal/application/modelusage"
 	applicationruntime "github.com/lyming99/autoplan/backend/internal/application/runtime"
 	"github.com/lyming99/autoplan/backend/internal/config"
 	"github.com/lyming99/autoplan/backend/internal/httpapi"
@@ -32,7 +33,6 @@ import (
 	backendruntime "github.com/lyming99/autoplan/backend/internal/runtime"
 	runtimelifecycle "github.com/lyming99/autoplan/backend/internal/runtime/lifecycle"
 	processruntime "github.com/lyming99/autoplan/backend/internal/runtime/process"
-	"github.com/lyming99/autoplan/backend/migrations"
 )
 
 const (
@@ -202,7 +202,7 @@ func RunDaemonCommand(ctx context.Context, args []string, stdin io.Reader, stdou
 		ScriptRunner: processRunner, ScriptFiles: terminalAccess, ScriptFinalizer: sqliteScriptFinalizer{writer: writer},
 		LoopRunner: sidecarLoopRunner{
 			store: repositoryLoopCycleStore{writer: writer, projects: writer}, runner: processRunner,
-			stateStore: loopState, logger: logger,
+			stateStore: loopState, usage: applicationmodelusage.New(writer), logger: logger,
 		},
 	})
 	if err != nil || dependencies.Services.Ready(runContext) != nil {
@@ -461,7 +461,7 @@ func verifyMigratedDatabase(databasePath string) error {
 	defer file.Close()
 	header := make([]byte, 100)
 	if _, err := io.ReadFull(file, header); err != nil || string(header[:16]) != "SQLite format 3\x00" ||
-		binary.BigEndian.Uint32(header[60:64]) != migrations.SchemaV3UserVersion {
+		binary.BigEndian.Uint32(header[60:64]) != storesqlite.SchemaVersion {
 		return errors.New("daemon migration pending")
 	}
 	return nil

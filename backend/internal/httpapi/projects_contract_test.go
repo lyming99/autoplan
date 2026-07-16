@@ -93,8 +93,15 @@ func TestProjectsHTTPSingleSnapshotAndStableFailureCatalog(t *testing.T) {
 		Data contracts.AppSnapshot `json:"data"`
 	}
 	if json.Unmarshal(snapshotResponse.Body.Bytes(), &snapshotEnvelope) != nil ||
-		snapshotEnvelope.Data.ActiveProjectID == nil || *snapshotEnvelope.Data.ActiveProjectID != 7 {
+		snapshotEnvelope.Data.ActiveProjectID == nil || *snapshotEnvelope.Data.ActiveProjectID != 7 ||
+		snapshotEnvelope.Data.ModelUsage.Cumulative.TotalTokens != 48 ||
+		len(snapshotEnvelope.Data.ModelUsage.ByProvider) != 1 ||
+		snapshotEnvelope.Data.ModelUsage.ByProvider[0].Provider != "openai" {
 		t.Fatal("snapshot envelope drifted")
+	}
+	if !strings.Contains(snapshotResponse.Body.String(), `"modelUsage"`) ||
+		!strings.Contains(snapshotResponse.Body.String(), `"inputTokens"`) {
+		t.Fatal("strongly typed model usage was not present in the HTTP contract")
 	}
 
 	failures := []struct {
@@ -122,6 +129,31 @@ func TestProjectsHTTPSingleSnapshotAndStableFailureCatalog(t *testing.T) {
 		if strings.Contains(failure.Body.String(), "repository internal detail") {
 			t.Fatal("internal repository detail escaped")
 		}
+	}
+}
+
+func TestProjectSnapshotHTTPExposesStrongModelUsageContract(t *testing.T) {
+	project := projectContractFixture(7)
+	service := &projectServiceFixture{snapshot: contractSnapshot(project)}
+	router, credential := newProjectsRouter(t, service, 0)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/projects/7/snapshot", nil)
+	request.Host = testAuthority
+	request.Header.Set("Origin", testOrigin)
+	request.Header.Set(session.HeaderName, credential)
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+	}
+	var envelope struct {
+		Data contracts.AppSnapshot `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.ModelUsage.Cumulative.TotalTokens != 48 ||
+		envelope.Data.ModelUsage.Today.TotalTokens != 17 || len(envelope.Data.ModelUsage.ByProvider) != 1 {
+		t.Fatalf("model usage=%#v", envelope.Data.ModelUsage)
 	}
 }
 
@@ -235,6 +267,15 @@ func contractSnapshot(project contracts.Project) contracts.AppSnapshot {
 		Scans: []contracts.SanitizedObject{}, ScanSummary: contracts.SanitizedObject{},
 		Scripts: []contracts.SanitizedObject{}, Executors: []contracts.SanitizedObject{},
 		Terminals: []contracts.SanitizedObject{}, ActiveOperations: []contracts.SanitizedObject{},
+		ModelUsage: contracts.ModelUsageSummary{
+			Cumulative: contracts.ModelUsageTotals{InputTokens: 30, OutputTokens: 12, CachedTokens: 4, ReasoningTokens: 2, TotalTokens: 48},
+			Today:      contracts.ModelUsageTotals{InputTokens: 10, OutputTokens: 5, CachedTokens: 1, ReasoningTokens: 1, TotalTokens: 17},
+			ByProvider: []contracts.ModelUsageProvider{{
+				Provider:   "openai",
+				Cumulative: contracts.ModelUsageTotals{InputTokens: 30, OutputTokens: 12, CachedTokens: 4, ReasoningTokens: 2, TotalTokens: 48},
+				Today:      contracts.ModelUsageTotals{InputTokens: 10, OutputTokens: 5, CachedTokens: 1, ReasoningTokens: 1, TotalTokens: 17},
+			}},
+		},
 	}
 }
 

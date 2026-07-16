@@ -17,7 +17,12 @@ func (request *commandRequest) run(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	output, err := runner.RunOnce(ctx, RunInput{ProjectID: request.command.ProjectID, OperationID: request.operation.OperationID})
+	output, err := runner.RunOnce(ctx, RunInput{
+		ProjectID: request.command.ProjectID, OperationID: request.operation.OperationID,
+		AssociatePlan: func(planID int64) bool {
+			return request.service.associatePlan(request.command.ProjectID, request.operation.OperationID, planID)
+		},
+	})
 	if err == nil && !output.Valid() {
 		return ErrStateConflict
 	}
@@ -105,4 +110,24 @@ func (service *runtimeService) activeFor(projectID int64, operationID string) (*
 	}
 	copy := *active
 	return &copy, true
+}
+
+func (service *runtimeService) associatePlan(projectID int64, operationID string, planID int64) bool {
+	if planID <= 0 {
+		return false
+	}
+	service.mu.Lock()
+	active := service.active[projectID]
+	if active == nil || active.operation.OperationID != operationID || active.cancelled {
+		service.mu.Unlock()
+		return false
+	}
+	active.planID = planID
+	_, stopPending := service.planStops[projectID][planID]
+	service.mu.Unlock()
+	if stopPending {
+		_, _ = service.cancelActiveOperation(context.Background(), projectID, operationID)
+		return false
+	}
+	return true
 }

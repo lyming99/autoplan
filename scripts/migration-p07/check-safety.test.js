@@ -161,6 +161,7 @@ test('checked P07 sources retain fixtures, action routes, owner guard and transp
   assert.equal(result.ok, true);
   assert.equal(result.schemaVersion, 1);
   assert.equal(result.stateMachineScenarioCount, 16);
+  assert.ok(result.openapiRoutes.includes('/api/v1/plans'));
   assert.ok(result.openapiRoutes.includes('/api/v1/plans/actions/run'));
   assert.match(result.databaseOwnerGuardSha256, /^[a-f0-9]{64}$/);
 });

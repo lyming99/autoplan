@@ -25,6 +25,7 @@ const (
 	CodeInvalidPagination       ErrorCode = "invalid_pagination"
 	CodeInvalidProjectID        ErrorCode = "invalid_project_id"
 	CodeInvalidProject          ErrorCode = "invalid_project"
+	CodeInvalidPlan             ErrorCode = "invalid_plan"
 	CodeInvalidConfig           ErrorCode = "invalid_config"
 	CodeInvalidIntake           ErrorCode = "invalid_intake"
 	CodeInvalidAttachment       ErrorCode = "invalid_attachment"
@@ -106,6 +107,7 @@ var errorCatalog = map[ErrorCode]errorSpec{
 	CodeInvalidPagination:       {http.StatusBadRequest, "pagination parameters are invalid", false},
 	CodeInvalidProjectID:        {http.StatusBadRequest, "project id is invalid", false},
 	CodeInvalidProject:          {http.StatusBadRequest, "project input is invalid", false},
+	CodeInvalidPlan:             {http.StatusUnprocessableEntity, "plan input is invalid", false},
 	CodeInvalidConfig:           {http.StatusBadRequest, "configuration input is invalid", false},
 	CodeInvalidIntake:           {http.StatusUnprocessableEntity, "intake input is invalid", false},
 	CodeInvalidAttachment:       {http.StatusUnprocessableEntity, "attachment input is invalid", false},

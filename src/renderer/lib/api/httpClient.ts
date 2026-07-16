@@ -322,6 +322,7 @@ export class HttpAutoplanClient {
   readonly #planMutationContexts = new WeakMap<object, Map<string, PlanMutationContext>>();
   readonly #projectVersions = new Map<number, number>();
   readonly #mutationGenerations = new Map<string, number>();
+  readonly #projectDeletionRequests = new Map<number, Promise<AppSnapshot>>();
   readonly #eventConnections = new Set<Unsubscribe>();
   readonly #eventWatermarks = new Map<string, EventStreamWatermark>();
   readonly #operationOwners = new Map<string, RuntimeOperationOwner>();
@@ -1045,7 +1046,9 @@ export class HttpAutoplanClient {
     options: HttpMutationOptions = {},
   ): Promise<AppSnapshot> => {
     const id = positiveInteger(input?.projectId, 'invalid_project_id');
-    return this.#snapshotMutation(
+    const existing = this.#projectDeletionRequests.get(id);
+    if (existing) return existing;
+    const request = this.#snapshotMutation(
       `/api/v1/projects/${id}`,
       'DELETE',
       undefined,
@@ -1053,6 +1056,13 @@ export class HttpAutoplanClient {
       options.signal,
       `project:${id}`,
     );
+    const tracked = request.finally(() => {
+      if (this.#projectDeletionRequests.get(id) === tracked) {
+        this.#projectDeletionRequests.delete(id);
+      }
+    });
+    this.#projectDeletionRequests.set(id, tracked);
+    return tracked;
   };
 
   configureLoop = async (
@@ -3989,7 +3999,7 @@ function validateSnapshot(value: unknown): AppSnapshot {
     'feedback', 'attachments', 'plans', 'tasks', 'events', 'scans', 'scanSummary',
     'scripts', 'executors', 'terminals', 'activeOperation', 'activeOperations', 'lastOperation',
   ];
-  const object = exactObject(value, required);
+  const object = exactObject(value, required, ['modelUsage']);
   if (!Array.isArray(object.projects) || !Array.isArray(object.attachments) || !isRecord(object.mcp) ||
       !required.filter((key) => [
         'projects', 'mcp', 'activeProjectId', 'activeProject', 'state', 'scanSummary',
@@ -4005,6 +4015,9 @@ function validateSnapshot(value: unknown): AppSnapshot {
   }
   const projects = object.projects.map(validateProject);
   const attachments = object.attachments.map(validateSafeAttachment);
+  const modelUsage = object.modelUsage === undefined
+    ? emptyModelUsage()
+    : validateModelUsage(object.modelUsage);
   if ((object.activeProjectId === null) !== (object.activeProject === null) ||
       (object.activeProjectId !== null &&
         (!safeInteger(object.activeProjectId) || object.activeProjectId <= 0))) {
@@ -4014,7 +4027,48 @@ function validateSnapshot(value: unknown): AppSnapshot {
     const active = validateProject(object.activeProject);
     if (active.id !== object.activeProjectId) throw new HttpClientError('invalid_response');
   }
-  return { ...object, projects, attachments } as unknown as AppSnapshot;
+  return { ...object, projects, attachments, modelUsage } as unknown as AppSnapshot;
+}
+
+function validateModelUsage(value: unknown): AppSnapshot['modelUsage'] {
+  const object = exactObject(value, ['cumulative', 'today', 'byProvider']);
+  if (!Array.isArray(object.byProvider)) throw new HttpClientError('invalid_response');
+  return {
+    cumulative: validateModelUsageTotals(object.cumulative),
+    today: validateModelUsageTotals(object.today),
+    byProvider: object.byProvider.map((entry) => {
+      const provider = exactObject(entry, ['provider', 'cumulative', 'today']);
+      if (typeof provider.provider !== 'string' || provider.provider.length < 1 || provider.provider.length > 64) {
+        throw new HttpClientError('invalid_response');
+      }
+      return {
+        provider: provider.provider,
+        cumulative: validateModelUsageTotals(provider.cumulative),
+        today: validateModelUsageTotals(provider.today),
+      };
+    }),
+  };
+}
+
+function validateModelUsageTotals(value: unknown): AppSnapshot['modelUsage']['cumulative'] {
+  const object = exactObject(value, [
+    'inputTokens', 'outputTokens', 'cachedTokens', 'reasoningTokens', 'totalTokens',
+  ]);
+  for (const count of Object.values(object)) {
+    if (!safeInteger(count) || count < 0) throw new HttpClientError('invalid_response');
+  }
+  return object as unknown as AppSnapshot['modelUsage']['cumulative'];
+}
+
+function emptyModelUsage(): AppSnapshot['modelUsage'] {
+  const totals = () => ({
+    inputTokens: 0,
+    outputTokens: 0,
+    cachedTokens: 0,
+    reasoningTokens: 0,
+    totalTokens: 0,
+  });
+  return { cumulative: totals(), today: totals(), byProvider: [] };
 }
 
 function plansFromSnapshot(snapshot: AppSnapshot, projectId: number): Plan[] {
@@ -4281,5 +4335,6 @@ function emptyProjectListSnapshot(): AppSnapshot {
     activeOperation: null,
     activeOperations: [],
     lastOperation: null,
+    modelUsage: emptyModelUsage(),
   };
 }

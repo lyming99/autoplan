@@ -320,6 +320,7 @@ async function main() {
     assertMcpControlSourceSmoke();
     assertAcceptanceModuleSourceSmoke();
     assertTerminalModuleSourceSmoke();
+    await assertAcceptanceIntakeIpcSmoke(db, loop, projectId, planId);
     await assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId);
 
     await assertScopeConcurrencySmoke(db, loop, workspace, projectId);
@@ -517,6 +518,36 @@ async function assertFinalAcceptanceTaskSmoke(db, loop, workspace, projectId) {
   const acceptanceEvents = taskEventsByKey(loop.snapshot(projectId), 'P002');
   assertTaskEventOrder(acceptanceEvents, ['task.succeeded', 'task.started'], 'final acceptance task events');
   assert.equal(acceptanceEvents[0].meta.acceptanceTask, true, 'final acceptance success event should be marked');
+}
+
+async function assertAcceptanceIntakeIpcSmoke(db, loop, projectId, planId) {
+  const requirementId = insertRequirement(db, projectId);
+  const feedbackId = insertFeedback(db, projectId);
+  const updatedAt = nowIso();
+  db.run('UPDATE requirements SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [planId, updatedAt, requirementId]);
+  db.run('UPDATE feedback SET linked_plan_id = ?, updated_at = ? WHERE id = ?', [planId, updatedAt, feedbackId]);
+
+  const handlers = loadMainIpcHandlers(db, loop);
+  const acceptPlan = handlers.get('acceptance:accept');
+  const unacceptPlan = handlers.get('acceptance:unaccept');
+  assert.equal(typeof acceptPlan, 'function', 'Node smoke should exercise the plan acceptance IPC handler');
+  assert.equal(typeof unacceptPlan, 'function', 'Node smoke should exercise the plan unacceptance IPC handler');
+
+  const accepted = await acceptPlan(null, { projectId, targetType: 'plan', id: planId });
+  const acceptedPlan = accepted.plans.find((item) => item.id === planId);
+  const acceptedRequirement = accepted.requirements.find((item) => item.id === requirementId);
+  const acceptedFeedback = accepted.feedback.find((item) => item.id === feedbackId);
+  assert.ok(acceptedPlan?.accepted_at, 'Node IPC plan acceptance should return the accepted plan');
+  assert.ok(acceptedRequirement?.accepted_at, 'Node IPC plan acceptance should return its accepted requirement');
+  assert.ok(acceptedFeedback?.accepted_at, 'Node IPC plan acceptance should return its accepted feedback');
+
+  const unaccepted = await unacceptPlan(null, { projectId, targetType: 'plan', id: planId });
+  assert.equal(unaccepted.plans.find((item) => item.id === planId)?.accepted_at, null,
+    'Node IPC plan unacceptance should return the unaccepted plan');
+  assert.equal(unaccepted.requirements.find((item) => item.id === requirementId)?.accepted_at, null,
+    'Node IPC plan unacceptance should clear the linked requirement');
+  assert.equal(unaccepted.feedback.find((item) => item.id === feedbackId)?.accepted_at, null,
+    'Node IPC plan unacceptance should clear the linked feedback');
 }
 
 function assertSearchHit(searchState, source, field, valuePattern, label) {

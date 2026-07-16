@@ -1999,6 +1999,7 @@ class LoopService extends EventEmitter {
       meta ? JSON.stringify(meta) : null,
       nowIso(),
     ]);
+    if (options.suppressUpdate) return;
     if (options.lightweight) this.emitRuntimePatch(projectId);
     else this.emitUpdate(projectId);
   }

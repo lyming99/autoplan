@@ -154,8 +154,12 @@ func (transaction *writeTransaction) DeletePlanAggregate(
 		if reference.IntakeType != "requirement" && reference.IntakeType != "feedback" {
 			return domainplan.DeleteResult{}, repository.ErrInvalidStore
 		}
+		table := "requirements"
+		if reference.IntakeType == "feedback" {
+			table = "feedback"
+		}
 		updateResult, updateErr := transaction.tx.ExecContext(ctx,
-			"UPDATE "+reference.IntakeType+` SET linked_plan_id = (
+			"UPDATE "+table+` SET linked_plan_id = (
 			  SELECT plan_id FROM intake_plan_links
 			   WHERE project_id = ? AND intake_type = ? AND intake_id = ?
 			   ORDER BY phase_index ASC, plan_id ASC LIMIT 1

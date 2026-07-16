@@ -31,7 +31,7 @@ func TestP11ProviderCommandAndPromptContractsUseArgumentArrays(t *testing.T) {
 		LastOutputFile: "<last-file>", ReasoningEffort: "high",
 	}, nil)
 	if err != nil || codex.Executable != "codex" || codex.PromptMode != PromptStdin || !reflect.DeepEqual(codex.Arguments,
-		[]string{"exec", "-c", `model_reasoning_effort="high"`, "--color", "never", "-o", "<last-file>", "--sandbox", "danger-full-access", "--skip-git-repo-check", "-"}) {
+		[]string{"exec", "-c", `model_reasoning_effort="high"`, "--json", "--color", "never", "-o", "<last-file>", "--sandbox", "danger-full-access", "--skip-git-repo-check", "-"}) {
 		t.Fatalf("codex=%#v err=%v", codex, err)
 	}
 	claude, err := (claudeAdapter{}).Prepare(ctx, Request{
@@ -53,7 +53,7 @@ func TestP11ProviderCommandAndPromptContractsUseArgumentArrays(t *testing.T) {
 	ohmypi, err := (ohMyPiAdapter{}).Prepare(ctx, Request{
 		Provider: ProviderOhMyPi, Workspace: "<fixture-workspace>", WorkingDirectory: "<fixture-workspace>", Prompt: "fixture prompt",
 	}, nil)
-	if err != nil || ohmypi.Executable != "omp" || ohmypi.PromptMode != PromptStdin || !reflect.DeepEqual(ohmypi.Arguments, []string{"--print"}) {
+	if err != nil || ohmypi.Executable != "omp" || ohmypi.PromptMode != PromptStdin || !reflect.DeepEqual(ohmypi.Arguments, []string{"--mode", "json"}) {
 		t.Fatalf("oh-my-pi=%#v err=%v", ohmypi, err)
 	}
 }
@@ -65,7 +65,7 @@ func TestP11ProviderResumeAndPlanAgentContractsStayFake(t *testing.T) {
 		LastOutputFile: "<last-file>", ReasoningEffort: "high", Session: Session{Mode: SessionResume, ID: "00000000-aaaa-bbbb-cccc-000000000001"},
 	}, nil)
 	if err != nil || !reflect.DeepEqual(codex.Arguments,
-		[]string{"exec", "resume", "-c", `model_reasoning_effort="high"`, "-o", "<last-file>", "--skip-git-repo-check", "00000000-aaaa-bbbb-cccc-000000000001", "-"}) {
+		[]string{"exec", "resume", "-c", `model_reasoning_effort="high"`, "--json", "-o", "<last-file>", "--skip-git-repo-check", "00000000-aaaa-bbbb-cccc-000000000001", "-"}) {
 		t.Fatalf("codex resume=%#v err=%v", codex, err)
 	}
 	claude, err := (claudeAdapter{}).Prepare(ctx, Request{

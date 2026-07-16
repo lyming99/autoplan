@@ -15,11 +15,11 @@ import (
 	"github.com/lyming99/autoplan/backend/internal/repository"
 )
 
-// manualRuntimeDispatcher owns the explicit task action path. It transitions
-// draft or interrupted plans back to pending so the loop can claim the selected
-// task; autonomous loop cycles never receive this capability.
+// manualRuntimeDispatcher owns explicit task run and stop actions. Autonomous
+// loop cycles never receive either activation or task-stop authority.
 type manualRuntimeDispatcher struct {
 	activator repository.DraftPlanTaskActivator
+	stopper   repository.PlanTaskStopper
 
 	mu         sync.RWMutex
 	operations *applicationoperations.Service
@@ -30,7 +30,8 @@ func newManualRuntimeDispatcher(activator repository.DraftPlanTaskActivator) *ma
 	if activator == nil {
 		return nil
 	}
-	return &manualRuntimeDispatcher{activator: activator}
+	stopper, _ := activator.(repository.PlanTaskStopper)
+	return &manualRuntimeDispatcher{activator: activator, stopper: stopper}
 }
 
 func (dispatcher *manualRuntimeDispatcher) Bind(operations *applicationoperations.Service, loop *applicationloop.Service) {
@@ -56,10 +57,7 @@ func (dispatcher *manualRuntimeDispatcher) dependencies() (*applicationoperation
 }
 
 func (dispatcher *manualRuntimeDispatcher) Dispatch(ctx context.Context, command applicationloop.Command) (applicationloop.Result, error) {
-	if command.Kind == applicationloop.CommandTaskStop {
-		return dispatcher.stop(ctx, command)
-	}
-	if command.Kind != applicationloop.CommandTaskRun && command.Kind != applicationloop.CommandTaskRunBatches {
+	if command.Kind != applicationloop.CommandTaskRun && command.Kind != applicationloop.CommandTaskRunBatches && command.Kind != applicationloop.CommandTaskStop {
 		return applicationloop.Result{}, applicationloop.ErrUnsupportedCommand
 	}
 	operations, loopService, err := dispatcher.dependencies()
@@ -88,6 +86,9 @@ func (dispatcher *manualRuntimeDispatcher) Dispatch(ctx context.Context, command
 	})
 	if err != nil {
 		return applicationloop.Result{}, manualOperationError(err)
+	}
+	if command.Kind == applicationloop.CommandTaskStop {
+		return dispatcher.stop(ctx, operations, loopService, command, caller, claimed.Operation)
 	}
 	activationAt := claimed.Operation.UpdatedAt
 	activated, err := dispatcher.activator.ActivateDraftPlanTask(ctx, repository.DraftPlanTaskActivation{
@@ -124,47 +125,6 @@ func (dispatcher *manualRuntimeDispatcher) Dispatch(ctx context.Context, command
 	return manualOperationResult(completed.Operation)
 }
 
-func (dispatcher *manualRuntimeDispatcher) stop(ctx context.Context, command applicationloop.Command) (applicationloop.Result, error) {
-	if command.PlanID <= 0 || command.TaskID <= 0 {
-		return applicationloop.Result{}, applicationloop.ErrInvalidCommand
-	}
-	operations, loopService, err := dispatcher.dependencies()
-	if err != nil {
-		return applicationloop.Result{}, err
-	}
-	digest := manualCommandDigest(command, []int64{command.TaskID})
-	caller := applicationoperations.Caller{ID: command.CallerScope, ProjectID: command.ProjectID}
-	created, err := operations.CreateOrReuse(ctx, applicationoperations.CreateCommand{
-		Caller: caller, ProjectID: command.ProjectID, Type: string(command.Kind),
-		IdempotencyKey: command.IdempotencyKey, RequestDigest: digest, RequestID: command.RequestID,
-	})
-	if err != nil {
-		return applicationloop.Result{}, manualOperationError(err)
-	}
-	if !created.Changed {
-		return manualOperationResult(created.Operation)
-	}
-	claimed, err := operations.Claim(ctx, applicationoperations.ClaimCommand{
-		Caller: caller, ProjectID: command.ProjectID, OperationID: created.Operation.OperationID,
-		ExpectedVersion: created.Operation.Version, RequestDigest: digest, RequestID: command.RequestID,
-	})
-	if err != nil {
-		return applicationloop.Result{}, manualOperationError(err)
-	}
-	if err := loopService.CancelActive(ctx, command.ProjectID); err != nil {
-		dispatcher.fail(ctx, operations, caller, claimed.Operation, command.RequestID)
-		return applicationloop.Result{}, err
-	}
-	completed, err := operations.Succeed(ctx, applicationoperations.CompleteCommand{
-		Caller: caller, ProjectID: command.ProjectID, OperationID: claimed.Operation.OperationID,
-		ExpectedVersion: claimed.Operation.Version, RequestID: command.RequestID,
-	})
-	if err != nil {
-		return applicationloop.Result{}, manualOperationError(err)
-	}
-	return manualOperationResult(completed.Operation)
-}
-
 func (dispatcher *manualRuntimeDispatcher) fail(ctx context.Context, operations *applicationoperations.Service, caller applicationoperations.Caller, operation domainoperation.Operation, requestID string) {
 	_, _ = operations.Fail(ctx, applicationoperations.FailCommand{
 		Caller: caller, ProjectID: operation.ProjectID, OperationID: operation.OperationID,
@@ -174,7 +134,7 @@ func (dispatcher *manualRuntimeDispatcher) fail(ctx context.Context, operations 
 }
 
 func manualTaskIDs(command applicationloop.Command) []int64 {
-	if command.Kind == applicationloop.CommandTaskRun {
+	if command.Kind == applicationloop.CommandTaskRun || command.Kind == applicationloop.CommandTaskStop {
 		if command.TaskID <= 0 {
 			return nil
 		}
@@ -185,6 +145,55 @@ func manualTaskIDs(command applicationloop.Command) []int64 {
 		result = append(result, batch.TaskIDs...)
 	}
 	return result
+}
+
+func (dispatcher *manualRuntimeDispatcher) stop(
+	ctx context.Context,
+	operations *applicationoperations.Service,
+	loopService *applicationloop.Service,
+	command applicationloop.Command,
+	caller applicationoperations.Caller,
+	operation domainoperation.Operation,
+) (applicationloop.Result, error) {
+	if dispatcher.stopper == nil {
+		dispatcher.fail(ctx, operations, caller, operation, command.RequestID)
+		return applicationloop.Result{}, applicationloop.ErrUnavailable
+	}
+	stopped, err := dispatcher.stopper.RequestPlanTaskStop(ctx, repository.PlanTaskStopInput{
+		ProjectID: command.ProjectID, PlanID: command.PlanID, TaskID: command.TaskID, UpdatedAt: operation.UpdatedAt,
+	})
+	if err != nil {
+		dispatcher.fail(ctx, operations, caller, operation, command.RequestID)
+		return applicationloop.Result{}, manualRepositoryError(err)
+	}
+	switch stopped.Outcome {
+	case repository.PlanTaskStopRequested, repository.PlanTaskStopAlreadyRequested:
+		if stopped.OperationID != "" {
+			if _, err = loopService.CancelTaskExecution(ctx, command.ProjectID, stopped.OperationID); err != nil {
+				dispatcher.fail(ctx, operations, caller, operation, command.RequestID)
+				return applicationloop.Result{}, err
+			}
+		}
+	case repository.PlanTaskStopTerminal:
+		// Repeated stop after terminal convergence is an idempotent no-op.
+	case repository.PlanTaskStopNotFound, repository.PlanTaskStopOwnershipMismatch:
+		dispatcher.fail(ctx, operations, caller, operation, command.RequestID)
+		return applicationloop.Result{}, applicationloop.ErrInvalidCommand
+	case repository.PlanTaskStopNotRunning:
+		dispatcher.fail(ctx, operations, caller, operation, command.RequestID)
+		return applicationloop.Result{}, applicationloop.ErrStateConflict
+	default:
+		dispatcher.fail(ctx, operations, caller, operation, command.RequestID)
+		return applicationloop.Result{}, applicationloop.ErrStateConflict
+	}
+	completed, err := operations.Succeed(ctx, applicationoperations.CompleteCommand{
+		Caller: caller, ProjectID: command.ProjectID, OperationID: operation.OperationID,
+		ExpectedVersion: operation.Version, RequestID: command.RequestID,
+	})
+	if err != nil {
+		return applicationloop.Result{}, manualOperationError(err)
+	}
+	return manualOperationResult(completed.Operation)
 }
 
 func manualCommandDigest(command applicationloop.Command, taskIDs []int64) string {

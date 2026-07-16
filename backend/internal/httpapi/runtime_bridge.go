@@ -74,6 +74,12 @@ func writeRuntimeBridgeError(writer http.ResponseWriter, request *http.Request, 
 		code = CodeRuntimeCommand
 	case errors.Is(err, applicationloop.ErrStateConflict):
 		code = CodePreconditionFailed
+	case errors.Is(err, applicationloop.ErrNotFound):
+		code = CodeNotFound
+	case errors.Is(err, applicationloop.ErrRepositoryUnavailable):
+		code = CodeRepositoryUnavailable
+	case errors.Is(err, applicationloop.ErrCancellationFailed):
+		code = CodeOperationCancelled
 	case errors.Is(err, applicationloop.ErrCancelled):
 		code = CodeOperationCancelled
 	case errors.Is(err, applicationloop.ErrUnavailable):
