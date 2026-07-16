@@ -1,4 +1,4 @@
-import { FormEvent, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { FormEvent, useMemo, useRef, useState, type Dispatch, type SetStateAction } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Icon } from '../components/icons';
 import type { CreateProjectInput, Project } from '../types';
@@ -28,6 +28,41 @@ import { UpdateNotice } from '../components/UpdateNotice';
 
 type Draft = CreateProjectInput & { id?: number };
 
+type ProjectSortKey =
+  | 'updated_at_desc'
+  | 'updated_at_asc'
+  | 'created_at_desc'
+  | 'created_at_asc'
+  | 'name_asc'
+  | 'name_desc'
+  | 'running_desc'
+  | 'running_asc';
+
+const PROJECTS_SORT_STORAGE_KEY = 'autoplan:projects-sort';
+
+const SORT_OPTIONS: { label: string; value: ProjectSortKey }[] = [
+  { label: '最后运行时间（最近优先）', value: 'updated_at_desc' },
+  { label: '最后运行时间（最早优先）', value: 'updated_at_asc' },
+  { label: '创建时间（最新优先）', value: 'created_at_desc' },
+  { label: '创建时间（最早优先）', value: 'created_at_asc' },
+  { label: '名称（A-Z）', value: 'name_asc' },
+  { label: '名称（Z-A）', value: 'name_desc' },
+  { label: '运行状态（运行中优先）', value: 'running_desc' },
+  { label: '运行状态（已停止优先）', value: 'running_asc' },
+];
+
+function readStoredSort(): ProjectSortKey {
+  try {
+    const stored = localStorage.getItem(PROJECTS_SORT_STORAGE_KEY);
+    if (stored && SORT_OPTIONS.some((option) => option.value === stored)) {
+      return stored as ProjectSortKey;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return 'running_desc';
+}
+
 const emptyDraft: Draft = {
   name: '',
   workspacePath: '',
@@ -54,6 +89,8 @@ export function ProjectsPage() {
   const { snapshot, setSnapshot, error, setError } = useSnapshot(null);
   const projects = snapshot?.projects || [];
   const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<ProjectSortKey>(readStoredSort());
+  const sortDetailsRef = useRef<HTMLDetailsElement>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [draft, setDraft] = useState<Draft>(emptyDraft);
   const [defaultSaved, setDefaultSaved] = useState(false);
@@ -61,13 +98,16 @@ export function ProjectsPage() {
 
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
-    if (!keyword) return projects;
-    return projects.filter((project) =>
-      [project.name, project.workspace_path, project.description].some((value) =>
-        String(value || '').toLowerCase().includes(keyword),
-      ),
-    );
-  }, [projects, query]);
+    const matched = keyword
+      ? projects.filter((project) =>
+          [project.name, project.workspace_path, project.description].some((value) =>
+            String(value || '').toLowerCase().includes(keyword),
+          ),
+        )
+      : projects.slice();
+    matched.sort((left, right) => sortProjects(left, right, sort));
+    return matched;
+  }, [projects, query, sort]);
 
   const showError = (e: unknown) => {
     const msg = e instanceof Error ? e.message : String(e);
@@ -127,6 +167,16 @@ export function ProjectsPage() {
       setError(null);
     } catch (e) {
       showError(e);
+    }
+  };
+
+  const handleSortChange = (value: ProjectSortKey) => {
+    setSort(value);
+    sortDetailsRef.current?.removeAttribute('open');
+    try {
+      localStorage.setItem(PROJECTS_SORT_STORAGE_KEY, value);
+    } catch {
+      // ignore storage errors
     }
   };
 
@@ -204,6 +254,23 @@ export function ProjectsPage() {
             onChange={(event) => setQuery(event.target.value)}
             placeholder="搜索项目名称、路径或备注…"
           />
+          <details className="sort-details" ref={sortDetailsRef}>
+            <summary className="sort-summary" aria-label="项目排序">
+              <Icon name="sliders" size={18} aria-hidden="true" />
+            </summary>
+            <div className="ctx-menu sort-menu">
+              {SORT_OPTIONS.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={sort === option.value ? 'active' : undefined}
+                  onClick={() => handleSortChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </details>
         </div>
 
         <div className="project-grid">
@@ -662,6 +729,51 @@ function nextModelForProvider(currentModel: string, currentProvider: string, nex
   const current = String(currentModel || '').trim();
   if (!current || current === planBackendDefaultModel(currentProvider)) return planBackendDefaultModel(nextProvider);
   return currentModel;
+}
+
+function sortProjects(left: Project, right: Project, sort: ProjectSortKey): number {
+  switch (sort) {
+    case 'name_asc':
+      return compareStrings(left.name, right.name) || compareNumbers(left.id, right.id);
+    case 'name_desc':
+      return compareStrings(right.name, left.name) || compareNumbers(left.id, right.id);
+    case 'created_at_desc':
+      return compareTimestamps(right.created_at, left.created_at) || compareNumbers(right.id, left.id);
+    case 'created_at_asc':
+      return compareTimestamps(left.created_at, right.created_at) || compareNumbers(left.id, right.id);
+    case 'updated_at_desc':
+      return compareTimestamps(right.updated_at, left.updated_at) || compareNumbers(right.id, left.id);
+    case 'updated_at_asc':
+      return compareTimestamps(left.updated_at, right.updated_at) || compareNumbers(left.id, right.id);
+    case 'running_desc': {
+      const leftRunning = left.running ? 1 : 0;
+      const rightRunning = right.running ? 1 : 0;
+      return rightRunning - leftRunning || compareTimestamps(right.updated_at, left.updated_at);
+    }
+    case 'running_asc': {
+      const leftRunning = left.running ? 1 : 0;
+      const rightRunning = right.running ? 1 : 0;
+      return leftRunning - rightRunning || compareTimestamps(right.updated_at, left.updated_at);
+    }
+    default:
+      return 0;
+  }
+}
+
+function compareStrings(left: string, right: string): number {
+  return String(left || '').localeCompare(String(right || ''), 'zh-CN', { sensitivity: 'base' });
+}
+
+function compareNumbers(left: number, right: number): number {
+  return (left || 0) - (right || 0);
+}
+
+function compareTimestamps(left: string, right: string): number {
+  const leftTime = Date.parse(String(left || ''));
+  const rightTime = Date.parse(String(right || ''));
+  const leftValue = Number.isFinite(leftTime) ? leftTime : 0;
+  const rightValue = Number.isFinite(rightTime) ? rightTime : 0;
+  return leftValue - rightValue;
 }
 
 function projectStatusText(project: Project) {

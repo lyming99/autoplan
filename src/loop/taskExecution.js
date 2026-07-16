@@ -36,7 +36,19 @@ const { BUILTIN_LLM_EXECUTION_UNSUPPORTED_ERROR } = planAgentCli;
 
 /** 退避重试序列：首次等待 5s，逐次递增，上限 30s */
 const TASK_RETRY_BACKOFF_SECONDS = Object.freeze([5, 10, 20, 30]);
-const TASK_AGENT_CLI_TIMEOUT_MS = 30 * 60 * 1000;
+/** 每次重试的超时补偿：首次 30 分钟，后续逐次递增，最高 2 小时 */
+const TASK_TIMEOUT_MS_BY_ATTEMPT = Object.freeze([
+  30 * 60 * 1000,
+  45 * 60 * 1000,
+  60 * 60 * 1000,
+  90 * 60 * 1000,
+]);
+const TASK_AGENT_CLI_TIMEOUT_MS = TASK_TIMEOUT_MS_BY_ATTEMPT[0];
+
+function taskTimeoutMs(attempt) {
+  const index = Math.max(0, Math.min(attempt, TASK_TIMEOUT_MS_BY_ATTEMPT.length - 1));
+  return TASK_TIMEOUT_MS_BY_ATTEMPT[index];
+}
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -172,21 +184,23 @@ async function processPlan(service, helpers, workspace, plan) {
       let forceNewSession = false;
       do {
         if (!taskTargetExists(service, plan, firstPendingTask)) return;
-        result = await service.executeTask(workspace, plan, firstPendingTask, { forceNewSession });
+        result = await service.executeTask(workspace, plan, firstPendingTask, { forceNewSession, attempt });
         if (!taskTargetExists(service, plan, firstPendingTask) || result?.cancelled) return;
         if (result.exitCode === 0) break;
         if (result?.timedOut) forceNewSession = true;
         attempt++;
         if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
           const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
+          const nextTimeoutMinutes = Math.round(taskTimeoutMs(attempt) / 60000);
           service.addEvent(plan.project_id, 'task.retry',
-            `任务 ${firstPendingTask.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s`,
+            `任务 ${firstPendingTask.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s，超时阈值 ${nextTimeoutMinutes} 分钟`,
             {
               planId: plan.id,
               taskId: firstPendingTask.id,
               taskKey: firstPendingTask.task_key,
               attempt,
               delaySeconds,
+              timeoutMs: taskTimeoutMs(attempt),
               ...timeoutRetrySessionContextFields({ forceNewSession }),
             });
           await sleep(delaySeconds * 1000);
@@ -295,7 +309,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
               result = cancelledTaskResult();
               break;
             }
-            result = await service.executeTask(workspace, plan, task, { parallel: false, forceNewSession });
+            result = await service.executeTask(workspace, plan, task, { parallel: false, forceNewSession, attempt });
             if (!taskTargetExists(service, plan, task) || result?.cancelled) {
               result = cancelledTaskResult(result);
               break;
@@ -305,14 +319,16 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
             attempt++;
             if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
               const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
+              const nextTimeoutMinutes = Math.round(taskTimeoutMs(attempt) / 60000);
               service.addEvent(plan.project_id, 'task.retry',
-                `任务 ${task.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s`,
+                `任务 ${task.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s，超时阈值 ${nextTimeoutMinutes} 分钟`,
                 {
                   planId: plan.id,
                   taskId: task.id,
                   taskKey: task.task_key,
                   attempt,
                   delaySeconds,
+                  timeoutMs: taskTimeoutMs(attempt),
                   ...timeoutRetrySessionContextFields({ forceNewSession }),
                 });
               await sleep(delaySeconds * 1000);
@@ -372,7 +388,7 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
               result = cancelledTaskResult();
               break;
             }
-            result = await service.executeTask(workspace, plan, task, { parallel: true, forceNewSession });
+            result = await service.executeTask(workspace, plan, task, { parallel: true, forceNewSession, attempt });
             if (!taskTargetExists(service, plan, task) || result?.cancelled) {
               result = cancelledTaskResult(result);
               break;
@@ -382,14 +398,16 @@ async function executeTaskBatch(service, helpers, workspace, plan, tasks, option
             attempt++;
             if (attempt <= TASK_RETRY_BACKOFF_SECONDS.length && !isEnvironmentBlocking(result)) {
               const delaySeconds = TASK_RETRY_BACKOFF_SECONDS[attempt - 1];
+              const nextTimeoutMinutes = Math.round(taskTimeoutMs(attempt) / 60000);
               service.addEvent(plan.project_id, 'task.retry',
-                `任务 ${task.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s`,
+                `任务 ${task.task_key} 第 ${attempt} 次重试，等待 ${delaySeconds}s，超时阈值 ${nextTimeoutMinutes} 分钟`,
                 {
                   planId: plan.id,
                   taskId: task.id,
                   taskKey: task.task_key,
                   attempt,
                   delaySeconds,
+                  timeoutMs: taskTimeoutMs(attempt),
                   ...timeoutRetrySessionContextFields({ forceNewSession }),
                 },
               );
@@ -566,7 +584,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
         planId: plan.id,
         taskId: task.id,
         parallel: Boolean(options.parallel),
-        timeoutMs: TASK_AGENT_CLI_TIMEOUT_MS,
+        timeoutMs: taskTimeoutMs(options.attempt || 0),
         ...execution.meta,
         ...taskAgentCliContext,
         ...startedSessionContext,
@@ -613,7 +631,7 @@ async function executeTask(service, helpers, workspace, plan, task, options = {}
       const timeoutLabel = timeoutMeta.timeoutMinutes ? `${timeoutMeta.timeoutMinutes} 分钟` : '任务级超时阈值';
       if (typeof service.addEvent === 'function') {
         service.addEvent(plan.project_id, 'task.timeout',
-          `任务 ${task.task_key} 执行超过 ${timeoutLabel}，已终止；后续重试将开启新上下文`,
+          `任务 ${task.task_key} 执行超过 ${timeoutLabel}，已终止；后续重试将开启新上下文并延长超时阈值`,
           {
             ...execution.meta,
             ...agentCliContextFields(result, { defaultProvider: true }),

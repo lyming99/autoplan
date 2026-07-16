@@ -27,6 +27,7 @@ function planExecutionConfig(service, plan) {
     }
   }
   const currentPlan = currentPlanExecutionSource(service, plan);
+  const projectDefaults = (typeof service.status === 'function' ? service.status(currentPlan.project_id) : null) || {};
   const eventSnapshot = planAgentCliEventSnapshot(service, currentPlan.project_id, currentPlan.id);
   const sourceSnapshot = planSourceAgentCliSnapshot(service, currentPlan.project_id, currentPlan.id);
   const snapshotDefaults = eventSnapshot || sourceSnapshot || projectDefaults;

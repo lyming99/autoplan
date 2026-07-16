@@ -244,6 +244,20 @@ func (service *Service) RemoveProject(ctx context.Context, projectID int64) erro
 	return service.runtime.RemoveProject(ctx, projectID)
 }
 
+// CancelActive requests cancellation of the currently running loop cycle for
+// projectID without changing the loop's scheduled state. It is a no-op when
+// no cycle is active, so callers must still create and complete an operation.
+func (service *Service) CancelActive(ctx context.Context, projectID int64) error {
+	if service == nil || service.runtime == nil {
+		return ErrUnavailable
+	}
+	if projectID <= 0 {
+		return ErrInvalidCommand
+	}
+	service.runtime.cancelActive(ctx, projectID)
+	return nil
+}
+
 // Bridge is a closed dispatcher registry. Registration happens once during
 // bootstrap; there is no runtime feature flag or dynamic handler lookup.
 type Bridge struct {
