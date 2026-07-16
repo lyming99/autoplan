@@ -15,9 +15,9 @@ import (
 	"github.com/lyming99/autoplan/backend/internal/repository"
 )
 
-// manualRuntimeDispatcher owns the explicit task action path. Its only state
-// transition before execution is draft -> pending; autonomous loop cycles
-// never receive this capability.
+// manualRuntimeDispatcher owns the explicit task action path. It transitions
+// draft or interrupted plans back to pending so the loop can claim the selected
+// task; autonomous loop cycles never receive this capability.
 type manualRuntimeDispatcher struct {
 	activator repository.DraftPlanTaskActivator
 
@@ -56,6 +56,9 @@ func (dispatcher *manualRuntimeDispatcher) dependencies() (*applicationoperation
 }
 
 func (dispatcher *manualRuntimeDispatcher) Dispatch(ctx context.Context, command applicationloop.Command) (applicationloop.Result, error) {
+	if command.Kind == applicationloop.CommandTaskStop {
+		return dispatcher.stop(ctx, command)
+	}
 	if command.Kind != applicationloop.CommandTaskRun && command.Kind != applicationloop.CommandTaskRunBatches {
 		return applicationloop.Result{}, applicationloop.ErrUnsupportedCommand
 	}
@@ -108,6 +111,47 @@ func (dispatcher *manualRuntimeDispatcher) Dispatch(ctx context.Context, command
 	if _, err = loopService.RunOnce(ctx, applicationloop.Command{
 		ProjectID: command.ProjectID, CallerScope: "task-runtime", RequestID: requestID, IdempotencyKey: key,
 	}); err != nil {
+		dispatcher.fail(ctx, operations, caller, claimed.Operation, command.RequestID)
+		return applicationloop.Result{}, err
+	}
+	completed, err := operations.Succeed(ctx, applicationoperations.CompleteCommand{
+		Caller: caller, ProjectID: command.ProjectID, OperationID: claimed.Operation.OperationID,
+		ExpectedVersion: claimed.Operation.Version, RequestID: command.RequestID,
+	})
+	if err != nil {
+		return applicationloop.Result{}, manualOperationError(err)
+	}
+	return manualOperationResult(completed.Operation)
+}
+
+func (dispatcher *manualRuntimeDispatcher) stop(ctx context.Context, command applicationloop.Command) (applicationloop.Result, error) {
+	if command.PlanID <= 0 || command.TaskID <= 0 {
+		return applicationloop.Result{}, applicationloop.ErrInvalidCommand
+	}
+	operations, loopService, err := dispatcher.dependencies()
+	if err != nil {
+		return applicationloop.Result{}, err
+	}
+	digest := manualCommandDigest(command, []int64{command.TaskID})
+	caller := applicationoperations.Caller{ID: command.CallerScope, ProjectID: command.ProjectID}
+	created, err := operations.CreateOrReuse(ctx, applicationoperations.CreateCommand{
+		Caller: caller, ProjectID: command.ProjectID, Type: string(command.Kind),
+		IdempotencyKey: command.IdempotencyKey, RequestDigest: digest, RequestID: command.RequestID,
+	})
+	if err != nil {
+		return applicationloop.Result{}, manualOperationError(err)
+	}
+	if !created.Changed {
+		return manualOperationResult(created.Operation)
+	}
+	claimed, err := operations.Claim(ctx, applicationoperations.ClaimCommand{
+		Caller: caller, ProjectID: command.ProjectID, OperationID: created.Operation.OperationID,
+		ExpectedVersion: created.Operation.Version, RequestDigest: digest, RequestID: command.RequestID,
+	})
+	if err != nil {
+		return applicationloop.Result{}, manualOperationError(err)
+	}
+	if err := loopService.CancelActive(ctx, command.ProjectID); err != nil {
 		dispatcher.fail(ctx, operations, caller, claimed.Operation, command.RequestID)
 		return applicationloop.Result{}, err
 	}

@@ -602,7 +602,7 @@ function installSidecarRequestAuthentication(webContents) {
   const request = webContents?.session?.webRequest;
   if (!request || typeof request.onBeforeSendHeaders !== 'function') return;
   request.onBeforeSendHeaders({ urls: ['http://127.0.0.1/*', 'ws://127.0.0.1/*'] }, (details, callback) => {
-    const client = daemonSupervisor?.clientOptions?.();
+    const client = currentDaemonClient();
     const rejection = sidecarRequestRejection(details, webContents, client, { requireSession: true });
     if (rejection) {
       callback({ cancel: false, requestHeaders: details.requestHeaders });
@@ -618,7 +618,7 @@ function installSidecarRequestAuthentication(webContents) {
     callback({ cancel: false, requestHeaders });
   });
   request.onHeadersReceived({ urls: ['http://127.0.0.1/*'] }, (details, callback) => {
-    const client = daemonSupervisor?.clientOptions?.();
+    const client = currentDaemonClient();
     const rejection = sidecarRequestRejection(details, webContents, client, { requireSession: false });
     if (rejection) {
       callback({ cancel: false, responseHeaders: details.responseHeaders });
@@ -663,6 +663,11 @@ function installSidecarRequestAuthentication(webContents) {
       });
     });
   }
+}
+
+function currentDaemonClient() {
+  try { return daemonSupervisor?.clientOptions?.() || null; }
+  catch { return null; }
 }
 
 function sidecarRequestRejection(details, webContents, client, { requireSession }) {

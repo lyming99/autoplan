@@ -34,8 +34,9 @@ class DesktopBridgeStub {}
 const provider = compile('src/renderer/lib/api/provider.tsx', {
   react: React,
   'react/jsx-runtime': require('react/jsx-runtime'),
+  './client': {},
   './transport': { getAutoplanClient: () => ({ transport: 'default-ipc' }) },
-  '../desktop/ipcBridge': { IpcDesktopBridge: DesktopBridgeStub },
+  '../desktop/ipcBridge': { IpcDesktopBridge: DesktopBridgeStub, getDefaultDesktopBridge: () => new DesktopBridgeStub() },
 });
 
 let snapshotView = { snapshot: null, error: null };

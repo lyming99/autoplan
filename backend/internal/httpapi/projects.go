@@ -11,6 +11,7 @@ import (
 
 	"github.com/lyming99/autoplan/backend/internal/application"
 	applicationprojects "github.com/lyming99/autoplan/backend/internal/application/projects"
+	domainconfig "github.com/lyming99/autoplan/backend/internal/domain/config"
 	"github.com/lyming99/autoplan/backend/internal/domain/contracts"
 	domainproject "github.com/lyming99/autoplan/backend/internal/domain/project"
 	"github.com/lyming99/autoplan/backend/internal/repository"
@@ -70,9 +71,72 @@ type projectPagination struct {
 }
 
 type createProjectRequest struct {
-	Name          string `json:"name"`
-	WorkspacePath string `json:"workspace_path"`
-	Description   string `json:"description"`
+	Name          string  `json:"name"`
+	WorkspacePath string  `json:"workspace_path"`
+	Description   string  `json:"description"`
+
+	AgentCLIProvider     *string `json:"agent_cli_provider,omitempty"`
+	AgentCLICommand      *string `json:"agent_cli_command,omitempty"`
+	CodexReasoningEffort *string `json:"codex_reasoning_effort,omitempty"`
+
+	PlanGenerationStrategy             *string `json:"plan_generation_strategy,omitempty"`
+	PlanGenerationProvider             *string `json:"plan_generation_provider,omitempty"`
+	PlanGenerationCommand              *string `json:"plan_generation_command,omitempty"`
+	PlanGenerationModel                *string `json:"plan_generation_model,omitempty"`
+	PlanGenerationCodexReasoningEffort *string `json:"plan_generation_codex_reasoning_effort,omitempty"`
+
+	PlanExecutionStrategy             *string `json:"plan_execution_strategy,omitempty"`
+	PlanExecutionProvider             *string `json:"plan_execution_provider,omitempty"`
+	PlanExecutionCommand              *string `json:"plan_execution_command,omitempty"`
+	PlanExecutionModel                *string `json:"plan_execution_model,omitempty"`
+	PlanExecutionCodexReasoningEffort *string `json:"plan_execution_codex_reasoning_effort,omitempty"`
+}
+
+func (input createProjectRequest) loopConfig() *domainconfig.LoopConfig {
+	config := domainconfig.LoopConfig{}
+	if input.AgentCLIProvider != nil {
+		config.AgentCLIProvider = *input.AgentCLIProvider
+	}
+	if input.AgentCLICommand != nil {
+		config.AgentCLICommand = *input.AgentCLICommand
+	}
+	if input.CodexReasoningEffort != nil {
+		config.CodexReasoningEffort = input.CodexReasoningEffort
+	}
+	if input.PlanGenerationStrategy != nil {
+		config.PlanGenerationStrategy = *input.PlanGenerationStrategy
+	}
+	if input.PlanGenerationProvider != nil {
+		config.PlanGenerationProvider = input.PlanGenerationProvider
+	}
+	if input.PlanGenerationCommand != nil {
+		config.PlanGenerationCommand = *input.PlanGenerationCommand
+	}
+	if input.PlanGenerationModel != nil {
+		config.PlanGenerationModel = *input.PlanGenerationModel
+	}
+	if input.PlanGenerationCodexReasoningEffort != nil {
+		config.PlanGenerationCodexReasoningEffort = input.PlanGenerationCodexReasoningEffort
+	}
+	if input.PlanExecutionStrategy != nil {
+		config.PlanExecutionStrategy = *input.PlanExecutionStrategy
+	}
+	if input.PlanExecutionProvider != nil {
+		config.PlanExecutionProvider = input.PlanExecutionProvider
+	}
+	if input.PlanExecutionCommand != nil {
+		config.PlanExecutionCommand = *input.PlanExecutionCommand
+	}
+	if input.PlanExecutionModel != nil {
+		config.PlanExecutionModel = *input.PlanExecutionModel
+	}
+	if input.PlanExecutionCodexReasoningEffort != nil {
+		config.PlanExecutionCodexReasoningEffort = input.PlanExecutionCodexReasoningEffort
+	}
+	if config == (domainconfig.LoopConfig{}) {
+		return nil
+	}
+	return &config
 }
 
 type updateProjectRequest struct {
@@ -172,6 +236,7 @@ func createProjectEndpoint(service ProjectService, bodyLimit int64) Endpoint {
 		}
 		snapshot, err := service.Create(request.Context(), applicationprojects.CreateCommand{
 			Project: project,
+			Config:  input.loopConfig(),
 			Metadata: applicationprojects.MutationMetadata{
 				CallerScope: metadata.CallerScope, IdempotencyKey: metadata.IdempotencyKey, RequestID: metadata.RequestID,
 			},

@@ -1,3 +1,5 @@
+'use strict';
+
 const { describe, it, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -45,6 +47,8 @@ function makeService(overrides = {}) {
     _calls: calls,
     activateDraftPlan: (plan) => plan,
     syncPlanTasks: () => {},
+    planExists: () => true,
+    taskExists: () => true,
     db: {
       all: () => [],
       get: () => null,

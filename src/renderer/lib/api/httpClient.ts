@@ -2807,11 +2807,29 @@ function projectCreateBody(input: CreateProjectInput): Record<string, unknown> {
     name: input.name,
     workspace_path: input.workspacePath,
     description: input.description,
+    agent_cli_provider: input.agentCliProvider,
+    agent_cli_command: input.agentCliCommand,
+    codex_reasoning_effort: input.codexReasoningEffort,
+    plan_generation_strategy: input.planGenerationStrategy,
+    plan_generation_provider: input.planGenerationProvider,
+    plan_generation_command: input.planGenerationCommand,
+    plan_generation_model: input.planGenerationModel,
+    plan_generation_codex_reasoning_effort: input.planGenerationCodexReasoningEffort,
+    plan_execution_strategy: input.planExecutionStrategy,
+    plan_execution_provider: input.planExecutionProvider,
+    plan_execution_command: input.planExecutionCommand,
+    plan_execution_model: input.planExecutionModel,
+    plan_execution_codex_reasoning_effort: input.planExecutionCodexReasoningEffort,
   });
 }
 
 function projectUpdateBody(input: UpdateProjectInput): Record<string, unknown> {
-  return projectCreateBody(input);
+  if (!input || typeof input !== 'object') throw new HttpClientError('invalid_request');
+  return compactObject({
+    name: input.name,
+    workspace_path: input.workspacePath,
+    description: input.description,
+  });
 }
 
 function intakeCollection(type: IntakeType): 'requirements' | 'feedback' {

@@ -570,6 +570,7 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 		operationHandlers = append(operationHandlers,
 			manualRecoveryHandler{operationType: string(applicationloop.CommandTaskRun)},
 			manualRecoveryHandler{operationType: string(applicationloop.CommandTaskRunBatches)},
+			manualRecoveryHandler{operationType: string(applicationloop.CommandTaskStop)},
 		)
 	}
 	operationService := applicationoperations.NewService(applicationoperations.Dependencies{
