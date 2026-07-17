@@ -52,11 +52,7 @@ func NewServer(options ServerOptions) (*Server, error) {
 	if options.Registry == nil {
 		return nil, ErrInvalidRegistry
 	}
-	authToken := options.AuthToken
-	if len(authToken) == 0 {
-		authToken = options.SessionToken
-	}
-	auth, err := newAuthenticator(options.SessionToken, authToken, configuration.AllowedOrigins)
+	auth, err := newAuthenticator(options.SessionToken, options.AuthToken, configuration.AllowedOrigins)
 	if err != nil {
 		return nil, err
 	}
@@ -167,10 +163,13 @@ func (server *Server) Status() Status {
 	status := Status{
 		Enabled: server.config.Enabled, Running: running, Transport: string(server.config.Transport),
 		HasAuthToken: hasToken, AuthTokenMasked: mask,
-		AuthHeader: "Authorization: Bearer <token>", LocalOnly: true,
-		Tools: toolNames(server.registry), ToolDocs: server.registry.List(),
+		LocalOnly: true,
+		Tools:     toolNames(server.registry), ToolDocs: server.registry.List(),
 		Note:      "Local MCP transport; application authorization remains authoritative.",
 		StartedAt: startedAt,
+	}
+	if hasToken {
+		status.AuthHeader = "Authorization: Bearer <token>"
 	}
 	if !server.config.Enabled {
 		status.State = "disabled"
@@ -181,7 +180,10 @@ func (server *Server) Status() Status {
 	if server.config.Transport == TransportHTTP {
 		url := "http://" + server.config.Host + ":" + strconv.Itoa(server.config.Port) + server.config.Path
 		status.URL = &url
-		status.ConnectionExample = "POST " + url + " with Authorization: Bearer <token>"
+		status.ConnectionExample = "POST " + url
+		if hasToken {
+			status.ConnectionExample += " with Authorization: Bearer <token>"
+		}
 	} else {
 		status.ConnectionExample = "autoplan-server mcp-stdio"
 	}

@@ -19,7 +19,7 @@ type Authenticator struct {
 }
 
 func newAuthenticator(sessionToken, authToken []byte, allowedOrigins []string) (*Authenticator, error) {
-	if !validCredential(sessionToken) || !validCredential(authToken) {
+	if !validCredential(sessionToken) || len(authToken) > 0 && !validCredential(authToken) {
 		return nil, ErrInvalidConfiguration
 	}
 	result := &Authenticator{
@@ -67,6 +67,21 @@ func (auth *Authenticator) authorizeHTTP(request *http.Request, expectedHost str
 		request.URL.User != nil || !matchesAuthority(request.Host, expectedHost, expectedPort) ||
 		hasForwardedHeaders(request.Header) || hasURLCredentials(request.URL) || hasSensitiveHeaders(request.Header) {
 		return false
+	}
+	if !auth.HasToken() {
+		originValues := request.Header.Values("Origin")
+		if len(originValues) == 0 {
+			return true
+		}
+		if len(originValues) != 1 {
+			return false
+		}
+		origin, valid := canonicalOrigin(originValues[0])
+		if !valid {
+			return false
+		}
+		_, allowed := auth.origins[origin]
+		return allowed
 	}
 	originValues := request.Header.Values("Origin")
 	if len(originValues) != 1 {
