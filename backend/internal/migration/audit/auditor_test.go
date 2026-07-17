@@ -326,6 +326,38 @@ func TestPersistedProjectWorkspacesCanBeStartupAuthorizationRoots(t *testing.T) 
 	}
 }
 
+func TestStartupAuditToleratesDeletedPersistedProjectWorkspace(t *testing.T) {
+	dataRoot := t.TempDir()
+	deletedWorkspace := filepath.Join(t.TempDir(), "deleted-workspace")
+	database := newFakeDatabase()
+	database.tableRows = 1
+	database.projectPaths = [][]any{{"1", deletedWorkspace}}
+	auditor := testAuditor(t, database, []string{dataRoot})
+	auditor.options.ProjectWorkspacesAreRoots = true
+
+	report, err := auditor.Audit(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK || len(report.Findings) != 0 {
+		encoded, _ := report.JSON()
+		t.Fatalf("deleted project workspace blocked startup audit: %s", encoded)
+	}
+	found := false
+	for _, metric := range report.Paths {
+		if metric.Table == "projects" && metric.Column == "workspace_path" && metric.Classification == "workspace_missing" {
+			found = true
+			if metric.Blocking || metric.Count != 1 {
+				t.Fatalf("workspace_missing metric should be non-blocking count=1: %#v", metric)
+			}
+		}
+	}
+	if !found {
+		encoded, _ := report.JSON()
+		t.Fatalf("missing workspace metric was not reported: %s", encoded)
+	}
+}
+
 func TestPathClassificationDistinguishesPortableDriveAndUNCForms(t *testing.T) {
 	tests := []struct {
 		name     string

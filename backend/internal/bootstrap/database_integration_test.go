@@ -80,6 +80,30 @@ func TestStartDatabaseUpgradesVersionThreeToModelUsageV4(t *testing.T) {
 	}
 }
 
+func TestStartDatabaseToleratesDeletedStoredWorkspace(t *testing.T) {
+	ctx := context.Background()
+	root := canonicalTemporaryDirectory(t)
+	deletedWorkspace := filepath.Join(canonicalTemporaryDirectory(t), "deleted-workspace")
+	target := filepath.Join(root, "autoplan.sqlite")
+	seedVersionThreeModelUsageFixture(t, target, deletedWorkspace)
+
+	readiness, err := NewDatabaseReadiness()
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime, err := StartDatabase(ctx, DatabaseStartupOptions{
+		Target: target, DriverName: "sqlite", AllowCreate: true, LockTimeout: time.Second,
+		AuthorizedRoots: []string{root}, AuthorizeStoredProjectWorkspaces: true, Readiness: readiness,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer runtime.Close(ctx)
+	if !readiness.Ready() {
+		t.Fatalf("database readiness did not open for deleted workspace: %#v", readiness.Snapshot())
+	}
+}
+
 func TestStartDatabaseRepairsV2OperationsAndRestartsWithStoredWorkspace(t *testing.T) {
 	ctx := context.Background()
 	root := canonicalTemporaryDirectory(t)
