@@ -46,6 +46,15 @@ func TestHTTPTransportRequiresExactSessionOriginAndToken(t *testing.T) {
 	}
 }
 
+func TestHTTPStatusOmitsAuthorizationHeaderWhenAuthTokenDisabled(t *testing.T) {
+	server := newTransportTestServerWithoutAuthToken(t, TransportHTTP)
+	status := server.Status()
+
+	if status.HasAuthToken || status.AuthHeader != "" || strings.Contains(status.ConnectionExample, "Authorization") {
+		t.Fatalf("disabled auth status still advertised bearer auth: %#v", status)
+	}
+}
+
 func TestHTTPAndStdioUseSameFrozenCatalog(t *testing.T) {
 	httpServer := newTransportTestServer(t, TransportHTTP)
 	httpResponse, respond := httpServer.processFrame(context.Background(), []byte(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`), TransportHTTP, ToolContext{})
@@ -110,7 +119,31 @@ func newTransportTestServer(t *testing.T, transport Transport) *Server {
 		configuration.AllowedOrigins = []string{"http://127.0.0.1:1"}
 	}
 	server, err := NewServer(ServerOptions{
-		Config: configuration, Registry: registry, SessionToken: bytes.Repeat([]byte{'a'}, 32),
+		Config: configuration, Registry: registry,
+		SessionToken: bytes.Repeat([]byte{'a'}, 32), AuthToken: bytes.Repeat([]byte{'a'}, 32),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close(context.Background()) })
+	return server
+}
+
+func newTransportTestServerWithoutAuthToken(t *testing.T, transport Transport) *Server {
+	t.Helper()
+	registry, err := NewFrozenRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := DefaultConfig()
+	configuration.Enabled = true
+	configuration.Transport = transport
+	if transport == TransportHTTP {
+		configuration.AllowedOrigins = []string{"http://127.0.0.1:1"}
+	}
+	server, err := NewServer(ServerOptions{
+		Config: configuration, Registry: registry,
+		SessionToken: bytes.Repeat([]byte{'a'}, 32),
 	})
 	if err != nil {
 		t.Fatal(err)

@@ -96,6 +96,9 @@ func auditPaths(ctx context.Context, database Queryer, available map[string]stru
 				return err
 			}
 			classification, blockingValue := classifyPath(value, spec.required, roots, options.Paths)
+			if options.ProjectWorkspacesAreRoots && spec.table == "projects" && spec.column == "workspace_path" {
+				classification, blockingValue = classifyStartupProjectWorkspacePath(value, roots, options.Paths, classification, blockingValue)
+			}
 			metricKey := spec.table + "\x00" + spec.column + "\x00" + classification
 			accumulator := metrics[metricKey]
 			if accumulator == nil {
@@ -173,6 +176,45 @@ func persistedProjectWorkspaceRoots(
 		return nil, err
 	}
 	return result, nil
+}
+
+func classifyStartupProjectWorkspacePath(
+	value sql.NullString,
+	roots []string,
+	inspector PathInspector,
+	classification string,
+	blocking bool,
+) (string, bool) {
+	if !blocking {
+		return classification, blocking
+	}
+	switch classification {
+	case "missing":
+		return "workspace_missing", false
+	case "absolute_unapproved", "drive_absolute_unapproved", "unc_absolute_unapproved":
+		if startupWorkspaceMissing(value, inspector) {
+			return "workspace_missing", false
+		}
+	}
+	return classification, blocking
+}
+
+func startupWorkspaceMissing(value sql.NullString, inspector PathInspector) bool {
+	if !value.Valid {
+		return false
+	}
+	pathValue := strings.TrimSpace(value.String)
+	if pathValue == "" || strings.ContainsRune(pathValue, '\x00') || !filepath.IsAbs(pathValue) {
+		return false
+	}
+	portable := strings.ReplaceAll(pathValue, "\\", "/")
+	for _, component := range strings.Split(portable, "/") {
+		if component == ".." {
+			return false
+		}
+	}
+	_, err := inspector.Lstat(filepath.Clean(pathValue))
+	return errors.Is(err, os.ErrNotExist)
 }
 
 func zeroPaddedIndex(value int) string {

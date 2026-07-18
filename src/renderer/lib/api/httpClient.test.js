@@ -890,6 +890,43 @@ describe('HttpAutoplanClient guarded read transport', () => {
     assert.equal(fallback.calls.some((call) => call.key === 'chatGetConfig' || call.key === 'chatSaveConfig'), false);
   });
 
+  it('starts and stops MCP through the global runtime command bridge', async () => {
+    const calls = [];
+    const snapshotValue = snapshot(project(7));
+    snapshotValue.mcp = { status: 'running', transport: 'http' };
+    const { client, fallback } = createClient(async (target, init) => {
+      const url = new URL(target);
+      const body = init.body ? JSON.parse(init.body) : undefined;
+      calls.push({ path: url.pathname, method: init.method, body });
+      if (url.pathname === '/api/v1/runtime/commands') {
+        return success({
+          operation: {
+            operation_id: `${body.command}:fixture`,
+            type: body.command,
+            status: 'accepted',
+            request_id: requestId,
+            accepted_at: '2026-07-16T00:00:00.000Z',
+          },
+        });
+      }
+      if (url.pathname === '/api/v1/projects/7/snapshot') return success(snapshotValue);
+      throw new Error(`unexpected MCP runtime URL: ${url.pathname}`);
+    });
+
+    assert.deepStrictEqual(await client.stopMcp({ projectId: 7 }), snapshotValue);
+    assert.deepStrictEqual(await client.startMcp({ projectId: 7 }), snapshotValue);
+
+    assert.deepStrictEqual(calls.map(({ path, method, body }) => ({ path, method, body })), [
+      { path: '/api/v1/runtime/commands', method: 'POST', body: { version: 'v1', command: 'mcp.stop', project_id: 0 } },
+      { path: '/api/v1/projects/7/snapshot', method: 'GET', body: undefined },
+      { path: '/api/v1/runtime/commands', method: 'POST', body: { version: 'v1', command: 'mcp.start', project_id: 0 } },
+      { path: '/api/v1/projects/7/snapshot', method: 'GET', body: undefined },
+    ]);
+    assert.equal(client.getRuntimeOperationOwner('mcp.stop:fixture'), 'go');
+    assert.equal(client.getRuntimeOperationOwner('mcp.start:fixture'), 'go');
+    assert.equal(fallback.calls.some((call) => call.key === 'startMcp' || call.key === 'stopMcp'), false);
+  });
+
   it('starts and stops a task through HTTP, follows cancellation, and refreshes the snapshot', async () => {
     const calls = [];
     const streams = [];

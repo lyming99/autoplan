@@ -16,7 +16,10 @@ func TestHTTPAuthorizationRequiresLoopbackOriginSessionAndToken(t *testing.T) {
 	}
 	configuration := DefaultConfig()
 	configuration.Enabled, configuration.AllowedOrigins = true, []string{"http://127.0.0.1:1"}
-	server, err := NewServer(ServerOptions{Config: configuration, Registry: registry, SessionToken: bytes.Repeat([]byte{'a'}, 32)})
+	server, err := NewServer(ServerOptions{
+		Config: configuration, Registry: registry,
+		SessionToken: bytes.Repeat([]byte{'a'}, 32), AuthToken: bytes.Repeat([]byte{'a'}, 32),
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -44,12 +47,53 @@ func TestHTTPAuthorizationRequiresLoopbackOriginSessionAndToken(t *testing.T) {
 	}
 }
 
+func TestHTTPAuthorizationAllowsLoopbackWhenAuthTokenDisabled(t *testing.T) {
+	registry, err := NewFrozenRegistry(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configuration := DefaultConfig()
+	configuration.Enabled, configuration.AllowedOrigins = true, []string{"http://127.0.0.1:1"}
+	server, err := NewServer(ServerOptions{Config: configuration, Registry: registry, SessionToken: bytes.Repeat([]byte{'a'}, 32)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = server.Close(context.Background()) })
+
+	request := unauthenticatedMCPRequest()
+	response := httptest.NewRecorder()
+	server.http.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "list_projects") {
+		t.Fatalf("unauthenticated loopback request response: status=%d body=%s", response.Code, response.Body.String())
+	}
+
+	for _, mutate := range []func(*http.Request){
+		func(request *http.Request) { request.Header.Set("Forwarded", "for=127.0.0.1") },
+		func(request *http.Request) { request.Host = "localhost:43847" },
+	} {
+		request := unauthenticatedMCPRequest()
+		mutate(request)
+		response := httptest.NewRecorder()
+		server.http.ServeHTTP(response, request)
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("unauthenticated loopback guard status = %d", response.Code)
+		}
+	}
+}
+
 func authorizedMCPRequest() *http.Request {
 	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
 	request.Host = "127.0.0.1:43847"
 	request.Header.Set("Origin", "http://127.0.0.1:1")
 	request.Header.Set("Authorization", "Bearer "+strings.Repeat("a", 32))
 	request.Header.Set("X-Autoplan-Session", strings.Repeat("a", 32))
+	request.Header.Set("Content-Type", "application/json")
+	return request
+}
+
+func unauthenticatedMCPRequest() *http.Request {
+	request := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`))
+	request.Host = "127.0.0.1:43847"
 	request.Header.Set("Content-Type", "application/json")
 	return request
 }

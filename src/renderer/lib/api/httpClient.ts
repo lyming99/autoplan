@@ -125,6 +125,8 @@ export const DEFAULT_HTTP_TIMEOUT_MS = 10_000;
 export const MAXIMUM_HTTP_TIMEOUT_MS = 120_000;
 export const PROJECT_SSE_PATH = '/api/v1/projects' as const;
 export const OPERATION_SSE_PATH = '/api/v1/operations' as const;
+const RUNTIME_COMMAND_PATH = '/api/v1/runtime/commands';
+const RUNTIME_COMMAND_CONTRACT_VERSION = 'v1';
 const JSON_CONTENT_TYPE = 'application/json';
 const EVENT_STREAM_CONTENT_TYPE = 'text/event-stream';
 const MAXIMUM_EVENT_WATERMARKS = 128;
@@ -861,6 +863,16 @@ export class HttpAutoplanClient {
       (value) => validateSuccessEnvelope(value, validateMCPConfig).data,
       { method: 'PATCH', body: staticMCPConfigInput(payload), retryTransportFailure: true });
     return this.#refreshProjectSnapshot(projectId);
+  };
+
+  startMcp = async (input: ProjectIdInput): Promise<AppSnapshot> => {
+    const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
+    return this.#submitGlobalRuntimeCommand('mcp.start', projectId, input);
+  };
+
+  stopMcp = async (input: ProjectIdInput): Promise<AppSnapshot> => {
+    const projectId = positiveInteger(input?.projectId, 'invalid_project_id');
+    return this.#submitGlobalRuntimeCommand('mcp.stop', projectId, input);
   };
 
   getCapabilities = (options: HttpRequestOptions = {}): Promise<HttpCapabilityDiscovery> =>
@@ -1852,6 +1864,25 @@ export class HttpAutoplanClient {
     return this.getProjectSnapshot(projectId);
   }
 
+  async #submitGlobalRuntimeCommand(
+    command: 'mcp.start' | 'mcp.stop',
+    projectId: number,
+    intent: object,
+  ): Promise<AppSnapshot> {
+    const accepted = await this.#request(
+      RUNTIME_COMMAND_PATH,
+      undefined,
+      (value) => validateSuccessEnvelope(value, validateRuntimeCommandResult).data.operation,
+      {
+        method: 'POST',
+        body: { version: RUNTIME_COMMAND_CONTRACT_VERSION, command, project_id: 0 },
+        idempotencyKey: this.#idempotencyKeyFor(intent),
+      },
+    );
+    this.#operationOwners.set(accepted.operation_id, 'go');
+    return this.#refreshProjectSnapshot(projectId);
+  }
+
   async #refreshProjectSnapshot(projectId: number): Promise<AppSnapshot> {
     const snapshot = await this.getProjectSnapshot(projectId);
     this.#recordSnapshotVersion(snapshot);
@@ -2555,7 +2586,7 @@ function installDelegateForwarders(target: ForwardedTarget, delegate: AutoplanCl
         key === 'aiConfigList' || key === 'aiConfigCreate' || key === 'aiConfigUpdate' || key === 'aiConfigDelete' || key === 'aiConfigGet' ||
         key === 'claudeCliConfigList' || key === 'claudeCliConfigCreate' || key === 'claudeCliConfigUpdate' ||
         key === 'claudeCliConfigDelete' || key === 'claudeCliConfigGet' || key === 'claudeCliConfigSetDefault' ||
-        key === 'saveMcpConfig' ||
+        key === 'startMcp' || key === 'stopMcp' || key === 'saveMcpConfig' ||
         key === 'acceptIntake' || key === 'unacceptIntake' ||
         key === 'createRequirement' || key === 'updateRequirement' || key === 'deleteRequirement' ||
         key === 'createFeedback' || key === 'updateFeedback' || key === 'deleteFeedback') continue;
@@ -3500,6 +3531,14 @@ function validateRuntimeOperationAccepted(value: unknown): RuntimeOperationAccep
     status: value.status,
     request_id: value.request_id,
     accepted_at: value.accepted_at,
+  };
+}
+
+function validateRuntimeCommandResult(value: unknown): { operation: RuntimeOperationAccepted; snapshot?: AppSnapshot } {
+  const object = exactObject(value, ['operation'], ['snapshot']);
+  return {
+    operation: validateRuntimeOperationAccepted(object.operation),
+    ...(object.snapshot === undefined ? {} : { snapshot: validateSnapshot(object.snapshot) }),
   };
 }
 

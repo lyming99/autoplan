@@ -633,9 +633,6 @@ func AssembleDependencies(configuration config.Config, overrides DependencyOverr
 	}
 	mcpSessionToken := sessionManager.CredentialCopy()
 	mcpAuthToken := append([]byte(nil), overrides.MCPAuthToken...)
-	if len(mcpAuthToken) == 0 {
-		mcpAuthToken = append([]byte(nil), mcpSessionToken...)
-	}
 	mcpServer, err := mcp.NewServer(mcp.ServerOptions{
 		Config: mcpConfig, Registry: mcpRegistry, Audit: overrides.MCPAudit,
 		SessionToken: mcpSessionToken, AuthToken: mcpAuthToken,
